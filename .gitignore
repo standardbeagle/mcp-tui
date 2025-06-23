@@ -1,0 +1,22 @@
+# Binaries
+mcp-tui
+*.exe
+
+# Go build artifacts
+*.o
+*.a
+*.so
+
+# Dependency directories
+vendor/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
