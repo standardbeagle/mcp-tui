@@ -186,7 +186,11 @@ func createStdioClient(ctx context.Context) (*client.Client, error) {
 	}
 
 	stdioTransport := transport.NewStdio(serverCommand, nil, serverArgs...)
-	c := client.NewClient(stdioTransport)
+	
+	// Always wrap with debug transport to capture messages
+	finalTransport := newDebugTransport(stdioTransport, "STDIO")
+	
+	c := client.NewClient(finalTransport)
 
 	return c, nil
 }
@@ -200,7 +204,11 @@ func createSSEClient(ctx context.Context) (*client.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSE transport: %w", err)
 	}
-	c := client.NewClient(sseTransport)
+	
+	// Always wrap with debug transport to capture messages
+	finalTransport := newDebugTransport(sseTransport, "SSE")
+	
+	c := client.NewClient(finalTransport)
 
 	return c, nil
 }
@@ -214,7 +222,11 @@ func createHTTPClient(ctx context.Context) (*client.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP transport: %w", err)
 	}
-	c := client.NewClient(httpTransport)
+	
+	// Always wrap with debug transport to capture messages
+	finalTransport := newDebugTransport(httpTransport, "HTTP")
+	
+	c := client.NewClient(finalTransport)
 
 	return c, nil
 }

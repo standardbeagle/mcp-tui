@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ const (
 	screenInspection
 	screenToolCall
 	screenToolSelect
+	screenDebugLog
 )
 
 type connectionType int
@@ -77,6 +79,10 @@ type model struct {
 	// Inspection tab state
 	activeTab   int  // 0=tools, 1=resources, 2=prompts
 	tabCursors  [3]int  // Cursor position for each tab
+	
+	// Debug log state
+	debugViewport viewport.Model
+	previousScreen screen  // Screen to return to when closing debug log
 }
 
 type toolField struct {
@@ -181,12 +187,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					headerFooterHeight = 8
 				}
+			case screenDebugLog:
+				headerFooterHeight = 4 // Title + footer
 			default:
 				headerFooterHeight = 8
 			}
 			
 			m.viewport.Width = msg.Width
 			m.viewport.Height = max(1, msg.Height - headerFooterHeight)
+			
+			// Also update debug viewport if initialized
+			if m.debugViewport.Width > 0 {
+				m.debugViewport.Width = msg.Width
+				m.debugViewport.Height = max(1, msg.Height - 4)
+			}
 		}
 		
 		// Update viewport content if we have it
@@ -206,7 +220,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenInspection
 		m.cursor = 0
 		m.loading = false
+		m.tabCursors[0] = 0  // Reset tools cursor
 		m.updateViewportContent()
+		m.viewport.GotoTop()  // Start at the top of the list
+		m.ensureSelectedToolVisible()
 		return m, nil
 	case errorMsg:
 		m.err = msg.err
@@ -217,6 +234,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.progressMsg = ""
 		m.updateViewportContent()
+		// Reset viewport to top to show the beginning of the result
+		m.viewport.GotoTop()
 		return m, nil
 	case progressMsg:
 		m.progressMsg = msg.message
@@ -246,7 +265,7 @@ func (m model) shouldUseViewport() bool {
 
 func (m model) isEditingField() bool {
 	// Check if cursor is in an input field
-	if m.screen == screenConnection && m.cursor == 0 {
+	if m.screen == screenConnection && m.cursor == 1 {
 		return true
 	}
 	if m.screen == screenToolCall && m.cursor < len(m.toolFields) {
@@ -256,6 +275,10 @@ func (m model) isEditingField() bool {
 }
 
 func (m *model) updateViewportContent() {
+	if !m.ready {
+		return
+	}
+	
 	var content string
 	
 	switch m.screen {
@@ -270,7 +293,39 @@ func (m *model) updateViewportContent() {
 	m.viewport.SetContent(content)
 }
 
+func (m *model) ensureSelectedToolVisible() {
+	if m.screen != screenInspection || m.activeTab != 0 || !m.ready {
+		return
+	}
+	
+	// Calculate the line number of the selected tool
+	// Each tool takes 3 lines (title + description + blank line)
+	selectedLine := m.tabCursors[0] * 3
+	
+	// Get current viewport position
+	currentTop := m.viewport.YOffset
+	currentBottom := currentTop + m.viewport.Height - 1
+	
+	// Check if selected tool is visible
+	if selectedLine < currentTop {
+		// Scroll up to show the selected tool
+		m.viewport.SetYOffset(selectedLine)
+	} else if selectedLine > currentBottom - 2 {
+		// Scroll down to show the selected tool (with some margin)
+		newOffset := selectedLine - m.viewport.Height + 3
+		if newOffset < 0 {
+			newOffset = 0
+		}
+		m.viewport.SetYOffset(newOffset)
+	}
+}
+
 func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle debug log screen separately
+	if m.screen == screenDebugLog {
+		return m.handleDebugLogKeyMsg(msg)
+	}
+	
 	// Handle inspection screen navigation first
 	if m.screen == screenInspection {
 		switch msg.Type {
@@ -278,12 +333,15 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Switch tabs
 			m.activeTab = (m.activeTab + 1) % 3
 			m.updateViewportContent()
+			m.viewport.GotoTop()
 			return m, nil
 		case tea.KeyUp:
 			if m.activeTab == 0 && len(m.tools) > 0 {
 				if m.tabCursors[0] > 0 {
 					m.tabCursors[0]--
 					m.updateViewportContent()
+					// Ensure the selected item is visible in the viewport
+					m.ensureSelectedToolVisible()
 				}
 			}
 			return m, nil
@@ -292,6 +350,8 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if m.tabCursors[0] < len(m.tools)-1 {
 					m.tabCursors[0]++
 					m.updateViewportContent()
+					// Ensure the selected item is visible in the viewport
+					m.ensureSelectedToolVisible()
 				}
 			}
 			return m, nil
@@ -304,10 +364,54 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.input = ""
 			}
 			return m, nil
+		case tea.KeyPgUp:
+			if m.activeTab == 0 && len(m.tools) > 0 {
+				// Move up by viewport height
+				newCursor := m.tabCursors[0] - m.viewport.Height/3
+				if newCursor < 0 {
+					newCursor = 0
+				}
+				m.tabCursors[0] = newCursor
+				m.updateViewportContent()
+				m.ensureSelectedToolVisible()
+			}
+			return m, nil
+		case tea.KeyPgDown:
+			if m.activeTab == 0 && len(m.tools) > 0 {
+				// Move down by viewport height
+				newCursor := m.tabCursors[0] + m.viewport.Height/3
+				if newCursor >= len(m.tools) {
+					newCursor = len(m.tools) - 1
+				}
+				m.tabCursors[0] = newCursor
+				m.updateViewportContent()
+				m.ensureSelectedToolVisible()
+			}
+			return m, nil
+		case tea.KeyHome:
+			if m.activeTab == 0 && len(m.tools) > 0 {
+				m.tabCursors[0] = 0
+				m.updateViewportContent()
+				m.ensureSelectedToolVisible()
+			}
+			return m, nil
+		case tea.KeyEnd:
+			if m.activeTab == 0 && len(m.tools) > 0 {
+				m.tabCursors[0] = len(m.tools) - 1
+				m.updateViewportContent()
+				m.ensureSelectedToolVisible()
+			}
+			return m, nil
 		}
 		
 		// Handle string keys
 		switch msg.String() {
+		case "ctrl+l":
+			// Toggle debug log
+			m.previousScreen = m.screen
+			m.screen = screenDebugLog
+			m.updateDebugViewport()
+			return m, nil
 		case "q":
 			return m, tea.Quit
 		case "b":
@@ -361,7 +465,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor > 0 {
 			m.cursor--
 			// Reset cursor position when moving to connection input
-			if m.screen == screenConnection && m.cursor == 0 {
+			if m.screen == screenConnection && m.cursor == 1 {
 				m.inputPos = len(m.input)
 			}
 		}
@@ -370,12 +474,19 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor < maxCursor {
 			m.cursor++
 			// Reset cursor position when moving to connection input
-			if m.screen == screenConnection && m.cursor == 0 {
+			if m.screen == screenConnection && m.cursor == 1 {
 				m.inputPos = len(m.input)
 			}
 		}
 	case tea.KeyLeft:
 		if m.screen == screenConnection && m.cursor == 0 {
+			// Connection type selector - cycle left
+			if m.connectionType > 0 {
+				m.connectionType--
+			} else {
+				m.connectionType = 2
+			}
+		} else if m.screen == screenConnection && m.cursor == 1 {
 			if m.inputPos > 0 {
 				m.inputPos--
 			}
@@ -386,6 +497,9 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyRight:
 		if m.screen == screenConnection && m.cursor == 0 {
+			// Connection type selector - cycle right
+			m.connectionType = (m.connectionType + 1) % 3
+		} else if m.screen == screenConnection && m.cursor == 1 {
 			if m.inputPos < len(m.input) {
 				m.inputPos++
 			}
@@ -395,13 +509,13 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.KeyHome:
-		if m.screen == screenConnection && m.cursor == 0 {
+		if m.screen == screenConnection && m.cursor == 1 {
 			m.inputPos = 0
 		} else if m.screen == screenToolCall && m.cursor < len(m.toolFields) {
 			m.toolFields[m.cursor].cursorPos = 0
 		}
 	case tea.KeyEnd:
-		if m.screen == screenConnection && m.cursor == 0 {
+		if m.screen == screenConnection && m.cursor == 1 {
 			m.inputPos = len(m.input)
 		} else if m.screen == screenToolCall && m.cursor < len(m.toolFields) {
 			m.toolFields[m.cursor].cursorPos = len(m.toolFields[m.cursor].value)
@@ -415,10 +529,49 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleEnter()
 	case tea.KeyTab:
 		if m.screen == screenConnection {
-			m.connectionType = (m.connectionType + 1) % 3
+			// Tab navigates through form fields
+			maxCursor := m.getMaxCursor()
+			// Tab goes forward
+			if m.cursor < maxCursor {
+				m.cursor++
+			} else {
+				// Wrap to beginning
+				m.cursor = 0
+			}
+		} else if m.screen == screenToolCall {
+			// Tab navigates through tool fields
+			maxCursor := m.getMaxCursor()
+			// Tab goes forward
+			if m.cursor < maxCursor {
+				m.cursor++
+			} else {
+				// Wrap to beginning
+				m.cursor = 0
+			}
+		}
+	case tea.KeyShiftTab:
+		if m.screen == screenConnection {
+			// Shift+Tab goes backwards
+			if m.cursor > 0 {
+				m.cursor--
+				if m.cursor == 1 {
+					m.inputPos = len(m.input)
+				}
+			} else {
+				// Wrap to end
+				m.cursor = m.getMaxCursor()
+			}
+		} else if m.screen == screenToolCall {
+			// Shift+Tab goes backwards
+			if m.cursor > 0 {
+				m.cursor--
+			} else {
+				// Wrap to end
+				m.cursor = m.getMaxCursor()
+			}
 		}
 	case tea.KeyBackspace:
-		if m.screen == screenConnection && m.cursor == 0 {
+		if m.screen == screenConnection && m.cursor == 1 {
 			if m.inputPos > 0 && len(m.input) > 0 {
 				m.input = m.input[:m.inputPos-1] + m.input[m.inputPos:]
 				m.inputPos--
@@ -433,7 +586,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyRunes:
 		// Handle regular character input including multi-character pastes
 		str := string(msg.Runes)
-		if m.screen == screenConnection && m.cursor == 0 {
+		if m.screen == screenConnection && m.cursor == 1 {
 			m.input = m.input[:m.inputPos] + str + m.input[m.inputPos:]
 			m.inputPos += len(str)
 		} else if m.screen == screenToolCall && m.cursor < len(m.toolFields) {
@@ -444,6 +597,9 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeySpace:
 		// Handle spacebar
 		if m.screen == screenConnection && m.cursor == 0 {
+			// Connection type selector - toggle with space
+			m.connectionType = (m.connectionType + 1) % 3
+		} else if m.screen == screenConnection && m.cursor == 1 {
 			m.input = m.input[:m.inputPos] + " " + m.input[m.inputPos:]
 			m.inputPos++
 		} else if m.screen == screenToolCall && m.cursor < len(m.toolFields) {
@@ -454,9 +610,17 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Handle other special keys by string
 		switch msg.String() {
+		case "ctrl+l":
+			// Toggle debug log from any screen
+			if m.screen != screenDebugLog {
+				m.previousScreen = m.screen
+				m.screen = screenDebugLog
+				m.updateDebugViewport()
+			}
+			return m, nil
 		case "q":
 			// Only quit if not in an input field
-			if m.screen == screenConnection && m.cursor == 0 {
+			if m.screen == screenConnection && m.cursor == 1 {
 				// In connection screen input field, treat as regular character
 				m.input = m.input[:m.inputPos] + "q" + m.input[m.inputPos:]
 				m.inputPos++
@@ -530,7 +694,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) getMaxCursor() int {
 	switch m.screen {
 	case screenConnection:
-		return 1 // 0 = input field, 1 = connect button
+		return 2 // 0 = connection type selector, 1 = input field, 2 = connect button
 	case screenInspection:
 		return len(m.tools) + 1
 	case screenToolCall:
@@ -542,7 +706,9 @@ func (m model) getMaxCursor() int {
 func (m model) handleEnter() (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case screenConnection:
-		if m.cursor == 1 { // Connect button
+		if m.cursor == 2 { // Connect button
+			return m.connect()
+		} else if m.cursor == 1 { // Input field - submit form
 			return m.connect()
 		}
 	case screenInspection:
@@ -558,7 +724,12 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 		}
 	case screenToolCall:
 		if m.cursor < len(m.toolFields) {
-			// Editing a field - do nothing, just stay in field
+			// In a field - submit the form if it's the last field
+			if m.cursor == len(m.toolFields)-1 {
+				return m.callTool()
+			}
+			// Otherwise, move to next field
+			m.cursor++
 		} else if m.cursor == len(m.toolFields) {
 			// Execute button
 			return m.callTool()
@@ -676,16 +847,7 @@ func (m model) parseToolSchema(tool mcp.Tool) []toolField {
 		}
 	}
 	
-	// If no schema found, create a generic message field (common for many tools)
-	if len(fields) == 0 {
-		fields = append(fields, toolField{
-			name:        "message",
-			required:    true,
-			fieldType:   "string",
-			description: "Message or input for the tool",
-		})
-	}
-	
+	// Return empty fields if no parameters are needed
 	return fields
 }
 
@@ -770,7 +932,13 @@ func (m model) callTool() (tea.Model, tea.Cmd) {
 			}
 			// Handle different content types
 			if textContent, ok := mcp.AsTextContent(content); ok {
-				resultText.WriteString(textContent.Text)
+				// Try to pretty-print JSON if detected
+				text := textContent.Text
+				if formatted := tryFormatJSON(text); formatted != "" {
+					resultText.WriteString(formatted)
+				} else {
+					resultText.WriteString(text)
+				}
 			} else {
 				resultText.WriteString(fmt.Sprintf("Content: %v", content))
 			}
@@ -778,6 +946,30 @@ func (m model) callTool() (tea.Model, tea.Cmd) {
 		
 		return toolResultMsg{resultText.String()}
 		})
+}
+
+func tryFormatJSON(text string) string {
+	// First trim whitespace
+	text = strings.TrimSpace(text)
+	
+	// Check if it might be JSON (starts with { or [)
+	if !strings.HasPrefix(text, "{") && !strings.HasPrefix(text, "[") {
+		return ""
+	}
+	
+	// Try to parse and pretty-print
+	var data interface{}
+	if err := json.Unmarshal([]byte(text), &data); err != nil {
+		return ""
+	}
+	
+	// Pretty print with indentation
+	formatted, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return ""
+	}
+	
+	return string(formatted)
 }
 
 type tickMsg time.Time
@@ -800,6 +992,8 @@ func (m model) View() string {
 		return m.inspectionView()
 	case screenToolCall:
 		return m.toolCallView()
+	case screenDebugLog:
+		return m.debugLogView()
 	}
 	return ""
 }
@@ -813,14 +1007,20 @@ func (m model) connectionView() string {
 	// Connection type selector
 	connTypes := []string{"STDIO", "SSE", "HTTP"}
 	b.WriteString("Connection Type: ")
-	for i, ct := range connTypes {
-		if connectionType(i) == m.connectionType {
-			b.WriteString(selectedStyle.Render(ct))
-		} else {
-			b.WriteString(normalStyle.Render(ct))
-		}
-		if i < len(connTypes)-1 {
-			b.WriteString(" | ")
+	if m.cursor == 0 {
+		b.WriteString("< ")
+		b.WriteString(selectedStyle.Render(connTypes[m.connectionType]))
+		b.WriteString(" >")
+	} else {
+		for i, ct := range connTypes {
+			if connectionType(i) == m.connectionType {
+				b.WriteString(selectedStyle.Render(ct))
+			} else {
+				b.WriteString(normalStyle.Render(ct))
+			}
+			if i < len(connTypes)-1 {
+				b.WriteString(" | ")
+			}
 		}
 	}
 	b.WriteString("\n\n")
@@ -842,7 +1042,7 @@ func (m model) connectionView() string {
 	inputContent := m.input
 	
 	// Add cursor indicator if input is focused
-	if m.cursor == 0 {
+	if m.cursor == 1 {
 		if m.inputPos >= len(m.input) {
 			inputContent += "█" // Block cursor at end
 		} else {
@@ -851,15 +1051,24 @@ func (m model) connectionView() string {
 		}
 	}
 	
-	if inputContent == "" {
+	if inputContent == "" && m.cursor == 1 {
 		inputContent = "█" // Show cursor in empty field
 	}
 	
-	b.WriteString(inputStyle.Render(inputContent))
+	if m.cursor == 1 {
+		b.WriteString(inputStyle.Render(inputContent))
+	} else {
+		b.WriteString(normalStyle.Copy().
+			Border(lipgloss.RoundedBorder()).
+			Padding(0, 1).
+			Width(60).
+			Render(inputContent))
+	}
 	b.WriteString("\n\n")
 	
+	
 	// Connect button
-	if m.cursor == 1 {
+	if m.cursor == 2 {
 		b.WriteString(selectedStyle.Render("[ Connect ]"))
 	} else {
 		b.WriteString(normalStyle.Render("[ Connect ]"))
@@ -876,7 +1085,7 @@ func (m model) connectionView() string {
 	}
 	
 	b.WriteString("\n\n")
-	b.WriteString(normalStyle.Render("Tab: Switch connection type | ↑/↓: Navigate | Enter: Connect | Right-click to paste | q: Quit"))
+	b.WriteString(normalStyle.Render("Tab/Shift+Tab: Navigate fields | ←/→: Change selection | Space: Toggle | Enter: Submit | Ctrl+C: Quit"))
 	
 	return b.String()
 }
@@ -977,9 +1186,9 @@ func (m model) inspectionView() string {
 	
 	// Help text based on active tab
 	if m.activeTab == 0 && len(m.tools) > 0 {
-		b.WriteString(normalStyle.Render("↑/↓: Navigate | Enter: Select | 1-9: Quick | Tab: Switch | b: Back | q: Quit"))
+		b.WriteString(normalStyle.Render("↑/↓: Navigate | PgUp/PgDn: Page | Home/End: First/Last | Enter: Select | 1-9: Quick | Tab: Switch | b: Back | Ctrl+L: Debug | q: Quit"))
 	} else {
-		b.WriteString(normalStyle.Render("Tab: Switch tabs | b: Back | q: Quit"))
+		b.WriteString(normalStyle.Render("Tab: Switch tabs | b: Back | Ctrl+L: Debug Log | q: Quit"))
 	}
 	
 	return b.String()
@@ -1008,54 +1217,59 @@ func (m model) toolCallView() string {
 		b.WriteString("\n\n")
 	}
 	
-	// Render form fields
-	for i, field := range m.toolFields {
-		// Field label
-		fieldLabel := field.name
-		if field.required {
-			fieldLabel += " *"
-		}
-		// Add type hint
-		typeHint := ""
-		switch field.fieldType {
-		case "number":
-			typeHint = "number"
-		case "integer":
-			typeHint = "integer"
-		case "boolean":
-			typeHint = "true/false"
-		case "array":
-			typeHint = "comma-separated"
-		}
-		if typeHint != "" {
-			fieldLabel += fmt.Sprintf(" [%s]", typeHint)
-		}
-		if field.description != "" {
-			fieldLabel += fmt.Sprintf(" (%s)", field.description)
-		}
-		b.WriteString(fieldLabel + ":\n")
-		
-		// Field input box
-		inputContent := field.value
-		
-		// Add cursor indicator if field is focused
-		if m.cursor == i {
-			if field.cursorPos >= len(field.value) {
-				inputContent += "█" // Block cursor at end
-			} else {
-				// Insert cursor in middle of text
-				inputContent = field.value[:field.cursorPos] + "█" + field.value[field.cursorPos:]
-			}
-		}
-		
-		if inputContent == "" && m.cursor == i {
-			inputContent = "█" // Show cursor in empty field
-		} else if inputContent == "" {
-			inputContent = " " // Ensure box has minimum content
-		}
-		
-		b.WriteString(inputStyle.Render(inputContent))
+	// Render form fields or message if no fields
+	if len(m.toolFields) == 0 {
+		b.WriteString(normalStyle.Render("This tool requires no parameters."))
 		b.WriteString("\n\n")
+	} else {
+		for i, field := range m.toolFields {
+			// Field label
+			fieldLabel := field.name
+			if field.required {
+				fieldLabel += " *"
+			}
+			// Add type hint
+			typeHint := ""
+			switch field.fieldType {
+			case "number":
+				typeHint = "number"
+			case "integer":
+				typeHint = "integer"
+			case "boolean":
+				typeHint = "true/false"
+			case "array":
+				typeHint = "comma-separated"
+			}
+			if typeHint != "" {
+				fieldLabel += fmt.Sprintf(" [%s]", typeHint)
+			}
+			if field.description != "" {
+				fieldLabel += fmt.Sprintf(" (%s)", field.description)
+			}
+			b.WriteString(fieldLabel + ":\n")
+			
+			// Field input box
+			inputContent := field.value
+			
+			// Add cursor indicator if field is focused
+			if m.cursor == i {
+				if field.cursorPos >= len(field.value) {
+					inputContent += "█" // Block cursor at end
+				} else {
+					// Insert cursor in middle of text
+					inputContent = field.value[:field.cursorPos] + "█" + field.value[field.cursorPos:]
+				}
+			}
+			
+			if inputContent == "" && m.cursor == i {
+				inputContent = "█" // Show cursor in empty field
+			} else if inputContent == "" {
+				inputContent = " " // Ensure box has minimum content
+			}
+			
+			b.WriteString(inputStyle.Render(inputContent))
+			b.WriteString("\n\n")
+		}
 	}
 	
 	// Buttons
@@ -1138,8 +1352,115 @@ func (m model) toolCallView() string {
 		b.WriteString(normalStyle.Render("b: Back | q: Quit"))
 	} else {
 		// Still entering parameters
-		b.WriteString(normalStyle.Render("↑/↓: Navigate | Enter: Execute/Back | Right-click to paste | q: Quit"))
+		b.WriteString(normalStyle.Render("Tab/Shift+Tab: Navigate fields | Enter: Submit | Ctrl+L: Debug Log | Ctrl+C: Quit"))
 	}
+	
+	return b.String()
+}
+
+// updateDebugViewport updates the debug viewport with the latest debug logs
+func (m *model) updateDebugViewport() {
+	if !m.ready {
+		// Initialize debug viewport if not ready
+		m.debugViewport = viewport.New(m.windowWidth, m.windowHeight-4)
+		m.debugViewport.HighPerformanceRendering = false
+	} else {
+		m.debugViewport.Width = m.windowWidth
+		m.debugViewport.Height = max(1, m.windowHeight-4)
+	}
+	
+	// Get debug logs and format them
+	logs := getDebugLogs()
+	var content strings.Builder
+	
+	for _, log := range logs {
+		timestamp := debugTimestampStyle.Render(log.timestamp)
+		
+		var header string
+		switch log.msgType {
+		case "REQUEST →", "NOTIFICATION →":
+			header = debugSendStyle.Render(log.msgType)
+		case "RESPONSE ←", "NOTIFICATION ←":
+			header = debugRecvStyle.Render(log.msgType)
+		default:
+			header = debugHeaderStyle.Render(log.msgType)
+		}
+		
+		content.WriteString(fmt.Sprintf("%s %s\n%s\n\n", timestamp, header, log.content))
+	}
+	
+	if content.Len() == 0 {
+		content.WriteString("No debug messages yet. Messages will appear here as they are exchanged with the server.")
+	}
+	
+	m.debugViewport.SetContent(content.String())
+	// Go to bottom to show latest messages
+	m.debugViewport.GotoBottom()
+}
+
+// handleDebugLogKeyMsg handles key messages when viewing the debug log
+func (m model) handleDebugLogKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		return m, tea.Quit
+	case tea.KeyEsc:
+		// Return to previous screen
+		m.screen = m.previousScreen
+		m.updateViewportContent()
+		return m, nil
+	case tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
+		var cmd tea.Cmd
+		m.debugViewport, cmd = m.debugViewport.Update(msg)
+		return m, cmd
+	}
+	
+	switch msg.String() {
+	case "q":
+		// Return to previous screen
+		m.screen = m.previousScreen
+		m.updateViewportContent()
+		return m, nil
+	case "ctrl+l":
+		// Toggle back to previous screen
+		m.screen = m.previousScreen
+		m.updateViewportContent()
+		return m, nil
+	case "c":
+		// Clear debug logs
+		clearDebugLogs()
+		m.updateDebugViewport()
+		return m, nil
+	}
+	
+	return m, nil
+}
+
+// debugLogView renders the debug log view
+func (m model) debugLogView() string {
+	var b strings.Builder
+	
+	// Header
+	b.WriteString(titleStyle.Render("Debug Log"))
+	b.WriteString("\n")
+	if m.windowWidth > 0 {
+		b.WriteString(strings.Repeat("─", min(m.windowWidth, 80)))
+	}
+	b.WriteString("\n")
+	
+	// Content in viewport
+	if m.ready {
+		b.WriteString(m.debugViewport.View())
+	}
+	
+	// Footer
+	b.WriteString("\n")
+	if m.windowWidth > 0 {
+		b.WriteString(strings.Repeat("─", min(m.windowWidth, 80)))
+	}
+	b.WriteString("\n")
+	
+	// Help text
+	b.WriteString(normalStyle.Render("↑/↓: Scroll | PgUp/PgDn: Page | Home/End: Top/Bottom | c: Clear | Ctrl+L/q/Esc: Back"))
 	
 	return b.String()
 }

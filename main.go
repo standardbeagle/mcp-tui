@@ -15,6 +15,7 @@ var (
 	serverArgs    []string
 	serverURL     string
 	outputJSON    bool
+	debugMode     bool
 )
 
 var rootCmd = &cobra.Command{
@@ -64,6 +65,7 @@ func init() {
 	rootCmd.PersistentFlags().StringSliceVar(&serverArgs, "args", []string{}, "Arguments for stdio server command")
 	rootCmd.PersistentFlags().StringVar(&serverURL, "url", "", "URL for SSE or HTTP servers")
 	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false, "Output results in JSON format")
+	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Enable debug mode to output protocol messages")
 
 	// Add subcommands
 	rootCmd.AddCommand(serverInfoCmd)
