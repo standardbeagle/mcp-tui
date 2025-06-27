@@ -3,19 +3,23 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 var (
+	// Version information
+	version = "0.1.0"
+
 	// Global flags
-	serverType    string
-	serverCommand string
-	serverArgs    []string
-	serverURL     string
-	outputJSON    bool
-	debugMode     bool
+	serverType     string
+	serverCommand  string
+	serverArgs     []string
+	serverURL      string
+	outputJSON     bool
+	debugMode      bool
+	connectTimeout time.Duration
 )
 
 var rootCmd = &cobra.Command{
@@ -24,6 +28,7 @@ var rootCmd = &cobra.Command{
 	Long: `A test client for Model Context Protocol servers with interactive TUI and CLI modes.
 
 By default, runs in interactive TUI mode. Use subcommands for CLI operations.`,
+	Version: version,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Default to TUI mode if no subcommand
 		runInteractiveMode()
@@ -43,7 +48,7 @@ var serverInfoCmd = &cobra.Command{
 
 		fmt.Printf("Connected to MCP server\n")
 		fmt.Printf("Type: %s\n", serverType)
-		
+
 		switch serverType {
 		case "stdio":
 			fmt.Printf("Command: %s\n", serverCommand)
@@ -59,6 +64,10 @@ var serverInfoCmd = &cobra.Command{
 }
 
 func init() {
+	// Set custom version template
+	rootCmd.SetVersionTemplate(`{{with .Name}}{{printf "%s " .}}{{end}}{{printf "version %s" .Version}}
+`)
+
 	// Global flags for server connection
 	rootCmd.PersistentFlags().StringVar(&serverType, "type", "stdio", "Server type: stdio, sse, or http")
 	rootCmd.PersistentFlags().StringVar(&serverCommand, "cmd", "", "Command to run for stdio servers")
@@ -66,13 +75,14 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&serverURL, "url", "", "URL for SSE or HTTP servers")
 	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false, "Output results in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Enable debug mode to output protocol messages")
+	rootCmd.PersistentFlags().DurationVar(&connectTimeout, "timeout", 2*time.Minute, "Timeout for connecting to MCP server")
 
 	// Add subcommands
 	rootCmd.AddCommand(serverInfoCmd)
 	rootCmd.AddCommand(toolCmd)
 	rootCmd.AddCommand(resourceCmd)
 	rootCmd.AddCommand(promptCmd)
-	
+
 	// Set up stderr filtering for all subcommands
 	for _, cmd := range []*cobra.Command{serverInfoCmd, toolCmd, resourceCmd, promptCmd} {
 		for _, subcmd := range cmd.Commands() {
@@ -88,41 +98,32 @@ func setupStderrFilter(cmd *cobra.Command) {
 		cmd.RunE = func(c *cobra.Command, args []string) error {
 			// Only filter for stdio connections
 			if serverType == "stdio" {
-				startStderrFilter()
+				if err := startStderrFilter(); err != nil {
+					// Log error but continue - filtering is not critical
+					fmt.Fprintf(os.Stderr, "Warning: failed to start stderr filter: %v\n", err)
+				}
+				defer stopStderrFilter()
 			}
 			return originalRunE(c, args)
 		}
 	}
 }
 
-func startStderrFilter() {
-	// Set up a filter that will remain active even after the program starts exiting
-	origStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := r.Read(buf)
-			if err != nil || n == 0 {
-				return
-			}
-			output := string(buf[:n])
-			if !strings.Contains(output, "Error reading response: read |0: file already closed") {
-				origStderr.Write(buf[:n])
-			}
+func main() {
+	// Set up panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "Fatal error: %v\n", r)
+			// Ensure cleanup happens even on panic
+			globalClientTracker.Shutdown()
+			globalClientTracker.WaitForShutdown()
+			os.Exit(1)
 		}
 	}()
-	
-	os.Stderr = w
-	
-	// Don't restore stderr - let the filter remain active until program exit
-}
 
-func main() {
 	// Set up signal handling to ensure proper cleanup
 	setupSignalHandler()
-	
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -131,6 +132,15 @@ func main() {
 
 func runInteractiveMode() {
 	fmt.Println("Starting interactive TUI mode...")
+
+	// Start stderr filtering for stdio connections
+	if serverType == "stdio" {
+		if err := startStderrFilter(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to start stderr filter: %v\n", err)
+		}
+		defer stopStderrFilter()
+	}
+
 	app := NewApp()
 	if err := app.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error starting TUI: %v\n", err)

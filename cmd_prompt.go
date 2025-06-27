@@ -108,7 +108,7 @@ var promptGetCmd = &cobra.Command{
 
 		// Build arguments from remaining args (key=value pairs)
 		promptArgs := make(map[string]string)
-		
+
 		for i := 1; i < len(args); i++ {
 			parts := strings.SplitN(args[i], "=", 2)
 			if len(parts) != 2 {
@@ -138,11 +138,11 @@ var promptGetCmd = &cobra.Command{
 			if result.Description != "" {
 				fmt.Printf("Description: %s\n\n", result.Description)
 			}
-			
+
 			fmt.Println("Messages:")
 			for i, msg := range result.Messages {
 				fmt.Printf("\n[%d] Role: %s\n", i+1, msg.Role)
-				
+
 				// Display content
 				if textContent, ok := mcp.AsTextContent(msg.Content); ok {
 					fmt.Println(textContent.Text)

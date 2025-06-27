@@ -1,4 +1,4 @@
-module mcp-tui
+module github.com/standardbeagle/mcp-tui
 
 go 1.24.2
 

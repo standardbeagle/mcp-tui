@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -27,24 +26,22 @@ type debugLogEntry struct {
 }
 
 var (
-	debugLogBuffer []debugLogEntry
-	debugLogMutex  sync.RWMutex
-	maxDebugLogs   = 1000 // Keep last 1000 entries
+	debugLogBuffer = NewDebugLogBuffer(1000) // Keep last 1000 entries
 )
 
 var (
 	debugHeaderStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("212"))
-	
+				Bold(true).
+				Foreground(lipgloss.Color("212"))
+
 	debugSendStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("121"))
-	
+			Foreground(lipgloss.Color("121"))
+
 	debugRecvStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("214"))
-	
+			Foreground(lipgloss.Color("214"))
+
 	debugTimestampStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240"))
+				Foreground(lipgloss.Color("240"))
 )
 
 func newDebugTransport(base transport.Interface, name string) transport.Interface {
@@ -67,19 +64,19 @@ func (d *debugTransport) SendRequest(ctx context.Context, request transport.JSON
 	// Log outgoing request
 	requestJSON, _ := json.MarshalIndent(request, "", "  ")
 	d.logMessage("REQUEST →", string(requestJSON))
-	
+
 	// Send the actual request
 	response, err := d.Interface.SendRequest(ctx, request)
-	
+
 	if err != nil {
 		d.logMessage("ERROR", fmt.Sprintf("Request failed: %v", err))
 		return response, err
 	}
-	
+
 	// Log incoming response
 	responseJSON, _ := json.MarshalIndent(response, "", "  ")
 	d.logMessage("RESPONSE ←", string(responseJSON))
-	
+
 	return response, err
 }
 
@@ -87,12 +84,12 @@ func (d *debugTransport) SendNotification(ctx context.Context, notification mcp.
 	// Log outgoing notification
 	notificationJSON, _ := json.MarshalIndent(notification, "", "  ")
 	d.logMessage("NOTIFICATION →", string(notificationJSON))
-	
+
 	err := d.Interface.SendNotification(ctx, notification)
 	if err != nil {
 		d.logMessage("ERROR", fmt.Sprintf("Notification failed: %v", err))
 	}
-	
+
 	return err
 }
 
@@ -101,36 +98,25 @@ func (d *debugTransport) SetNotificationHandler(handler func(notification mcp.JS
 	wrappedHandler := func(notification mcp.JSONRPCNotification) {
 		notificationJSON, _ := json.MarshalIndent(notification, "", "  ")
 		d.logMessage("NOTIFICATION ←", string(notificationJSON))
-		
+
 		// Call the original handler
 		if handler != nil {
 			handler(notification)
 		}
 	}
-	
+
 	d.Interface.SetNotificationHandler(wrappedHandler)
 }
 
 func (d *debugTransport) logMessage(msgType, content string) {
-	timestamp := time.Now().Format("15:04:05.000")
-	
 	// Store in buffer for TUI display
-	debugLogMutex.Lock()
-	debugLogBuffer = append(debugLogBuffer, debugLogEntry{
-		timestamp: timestamp,
-		msgType:   msgType,
-		content:   content,
-	})
-	// Keep buffer size limited
-	if len(debugLogBuffer) > maxDebugLogs {
-		debugLogBuffer = debugLogBuffer[len(debugLogBuffer)-maxDebugLogs:]
-	}
-	debugLogMutex.Unlock()
-	
+	debugLogBuffer.Add(msgType, content)
+
 	// Also output to stderr if in debug mode
 	if debugMode {
+		timestamp := time.Now().Format("15:04:05.000")
 		timestampStr := debugTimestampStyle.Render(timestamp)
-		
+
 		var header string
 		switch msgType {
 		case "REQUEST →", "NOTIFICATION →":
@@ -140,27 +126,19 @@ func (d *debugTransport) logMessage(msgType, content string) {
 		default:
 			header = debugHeaderStyle.Render(msgType)
 		}
-		
+
 		fmt.Fprintf(os.Stderr, "\n%s %s\n%s\n", timestampStr, header, content)
 	}
 }
 
 // getDebugLogs returns a copy of the debug log entries
 func getDebugLogs() []debugLogEntry {
-	debugLogMutex.RLock()
-	defer debugLogMutex.RUnlock()
-	
-	// Return a copy to avoid race conditions
-	logs := make([]debugLogEntry, len(debugLogBuffer))
-	copy(logs, debugLogBuffer)
-	return logs
+	return debugLogBuffer.GetAll()
 }
 
 // clearDebugLogs clears the debug log buffer
 func clearDebugLogs() {
-	debugLogMutex.Lock()
-	defer debugLogMutex.Unlock()
-	debugLogBuffer = nil
+	debugLogBuffer.Clear()
 }
 
 func (d *debugTransport) Close() error {

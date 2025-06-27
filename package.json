@@ -1,0 +1,44 @@
+{
+  "name": "@standardbeagle/mcp-tui",
+  "version": "0.1.0",
+  "description": "A Terminal User Interface (TUI) and CLI for Model Context Protocol (MCP) servers",
+  "main": "index.js",
+  "bin": {
+    "mcp-tui": "bin/mcp-tui.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/standardbeagle/mcp-tui.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tui",
+    "terminal",
+    "cli",
+    "ai",
+    "llm"
+  ],
+  "author": "standardbeagle",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/standardbeagle/mcp-tui/issues"
+  },
+  "homepage": "https://github.com/standardbeagle/mcp-tui#readme",
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

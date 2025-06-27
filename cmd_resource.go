@@ -96,7 +96,7 @@ var resourceReadCmd = &cobra.Command{
 				if i > 0 {
 					fmt.Println("\n---")
 				}
-				
+
 				// Check for different content types
 				if textContent, ok := content.(mcp.TextResourceContents); ok {
 					fmt.Printf("Resource: %s\n", textContent.URI)

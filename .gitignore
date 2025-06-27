@@ -20,3 +20,11 @@ vendor/
 # OS files
 .DS_Store
 Thumbs.db
+
+# npm artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+binaries/
+*.tgz

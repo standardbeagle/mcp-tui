@@ -1,139 +1,359 @@
-# MCP Test Client
+# MCP-TUI
 
-A Go-based test client for Model Context Protocol (MCP) servers with both interactive TUI and CLI modes.
+A professional test client for [Model Context Protocol](https://modelcontextprotocol.io/) servers with both interactive Terminal User Interface (TUI) and Command Line Interface (CLI) modes.
 
-## Features
+## ✨ Features
 
-- **Interactive TUI Mode**: Browse and interact with MCP servers using a terminal user interface
-- **CLI Mode**: Scriptable command-line interface for automation
-- **Multiple Transport Types**: Support for stdio, SSE, and HTTP connections
-- **Server Inspection**: List available tools, resources, and prompts
-- **Dynamic Tool Forms**: Automatically generated forms based on tool schemas
-- **Tool Execution**: Call MCP tools with properly validated arguments
-- **Type Conversion**: Automatic conversion of string inputs to required types (numbers, booleans, arrays)
-- **Progress Tracking**: Real-time progress display for long-running operations with elapsed time
-- **Scrollable Output**: Large results can be scrolled with arrow keys, PgUp/PgDn
-- **Clipboard Support**: Paste with right-click (Windows Terminal) or terminal's paste shortcut
+- **🖥️ Interactive TUI mode** - Browse servers, tools, resources, and prompts with a user-friendly interface
+- **⚡ CLI mode** - Scriptable command-line interface for automation and testing
+- **🔄 Multiple transports** - Support for STDIO, SSE, and HTTP transports
+- **🌍 Cross-platform** - Works on Windows, macOS, and Linux
+- **🛡️ Robust error handling** - Graceful handling of server failures and network issues
+- **📝 Structured logging** - Comprehensive debugging and monitoring capabilities
+- **🧪 Test servers included** - Problematic servers for testing error scenarios
+- **🎯 Type-safe operations** - Automatic conversion of CLI inputs to proper JSON schema types
+- **📋 Progress tracking** - Real-time progress display for long-running operations
 
-## Installation
+## 🚀 Quick Start
 
+### Installation
+
+**Using Go:**
 ```bash
-go build
+go install github.com/standardbeagle/mcp-tui@latest
 ```
 
-## Usage
-
-### Interactive Mode (Default)
-
-Start the interactive TUI:
-
+**Using npm:**
 ```bash
-./mcp-tui
+npm install -g @standardbeagle/mcp-tui
+# or use directly: npx @standardbeagle/mcp-tui
 ```
 
-Use Tab to switch between connection types (STDIO/SSE/HTTP), enter connection details, and navigate with arrow keys.
-
-#### Testing with Sample Server
-
-To test with the official MCP sample server:
-
-1. In the TUI, select STDIO connection
-2. Enter command: `npx`
-3. Enter args: `@modelcontextprotocol/server-everything stdio`
-4. Press Enter to connect
-
-The sample server includes tools that demonstrate various MCP features:
-- **echo**: Simple text echo
-- **add**: Number addition (demonstrates type conversion)
-- **longRunningOperation**: Configurable delay (tests progress tracking)
-- **sampleLLM**: LLM sampling demonstration
-- **printEnv**: Shows environment variables
-- **getTinyImage**: Returns an image
-- **annotatedMessage**: Demonstrates content annotations
-
-### CLI Mode
-
-The CLI mode provides Git-like subcommands for interacting with MCP servers.
-
-#### Basic Connection Options
-
-All commands require connection parameters:
-- `--type`: Server type (stdio, sse, or http)
-- `--cmd`: Command for stdio servers
-- `--args`: Arguments for stdio command (comma-separated)
-- `--url`: URL for SSE or HTTP servers
-- `--json`: Output results in JSON format
-
-#### Tool Commands
-
-List available tools:
+**Build from source:**
 ```bash
-./mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool list
+git clone https://github.com/standardbeagle/mcp-tui.git
+cd mcp-tui
+make install
 ```
 
-Get detailed information about a tool:
+### Basic Usage
+
+**Interactive TUI Mode:**
 ```bash
-./mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool describe echo
+mcp-tui
 ```
 
-Call a tool with arguments:
+**CLI Mode Examples:**
 ```bash
-./mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool call echo message="Hello World"
-./mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool call add a=5 b=3
+# List tools
+mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool list
+
+# Call a tool
+mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool call add a=5 b=3
+
+# List resources
+mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" resource list
 ```
 
-#### Resource Commands
+## 📖 Documentation
 
-List available resources:
-```bash
-./mcp-tui --cmd python --args "server.py" resource list
+- **[Architecture Guide](ARCHITECTURE.md)** - Detailed architecture and design decisions
+- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to the project
+- **[Development Guide](CLAUDE.md)** - Development setup and commands
+
+## 🏗️ Architecture
+
+MCP-TUI is built with a clean, modular architecture following Go best practices:
+
+```
+mcp-tui/
+├── cmd/                    # Application entry points
+├── internal/               # Private application code
+│   ├── config/            # Configuration management
+│   ├── mcp/               # MCP service layer
+│   ├── cli/               # CLI command implementations
+│   ├── tui/               # Terminal UI implementation
+│   │   ├── app/           # TUI application management
+│   │   ├── screens/       # Individual UI screens
+│   │   └── components/    # Reusable UI components
+│   ├── platform/          # Platform-specific code
+│   │   ├── process/       # Process management
+│   │   └── signal/        # Signal handling
+│   └── debug/             # Logging and error handling
+├── test-servers/          # Test servers for validation
+└── tests/                 # Integration tests
 ```
 
-Read a resource by URI:
+### Key Design Principles
+
+- **Separation of Concerns** - Clear boundaries between UI, business logic, and platform code
+- **Error Resilience** - Comprehensive error handling with structured error types and user-friendly messages
+- **Platform Abstraction** - Cross-platform process and signal management using Go build tags
+- **Testability** - Modular design with interfaces and dependency injection
+- **Performance** - Efficient UI updates and resource management
+
+## 🔧 Development
+
+### Prerequisites
+
+- Go 1.21+
+- Node.js 14+ (for test servers)
+- Make
+
+### Development Commands
+
 ```bash
-./mcp-tui --cmd python --args "server.py" resource read "file:///path/to/resource"
+make all           # Full build pipeline (lint, test, build)
+make build         # Build binary
+make test          # Run tests
+make coverage      # Test coverage report
+make lint          # Code linting with golangci-lint
+make dev           # Development build with debug symbols
+make test-servers  # Test with problematic servers
+make release       # Build release binaries for all platforms
 ```
 
-#### Prompt Commands
+### Project Layout
 
-List available prompts:
+The project follows Go standards and best practices:
+
+- **`internal/`** - Private application code, organized by domain
+- **`cmd/`** - Application entry points
+- **`pkg/`** - Public packages (currently none)
+- **Platform-specific code** - Uses build tags (`//go:build !windows`)
+- **Interfaces first** - Define contracts before implementations
+- **Structured errors** - Custom error types with codes and context
+
+## 🧪 Testing
+
+### Test Infrastructure
+
+The project includes comprehensive testing:
+
+- **Unit tests** - Individual component testing
+- **Integration tests** - End-to-end MCP server interactions
+- **Error scenario testing** - Problematic servers for edge cases
+
+### Test Servers
+
+Intentionally problematic MCP servers for testing:
+
+- **`invalid-json-server.js`** - Sends malformed JSON responses
+- **`crash-server.js`** - Crashes at various points during communication
+- **`timeout-server.js`** - Never responds or responds extremely slowly
+- **`protocol-violator-server.js`** - Violates MCP protocol requirements
+- **`oversized-server.js`** - Sends extremely large messages (MB-sized)
+- **`out-of-order-server.js`** - Sends responses out of order or with wrong IDs
+
 ```bash
-./mcp-tui --url "http://localhost:8000" --type http prompt list
+# Test all problematic servers
+make test-servers
+
+# Test specific failure scenario
+./mcp-tui --cmd node --args "test-servers/crash-server.js" tool list
 ```
 
-Get a prompt with arguments:
+## 📋 Commands Reference
+
+### Tool Operations
 ```bash
-./mcp-tui --url "http://localhost:8000" --type http prompt get complex_prompt temperature=0.7 style=formal
+mcp-tui tool list                      # List all available tools
+mcp-tui tool describe <name>           # Get detailed tool information
+mcp-tui tool call <name> key=value     # Execute a tool with arguments
 ```
 
-#### JSON Output
-
-All commands support JSON output for scripting:
+### Resource Operations
 ```bash
-# Get tools as JSON
-./mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" --json tool list
-
-# Pipe to jq for processing
-./mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" --json tool list | jq '.[].name'
+mcp-tui resource list                  # List all available resources
+mcp-tui resource read <uri>            # Read a resource by URI
 ```
 
-## Connection Types
+### Prompt Operations
+```bash
+mcp-tui prompt list                    # List all available prompts
+mcp-tui prompt get <name> [args...]    # Get a prompt with arguments
+```
 
-- **stdio**: Connect to MCP servers via standard input/output
-- **sse**: Connect via Server-Sent Events
-- **http**: Connect via HTTP streaming
+### Global Options
+```bash
+--cmd string         # Command to run MCP server (for STDIO)
+--args strings       # Arguments for server command (comma-separated)
+--url string         # URL for SSE/HTTP servers
+--type string        # Transport type (stdio, sse, http)
+--timeout duration   # Connection timeout (default 30s)
+--debug             # Enable debug mode with detailed logging
+--log-level string  # Log level (debug, info, warn, error)
+--json              # Output results in JSON format
+```
 
-## Dependencies
+## 🔍 Error Handling & Debugging
 
-- [bubbletea](https://github.com/charmbracelet/bubbletea) - TUI framework
-- [lipgloss](https://github.com/charmbracelet/lipgloss) - Terminal styling
-- [cobra](https://github.com/spf13/cobra) - CLI framework  
-- [mcp-go](https://github.com/mark3labs/mcp-go) - MCP protocol implementation
+### Structured Error System
 
-## Interactive Controls
+MCP-TUI uses a comprehensive error handling system:
 
-- **Tab**: Switch connection types
-- **Arrow Keys/j/k**: Navigate menus
-- **Enter**: Select/Execute
-- **q/Ctrl+C**: Quit
-- **Backspace**: Edit input fields
+```go
+// Error codes for different failure types
+type ErrorCode string
+
+const (
+    ErrorCodeConnectionFailed     = "CONNECTION_FAILED"
+    ErrorCodeServerCrash         = "SERVER_CRASH"
+    ErrorCodeInvalidJSON         = "INVALID_JSON"
+    ErrorCodeProtocolViolation   = "PROTOCOL_VIOLATION"
+    // ... and many more
+)
+```
+
+### Debug Mode
+
+Enable comprehensive debugging:
+```bash
+mcp-tui --debug --log-level debug --cmd your-server
+```
+
+This provides:
+- **Detailed connection logs** - Transport-level communication
+- **Protocol message tracing** - JSON-RPC message flow
+- **Error context and stack traces** - Full error details
+- **Performance metrics** - Timing and resource usage
+- **Component-specific logging** - Structured logs by system component
+
+### Common Error Scenarios
+
+**Connection Issues:**
+```bash
+# Server command not found
+Error: CONNECTION_FAILED: failed to start server process
+
+# Server crashes during initialization
+Error: SERVER_CRASH: server process exited unexpectedly (exit code: 1)
+
+# Connection timeout
+Error: CONNECTION_TIMEOUT: server did not respond within 30s
+```
+
+**Protocol Issues:**
+```bash
+# Server sends invalid JSON
+Error: INVALID_JSON: failed to parse server response
+
+# Missing required MCP fields
+Error: PROTOCOL_VIOLATION: missing required field 'protocolVersion'
+
+# Server not responding to requests
+Error: SERVER_NOT_RESPONDING: no response to initialize request
+```
+
+## 🎯 Type System & Validation
+
+### Automatic Type Conversion
+
+CLI arguments are automatically converted to proper JSON schema types:
+
+```bash
+# String values
+mcp-tui tool call echo message="Hello World"
+
+# Numeric values
+mcp-tui tool call add a=5 b=3.14
+
+# Boolean values
+mcp-tui tool call configure enabled=true debug=false
+
+# JSON objects/arrays
+mcp-tui tool call process_data 'items=["a","b","c"]' 'config={"timeout":30}'
+```
+
+### Schema Validation
+
+- **Input validation** against tool schemas
+- **Type coercion** with fallback to string
+- **Error reporting** for invalid arguments
+- **Help generation** from schema descriptions
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for:
+
+- **Development environment setup**
+- **Coding standards and guidelines**
+- **Testing requirements**
+- **Pull request process**
+- **Architecture decisions**
+
+### Quick Start for Contributors
+
+1. **Fork and clone**
+   ```bash
+   git clone https://github.com/your-username/mcp-tui.git
+   cd mcp-tui
+   ```
+
+2. **Set up development environment**
+   ```bash
+   make deps
+   make test
+   ```
+
+3. **Make changes and test**
+   ```bash
+   make all
+   make test-servers
+   ```
+
+4. **Follow coding standards**
+   - Use `make lint` for code quality
+   - Add tests for new functionality
+   - Update documentation for changes
+   - Follow the established architecture patterns
+
+## 🔧 Technical Details
+
+### Platform Support
+
+- **Unix/Linux** - Full support with process groups and signal handling
+- **Windows** - Job objects for process management
+- **macOS** - Native signal and process handling
+
+### Dependencies
+
+**Core:**
+- `github.com/mark3labs/mcp-go` - MCP protocol implementation
+- `github.com/charmbracelet/bubbletea` - TUI framework
+- `github.com/spf13/cobra` - CLI framework
+
+**Development:**
+- `golangci-lint` - Comprehensive code linting
+- Platform-specific build tools
+- Integration test framework
+
+### Performance Characteristics
+
+- **Memory efficient** - Streaming JSON processing
+- **Responsive UI** - Async operations with progress tracking
+- **Resource cleanup** - Proper process and connection management
+- **Concurrent safe** - Thread-safe components with proper synchronization
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [Model Context Protocol](https://modelcontextprotocol.io/) specification
+- [Bubbletea](https://github.com/charmbracelet/bubbletea) TUI framework
+- [Cobra](https://github.com/spf13/cobra) CLI framework
+- [mark3labs/mcp-go](https://github.com/mark3labs/mcp-go) MCP implementation
+
+## 📊 Project Status
+
+- ✅ **Core architecture** - Clean, modular design implemented
+- ✅ **Error handling** - Comprehensive error system with structured types
+- ✅ **Platform abstraction** - Cross-platform process and signal management
+- ✅ **Test infrastructure** - Problematic servers for edge case testing
+- ✅ **Development tooling** - Makefile, linting, testing pipeline
+- 🚧 **CLI commands** - Basic structure implemented, needs MCP integration
+- 🚧 **TUI implementation** - Screen architecture in place, needs full UI
+- 📋 **Integration tests** - Framework ready, tests planned
+- 📋 **Performance optimization** - Profiling and optimization planned

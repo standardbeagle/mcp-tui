@@ -6,42 +6,36 @@ package main
 import (
 	"os"
 	"os/signal"
-	"sync"
-)
 
-var (
-	cleanupOnce sync.Once
-	activeClient interface{ Close() error }
-	clientMutex sync.Mutex
+	mcpclient "github.com/mark3labs/mcp-go/client"
 )
 
 // trackClient stores the active client for cleanup on exit
-func trackClient(c interface{ Close() error }) {
-	clientMutex.Lock()
-	activeClient = c
-	clientMutex.Unlock()
+func trackClient(c *mcpclient.Client) {
+	globalClientTracker.TrackClient(c)
 }
 
 // setupSignalHandler sets up signal handling for graceful shutdown
 func setupSignalHandler() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
-	
+
 	go func() {
-		<-sigChan
-		// Perform cleanup only once
-		cleanupOnce.Do(func() {
-			clientMutex.Lock()
-			c := activeClient
-			clientMutex.Unlock()
-			
-			if c != nil {
-				// Clean up the client and its processes
-				c.Close()
-			}
-			
+		select {
+		case <-sigChan:
+			// Initiate graceful shutdown
+			globalClientTracker.Shutdown()
+
+			// Wait for shutdown to complete
+			globalClientTracker.WaitForShutdown()
+
 			// Exit cleanly
 			os.Exit(0)
-		})
+
+		case <-globalClientTracker.Context().Done():
+			// Shutdown initiated elsewhere
+			signal.Stop(sigChan)
+			close(sigChan)
+		}
 	}()
 }

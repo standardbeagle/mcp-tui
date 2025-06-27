@@ -125,16 +125,16 @@ var toolCallCmd = &cobra.Command{
 
 		// Build arguments from remaining args (key=value pairs)
 		toolArgs := make(map[string]interface{})
-		
+
 		for i := 1; i < len(args); i++ {
 			parts := strings.SplitN(args[i], "=", 2)
 			if len(parts) != 2 {
 				return fmt.Errorf("invalid argument format: %s (expected key=value)", args[i])
 			}
-			
+
 			key := parts[0]
 			value := parts[1]
-			
+
 			// Try to determine the expected type from schema
 			if prop, ok := targetTool.InputSchema.Properties[key]; ok {
 				if propMap, ok := prop.(map[string]interface{}); ok {
