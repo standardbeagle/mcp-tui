@@ -1,149 +1,281 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
-	"time"
+	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/standardbeagle/mcp-tui/internal/cli"
+	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/debug"
+	platformSignal "github.com/standardbeagle/mcp-tui/internal/platform/signal"
+	"github.com/standardbeagle/mcp-tui/internal/tui/app"
 )
 
 var (
-	// Version information
 	version = "0.1.0"
-
-	// Global flags
-	serverType     string
-	serverCommand  string
-	serverArgs     []string
-	serverURL      string
-	outputJSON     bool
-	debugMode      bool
-	connectTimeout time.Duration
+	cfg     *config.Config
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "mcp-tui",
-	Short: "MCP Test Client with TUI and CLI modes",
-	Long: `A test client for Model Context Protocol servers with interactive TUI and CLI modes.
-
-By default, runs in interactive TUI mode. Use subcommands for CLI operations.`,
-	Version: version,
-	Run: func(cmd *cobra.Command, args []string) {
-		// Default to TUI mode if no subcommand
-		runInteractiveMode()
-	},
-}
-
-var serverInfoCmd = &cobra.Command{
-	Use:   "server",
-	Short: "Server connection information",
-	Long:  "Show information about the current server connection",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		client, err := createMCPClient()
-		if err != nil {
-			return fmt.Errorf("failed to create client: %w", err)
-		}
-		defer closeClientGracefully(client)
-
-		fmt.Printf("Connected to MCP server\n")
-		fmt.Printf("Type: %s\n", serverType)
-
-		switch serverType {
-		case "stdio":
-			fmt.Printf("Command: %s\n", serverCommand)
-			if len(serverArgs) > 0 {
-				fmt.Printf("Args: %v\n", serverArgs)
-			}
-		case "sse", "http":
-			fmt.Printf("URL: %s\n", serverURL)
-		}
-
-		return nil
-	},
-}
-
-func init() {
-	// Set custom version template
-	rootCmd.SetVersionTemplate(`{{with .Name}}{{printf "%s " .}}{{end}}{{printf "version %s" .Version}}
-`)
-
-	// Global flags for server connection
-	rootCmd.PersistentFlags().StringVar(&serverType, "type", "stdio", "Server type: stdio, sse, or http")
-	rootCmd.PersistentFlags().StringVar(&serverCommand, "cmd", "", "Command to run for stdio servers")
-	rootCmd.PersistentFlags().StringSliceVar(&serverArgs, "args", []string{}, "Arguments for stdio server command")
-	rootCmd.PersistentFlags().StringVar(&serverURL, "url", "", "URL for SSE or HTTP servers")
-	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false, "Output results in JSON format")
-	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Enable debug mode to output protocol messages")
-	rootCmd.PersistentFlags().DurationVar(&connectTimeout, "timeout", 2*time.Minute, "Timeout for connecting to MCP server")
-
-	// Add subcommands
-	rootCmd.AddCommand(serverInfoCmd)
-	rootCmd.AddCommand(toolCmd)
-	rootCmd.AddCommand(resourceCmd)
-	rootCmd.AddCommand(promptCmd)
-
-	// Set up stderr filtering for all subcommands
-	for _, cmd := range []*cobra.Command{serverInfoCmd, toolCmd, resourceCmd, promptCmd} {
-		for _, subcmd := range cmd.Commands() {
-			setupStderrFilter(subcmd)
-		}
-		setupStderrFilter(cmd)
-	}
-}
-
-func setupStderrFilter(cmd *cobra.Command) {
-	originalRunE := cmd.RunE
-	if originalRunE != nil {
-		cmd.RunE = func(c *cobra.Command, args []string) error {
-			// Only filter for stdio connections
-			if serverType == "stdio" {
-				if err := startStderrFilter(); err != nil {
-					// Log error but continue - filtering is not critical
-					fmt.Fprintf(os.Stderr, "Warning: failed to start stderr filter: %v\n", err)
-				}
-				defer stopStderrFilter()
-			}
-			return originalRunE(c, args)
-		}
-	}
-}
-
 func main() {
-	// Set up panic recovery
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "Fatal error: %v\n", r)
-			// Ensure cleanup happens even on panic
-			globalClientTracker.Shutdown()
-			globalClientTracker.WaitForShutdown()
-			os.Exit(1)
-		}
-	}()
-
-	// Set up signal handling to ensure proper cleanup
-	setupSignalHandler()
-
+	// Initialize configuration
+	cfg = config.Default()
+	
+	// Check if this looks like a direct connection command
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") && !isKnownSubcommand(os.Args[1]) {
+		// This is likely a connection string, handle it directly
+		handleDirectConnection(os.Args[1:])
+		return
+	}
+	
+	// Set up graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	// Set up signal handling
+	sigHandler := platformSignal.NewHandler()
+	sigHandler.Register(func(sig os.Signal) {
+		debug.Info("Received signal, shutting down gracefully", debug.F("signal", sig))
+		cancel()
+	}, os.Interrupt, syscall.SIGTERM)
+	sigHandler.Start()
+	defer sigHandler.Stop()
+	
+	// Create root command
+	rootCmd := createRootCommand(ctx)
+	
+	// Execute
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		debug.Error("Application failed", debug.F("error", err))
 		os.Exit(1)
 	}
 }
 
-func runInteractiveMode() {
-	fmt.Println("Starting interactive TUI mode...")
+func createRootCommand(ctx context.Context) *cobra.Command {
+	var url string
+	
+	rootCmd := &cobra.Command{
+		Use:   "mcp-tui [connection-string]",
+		Short: "MCP Test Client with TUI and CLI modes",
+		Long: `A test client for Model Context Protocol servers with interactive TUI and CLI modes.
 
-	// Start stderr filtering for stdio connections
-	if serverType == "stdio" {
-		if err := startStderrFilter(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to start stderr filter: %v\n", err)
-		}
-		defer stopStderrFilter()
+Examples:
+  # Quick connect to STDIO server
+  mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
+  
+  # Connect to HTTP/SSE server
+  mcp-tui --url http://localhost:8000/mcp
+  
+  # Interactive mode (connection screen)
+  mcp-tui`,
+		Version: version,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Initialize logging based on flags
+			debugMode, _ := cmd.Flags().GetBool("debug")
+			logLevel, _ := cmd.Flags().GetString("log-level")
+			
+			debug.InitializeLogging(logLevel, debugMode)
+			
+			return nil
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			// Parse connection arguments
+			connectionConfig := parseConnectionArgs(cmd, args, url)
+			
+			// Run TUI mode with connection config
+			runTUIMode(ctx, connectionConfig)
+		},
 	}
+	
+	// Add persistent flags
+	rootCmd.PersistentFlags().StringVar(&cfg.Command, "cmd", "", "Command to run MCP server (STDIO mode)")
+	rootCmd.PersistentFlags().StringSliceVar(&cfg.Args, "args", []string{}, "Arguments for MCP server command")
+	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
+	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
+	rootCmd.PersistentFlags().BoolVar(&cfg.DebugMode, "debug", false, "Enable debug mode")
+	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	
+	// Add subcommands
+	rootCmd.AddCommand(createToolCommand())
+	rootCmd.AddCommand(createResourceCommand())
+	rootCmd.AddCommand(createPromptCommand())
+	rootCmd.AddCommand(createServerCommand())
+	
+	return rootCmd
+}
 
-	app := NewApp()
-	if err := app.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error starting TUI: %v\n", err)
+func createToolCommand() *cobra.Command {
+	toolCmd := cli.NewToolCommand()
+	return toolCmd.CreateCommand()
+}
+
+func createResourceCommand() *cobra.Command {
+	// Similar to tool command - implementation would be here
+	return &cobra.Command{
+		Use:   "resource",
+		Short: "Interact with MCP server resources",
+		Run: func(cmd *cobra.Command, args []string) {
+			debug.Info("Resource command not fully implemented yet")
+		},
+	}
+}
+
+func createPromptCommand() *cobra.Command {
+	// Similar to tool command - implementation would be here
+	return &cobra.Command{
+		Use:   "prompt",
+		Short: "Interact with MCP server prompts",
+		Run: func(cmd *cobra.Command, args []string) {
+			debug.Info("Prompt command not fully implemented yet")
+		},
+	}
+}
+
+func createServerCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "server",
+		Short: "Show server information",
+		Run: func(cmd *cobra.Command, args []string) {
+			debug.Info("Server command not fully implemented yet")
+		},
+	}
+}
+
+func parseConnectionArgs(cmd *cobra.Command, args []string, url string) *config.ConnectionConfig {
+	// If URL is provided, it's HTTP/SSE mode
+	if url != "" {
+		transportType := config.TransportHTTP
+		if strings.Contains(url, "/events") || strings.Contains(url, "sse") {
+			transportType = config.TransportSSE
+		}
+		
+		return &config.ConnectionConfig{
+			Type: transportType,
+			URL:  url,
+		}
+	}
+	
+	// If command and args are provided via flags
+	if cfg.Command != "" {
+		return &config.ConnectionConfig{
+			Type:    config.TransportStdio,
+			Command: cfg.Command,
+			Args:    cfg.Args,
+		}
+	}
+	
+	// If positional argument is provided, parse it as STDIO command
+	if len(args) > 0 {
+		connectionString := args[0]
+		parts := strings.Fields(connectionString)
+		if len(parts) > 0 {
+			command := parts[0]
+			cmdArgs := parts[1:]
+			
+			return &config.ConnectionConfig{
+				Type:    config.TransportStdio,
+				Command: command,
+				Args:    cmdArgs,
+			}
+		}
+	}
+	
+	// No connection info provided - use interactive mode
+	return nil
+}
+
+func runTUIMode(ctx context.Context, connectionConfig *config.ConnectionConfig) {
+	logger := debug.Component("tui")
+	logger.Info("Starting TUI mode")
+	
+	// Create and run TUI application
+	tuiApp := app.New(cfg, connectionConfig)
+	if err := tuiApp.Run(ctx); err != nil {
+		logger.Error("TUI application failed", debug.F("error", err))
 		os.Exit(1)
 	}
+	
+	logger.Info("TUI mode ended")
+}
+
+// isKnownSubcommand checks if the argument is a known subcommand
+func isKnownSubcommand(arg string) bool {
+	knownCommands := []string{"tool", "resource", "prompt", "server", "completion", "help"}
+	for _, cmd := range knownCommands {
+		if arg == cmd {
+			return true
+		}
+	}
+	return false
+}
+
+// handleDirectConnection handles direct connection strings bypassing Cobra entirely
+func handleDirectConnection(args []string) {
+	// Initialize logging with defaults first
+	debug.InitializeLogging("info", false)
+	
+	// Parse flags from the args manually
+	var debugMode bool
+	var logLevel string = "info"
+	var connectionString string
+	
+	// Simple flag parsing
+	filteredArgs := []string{}
+	for i, arg := range args {
+		if arg == "--debug" {
+			debugMode = true
+		} else if arg == "--log-level" && i+1 < len(args) {
+			logLevel = args[i+1]
+			i++ // skip next arg
+		} else if strings.HasPrefix(arg, "--log-level=") {
+			logLevel = strings.TrimPrefix(arg, "--log-level=")
+		} else if !strings.HasPrefix(arg, "-") {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+	
+	// Reinitialize logging with parsed settings
+	debug.InitializeLogging(logLevel, debugMode)
+	
+	// Get connection string
+	if len(filteredArgs) > 0 {
+		connectionString = filteredArgs[0]
+	}
+	
+	if connectionString == "" {
+		debug.Error("No connection string provided")
+		os.Exit(1)
+	}
+	
+	// Parse connection string into config
+	parts := strings.Fields(connectionString)
+	if len(parts) == 0 {
+		debug.Error("Invalid connection string")
+		os.Exit(1)
+	}
+	
+	connectionConfig := &config.ConnectionConfig{
+		Type:    config.TransportStdio,
+		Command: parts[0],
+		Args:    parts[1:],
+	}
+	
+	// Set up graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	// Set up signal handling
+	sigHandler := platformSignal.NewHandler()
+	sigHandler.Register(func(sig os.Signal) {
+		debug.Info("Received signal, shutting down gracefully", debug.F("signal", sig))
+		cancel()
+	}, os.Interrupt, syscall.SIGTERM)
+	sigHandler.Start()
+	defer sigHandler.Stop()
+	
+	// Run TUI directly
+	runTUIMode(ctx, connectionConfig)
 }

@@ -1,0 +1,1042 @@
+package screens
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
+)
+
+// MainScreen is the primary interface for browsing tools, resources, and prompts
+type MainScreen struct {
+	*BaseScreen
+	config           *config.Config
+	connectionConfig *config.ConnectionConfig
+	logger           debug.Logger
+	
+	// MCP service
+	mcpService mcp.Service
+	connected  bool
+	
+	// Navigation handler
+	navigationHandler *NavigationHandler
+	
+	// UI state
+	activeTab    int // 0=tools, 1=resources, 2=prompts, 3=events
+	tools        []string
+	resources    []string
+	prompts      []string
+	events       []debug.MCPLogEntry // Store actual event entries
+	
+	// Actual counts (0 when empty, not 1 for empty message)
+	toolCount     int
+	resourceCount int
+	promptCount   int
+	eventCount    int
+	
+	// List navigation
+	selectedIndex map[int]int // selected index per tab
+	
+	// Event view state
+	showEventDetail bool
+	eventPaneFocus  int // 0=list, 1=detail
+	
+	// Connection status
+	connectionStatus string
+	connecting       bool
+	
+	// Styles
+	tabStyle         lipgloss.Style
+	activeTabStyle   lipgloss.Style
+	listStyle        lipgloss.Style
+	selectedStyle    lipgloss.Style
+	statusStyle      lipgloss.Style
+	titleStyle       lipgloss.Style
+}
+
+// ConnectionStartedMsg indicates connection is starting
+type ConnectionStartedMsg struct{}
+
+// ConnectionCompleteMsg indicates connection is complete
+type ConnectionCompleteMsg struct {
+	Success bool
+	Error   error
+}
+
+// ItemsLoadedMsg contains loaded items for a tab
+type ItemsLoadedMsg struct {
+	Tab        int
+	Items      []string
+	ActualCount int // The actual count of items (0 when empty)
+	Error      error
+}
+
+// EventTickMsg is sent periodically to refresh events
+type EventTickMsg struct{}
+
+// NewMainScreen creates a new main screen
+func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *MainScreen {
+	ms := &MainScreen{
+		BaseScreen:       NewBaseScreen("Main", true),
+		config:           cfg,
+		connectionConfig: connConfig,
+		logger:           debug.Component("main-screen"),
+		mcpService:       mcp.NewService(),
+		selectedIndex:    make(map[int]int),
+		tools:            []string{},
+		resources:        []string{},
+		prompts:          []string{},
+		events:           []debug.MCPLogEntry{},
+		connectionStatus: "Connecting...",
+		connecting:       true,
+	}
+	
+	// Initialize styles
+	ms.initStyles()
+	
+	// Initialize navigation handler
+	ms.navigationHandler = NewNavigationHandler(ms)
+	
+	// Debug the connection config
+	ms.logger.Info("MainScreen created with connection config",
+		debug.F("type", connConfig.Type),
+		debug.F("command", connConfig.Command),
+		debug.F("args", connConfig.Args),
+		debug.F("url", connConfig.URL))
+	
+	return ms
+}
+
+// initStyles initializes the visual styles
+func (ms *MainScreen) initStyles() {
+	// Simple tab styles without borders to avoid rendering issues
+	ms.tabStyle = lipgloss.NewStyle().
+		Padding(0, 1).
+		Foreground(lipgloss.Color("8"))
+	
+	ms.activeTabStyle = lipgloss.NewStyle().
+		Padding(0, 1).
+		Foreground(lipgloss.Color("15")).
+		Background(lipgloss.Color("4")).
+		Bold(true)
+	
+	ms.listStyle = lipgloss.NewStyle().
+		Padding(1).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Width(60).
+		Height(15)
+	
+	ms.selectedStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("0")).
+		Background(lipgloss.Color("6")).
+		Bold(true)
+	
+	ms.statusStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("2")).
+		Bold(true)
+	
+	ms.titleStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("13")).
+		Bold(true).
+		Margin(1, 0)
+}
+
+// Init initializes the main screen
+func (ms *MainScreen) Init() tea.Cmd {
+	ms.logger.Info("Initializing main screen")
+	
+	// Start connection
+	return tea.Batch(
+		func() tea.Msg { return ConnectionStartedMsg{} },
+		ms.connectToServer(),
+		ms.tickEvents(), // Start periodic event refresh
+	)
+}
+
+// Update handles messages for the main screen
+func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		ms.UpdateSize(msg.Width, msg.Height)
+		return ms, nil
+		
+	case tea.KeyMsg:
+		return ms.handleKeyMsg(msg)
+		
+	case ConnectionStartedMsg:
+		ms.connecting = true
+		ms.connectionStatus = "Connecting to MCP server..."
+		return ms, nil
+		
+	case ConnectionCompleteMsg:
+		ms.connecting = false
+		if msg.Success {
+			ms.connected = true
+			ms.connectionStatus = fmt.Sprintf("Connected to %s %s", 
+				ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
+			// Load initial data
+			return ms, tea.Batch(
+				ms.loadTools(),
+				ms.loadResources(),
+				ms.loadPrompts(),
+				ms.loadEvents(),
+			)
+		} else {
+			ms.connected = false
+			// Format error message based on type
+			errorMsg := "Connection failed"
+			if msg.Error != nil {
+				switch {
+				case strings.Contains(msg.Error.Error(), "no such file"):
+					errorMsg = fmt.Sprintf("Command not found: %s", ms.connectionConfig.Command)
+				case strings.Contains(msg.Error.Error(), "connection refused"):
+					errorMsg = "Connection refused - server not running"
+				case strings.Contains(msg.Error.Error(), "timeout"):
+					errorMsg = "Connection timeout - server not responding"
+				default:
+					errorMsg = fmt.Sprintf("Connection failed: %v", msg.Error)
+				}
+			}
+			ms.connectionStatus = errorMsg
+			ms.SetError(msg.Error)
+		}
+		return ms, nil
+		
+	case ItemsLoadedMsg:
+		switch msg.Tab {
+		case 0: // Tools
+			if msg.Error != nil {
+				ms.tools = []string{fmt.Sprintf("Error loading tools: %v", msg.Error)}
+				ms.toolCount = 0
+			} else {
+				ms.tools = msg.Items
+				ms.toolCount = msg.ActualCount
+			}
+		case 1: // Resources
+			if msg.Error != nil {
+				ms.resources = []string{fmt.Sprintf("Error loading resources: %v", msg.Error)}
+				ms.resourceCount = 0
+			} else {
+				ms.resources = msg.Items
+				ms.resourceCount = msg.ActualCount
+			}
+		case 2: // Prompts
+			if msg.Error != nil {
+				ms.prompts = []string{fmt.Sprintf("Error loading prompts: %v", msg.Error)}
+				ms.promptCount = 0
+			} else {
+				ms.prompts = msg.Items
+				ms.promptCount = msg.ActualCount
+			}
+		case 3: // Events
+			// Re-fetch events from logger
+			if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
+				allEntries := mcpLogger.GetEntries()
+				var events []debug.MCPLogEntry
+				for _, entry := range allEntries {
+					if entry.MessageType == debug.MCPMessageNotification || entry.ID == nil {
+						events = append(events, entry)
+					}
+				}
+				ms.events = events
+				ms.eventCount = len(events)
+			}
+		}
+		return ms, nil
+		
+	case ErrorMsg:
+		ms.SetError(msg.Error)
+		return ms, nil
+		
+	case EventTickMsg:
+		// Only refresh events if we're on the events tab and connected
+		if ms.connected && ms.activeTab == 3 {
+			return ms, tea.Batch(
+				ms.loadEvents(),
+				ms.tickEvents(), // Continue ticking
+			)
+		}
+		return ms, ms.tickEvents() // Continue ticking even if not on events tab
+	}
+	
+	return ms, nil
+}
+
+// handleKeyMsg handles keyboard input
+func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if !ms.connected {
+		// Only allow quit when not connected
+		switch msg.String() {
+		case "ctrl+c", "q", "esc":
+			return ms, tea.Quit
+		}
+		return ms, nil
+	}
+	
+	// Try navigation handler first
+	if handled, model, cmd := ms.navigationHandler.HandleKey(msg); handled {
+		return model, cmd
+	}
+	
+	switch msg.String() {
+	case "ctrl+c", "q", "esc":
+		return ms, tea.Quit
+		
+	case "tab":
+		ms.activeTab = (ms.activeTab + 1) % 4
+		return ms, nil
+		
+	case "shift+tab":
+		ms.activeTab = (ms.activeTab - 1 + 4) % 4
+		return ms, nil
+		
+	case "right":
+		// In events tab with detail view, switch panes
+		if ms.activeTab == 3 && ms.showEventDetail {
+			ms.eventPaneFocus = 1
+		} else {
+			ms.activeTab = (ms.activeTab + 1) % 4
+		}
+		return ms, nil
+		
+	case "left":
+		// In events tab with detail view, switch panes
+		if ms.activeTab == 3 && ms.showEventDetail {
+			ms.eventPaneFocus = 0
+		} else {
+			ms.activeTab = (ms.activeTab - 1 + 4) % 4
+		}
+		return ms, nil
+		
+	case "b", "alt+left":
+		// In events tab with detail view, close detail
+		if ms.activeTab == 3 && ms.showEventDetail {
+			ms.showEventDetail = false
+			ms.eventPaneFocus = 0
+			return ms, nil
+		}
+		return ms, nil
+		
+	case "enter":
+		// Execute/show details of selected item
+		return ms.handleItemSelection()
+		
+	case "r":
+		// Refresh current tab
+		return ms, ms.refreshCurrentTab()
+		
+	case "ctrl+l":
+		// Show debug logs
+		debugScreen := NewDebugScreen()
+		return ms, func() tea.Msg {
+			return TransitionMsg{
+				Transition: ScreenTransition{
+					Screen: debugScreen,
+				},
+			}
+		}
+	}
+	
+	return ms, nil
+}
+
+// getCurrentList returns the current list based on active tab
+func (ms *MainScreen) getCurrentList() []string {
+	switch ms.activeTab {
+	case 0:
+		return ms.tools
+	case 1:
+		return ms.resources
+	case 2:
+		return ms.prompts
+	case 3:
+		// Convert events to string list for display
+		eventStrings := make([]string, len(ms.events))
+		for i, event := range ms.events {
+			eventStrings[i] = event.String()
+		}
+		return eventStrings
+	default:
+		return []string{}
+	}
+}
+
+// getActualItemCount returns the actual number of items (excluding placeholder messages)
+func (ms *MainScreen) getActualItemCount() int {
+	switch ms.activeTab {
+	case 0:
+		return ms.toolCount
+	case 1:
+		return ms.resourceCount
+	case 2:
+		return ms.promptCount
+	case 3:
+		return ms.eventCount
+	default:
+		return 0
+	}
+}
+
+// handleItemSelection handles when user selects an item
+func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
+	// Check if we have actual items
+	if ms.getActualItemCount() == 0 {
+		return ms, nil
+	}
+	
+	currentList := ms.getCurrentList()
+	if len(currentList) == 0 {
+		return ms, nil
+	}
+	
+	selectedIdx, exists := ms.selectedIndex[ms.activeTab]
+	if !exists || selectedIdx >= len(currentList) {
+		return ms, nil
+	}
+	
+	selectedItem := currentList[selectedIdx]
+	
+	switch ms.activeTab {
+	case 0: // Tools
+		// Extract tool name from the display string (format: "name - description")
+		parts := strings.SplitN(selectedItem, " - ", 2)
+		if len(parts) > 0 {
+			toolName := parts[0]
+			// Find the actual tool object
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			
+			tools, err := ms.mcpService.ListTools(ctx)
+			if err != nil {
+				ms.SetError(fmt.Errorf("failed to get tool details: %v", err))
+				return ms, nil
+			}
+			
+			for _, tool := range tools {
+				if tool.Name == toolName {
+					// Create tool screen
+					toolScreen := NewToolScreen(tool, ms.mcpService)
+					return ms, func() tea.Msg {
+						return TransitionMsg{
+							Transition: ScreenTransition{
+								Screen: toolScreen,
+							},
+						}
+					}
+				}
+			}
+			ms.SetError(fmt.Errorf("tool '%s' not found", toolName))
+		}
+		
+	case 1: // Resources
+		// TODO: Implement resource viewer
+		tabName := []string{"tool", "resource", "prompt"}[ms.activeTab]
+		ms.SetStatus(fmt.Sprintf("Selected %s: %s (viewer not implemented)", tabName, selectedItem), StatusInfo)
+		
+	case 2: // Prompts
+		// TODO: Implement prompt viewer
+		tabName := []string{"tool", "resource", "prompt", "event"}[ms.activeTab]
+		ms.SetStatus(fmt.Sprintf("Selected %s: %s (viewer not implemented)", tabName, selectedItem), StatusInfo)
+		
+	case 3: // Events
+		// Toggle detail view for the selected event
+		ms.showEventDetail = true
+		return ms, nil
+	}
+	
+	return ms, nil
+}
+
+// refreshCurrentTab refreshes the current tab's data
+func (ms *MainScreen) refreshCurrentTab() tea.Cmd {
+	switch ms.activeTab {
+	case 0:
+		return ms.loadTools()
+	case 1:
+		return ms.loadResources()
+	case 2:
+		return ms.loadPrompts()
+	case 3:
+		return ms.loadEvents()
+	default:
+		return nil
+	}
+}
+
+// View renders the main screen
+func (ms *MainScreen) View() string {
+	var builder strings.Builder
+	
+	// Title
+	builder.WriteString(ms.titleStyle.Render("MCP Server Interface"))
+	builder.WriteString("\n")
+	
+	// Connection status
+	statusColor := "10" // green
+	if !ms.connected {
+		if ms.connecting {
+			statusColor = "11" // yellow
+		} else {
+			statusColor = "9" // red
+		}
+	}
+	
+	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
+	builder.WriteString(statusStyle.Render(ms.connectionStatus))
+	builder.WriteString("\n\n")
+	
+	if !ms.connected && !ms.connecting {
+		// Show error and quit instruction
+		builder.WriteString("Press 'q' or Ctrl+C to quit")
+		return builder.String()
+	}
+	
+	if ms.connecting {
+		// Show loading spinner
+		builder.WriteString("Please wait...")
+		return builder.String()
+	}
+	
+	// Tabs
+	builder.WriteString(ms.renderTabs())
+	builder.WriteString("\n\n")
+	
+	// Current list or split-pane view for events
+	if ms.activeTab == 3 && ms.showEventDetail {
+		builder.WriteString(ms.renderEventSplitView())
+	} else {
+		builder.WriteString(ms.renderCurrentList())
+	}
+	
+	// Help text
+	builder.WriteString("\n\n")
+	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Select • r: Refresh • Ctrl+L: Debug Logs • q: Quit"
+	if ms.activeTab == 3 && ms.showEventDetail {
+		helpText = "←/→: Switch panes • ↑↓: Navigate • b/Alt+←: Close detail • r: Refresh • q: Quit"
+	}
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	builder.WriteString(helpStyle.Render(helpText))
+	
+	// Status message
+	if statusMsg, _ := ms.StatusMessage(); statusMsg != "" {
+		builder.WriteString("\n\n")
+		builder.WriteString(ms.statusStyle.Render(statusMsg))
+	}
+	
+	return builder.String()
+}
+
+// renderTabs renders the tab bar
+func (ms *MainScreen) renderTabs() string {
+	tabs := []string{"Tools", "Resources", "Prompts", "Events"}
+	counts := []int{ms.toolCount, ms.resourceCount, ms.promptCount, ms.eventCount}
+	
+	var renderedTabs []string
+	
+	for i, tab := range tabs {
+		tabText := fmt.Sprintf(" %s (%d) ", tab, counts[i])
+		
+		if i == ms.activeTab {
+			renderedTabs = append(renderedTabs, ms.activeTabStyle.Render(tabText))
+		} else {
+			renderedTabs = append(renderedTabs, ms.tabStyle.Render(tabText))
+		}
+	}
+	
+	// Join with a separator for cleaner horizontal layout
+	return strings.Join(renderedTabs, "│")
+}
+
+// renderCurrentList renders the current tab's list
+func (ms *MainScreen) renderCurrentList() string {
+	currentList := ms.getCurrentList()
+	tabNames := []string{"tools", "resources", "prompts", "events"}
+	
+	if len(currentList) == 0 {
+		emptyMsg := fmt.Sprintf("This MCP server doesn't provide any %s", tabNames[ms.activeTab])
+		return ms.listStyle.Render(emptyMsg)
+	}
+	
+	// Check if we have actual items or just a placeholder message
+	actualCount := 0
+	switch ms.activeTab {
+	case 0:
+		actualCount = ms.toolCount
+	case 1:
+		actualCount = ms.resourceCount
+	case 2:
+		actualCount = ms.promptCount
+	case 3:
+		actualCount = ms.eventCount
+	}
+	
+	// If no actual items, just show the message without selection
+	if actualCount == 0 {
+		return ms.listStyle.Render(currentList[0])
+	}
+	
+	var listItems []string
+	selectedIdx := ms.selectedIndex[ms.activeTab]
+	
+	maxHeight := 15 // Maximum number of items to show
+	startIdx := 0
+	endIdx := len(currentList)
+	
+	// Calculate scroll position if list is too long
+	if len(currentList) > maxHeight {
+		if selectedIdx >= maxHeight/2 {
+			startIdx = selectedIdx - maxHeight/2
+			if startIdx > len(currentList)-maxHeight {
+				startIdx = len(currentList) - maxHeight
+			}
+		}
+		endIdx = min(startIdx+maxHeight, len(currentList))
+	}
+	
+	for i := startIdx; i < endIdx; i++ {
+		item := currentList[i]
+		if i == selectedIdx {
+			listItems = append(listItems, ms.selectedStyle.Render(fmt.Sprintf("▶ %s", item)))
+		} else {
+			listItems = append(listItems, fmt.Sprintf("  %s", item))
+		}
+	}
+	
+	// Add scroll indicators
+	if startIdx > 0 {
+		listItems = append([]string{"  ↑ More items above ↑"}, listItems...)
+	}
+	if endIdx < len(currentList) {
+		listItems = append(listItems, "  ↓ More items below ↓")
+	}
+	
+	return ms.listStyle.Render(strings.Join(listItems, "\n"))
+}
+
+// connectToServer starts the connection to the MCP server
+func (ms *MainScreen) connectToServer() tea.Cmd {
+	return func() tea.Msg {
+		ms.logger.Info("Attempting real MCP connection", 
+			debug.F("type", ms.connectionConfig.Type),
+			debug.F("command", ms.connectionConfig.Command),
+			debug.F("args", ms.connectionConfig.Args))
+		
+		// Use context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		
+		// Actually connect to the MCP server
+		err := ms.mcpService.Connect(ctx, ms.connectionConfig)
+		if err != nil {
+			ms.logger.Error("MCP connection failed", debug.F("error", err))
+			return ConnectionCompleteMsg{
+				Success: false,
+				Error:   err,
+			}
+		}
+		
+		ms.logger.Info("MCP connection successful")
+		return ConnectionCompleteMsg{
+			Success: true,
+			Error:   nil,
+		}
+	}
+}
+
+// loadTools loads the list of tools
+func (ms *MainScreen) loadTools() tea.Cmd {
+	return func() tea.Msg {
+		if !ms.mcpService.IsConnected() {
+			return ItemsLoadedMsg{
+				Tab:         0,
+				Items:       []string{"Not connected to MCP server"},
+				ActualCount: 0,
+				Error:       fmt.Errorf("service not connected"),
+			}
+		}
+		
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		tools, err := ms.mcpService.ListTools(ctx)
+		if err != nil {
+			// Check if this is a "not supported" error - treat as normal
+			if isUnsupportedCapabilityError(err) {
+				ms.logger.Info("Server doesn't support tools - this is normal", debug.F("error", err))
+				return ItemsLoadedMsg{
+					Tab:         0,
+					Items:       []string{"This MCP server doesn't provide any tools"},
+					ActualCount: 0,
+					Error:       nil,
+				}
+			}
+			ms.logger.Error("Failed to load tools", debug.F("error", err))
+			return ItemsLoadedMsg{
+				Tab:         0,
+				Items:       []string{fmt.Sprintf("Error loading tools: %v", err)},
+				ActualCount: 0,
+				Error:       err,
+			}
+		}
+		
+		var toolList []string
+		actualCount := len(tools)
+		if len(tools) == 0 {
+			toolList = []string{"This MCP server doesn't provide any tools"}
+		} else {
+			for _, tool := range tools {
+				description := tool.Description
+				if description == "" {
+					description = "No description"
+				}
+				toolList = append(toolList, fmt.Sprintf("%s - %s", tool.Name, description))
+			}
+		}
+		
+		return ItemsLoadedMsg{
+			Tab:         0,
+			Items:       toolList,
+			ActualCount: actualCount,
+			Error:       nil,
+		}
+	}
+}
+
+// loadResources loads the list of resources
+func (ms *MainScreen) loadResources() tea.Cmd {
+	return func() tea.Msg {
+		if !ms.mcpService.IsConnected() {
+			return ItemsLoadedMsg{
+				Tab:         1,
+				Items:       []string{"Not connected to MCP server"},
+				ActualCount: 0,
+				Error:       fmt.Errorf("service not connected"),
+			}
+		}
+		
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		resources, err := ms.mcpService.ListResources(ctx)
+		if err != nil {
+			// Check if this is a "not supported" error - treat as normal
+			if isUnsupportedCapabilityError(err) {
+				ms.logger.Info("Server doesn't support resources - this is normal", debug.F("error", err))
+				return ItemsLoadedMsg{
+					Tab:         1,
+					Items:       []string{"This MCP server doesn't provide any resources"},
+					ActualCount: 0,
+					Error:       nil,
+				}
+			}
+			ms.logger.Error("Failed to load resources", debug.F("error", err))
+			return ItemsLoadedMsg{
+				Tab:         1,
+				Items:       []string{fmt.Sprintf("Error loading resources: %v", err)},
+				ActualCount: 0,
+				Error:       err,
+			}
+		}
+		
+		var resourceList []string
+		actualCount := len(resources)
+		if len(resources) == 0 {
+			resourceList = []string{"This MCP server doesn't provide any resources"}
+		} else {
+			for _, resource := range resources {
+				description := resource.Description
+				if description == "" {
+					description = "No description"
+				}
+				resourceList = append(resourceList, fmt.Sprintf("%s - %s", resource.URI, description))
+			}
+		}
+		
+		return ItemsLoadedMsg{
+			Tab:         1,
+			Items:       resourceList,
+			ActualCount: actualCount,
+			Error:       nil,
+		}
+	}
+}
+
+// loadPrompts loads the list of prompts
+func (ms *MainScreen) loadPrompts() tea.Cmd {
+	return func() tea.Msg {
+		if !ms.mcpService.IsConnected() {
+			return ItemsLoadedMsg{
+				Tab:         2,
+				Items:       []string{"Not connected to MCP server"},
+				ActualCount: 0,
+				Error:       fmt.Errorf("service not connected"),
+			}
+		}
+		
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		prompts, err := ms.mcpService.ListPrompts(ctx)
+		if err != nil {
+			// Check if this is a "not supported" error - treat as normal
+			if isUnsupportedCapabilityError(err) {
+				ms.logger.Info("Server doesn't support prompts - this is normal", debug.F("error", err))
+				return ItemsLoadedMsg{
+					Tab:         2,
+					Items:       []string{"This MCP server doesn't provide any prompts"},
+					ActualCount: 0,
+					Error:       nil,
+				}
+			}
+			ms.logger.Error("Failed to load prompts", debug.F("error", err))
+			return ItemsLoadedMsg{
+				Tab:         2,
+				Items:       []string{fmt.Sprintf("Error loading prompts: %v", err)},
+				ActualCount: 0,
+				Error:       err,
+			}
+		}
+		
+		var promptList []string
+		actualCount := len(prompts)
+		if len(prompts) == 0 {
+			promptList = []string{"This MCP server doesn't provide any prompts"}
+		} else {
+			for _, prompt := range prompts {
+				description := prompt.Description
+				if description == "" {
+					description = "No description"
+				}
+				promptList = append(promptList, fmt.Sprintf("%s - %s", prompt.Name, description))
+			}
+		}
+		
+		return ItemsLoadedMsg{
+			Tab:         2,
+			Items:       promptList,
+			ActualCount: actualCount,
+			Error:       nil,
+		}
+	}
+}
+
+// tickEvents creates a command that periodically refreshes events
+func (ms *MainScreen) tickEvents() tea.Cmd {
+	return tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
+		return EventTickMsg{}
+	})
+}
+
+// loadEvents loads the list of events (messages without request IDs)
+func (ms *MainScreen) loadEvents() tea.Cmd {
+	return func() tea.Msg {
+		// Get all MCP log entries
+		if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
+			allEntries := mcpLogger.GetEntries()
+			
+			// Filter for notifications and events without IDs
+			var events []debug.MCPLogEntry
+			for _, entry := range allEntries {
+				// Include notifications and any messages without IDs
+				if entry.MessageType == debug.MCPMessageNotification || entry.ID == nil {
+					events = append(events, entry)
+				}
+			}
+			
+			return ItemsLoadedMsg{
+				Tab:         3,
+				Items:       nil, // We store events directly
+				ActualCount: len(events),
+				Error:       nil,
+			}
+		}
+		
+		return ItemsLoadedMsg{
+			Tab:         3,
+			Items:       nil,
+			ActualCount: 0,
+			Error:       nil,
+		}
+	}
+}
+
+// renderEventSplitView renders the split-pane view for events
+func (ms *MainScreen) renderEventSplitView() string {
+	var builder strings.Builder
+	
+	// Get terminal width to split the panes
+	totalWidth := ms.Width()
+	if totalWidth == 0 {
+		totalWidth = 120 // Default width
+	}
+	
+	leftPaneWidth := totalWidth * 40 / 100  // 40% for list
+	rightPaneWidth := totalWidth * 55 / 100 // 55% for detail (5% margin)
+	
+	// Create styles for panes
+	leftPaneStyle := lipgloss.NewStyle().
+		Width(leftPaneWidth).
+		Height(20).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8"))
+		
+	rightPaneStyle := lipgloss.NewStyle().
+		Width(rightPaneWidth).
+		Height(20).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8"))
+		
+	// Active pane gets highlighted border
+	if ms.eventPaneFocus == 0 {
+		leftPaneStyle = leftPaneStyle.BorderForeground(lipgloss.Color("6"))
+	} else {
+		rightPaneStyle = rightPaneStyle.BorderForeground(lipgloss.Color("6"))
+	}
+	
+	// Render left pane (event list)
+	leftContent := ms.renderEventList()
+	leftPane := leftPaneStyle.Render(leftContent)
+	
+	// Render right pane (event detail)
+	rightContent := ms.renderEventDetail()
+	rightPane := rightPaneStyle.Render(rightContent)
+	
+	// Join panes horizontally
+	builder.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, " ", rightPane))
+	
+	return builder.String()
+}
+
+// renderEventList renders the event list for the left pane
+func (ms *MainScreen) renderEventList() string {
+	if len(ms.events) == 0 {
+		return "No events recorded yet"
+	}
+	
+	var listItems []string
+	selectedIdx := ms.selectedIndex[3]
+	
+	maxHeight := 18 // Slightly less than pane height for padding
+	startIdx := 0
+	endIdx := len(ms.events)
+	
+	// Calculate scroll position
+	if len(ms.events) > maxHeight {
+		if selectedIdx >= maxHeight/2 {
+			startIdx = selectedIdx - maxHeight/2
+			if startIdx > len(ms.events)-maxHeight {
+				startIdx = len(ms.events) - maxHeight
+			}
+		}
+		endIdx = min(startIdx+maxHeight, len(ms.events))
+	}
+	
+	for i := startIdx; i < endIdx; i++ {
+		event := ms.events[i]
+		timestamp := event.Timestamp.Format("15:04:05")
+		
+		// Format event type and method
+		var eventInfo string
+		switch event.MessageType {
+		case debug.MCPMessageNotification:
+			eventInfo = fmt.Sprintf("NOT %s", event.Method)
+		case debug.MCPMessageError:
+			eventInfo = "ERROR"
+		default:
+			eventInfo = string(event.MessageType)
+		}
+		
+		line := fmt.Sprintf("[%s] %s %s", timestamp, event.Direction, eventInfo)
+		
+		if i == selectedIdx && ms.eventPaneFocus == 0 {
+			listItems = append(listItems, ms.selectedStyle.Render(fmt.Sprintf("▶ %s", line)))
+		} else {
+			listItems = append(listItems, fmt.Sprintf("  %s", line))
+		}
+	}
+	
+	return strings.Join(listItems, "\n")
+}
+
+// renderEventDetail renders the event detail for the right pane
+func (ms *MainScreen) renderEventDetail() string {
+	if len(ms.events) == 0 {
+		return "No event selected"
+	}
+	
+	selectedIdx := ms.selectedIndex[3]
+	if selectedIdx >= len(ms.events) {
+		return "Invalid selection"
+	}
+	
+	event := ms.events[selectedIdx]
+	
+	var builder strings.Builder
+	
+	// Event header
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	builder.WriteString(headerStyle.Render("Event Details"))
+	builder.WriteString("\n\n")
+	
+	// Event metadata
+	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	builder.WriteString(infoStyle.Render(fmt.Sprintf("Time: %s\n", event.Timestamp.Format("15:04:05.000"))))
+	builder.WriteString(infoStyle.Render(fmt.Sprintf("Direction: %s\n", event.Direction)))
+	builder.WriteString(infoStyle.Render(fmt.Sprintf("Type: %s\n", event.MessageType)))
+	
+	if event.Method != "" {
+		builder.WriteString(infoStyle.Render(fmt.Sprintf("Method: %s\n", event.Method)))
+	}
+	
+	builder.WriteString("\n")
+	
+	// JSON content
+	jsonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	builder.WriteString(headerStyle.Render("Message Content:"))
+	builder.WriteString("\n")
+	builder.WriteString(jsonStyle.Render(event.GetFormattedJSON()))
+	
+	return builder.String()
+}
+
+// isUnsupportedCapabilityError checks if an error indicates a capability is not supported
+func isUnsupportedCapabilityError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "not supported") ||
+		   strings.Contains(errStr, "method not found") ||
+		   strings.Contains(errStr, "unknown method") ||
+		   strings.Contains(errStr, "not implemented") ||
+		   strings.Contains(errStr, "unsupported") ||
+		   strings.Contains(errStr, "method not available") ||
+		   strings.Contains(errStr, "-32601") || // JSON-RPC method not found
+		   strings.Contains(errStr, "no such method") ||
+		   strings.Contains(errStr, "capability not supported") ||
+		   strings.Contains(errStr, "does not support this functionality")
+}
+
+// Utility functions
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

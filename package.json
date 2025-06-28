@@ -30,6 +30,7 @@
   },
   "homepage": "https://github.com/standardbeagle/mcp-tui#readme",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.2",
     "node-fetch": "^3.3.2"
   },
   "files": [

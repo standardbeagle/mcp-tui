@@ -6,22 +6,23 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/your-org/mcp-tui/internal/config"
-	"github.com/your-org/mcp-tui/internal/debug"
-	"github.com/your-org/mcp-tui/internal/tui/screens"
+	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 
 // App represents the TUI application
 type App struct {
-	config *config.Config
-	logger debug.Logger
+	config           *config.Config
+	connectionConfig *config.ConnectionConfig
+	logger           debug.Logger
 }
 
 // New creates a new TUI application
-func New(cfg *config.Config) *App {
+func New(cfg *config.Config, connConfig *config.ConnectionConfig) *App {
 	return &App{
-		config: cfg,
-		logger: debug.Component("tui-app"),
+		config:           cfg,
+		connectionConfig: connConfig,
+		logger:           debug.Component("tui-app"),
 	}
 }
 
@@ -29,8 +30,8 @@ func New(cfg *config.Config) *App {
 func (a *App) Run(ctx context.Context) error {
 	a.logger.Info("Starting TUI application")
 	
-	// Create the initial model
-	model := screens.NewConnectionScreen(a.config)
+	// Create screen manager to handle navigation
+	model := NewScreenManager(a.config, a.connectionConfig)
 	
 	// Create program with context
 	program := tea.NewProgram(

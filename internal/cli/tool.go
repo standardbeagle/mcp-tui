@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 // ToolCommand handles tool-related CLI operations
@@ -93,9 +95,25 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	// Implementation will be moved from cmd_tool.go
-	_ = ctx
-	fmt.Println("Tool list functionality - to be implemented")
+	tools, err := tc.GetService().ListTools(ctx)
+	if err != nil {
+		return tc.HandleError(err, "list tools")
+	}
+
+	if len(tools) == 0 {
+		fmt.Println("No tools available from this MCP server")
+		return nil
+	}
+
+	// Display tools in a nice format
+	for _, tool := range tools {
+		fmt.Printf("• %s", tool.Name)
+		if tool.Description != "" {
+			fmt.Printf(" - %s", tool.Description)
+		}
+		fmt.Println()
+	}
+
 	return nil
 }
 
@@ -109,10 +127,43 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	// Implementation will be moved from cmd_tool.go
-	_ = ctx
-	_ = toolName
-	fmt.Printf("Tool describe functionality for '%s' - to be implemented\n", toolName)
+	// Get list of tools to find the specific one
+	tools, err := tc.GetService().ListTools(ctx)
+	if err != nil {
+		return tc.HandleError(err, "list tools")
+	}
+
+	// Find the specific tool
+	var foundTool *gomcp.Tool
+	for _, tool := range tools {
+		if tool.Name == toolName {
+			foundTool = &tool
+			break
+		}
+	}
+
+	if foundTool == nil {
+		return fmt.Errorf("tool '%s' not found", toolName)
+	}
+
+	// Display tool details
+	fmt.Printf("Tool: %s\n", foundTool.Name)
+	if foundTool.Description != "" {
+		fmt.Printf("Description: %s\n", foundTool.Description)
+	}
+
+	// Display input schema if available
+	if foundTool.InputSchema.Type != "" || foundTool.InputSchema.Properties != nil {
+		fmt.Println("\nInput Schema:")
+		// Pretty print the JSON schema
+		schemaJSON, err := json.MarshalIndent(foundTool.InputSchema, "  ", "  ")
+		if err != nil {
+			fmt.Printf("  Error formatting schema: %v\n", err)
+		} else {
+			fmt.Printf("  %s\n", string(schemaJSON))
+		}
+	}
+
 	return nil
 }
 
@@ -151,10 +202,72 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	// Implementation will be moved from cmd_tool.go
-	_ = ctx
-	_ = toolName
-	_ = toolArgs
-	fmt.Printf("Tool call functionality for '%s' with args %v - to be implemented\n", toolName, toolArgs)
+	// Call the tool
+	result, err := tc.GetService().CallTool(ctx, mcp.CallToolRequest{
+		Name:      toolName,
+		Arguments: toolArgs,
+	})
+	if err != nil {
+		return tc.HandleError(err, "call tool")
+	}
+
+	// Display results
+	if result.IsError {
+		fmt.Println("Error response from tool:")
+	} else {
+		fmt.Println("Tool response:")
+	}
+
+	// Display each content item
+	for i, content := range result.Content {
+		if i > 0 {
+			fmt.Println("\n---")
+		}
+		
+		// Handle different content types
+		if textContent, ok := gomcp.AsTextContent(content); ok {
+			// Try to pretty-print JSON if detected
+			text := textContent.Text
+			if formatted := tryFormatJSON(text); formatted != "" {
+				fmt.Println(formatted)
+			} else {
+				fmt.Println(text)
+			}
+		} else {
+			// For non-text content, show as JSON
+			contentJSON, err := json.MarshalIndent(content, "", "  ")
+			if err != nil {
+				fmt.Printf("Content: %v\n", content)
+			} else {
+				fmt.Println(string(contentJSON))
+			}
+		}
+	}
+
 	return nil
+}
+
+// tryFormatJSON attempts to format a string as pretty JSON
+func tryFormatJSON(text string) string {
+	// First trim whitespace
+	text = strings.TrimSpace(text)
+
+	// Check if it might be JSON (starts with { or [)
+	if !strings.HasPrefix(text, "{") && !strings.HasPrefix(text, "[") {
+		return ""
+	}
+
+	// Try to parse and pretty-print
+	var data interface{}
+	if err := json.Unmarshal([]byte(text), &data); err != nil {
+		return ""
+	}
+
+	// Pretty print with indentation
+	formatted, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return ""
+	}
+
+	return string(formatted)
 }

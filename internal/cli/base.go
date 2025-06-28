@@ -3,15 +3,17 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
+	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 // BaseCommand provides common functionality for all CLI commands
 type BaseCommand struct {
-	client  *server.StdioServerClient
+	service mcp.Service
 	timeout time.Duration
 }
 
@@ -33,33 +35,64 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	// Get global flags
 	command := cmd.Flag("cmd").Value.String()
 	args := cmd.Flag("args").Value.String()
+	url := cmd.Flag("url").Value.String()
+	transportType := cmd.Flag("transport").Value.String()
 	
-	if command == "" {
-		return fmt.Errorf("command is required (use --cmd flag)")
+	// Default to stdio if not specified
+	if transportType == "" {
+		transportType = "stdio"
 	}
 	
-	// Parse args string into slice
-	argSlice := []string{}
-	if args != "" {
-		// Simple split for now - could be improved with proper parsing
-		argSlice = []string{args}
+	// Create connection config
+	connConfig := &config.ConnectionConfig{
+		Type: config.TransportType(transportType),
 	}
 	
-	// Create client - implementation to be moved from existing code
-	_ = command
-	_ = argSlice
+	switch transportType {
+	case "stdio":
+		if command == "" {
+			return fmt.Errorf("command is required for stdio transport (use --cmd flag)")
+		}
+		connConfig.Command = command
+		// Parse args string into slice
+		if args != "" {
+			// Split by comma for multiple args
+			connConfig.Args = strings.Split(args, ",")
+		}
+	case "sse", "http":
+		if url == "" {
+			return fmt.Errorf("URL is required for %s transport (use --url flag)", transportType)
+		}
+		connConfig.URL = url
+	default:
+		return fmt.Errorf("unsupported transport type: %s", transportType)
+	}
 	
-	return fmt.Errorf("client creation not implemented yet")
+	// Create service and connect
+	c.service = mcp.NewService()
+	
+	ctx, cancel := c.WithContext()
+	defer cancel()
+	
+	if err := c.service.Connect(ctx, connConfig); err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	
+	return nil
 }
 
 // CloseClient properly closes the MCP client
 func (c *BaseCommand) CloseClient() error {
-	if c.client == nil {
+	if c.service == nil {
 		return nil
 	}
 	
-	// Cleanup implementation
-	c.client = nil
+	// Disconnect service
+	if err := c.service.Disconnect(); err != nil {
+		return fmt.Errorf("failed to disconnect: %w", err)
+	}
+	
+	c.service = nil
 	return nil
 }
 
@@ -90,8 +123,13 @@ func (c *BaseCommand) HandleError(err error, operation string) error {
 
 // ValidateConnection checks if the client is connected
 func (c *BaseCommand) ValidateConnection() error {
-	if c.client == nil {
+	if c.service == nil || !c.service.IsConnected() {
 		return fmt.Errorf("no connection established")
 	}
 	return nil
+}
+
+// GetService returns the MCP service
+func (c *BaseCommand) GetService() mcp.Service {
+	return c.service
 }

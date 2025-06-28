@@ -204,6 +204,12 @@ func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 	
 	// Write to output
 	fmt.Fprint(output, builder.String())
+	
+	// Also add to log buffer for TUI debug console
+	if logBuffer := GetLogBuffer(); logBuffer != nil {
+		allFields := append(baseFields, fields...)
+		logBuffer.Add(level, component, msg, allFields)
+	}
 }
 
 // Global logger instance
@@ -278,6 +284,10 @@ func InitializeLogging(level string, debugMode bool) {
 	}
 	
 	SetGlobalLevel(logLevel)
+	
+	// Initialize log buffers for the TUI debug console
+	InitLogBuffer(1000)   // General logs
+	InitMCPLogger(2000)   // MCP protocol logs (more since these are important for debugging)
 	
 	// In debug mode, also log to a file
 	if debugMode {

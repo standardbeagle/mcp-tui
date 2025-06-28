@@ -38,12 +38,21 @@ make install
 
 ### Basic Usage
 
-**Interactive TUI Mode:**
+**🚀 Super Simple - One Command:**
 ```bash
-mcp-tui
+# Just put your MCP server command in quotes - that's it!
+mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
+
+# For HTTP/SSE servers
+mcp-tui --url http://localhost:8000/mcp
 ```
 
-**CLI Mode Examples:**
+**📋 Interactive TUI Mode:**
+```bash
+mcp-tui  # No arguments = connection setup screen
+```
+
+**⚡ CLI Mode Examples:**
 ```bash
 # List tools
 mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool list
@@ -57,6 +66,7 @@ mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" resourc
 
 ## 📖 Documentation
 
+- **[Quick Start Guide](QUICK_START.md)** - Get started in 30 seconds
 - **[Architecture Guide](ARCHITECTURE.md)** - Detailed architecture and design decisions
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to the project
 - **[Development Guide](CLAUDE.md)** - Development setup and commands

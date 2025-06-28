@@ -7,8 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/your-org/mcp-tui/internal/config"
-	"github.com/your-org/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 
 // ConnectionScreen handles MCP server connection setup
@@ -98,7 +98,7 @@ func (cs *ConnectionScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKeyMsg handles keyboard input
 func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c", "q":
+	case "ctrl+c", "q", "esc":
 		return cs, tea.Quit
 		
 	case "tab", "down":
@@ -178,14 +178,11 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 		URL:     cs.url,
 	}
 	
-	// In the actual implementation, this would create the MCP client
-	// and transition to the main screen
 	cs.logger.Info("Connection configuration created", debug.F("config", connConfig))
 	
-	// For now, just show a success message
-	cs.SetStatus("Connection successful! (Not implemented yet)", StatusSuccess)
-	
-	return cs, nil
+	// Transition to main screen
+	mainScreen := NewMainScreen(cs.config, connConfig)
+	return mainScreen, mainScreen.Init()
 }
 
 // validateInputs validates the form inputs
@@ -237,7 +234,7 @@ func (cs *ConnectionScreen) View() string {
 	
 	// Help text
 	builder.WriteString("\n\n")
-	builder.WriteString(cs.helpStyle.Render("Press Tab/Shift+Tab to navigate, Enter to connect, Ctrl+C to quit"))
+	builder.WriteString(cs.helpStyle.Render("Tab/Shift+Tab: Navigate • Enter: Connect • Esc/Ctrl+C: Quit"))
 	
 	return builder.String()
 }
