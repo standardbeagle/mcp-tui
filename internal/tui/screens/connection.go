@@ -101,6 +101,17 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q", "esc":
 		return cs, tea.Quit
 		
+	case "ctrl+l":
+		// Show debug logs
+		debugScreen := NewDebugScreen()
+		return cs, func() tea.Msg {
+			return TransitionMsg{
+				Transition: ScreenTransition{
+					Screen: debugScreen,
+				},
+			}
+		}
+		
 	case "tab", "down":
 		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
 		return cs, nil
@@ -234,7 +245,7 @@ func (cs *ConnectionScreen) View() string {
 	
 	// Help text
 	builder.WriteString("\n\n")
-	builder.WriteString(cs.helpStyle.Render("Tab/Shift+Tab: Navigate • Enter: Connect • Esc/Ctrl+C: Quit"))
+	builder.WriteString(cs.helpStyle.Render("Tab/Shift+Tab: Navigate • Enter: Connect • Ctrl+L: Debug Log • Esc/Ctrl+C: Quit"))
 	
 	return builder.String()
 }

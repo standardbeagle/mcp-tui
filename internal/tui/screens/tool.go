@@ -10,9 +10,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/atotto/clipboard"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
 // ToolScreen allows interactive tool execution
@@ -48,12 +50,13 @@ type ToolScreen struct {
 
 // toolField represents a single input field
 type toolField struct {
-	name        string
-	description string
-	fieldType   string
-	required    bool
-	value       string
-	cursorPos   int
+	name            string
+	description     string
+	fieldType       string
+	required        bool
+	value           string
+	cursorPos       int
+	validationError string // Real-time validation error
 }
 
 // NewToolScreen creates a new tool execution screen
@@ -221,6 +224,15 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StatusMsg:
 		ts.SetStatus(msg.Message, msg.Level)
 		return ts, nil
+		
+	case toolSpinnerTickMsg:
+		// Continue spinner animation while executing
+		if ts.executing {
+			return ts, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+				return toolSpinnerTickMsg{}
+			})
+		}
+		return ts, nil
 	}
 	
 	return ts, nil
@@ -231,6 +243,9 @@ type toolExecutionCompleteMsg struct {
 	Result *imcp.CallToolResult
 	Error  error
 }
+
+// toolSpinnerTickMsg is sent to update the spinner animation
+type toolSpinnerTickMsg struct{}
 
 // handleKeyMsg handles keyboard input
 func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -244,7 +259,21 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	
 	switch msg.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
+		// Copy result to clipboard if available
+		if ts.result != nil && ts.resultJSON != "" {
+			if err := clipboard.WriteAll(ts.resultJSON); err == nil {
+				ts.SetStatus("Result copied to clipboard!", StatusSuccess)
+			} else {
+				ts.SetStatus("Failed to copy to clipboard", StatusError)
+			}
+		} else {
+			// No result, go back
+			return ts, func() tea.Msg { return BackMsg{} }
+		}
+		return ts, nil
+		
+	case "esc":
 		// Go back to previous screen
 		return ts, func() tea.Msg { return BackMsg{} }
 		
@@ -252,7 +281,22 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Go back to previous screen
 		return ts, func() tea.Msg { return BackMsg{} }
 		
+	case "ctrl+l":
+		// Show debug logs
+		debugScreen := NewDebugScreen()
+		return ts, func() tea.Msg {
+			return TransitionMsg{
+				Transition: ScreenTransition{
+					Screen: debugScreen,
+				},
+			}
+		}
+		
 	case "tab", "down":
+		// Validate current field before moving
+		if ts.cursor < len(ts.fields) {
+			ts.validateField(ts.cursor)
+		}
 		// Move to next field/button
 		totalItems := len(ts.fields) + 2 // fields + execute button + back button
 		ts.cursor = (ts.cursor + 1) % totalItems
@@ -321,12 +365,27 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 		
+	case "ctrl+v", "shift+insert":
+		// Paste from clipboard
+		if ts.cursor < len(ts.fields) {
+			if clipContent, err := clipboard.ReadAll(); err == nil && clipContent != "" {
+				field := &ts.fields[ts.cursor]
+				// Insert at cursor position
+				field.value = field.value[:field.cursorPos] + clipContent + field.value[field.cursorPos:]
+				field.cursorPos += len(clipContent)
+				ts.SetStatus("Pasted from clipboard", StatusSuccess)
+			}
+		}
+		return ts, nil
+		
 	default:
 		// Handle regular character input
 		if ts.cursor < len(ts.fields) && len(msg.String()) == 1 {
 			field := &ts.fields[ts.cursor]
 			field.value = field.value[:field.cursorPos] + msg.String() + field.value[field.cursorPos:]
 			field.cursorPos++
+			// Validate on input
+			ts.validateField(ts.cursor)
 		}
 		return ts, nil
 	}
@@ -404,7 +463,14 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 	ts.executionStart = time.Now()
 	ts.SetStatus("Executing tool...", StatusInfo)
 	
-	return func() tea.Msg {
+	// Start the execution and spinner ticker
+	return tea.Batch(
+		// Spinner ticker
+		tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+			return toolSpinnerTickMsg{}
+		}),
+		// Tool execution
+		func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		
@@ -416,6 +482,64 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 		return toolExecutionCompleteMsg{
 			Result: result,
 			Error:  err,
+		}
+		},
+	)
+}
+
+// validateField validates a single field
+func (ts *ToolScreen) validateField(index int) {
+	if index >= len(ts.fields) {
+		return
+	}
+	
+	field := &ts.fields[index]
+	field.validationError = ""
+	
+	// Check required fields
+	if field.required && strings.TrimSpace(field.value) == "" {
+		field.validationError = "This field is required"
+		return
+	}
+	
+	// Type-specific validation
+	switch field.fieldType {
+	case "number":
+		if field.value != "" {
+			var num float64
+			if err := json.Unmarshal([]byte(field.value), &num); err != nil {
+				field.validationError = "Must be a valid number"
+			}
+		}
+	case "integer":
+		if field.value != "" {
+			var num int
+			if err := json.Unmarshal([]byte(field.value), &num); err != nil {
+				field.validationError = "Must be a valid integer"
+			}
+		}
+	case "boolean":
+		if field.value != "" {
+			if field.value != "true" && field.value != "false" {
+				field.validationError = "Must be 'true' or 'false'"
+			}
+		}
+	case "array":
+		if field.value != "" {
+			var arr []interface{}
+			if err := json.Unmarshal([]byte(field.value), &arr); err != nil {
+				// Try comma-separated format
+				if !strings.Contains(field.value, ",") {
+					field.validationError = "Must be a JSON array or comma-separated values"
+				}
+			}
+		}
+	case "object":
+		if field.value != "" {
+			var obj map[string]interface{}
+			if err := json.Unmarshal([]byte(field.value), &obj); err != nil {
+				field.validationError = "Must be a valid JSON object"
+			}
 		}
 	}
 }
@@ -440,14 +564,19 @@ func (ts *ToolScreen) View() string {
 		builder.WriteString("\n\n")
 	} else {
 		for i, field := range ts.fields {
-			// Field label
+			// Field label with type indicator
 			label := field.name
 			if field.required {
 				label += " *"
 			}
-			if field.fieldType != "" && field.fieldType != "string" {
-				label += fmt.Sprintf(" [%s]", field.fieldType)
+			
+			// Always show field type for clarity
+			typeIndicator := field.fieldType
+			if typeIndicator == "" {
+				typeIndicator = "string"
 			}
+			label += fmt.Sprintf(" [%s]", typeIndicator)
+			
 			if field.description != "" {
 				label += fmt.Sprintf(" - %s", field.description)
 			}
@@ -473,8 +602,26 @@ func (ts *ToolScreen) View() string {
 			if ts.cursor == i {
 				style = ts.selectedStyle
 			}
-			builder.WriteString(style.Render(inputContent))
-			builder.WriteString("\n\n")
+			
+			// Show validation error with red border if present
+			if field.validationError != "" && ts.cursor == i {
+				errorInputStyle := style.Copy().
+					BorderForeground(lipgloss.Color("9"))
+				builder.WriteString(errorInputStyle.Render(inputContent))
+			} else {
+				builder.WriteString(style.Render(inputContent))
+			}
+			builder.WriteString("\n")
+			
+			// Show validation error message
+			if field.validationError != "" {
+				validationStyle := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("9")).
+					Italic(true)
+				builder.WriteString(validationStyle.Render("  ⚠ " + field.validationError))
+				builder.WriteString("\n")
+			}
+			builder.WriteString("\n")
 		}
 	}
 	
@@ -495,15 +642,30 @@ func (ts *ToolScreen) View() string {
 	}
 	builder.WriteString("\n\n")
 	
-	// Execution status
+	// Execution status with progress indicator
 	if ts.executing {
-		elapsed := time.Since(ts.executionStart).Round(time.Second)
-		builder.WriteString(fmt.Sprintf("Executing... (%s)\n", elapsed))
-		// Simple spinner
-		spinner := []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
-		frame := int(elapsed.Seconds()) % len(spinner)
-		builder.WriteString(spinner[frame])
+		elapsed := time.Since(ts.executionStart)
+		
+		// Show spinner and message
+		builder.WriteString(components.ProgressMessage("Executing tool...", elapsed, true))
 		builder.WriteString("\n")
+		
+		// Show indeterminate progress bar
+		progressBar := components.NewIndeterminateProgress(40)
+		builder.WriteString(progressBar.Render(elapsed))
+		builder.WriteString("\n")
+		
+		// Show timeout warning if taking too long
+		if elapsed > 10*time.Second {
+			warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+			remaining := 30*time.Second - elapsed
+			if remaining > 0 {
+				builder.WriteString(warningStyle.Render(fmt.Sprintf("Timeout in %s", remaining.Round(time.Second))))
+			} else {
+				builder.WriteString(warningStyle.Render("Operation may timeout soon..."))
+			}
+			builder.WriteString("\n")
+		}
 	}
 	
 	// Result
@@ -528,7 +690,14 @@ func (ts *ToolScreen) View() string {
 	
 	// Help text
 	builder.WriteString("\n")
-	helpText := "Tab/Shift+Tab: Navigate • Enter: Submit • b/Alt+←: Back • Esc/Ctrl+C: Quit"
+	var helpText string
+	if ts.result != nil {
+		helpText = "Ctrl+C: Copy result • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+	} else if ts.cursor < len(ts.fields) {
+		helpText = "Tab: Navigate • Enter: Submit • Ctrl+V: Paste • Ctrl+L: Debug Log • b: Back • Esc: Back"
+	} else {
+		helpText = "Tab: Navigate • Enter: Submit • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+	}
 	builder.WriteString(ts.helpStyle.Render(helpText))
 	
 	// Status message

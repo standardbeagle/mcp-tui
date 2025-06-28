@@ -12,6 +12,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
 // MainScreen is the primary interface for browsing tools, resources, and prompts
@@ -51,6 +52,7 @@ type MainScreen struct {
 	// Connection status
 	connectionStatus string
 	connecting       bool
+	connectingStart  time.Time
 	
 	// Styles
 	tabStyle         lipgloss.Style
@@ -80,6 +82,9 @@ type ItemsLoadedMsg struct {
 
 // EventTickMsg is sent periodically to refresh events
 type EventTickMsg struct{}
+
+// spinnerTickMsg is sent to update the spinner animation
+type spinnerTickMsg struct{}
 
 // NewMainScreen creates a new main screen
 func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *MainScreen {
@@ -173,8 +178,12 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 	case ConnectionStartedMsg:
 		ms.connecting = true
+		ms.connectingStart = time.Now()
 		ms.connectionStatus = "Connecting to MCP server..."
-		return ms, nil
+		// Start ticker for spinner animation
+		return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+			return spinnerTickMsg{}
+		})
 		
 	case ConnectionCompleteMsg:
 		ms.connecting = false
@@ -265,6 +274,15 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 		return ms, ms.tickEvents() // Continue ticking even if not on events tab
+		
+	case spinnerTickMsg:
+		// Continue spinner animation while connecting
+		if ms.connecting {
+			return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+				return spinnerTickMsg{}
+			})
+		}
+		return ms, nil
 	}
 	
 	return ms, nil
@@ -273,10 +291,22 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKeyMsg handles keyboard input
 func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ms.connected {
-		// Only allow quit when not connected
+		// Handle special keys when not connected
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return ms, tea.Quit
+		case "r":
+			// Retry connection
+			ms.connecting = true
+			ms.connectingStart = time.Now()
+			ms.connectionStatus = "Retrying connection..."
+			ms.SetError(nil) // Clear previous error
+			return ms, tea.Batch(
+				ms.connectToServer(),
+				tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+					return spinnerTickMsg{}
+				}),
+			)
 		}
 		return ms, nil
 	}
@@ -494,20 +524,52 @@ func (ms *MainScreen) View() string {
 	builder.WriteString("\n\n")
 	
 	if !ms.connected && !ms.connecting {
-		// Show error and quit instruction
-		builder.WriteString("Press 'q' or Ctrl+C to quit")
+		// Show error with retry option
+		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+		builder.WriteString(errorStyle.Render("Connection failed"))
+		builder.WriteString("\n\n")
+		
+		// Show retry options
+		optionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+		builder.WriteString(optionStyle.Render("Press 'r' to retry connection"))
+		builder.WriteString("\n")
+		builder.WriteString(optionStyle.Render("Press 'q' or Ctrl+C to quit"))
 		return builder.String()
 	}
 	
 	if ms.connecting {
 		// Show loading spinner
-		builder.WriteString("Please wait...")
+		spinner := components.NewSpinner(components.SpinnerDots)
+		elapsed := time.Since(ms.connectingStart)
+		
+		builder.WriteString("\n\n")
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("212")).
+			Bold(true)
+		loadingStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("99"))
+			
+		builder.WriteString(spinnerStyle.Render(spinner.Frame(elapsed)))
+		builder.WriteString(" ")
+		builder.WriteString(loadingStyle.Render("Connecting to MCP server..."))
+		
+		// Show elapsed time
+		if elapsed > 2*time.Second {
+			builder.WriteString(fmt.Sprintf(" (%s)", elapsed.Round(time.Second)))
+		}
 		return builder.String()
 	}
 	
 	// Tabs
 	builder.WriteString(ms.renderTabs())
-	builder.WriteString("\n\n")
+	builder.WriteString("\n")
+	
+	// Horizontal separator
+	if ms.Width() > 0 {
+		separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		builder.WriteString(separatorStyle.Render(strings.Repeat("─", min(ms.Width(), 80))))
+		builder.WriteString("\n")
+	}
 	
 	// Current list or split-pane view for events
 	if ms.activeTab == 3 && ms.showEventDetail {
@@ -516,14 +578,57 @@ func (ms *MainScreen) View() string {
 		builder.WriteString(ms.renderCurrentList())
 	}
 	
-	// Help text
-	builder.WriteString("\n\n")
-	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Select • r: Refresh • Ctrl+L: Debug Logs • q: Quit"
-	if ms.activeTab == 3 && ms.showEventDetail {
-		helpText = "←/→: Switch panes • ↑↓: Navigate • b/Alt+←: Close detail • r: Refresh • q: Quit"
+	// Bottom separator
+	builder.WriteString("\n")
+	if ms.Width() > 0 {
+		separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		builder.WriteString(separatorStyle.Render(strings.Repeat("─", min(ms.Width(), 80))))
 	}
+	builder.WriteString("\n")
+	// Help text with better formatting
+	var helpItems []string
+	switch {
+	case ms.activeTab == 3 && ms.showEventDetail:
+		helpItems = []string{
+			"←/→: Switch panes",
+			"↑↓: Navigate", 
+			"b/Alt+←: Close detail",
+			"r: Refresh",
+			"Ctrl+L: Debug Log",
+			"q: Quit",
+		}
+	case ms.activeTab == 0 && ms.toolCount > 0:
+		helpItems = []string{
+			"↑↓/j/k: Navigate",
+			"1-9: Quick select",
+			"Enter: Execute",
+			"PgUp/Dn: Page",
+			"r: Refresh",
+			"Tab: Switch tabs",
+			"Ctrl+L: Debug Log",
+			"q: Quit",
+		}
+	default:
+		helpItems = []string{
+			"Tab/↑↓: Navigate",
+			"Enter: Select",
+			"r: Refresh",
+			"Ctrl+L: Debug",
+			"q: Quit",
+		}
+	}
+	
+	// Style each help item
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	builder.WriteString(helpStyle.Render(helpText))
+	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	
+	var styledHelp []string
+	for _, item := range helpItems {
+		styledHelp = append(styledHelp, helpStyle.Render(item))
+	}
+	
+	helpText := strings.Join(styledHelp, separatorStyle.Render(" • "))
+	builder.WriteString(helpText)
 	
 	// Status message
 	if statusMsg, _ := ms.StatusMessage(); statusMsg != "" {
@@ -551,8 +656,9 @@ func (ms *MainScreen) renderTabs() string {
 		}
 	}
 	
-	// Join with a separator for cleaner horizontal layout
-	return strings.Join(renderedTabs, "│")
+	// Join with a more visible separator
+	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	return strings.Join(renderedTabs, separatorStyle.Render(" │ "))
 }
 
 // renderCurrentList renders the current tab's list
@@ -561,8 +667,23 @@ func (ms *MainScreen) renderCurrentList() string {
 	tabNames := []string{"tools", "resources", "prompts", "events"}
 	
 	if len(currentList) == 0 {
-		emptyMsg := fmt.Sprintf("This MCP server doesn't provide any %s", tabNames[ms.activeTab])
-		return ms.listStyle.Render(emptyMsg)
+		var emptyMsg string
+		switch ms.activeTab {
+		case 0:
+			emptyMsg = "No tools available\n\nThis MCP server doesn't provide any tools.\nTry connecting to a different server."
+		case 1:
+			emptyMsg = "No resources available\n\nThis MCP server doesn't provide any resources.\nResources allow reading of files and data."
+		case 2:
+			emptyMsg = "No prompts available\n\nThis MCP server doesn't provide any prompts.\nPrompts are reusable templates for interactions."
+		case 3:
+			emptyMsg = "No events recorded yet\n\nEvents will appear here as the server sends notifications."
+		default:
+			emptyMsg = fmt.Sprintf("This MCP server doesn't provide any %s", tabNames[ms.activeTab])
+		}
+		emptyStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Align(lipgloss.Center)
+		return ms.listStyle.Render(emptyStyle.Render(emptyMsg))
 	}
 	
 	// Check if we have actual items or just a placeholder message
@@ -603,19 +724,38 @@ func (ms *MainScreen) renderCurrentList() string {
 	
 	for i := startIdx; i < endIdx; i++ {
 		item := currentList[i]
-		if i == selectedIdx {
-			listItems = append(listItems, ms.selectedStyle.Render(fmt.Sprintf("▶ %s", item)))
+		
+		// For tools tab, add numbers
+		var displayItem string
+		if ms.activeTab == 0 && actualCount > 0 {
+			// Extract just the tool name for numbering
+			parts := strings.SplitN(item, " - ", 2)
+			if len(parts) == 2 {
+				displayItem = fmt.Sprintf("%d. %s - %s", i+1, parts[0], parts[1])
+			} else {
+				displayItem = fmt.Sprintf("%d. %s", i+1, item)
+			}
 		} else {
-			listItems = append(listItems, fmt.Sprintf("  %s", item))
+			displayItem = item
+		}
+		
+		if i == selectedIdx {
+			listItems = append(listItems, ms.selectedStyle.Render(fmt.Sprintf("▶ %s", displayItem)))
+		} else {
+			listItems = append(listItems, fmt.Sprintf("  %s", displayItem))
 		}
 	}
 	
-	// Add scroll indicators
+	// Add scroll indicators with styling
+	scrollStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
 	if startIdx > 0 {
-		listItems = append([]string{"  ↑ More items above ↑"}, listItems...)
+		indicator := scrollStyle.Render(fmt.Sprintf("  ↑ %d more above ↑", startIdx))
+		listItems = append([]string{indicator}, listItems...)
 	}
 	if endIdx < len(currentList) {
-		listItems = append(listItems, "  ↓ More items below ↓")
+		remaining := len(currentList) - endIdx
+		indicator := scrollStyle.Render(fmt.Sprintf("  ↓ %d more below ↓", remaining))
+		listItems = append(listItems, indicator)
 	}
 	
 	return ms.listStyle.Render(strings.Join(listItems, "\n"))
