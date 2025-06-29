@@ -180,17 +180,17 @@ make test-servers
 
 **Passing Multiple Arguments:**
 ```bash
-# Use comma-separated values for multiple arguments
-mcp-tui --cmd ./server --args arg1,arg2,arg3
+# Use multiple --args flags for multiple arguments
+mcp-tui --cmd ./server --args arg1 --args arg2 --args arg3
 
-# For arguments with spaces, quote the entire args value
-mcp-tui --cmd ./server --args "arg with spaces,another arg"
+# For arguments with spaces, quote each argument
+mcp-tui --cmd ./server --args "arg with spaces" --args "another arg"
 
 # Example with npm/npx
-mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio"
+mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything" --args "stdio"
 
-# Real example with environment variables
-mcp-tui --cmd ./brum --args "--mcp,--env,key=value"
+# Real example with multiple flags
+mcp-tui --cmd ./brum --args "--mcp" --args "--verbose"
 ```
 
 ### Tool Operations
@@ -215,7 +215,7 @@ mcp-tui prompt get <name> [args...]    # Get a prompt with arguments
 ### Global Options
 ```bash
 --cmd string         # Command to run MCP server (for STDIO)
---args strings       # Arguments for server command (comma-separated)
+--args strings       # Arguments for server command (use multiple flags)
 --url string         # URL for SSE/HTTP servers
 --type string        # Transport type (stdio, sse, http)
 --timeout duration   # Connection timeout (default 30s)

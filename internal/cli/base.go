@@ -60,17 +60,8 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 		urlFlag, _ := cmd.Flags().GetString("url")
 		transportFlag, _ := cmd.Flags().GetString("transport")
 		
-		// Handle args - support both comma-separated and multiple flags
-		var argsFlag []string
-		if sliceVal, err := cmd.Flags().GetStringSlice("args"); err == nil {
-			// If we got a single element with commas, split it (legacy format)
-			// Otherwise use as-is (multiple --args flags)
-			if len(sliceVal) == 1 && strings.Contains(sliceVal[0], ",") {
-				argsFlag = strings.Split(sliceVal[0], ",")
-			} else {
-				argsFlag = sliceVal
-			}
-		}
+		// Get args as string slice (multiple --args flags)
+		argsFlag, _ := cmd.Flags().GetStringSlice("args")
 		
 		// Use the unified parser
 		parsedArgs := config.ParseArgs(cmd.Flags().Args(), cmdFlag, urlFlag, argsFlag)

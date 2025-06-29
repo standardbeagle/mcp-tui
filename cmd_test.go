@@ -38,9 +38,9 @@ func TestMainFunctionFlow(t *testing.T) {
 		},
 		{
 			name: "flag-based CLI",
-			args: []string{"mcp-tui", "--cmd", "npx", "--args", "server,stdio", "tool", "list"},
+			args: []string{"mcp-tui", "--cmd", "npx", "--args", "server", "--args", "stdio", "tool", "list"},
 			expectedConfig: nil, // Flags are parsed later by Cobra
-			expectedOsArgs: []string{"mcp-tui", "--cmd", "npx", "--args", "server,stdio", "tool", "list"},
+			expectedOsArgs: []string{"mcp-tui", "--cmd", "npx", "--args", "server", "--args", "stdio", "tool", "list"},
 			description: "Flag-based usage should pass through unchanged",
 		},
 		{
