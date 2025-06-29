@@ -37,7 +37,6 @@ func (a *App) Run(ctx context.Context) error {
 	program := tea.NewProgram(
 		model,
 		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
 		tea.WithContext(ctx),
 	)
 	
