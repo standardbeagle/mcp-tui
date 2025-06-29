@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -98,15 +99,35 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	}
 	
 	// Create service and connect
+	fmt.Fprintf(os.Stderr, "🔄 Creating MCP service...\n")
 	c.service = mcp.NewService()
 	
 	ctx, cancel := c.WithContext()
 	defer cancel()
 	
+	// Show connection details
+	switch connConfig.Type {
+	case config.TransportStdio:
+		fmt.Fprintf(os.Stderr, "🚀 Starting process: %s %s\n", connConfig.Command, strings.Join(connConfig.Args, " "))
+	case config.TransportHTTP, config.TransportSSE:
+		fmt.Fprintf(os.Stderr, "🌐 Connecting to URL: %s\n", connConfig.URL)
+	}
+	
+	fmt.Fprintf(os.Stderr, "⏳ Establishing connection (timeout: %s)...\n", c.timeout)
+	
 	if err := c.service.Connect(ctx, connConfig); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Connection failed\n")
+		// Add helpful message for timeout errors
+		if strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "timeout") {
+			fmt.Fprintf(os.Stderr, "\n💡 Tip: The connection timed out. Try:\n")
+			fmt.Fprintf(os.Stderr, "   - Checking if the server is running\n")
+			fmt.Fprintf(os.Stderr, "   - Increasing timeout with --timeout flag\n")
+			fmt.Fprintf(os.Stderr, "   - Verifying the command/URL is correct\n")
+		}
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 	
+	fmt.Fprintf(os.Stderr, "✅ Connected successfully\n")
 	return nil
 }
 

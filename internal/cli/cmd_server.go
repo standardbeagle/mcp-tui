@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -37,11 +38,16 @@ func (c *ServerCommand) CreateCommand() *cobra.Command {
 
 // RunE executes the server command
 func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
+	fmt.Fprintf(os.Stderr, "📊 Gathering server information...\n")
+	
 	info := c.service.GetServerInfo()
 	
 	if !info.Connected {
+		fmt.Fprintf(os.Stderr, "❌ Not connected to server\n")
 		return fmt.Errorf("not connected to server")
 	}
+	
+	fmt.Fprintf(os.Stderr, "✅ Connected to server\n\n")
 	
 	// Print server information
 	fmt.Printf("Server Information\n")
@@ -70,7 +76,10 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	ctx, cancel := c.WithContext()
 	defer cancel()
 	
+	fmt.Fprintf(os.Stderr, "📋 Querying available features...\n")
+	
 	// Count tools
+	fmt.Fprintf(os.Stderr, "  • Fetching tools...\n")
 	tools, err := c.service.ListTools(ctx)
 	if err == nil {
 		fmt.Printf("Available Tools:     %d\n", len(tools))
@@ -85,6 +94,7 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	}
 	
 	// Count resources
+	fmt.Fprintf(os.Stderr, "  • Fetching resources...\n")
 	resources, err := c.service.ListResources(ctx)
 	if err == nil {
 		fmt.Printf("Available Resources: %d\n", len(resources))
@@ -99,6 +109,7 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	}
 	
 	// Count prompts
+	fmt.Fprintf(os.Stderr, "  • Fetching prompts...\n")
 	prompts, err := c.service.ListPrompts(ctx)
 	if err == nil {
 		fmt.Printf("Available Prompts:   %d\n", len(prompts))
@@ -111,6 +122,8 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Available Prompts:   Error: %v\n", err)
 	}
+	
+	fmt.Fprintf(os.Stderr, "\n✅ Server information complete\n")
 	
 	return nil
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
@@ -95,10 +96,14 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
+	fmt.Fprintf(os.Stderr, "📋 Fetching available tools...\n")
 	tools, err := tc.GetService().ListTools(ctx)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
 		return tc.HandleError(err, "list tools")
 	}
+
+	fmt.Fprintf(os.Stderr, "✅ Tools retrieved successfully\n\n")
 
 	if len(tools) == 0 {
 		fmt.Println("No tools available from this MCP server")
@@ -127,9 +132,12 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
+	fmt.Fprintf(os.Stderr, "🔍 Looking up tool '%s'...\n", toolName)
+	
 	// Get list of tools to find the specific one
 	tools, err := tc.GetService().ListTools(ctx)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
 		return tc.HandleError(err, "list tools")
 	}
 
@@ -143,8 +151,11 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	}
 
 	if foundTool == nil {
+		fmt.Fprintf(os.Stderr, "❌ Tool not found\n")
 		return fmt.Errorf("tool '%s' not found", toolName)
 	}
+
+	fmt.Fprintf(os.Stderr, "✅ Tool found\n\n")
 
 	// Display tool details
 	fmt.Printf("Tool: %s\n", foundTool.Name)
@@ -180,10 +191,16 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	toolName := args[0]
 	toolArgs := make(map[string]interface{})
 
+	fmt.Fprintf(os.Stderr, "🛠️  Preparing to call tool '%s'...\n", toolName)
+
 	// Parse arguments (key=value pairs)
+	if len(args) > 1 {
+		fmt.Fprintf(os.Stderr, "📝 Parsing arguments...\n")
+	}
 	for _, arg := range args[1:] {
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "❌ Invalid argument format\n")
 			return fmt.Errorf("invalid argument format: %s (expected key=value)", arg)
 		}
 		
@@ -202,14 +219,19 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
+	fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
+	
 	// Call the tool
 	result, err := tc.GetService().CallTool(ctx, mcp.CallToolRequest{
 		Name:      toolName,
 		Arguments: toolArgs,
 	})
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Tool execution failed\n")
 		return tc.HandleError(err, "call tool")
 	}
+
+	fmt.Fprintf(os.Stderr, "✅ Tool executed successfully\n\n")
 
 	// Display results
 	if result.IsError {
