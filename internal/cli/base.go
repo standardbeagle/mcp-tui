@@ -34,13 +34,23 @@ func (c *BaseCommand) WithTimeout(timeout time.Duration) *BaseCommand {
 // CreateClient creates and initializes an MCP client
 func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	// Get global flags with nil checks
-	var command, args, url, transportType string
+	var command, url, transportType string
+	var args []string
 	
 	if flag := cmd.Flag("cmd"); flag != nil && flag.Value != nil {
 		command = flag.Value.String()
 	}
 	if flag := cmd.Flag("args"); flag != nil && flag.Value != nil {
-		args = flag.Value.String()
+		// Get the string slice value - this handles multiple --args flags
+		if sliceVal, err := cmd.Flags().GetStringSlice("args"); err == nil {
+			// If we got a single element with commas, split it (legacy format)
+			// Otherwise use as-is (multiple --args flags)
+			if len(sliceVal) == 1 && strings.Contains(sliceVal[0], ",") {
+				args = strings.Split(sliceVal[0], ",")
+			} else {
+				args = sliceVal
+			}
+		}
 	}
 	if flag := cmd.Flag("url"); flag != nil && flag.Value != nil {
 		url = flag.Value.String()
@@ -81,11 +91,7 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 			return fmt.Errorf("cannot use --url with stdio transport")
 		}
 		connConfig.Command = command
-		// Parse args string into slice
-		if args != "" {
-			// Split by comma for multiple args
-			connConfig.Args = strings.Split(args, ",")
-		}
+		connConfig.Args = args
 	case "sse", "http":
 		if url == "" {
 			return fmt.Errorf("URL is required for %s transport (use --url flag)", transportType)
