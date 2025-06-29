@@ -135,9 +135,7 @@ func (ms *MainScreen) initStyles() {
 	ms.listStyle = lipgloss.NewStyle().
 		Padding(1).
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("8")).
-		Width(60).
-		Height(15)
+		BorderForeground(lipgloss.Color("8"))
 	
 	ms.selectedStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("0")).
@@ -707,35 +705,133 @@ func (ms *MainScreen) renderCurrentList() string {
 	var listItems []string
 	selectedIdx := ms.selectedIndex[ms.activeTab]
 	
-	maxHeight := 15 // Maximum number of items to show
+	// Calculate viewport height based on terminal size
+	// Reserve space for: title(2) + status(3) + tabs(3) + help(3) + borders(2)
+	reservedHeight := 13
+	termHeight := ms.Height()
+	maxHeight := termHeight - reservedHeight
+	if maxHeight < 5 {
+		maxHeight = 5 // Minimum visible items
+	}
+	if maxHeight > 30 {
+		maxHeight = 30 // Maximum to prevent too sparse display
+	}
+	
 	startIdx := 0
 	endIdx := len(currentList)
 	
 	// Calculate scroll position if list is too long
 	if len(currentList) > maxHeight {
-		if selectedIdx >= maxHeight/2 {
-			startIdx = selectedIdx - maxHeight/2
-			if startIdx > len(currentList)-maxHeight {
-				startIdx = len(currentList) - maxHeight
-			}
+		// Keep selected item centered when possible
+		halfView := maxHeight / 2
+		if selectedIdx < halfView {
+			// Near the top
+			startIdx = 0
+		} else if selectedIdx >= len(currentList) - halfView {
+			// Near the bottom
+			startIdx = len(currentList) - maxHeight
+		} else {
+			// Middle - center the selection
+			startIdx = selectedIdx - halfView
 		}
-		endIdx = min(startIdx+maxHeight, len(currentList))
+		endIdx = startIdx + maxHeight
+		if endIdx > len(currentList) {
+			endIdx = len(currentList)
+		}
 	}
 	
+	// Define item styles
+	nameStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("12")) // Bright Blue
+		
+	descriptionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")) // Gray
+		
+	numberStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")) // Dim gray
+		
+	resourceStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("10")) // Green
+		
+	promptStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("13")) // Magenta
+		
+	eventTimeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")) // Dim gray
+		
+	eventMethodStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("14")) // Cyan
+		
 	for i := startIdx; i < endIdx; i++ {
 		item := currentList[i]
 		
-		// For tools tab, add numbers
+		// Format the item based on tab type
 		var displayItem string
-		if ms.activeTab == 0 && actualCount > 0 {
-			// Extract just the tool name for numbering
+		switch ms.activeTab {
+		case 0: // Tools
+			if actualCount > 0 {
+				parts := strings.SplitN(item, " - ", 2)
+				if len(parts) == 2 {
+					number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
+					name := nameStyle.Render(parts[0])
+					desc := descriptionStyle.Render(parts[1])
+					displayItem = fmt.Sprintf("%s%s - %s", number, name, desc)
+				} else {
+					number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
+					displayItem = number + nameStyle.Render(item)
+				}
+			} else {
+				displayItem = item
+			}
+			
+		case 1: // Resources
 			parts := strings.SplitN(item, " - ", 2)
 			if len(parts) == 2 {
-				displayItem = fmt.Sprintf("%d. %s - %s", i+1, parts[0], parts[1])
+				name := resourceStyle.Render(parts[0])
+				desc := descriptionStyle.Render(parts[1])
+				displayItem = fmt.Sprintf("%s - %s", name, desc)
 			} else {
-				displayItem = fmt.Sprintf("%d. %s", i+1, item)
+				displayItem = resourceStyle.Render(item)
 			}
-		} else {
+			
+		case 2: // Prompts
+			parts := strings.SplitN(item, " - ", 2)
+			if len(parts) == 2 {
+				name := promptStyle.Render(parts[0])
+				desc := descriptionStyle.Render(parts[1])
+				displayItem = fmt.Sprintf("%s - %s", name, desc)
+			} else {
+				displayItem = promptStyle.Render(item)
+			}
+			
+		case 3: // Events
+			// Parse event format: "[timestamp] direction method"
+			if strings.HasPrefix(item, "[") {
+				endIdx := strings.Index(item, "]")
+				if endIdx > 0 && endIdx < len(item)-1 {
+					timestamp := eventTimeStyle.Render(item[:endIdx+1])
+					rest := item[endIdx+1:]
+					// Extract method if present
+					parts := strings.Fields(rest)
+					if len(parts) >= 2 {
+						direction := parts[0]
+						method := eventMethodStyle.Render(strings.Join(parts[1:], " "))
+						displayItem = fmt.Sprintf("%s %s %s", timestamp, direction, method)
+					} else {
+						displayItem = timestamp + rest
+					}
+				} else {
+					displayItem = item
+				}
+			} else {
+				displayItem = item
+			}
+			
+		default:
 			displayItem = item
 		}
 		
@@ -758,7 +854,22 @@ func (ms *MainScreen) renderCurrentList() string {
 		listItems = append(listItems, indicator)
 	}
 	
-	return ms.listStyle.Render(strings.Join(listItems, "\n"))
+	// Apply dynamic dimensions to list style
+	width := ms.Width()
+	if width > 100 {
+		width = 100 // Cap width for readability
+	}
+	if width < 40 {
+		width = 40 // Minimum width
+	}
+	
+	// Height is based on actual content + borders
+	contentHeight := len(listItems)
+	dynamicListStyle := ms.listStyle.
+		Width(width - 4). // Account for margins
+		Height(contentHeight + 2) // Content + padding
+		
+	return dynamicListStyle.Render(strings.Join(listItems, "\n"))
 }
 
 // connectToServer starts the connection to the MCP server
