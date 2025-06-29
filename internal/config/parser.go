@@ -68,19 +68,30 @@ func ParseArgs(args []string, cmdFlag, urlFlag string, argsFlag []string) *Parse
 		}
 	}
 	
-	// If no flags, check for positional connection string
-	if result.Connection == nil && len(args) > 0 {
+	// Check if we need to parse positional connection string
+	argsToProcess := args
+	if result.Connection == nil && len(argsToProcess) > 0 {
 		// Skip if first arg is a subcommand
-		if !isKnownSubcommand(args[0]) && !strings.HasPrefix(args[0], "-") {
-			result.Connection = ParseConnectionString(args[0])
-			args = args[1:] // consume the connection string
+		if !isKnownSubcommand(argsToProcess[0]) && !strings.HasPrefix(argsToProcess[0], "-") {
+			result.Connection = ParseConnectionString(argsToProcess[0])
+			argsToProcess = argsToProcess[1:] // consume the connection string
+		}
+	} else if result.Connection != nil && len(args) > 0 {
+		// When using flags, we might have a positional arg that's not a connection
+		// Check if first arg looks like a connection string or is a subcommand
+		if isKnownSubcommand(args[0]) || 
+		   (len(args) > 1 && isKnownSubcommand(args[1])) {
+			// It's likely "some-command tool list" where some-command should be ignored
+			if !isKnownSubcommand(args[0]) && len(args) > 1 {
+				argsToProcess = args[1:] // skip the non-subcommand first arg
+			}
 		}
 	}
 	
 	// Extract subcommand and its args
-	if len(args) > 0 && isKnownSubcommand(args[0]) {
-		result.SubCommand = args[0]
-		result.SubCommandArgs = args[1:]
+	if len(argsToProcess) > 0 && isKnownSubcommand(argsToProcess[0]) {
+		result.SubCommand = argsToProcess[0]
+		result.SubCommandArgs = argsToProcess[1:]
 	}
 	
 	return result
