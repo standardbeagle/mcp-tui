@@ -31,11 +31,15 @@ func main() {
 	if len(os.Args) > 1 {
 		// Do a quick pre-parse to see if we have a connection string
 		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
-		if parsedArgs.Connection != nil && parsedArgs.SubCommand != "" {
-			// We have both connection and subcommand, store the connection
+		if parsedArgs.Connection != nil {
 			globalConnConfig = parsedArgs.Connection
-			// Make it available to CLI commands
-			cli.SetGlobalConnection(globalConnConfig)
+			
+			if parsedArgs.SubCommand != "" {
+				// We have both connection and subcommand
+				// Make it available to CLI commands
+				cli.SetGlobalConnection(globalConnConfig)
+			}
+			// else: TUI mode with connection string
 		}
 	}
 	
@@ -55,16 +59,19 @@ func main() {
 	// Create root command
 	rootCmd := createRootCommand(ctx)
 	
-	// If we detected a connection string with subcommand, we need to adjust the args
+	// If we detected a connection string, we need to adjust the args
 	// so Cobra doesn't treat the connection string as a command
-	if globalConnConfig != nil && len(os.Args) > 2 {
-		// Find where the subcommand starts
+	if globalConnConfig != nil {
 		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
+		
 		if parsedArgs.SubCommand != "" {
-			// Reconstruct args without the connection string
+			// CLI mode: Reconstruct args without the connection string
 			newArgs := []string{os.Args[0], parsedArgs.SubCommand}
 			newArgs = append(newArgs, parsedArgs.SubCommandArgs...)
 			os.Args = newArgs
+		} else {
+			// TUI mode: Remove the connection string from args
+			os.Args = []string{os.Args[0]}
 		}
 	}
 	
