@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
@@ -110,14 +111,48 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Define styles
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("15")). // White
+		MarginBottom(1)
+		
+	toolNameStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("12")) // Bright Blue
+		
+	descriptionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")). // Gray
+		MarginLeft(2)
+		
+	countStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")). // Gray
+		Italic(true).
+		MarginTop(1)
+	
+	// Header
+	fmt.Println(headerStyle.Render(fmt.Sprintf("Available Tools (%d)", len(tools))))
+	fmt.Println(strings.Repeat("─", 40))
+	
 	// Display tools in a nice format
-	for _, tool := range tools {
-		fmt.Printf("• %s", tool.Name)
-		if tool.Description != "" {
-			fmt.Printf(" - %s", tool.Description)
+	for i, tool := range tools {
+		// Add spacing between tools
+		if i > 0 {
+			fmt.Println()
 		}
-		fmt.Println()
+		
+		// Tool name
+		fmt.Println(toolNameStyle.Render(tool.Name))
+		
+		// Description on next line, indented
+		if tool.Description != "" {
+			fmt.Println(descriptionStyle.Render(tool.Description))
+		}
 	}
+	
+	// Footer
+	fmt.Println()
+	fmt.Println(countStyle.Render(fmt.Sprintf("Total: %d tools", len(tools))))
 
 	return nil
 }
@@ -157,21 +192,46 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(os.Stderr, "✅ Tool found\n\n")
 
+	// Define styles for tool details
+	labelStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("14")) // Cyan
+		
+	toolNameStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("12")) // Bright Blue
+		
+	descriptionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("15")) // White
+		
+	schemaStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("10")). // Green
+		MarginLeft(2)
+
 	// Display tool details
-	fmt.Printf("Tool: %s\n", foundTool.Name)
+	fmt.Println(labelStyle.Render("Tool:"), toolNameStyle.Render(foundTool.Name))
+	
 	if foundTool.Description != "" {
-		fmt.Printf("Description: %s\n", foundTool.Description)
+		fmt.Println()
+		fmt.Println(labelStyle.Render("Description:"))
+		fmt.Println(descriptionStyle.Render("  " + foundTool.Description))
 	}
 
 	// Display input schema if available
 	if foundTool.InputSchema.Type != "" || foundTool.InputSchema.Properties != nil {
-		fmt.Println("\nInput Schema:")
+		fmt.Println()
+		fmt.Println(labelStyle.Render("Input Schema:"))
+		
 		// Pretty print the JSON schema
-		schemaJSON, err := json.MarshalIndent(foundTool.InputSchema, "  ", "  ")
+		schemaJSON, err := json.MarshalIndent(foundTool.InputSchema, "", "  ")
 		if err != nil {
 			fmt.Printf("  Error formatting schema: %v\n", err)
 		} else {
-			fmt.Printf("  %s\n", string(schemaJSON))
+			// Apply styling to each line
+			lines := strings.Split(string(schemaJSON), "\n")
+			for _, line := range lines {
+				fmt.Println(schemaStyle.Render(line))
+			}
 		}
 	}
 
