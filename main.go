@@ -136,13 +136,8 @@ func createPromptCommand() *cobra.Command {
 }
 
 func createServerCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "server",
-		Short: "Show server information",
-		Run: func(cmd *cobra.Command, args []string) {
-			debug.Info("Server command not fully implemented yet")
-		},
-	}
+	serverCmd := cli.NewServerCommand()
+	return serverCmd.CreateCommand()
 }
 
 func parseConnectionArgs(cmd *cobra.Command, args []string, url string) *config.ConnectionConfig {
