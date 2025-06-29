@@ -227,7 +227,12 @@ func (s *service) Disconnect() error {
 		return nil
 	}
 	
-	// Close the client and cleanup
+	// Close the client connection
+	if err := s.client.Close(); err != nil {
+		return fmt.Errorf("failed to close client: %w", err)
+	}
+	
+	// Cleanup
 	s.client = nil
 	s.info.Connected = false
 	return nil

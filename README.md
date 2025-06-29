@@ -171,6 +171,23 @@ make test-servers
 
 ## 📋 Commands Reference
 
+### Command Line Arguments
+
+**Passing Multiple Arguments:**
+```bash
+# Use comma-separated values for multiple arguments
+mcp-tui --cmd ./server --args arg1,arg2,arg3
+
+# For arguments with spaces, quote the entire args value
+mcp-tui --cmd ./server --args "arg with spaces,another arg"
+
+# Example with npm/npx
+mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio"
+
+# Real example with environment variables
+mcp-tui --cmd ./brum --args "--mcp,--env,key=value"
+```
+
 ### Tool Operations
 ```bash
 mcp-tui tool list                      # List all available tools
