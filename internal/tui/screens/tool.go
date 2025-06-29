@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +39,11 @@ type ToolScreen struct {
 	result         *imcp.CallToolResult
 	resultJSON     string // Pretty-printed JSON result
 	
+	// Result viewing mode
+	viewingResult  bool        // Whether we're in result viewing mode
+	resultFields   []resultField // Parsed JSON fields
+	resultCursor   int        // Current field in result view
+	
 	// Styles
 	titleStyle    lipgloss.Style
 	labelStyle    lipgloss.Style
@@ -59,6 +65,13 @@ type toolField struct {
 	value           string
 	cursorPos       int
 	validationError string // Real-time validation error
+}
+
+// resultField represents a parsed field from JSON result
+type resultField struct {
+	path  string // JSON path like "data.id" or "items[0].name"
+	value string // String representation of the value
+	raw   interface{} // Raw value
 }
 
 // NewToolScreen creates a new tool execution screen
@@ -221,6 +234,9 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				ts.resultJSON = resultText.String()
+				
+				// Parse result fields for viewing
+				ts.parseResultFields()
 			}
 			
 			// Show execution count in status
@@ -269,6 +285,59 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ts, nil
 	}
 	
+	// Special handling for result viewing mode
+	if ts.viewingResult && ts.result != nil {
+		switch msg.String() {
+		case "up", "k":
+			if ts.resultCursor > 0 {
+				ts.resultCursor--
+			}
+			return ts, nil
+			
+		case "down", "j":
+			if ts.resultCursor < len(ts.resultFields)-1 {
+				ts.resultCursor++
+			}
+			return ts, nil
+			
+		case "enter", "c", "y":
+			// Copy selected field value
+			if ts.resultCursor < len(ts.resultFields) {
+				field := ts.resultFields[ts.resultCursor]
+				if err := clipboard.WriteAll(field.value); err == nil {
+					ts.SetStatus(fmt.Sprintf("Copied '%s' to clipboard!", field.path), StatusSuccess)
+				} else {
+					ts.SetStatus("Failed to copy to clipboard", StatusError)
+				}
+			}
+			return ts, nil
+			
+		case "v":
+			// Exit result viewing mode
+			ts.viewingResult = false
+			ts.SetStatus("", StatusInfo)
+			return ts, nil
+			
+		case "ctrl+c":
+			// Copy entire result
+			if err := clipboard.WriteAll(ts.resultJSON); err == nil {
+				ts.SetStatus("Copied entire result to clipboard!", StatusSuccess)
+			} else {
+				ts.SetStatus("Failed to copy to clipboard", StatusError)
+			}
+			return ts, nil
+			
+		case "esc", "q":
+			// Exit result viewing mode
+			ts.viewingResult = false
+			ts.SetStatus("", StatusInfo)
+			return ts, nil
+		}
+		
+		// Don't process other keys in viewing mode
+		return ts, nil
+	}
+	
 	switch msg.String() {
 	case "ctrl+c":
 		// Copy result to clipboard if available
@@ -281,6 +350,15 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			// No result, go back
 			return ts, func() tea.Msg { return BackMsg{} }
+		}
+		return ts, nil
+		
+	case "v":
+		// Enter result viewing mode if we have results
+		if ts.result != nil && len(ts.resultFields) > 0 {
+			ts.viewingResult = true
+			ts.resultCursor = 0
+			ts.SetStatus("Navigate with ↑/↓, Enter to copy field, v/Esc to exit", StatusInfo)
 		}
 		return ts, nil
 		
@@ -734,7 +812,60 @@ func (ts *ToolScreen) View() string {
 			builder.WriteString(ts.labelStyle.Render("Result:"))
 		}
 		builder.WriteString("\n")
-		builder.WriteString(ts.resultStyle.Render(ts.resultJSON))
+		
+		// Show result viewing mode or normal result
+		if ts.viewingResult && len(ts.resultFields) > 0 {
+			// Field selection view
+			fieldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+			selectedFieldStyle := lipgloss.NewStyle().
+				Background(lipgloss.Color("240")).
+				Foreground(lipgloss.Color("15")).
+				Bold(true)
+			pathStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("14")). // Cyan
+				Bold(true)
+			valueStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("10")) // Green
+			
+			builder.WriteString(fieldStyle.Render("Select a field to copy its value:"))
+			builder.WriteString("\n\n")
+			
+			// Show fields
+			for i, field := range ts.resultFields {
+				var line string
+				if i == ts.resultCursor {
+					line = fmt.Sprintf("▶ %s = %s", 
+						pathStyle.Render(field.path), 
+						valueStyle.Render(field.value))
+					builder.WriteString(selectedFieldStyle.Render(line))
+				} else {
+					line = fmt.Sprintf("  %s = %s", 
+						pathStyle.Render(field.path), 
+						valueStyle.Render(field.value))
+					builder.WriteString(line)
+				}
+				builder.WriteString("\n")
+			}
+			
+			// Help text for viewing mode
+			viewHelpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("243")).
+				Italic(true)
+			builder.WriteString("\n")
+			builder.WriteString(viewHelpStyle.Render("↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
+		} else {
+			// Normal result display
+			builder.WriteString(ts.resultStyle.Render(ts.resultJSON))
+			
+			// Show hint about viewing mode if we have parseable fields
+			if len(ts.resultFields) > 1 {
+				hintStyle := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("243")).
+					Italic(true)
+				builder.WriteString("\n")
+				builder.WriteString(hintStyle.Render("Press 'v' to view individual fields"))
+			}
+		}
 		builder.WriteString("\n")
 	}
 	
@@ -748,14 +879,23 @@ func (ts *ToolScreen) View() string {
 	// Help text
 	builder.WriteString("\n")
 	var helpText string
-	if ts.result != nil {
-		helpText = "Ctrl+C: Copy result • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+	if ts.viewingResult {
+		// Already shown inline help for viewing mode
+		helpText = ""
+	} else if ts.result != nil {
+		if len(ts.resultFields) > 1 {
+			helpText = "v: View fields • Ctrl+C: Copy all • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+		} else {
+			helpText = "Ctrl+C: Copy result • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+		}
 	} else if ts.cursor < len(ts.fields) {
 		helpText = "Tab: Navigate • Enter: Submit • Ctrl+V: Paste • Ctrl+L: Debug Log • b: Back • Esc: Back"
 	} else {
 		helpText = "Tab: Navigate • Enter: Submit • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 	}
-	builder.WriteString(ts.helpStyle.Render(helpText))
+	if helpText != "" {
+		builder.WriteString(ts.helpStyle.Render(helpText))
+	}
 	
 	// Status message
 	if statusMsg, level := ts.StatusMessage(); statusMsg != "" {
@@ -776,4 +916,75 @@ func (ts *ToolScreen) View() string {
 	}
 	
 	return builder.String()
+}
+
+// parseResultFields extracts copyable fields from JSON result
+func (ts *ToolScreen) parseResultFields() {
+	ts.resultFields = []resultField{}
+	
+	// Try to parse as JSON
+	var data interface{}
+	if err := json.Unmarshal([]byte(ts.resultJSON), &data); err != nil {
+		// Not JSON, treat as single text field
+		ts.resultFields = append(ts.resultFields, resultField{
+			path:  "result",
+			value: ts.resultJSON,
+			raw:   ts.resultJSON,
+		})
+		return
+	}
+	
+	// Recursively extract fields
+	ts.extractFields("", data)
+	
+	// Sort fields by path for consistent ordering
+	sort.Slice(ts.resultFields, func(i, j int) bool {
+		return ts.resultFields[i].path < ts.resultFields[j].path
+	})
+}
+
+// extractFields recursively extracts fields from JSON data
+func (ts *ToolScreen) extractFields(prefix string, data interface{}) {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		for key, value := range v {
+			path := key
+			if prefix != "" {
+				path = prefix + "." + key
+			}
+			
+			switch val := value.(type) {
+			case map[string]interface{}, []interface{}:
+				// Recurse into nested structures
+				ts.extractFields(path, val)
+			default:
+				// Leaf value
+				strVal := fmt.Sprintf("%v", value)
+				if strVal != "" && strVal != "null" {
+					ts.resultFields = append(ts.resultFields, resultField{
+						path:  path,
+						value: strVal,
+						raw:   value,
+					})
+				}
+			}
+		}
+		
+	case []interface{}:
+		for i, item := range v {
+			path := fmt.Sprintf("%s[%d]", prefix, i)
+			ts.extractFields(path, item)
+		}
+		
+	default:
+		// Leaf value
+		strVal := fmt.Sprintf("%v", v)
+		if strVal != "" && strVal != "null" && prefix != "" {
+			ts.resultFields = append(ts.resultFields, resultField{
+				path:  prefix,
+				value: strVal,
+				raw:   v,
+			})
+		}
+	}
 }
