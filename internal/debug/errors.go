@@ -178,7 +178,7 @@ func RecoveryHandler() {
 		case error:
 			err = v
 		case string:
-			err = fmt.Errorf(v)
+			err = fmt.Errorf("%s", v)
 		default:
 			err = fmt.Errorf("unknown panic: %v", v)
 		}

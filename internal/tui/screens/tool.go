@@ -31,10 +31,12 @@ type ToolScreen struct {
 	cursor       int // current field index
 	
 	// Execution state
-	executing    bool
+	executing      bool
 	executionStart time.Time
-	result       *imcp.CallToolResult
-	resultJSON   string // Pretty-printed JSON result
+	executionCount int       // Number of times the tool has been executed
+	lastExecution  time.Time // Time of last execution
+	result         *imcp.CallToolResult
+	resultJSON     string // Pretty-printed JSON result
 	
 	// Styles
 	titleStyle    lipgloss.Style
@@ -182,6 +184,9 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 	case toolExecutionCompleteMsg:
 		ts.executing = false
+		ts.lastExecution = time.Now()
+		ts.executionCount++
+		
 		if msg.Error != nil {
 			ts.SetError(msg.Error)
 		} else {
@@ -217,7 +222,13 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				ts.resultJSON = resultText.String()
 			}
-			ts.SetStatus("Tool executed successfully", StatusSuccess)
+			
+			// Show execution count in status
+			execMsg := fmt.Sprintf("Tool executed successfully (#%d)", ts.executionCount)
+			if ts.executionCount > 1 {
+				execMsg = fmt.Sprintf("Tool executed successfully (#%d) ✨", ts.executionCount)
+			}
+			ts.SetStatus(execMsg, StatusSuccess)
 		}
 		return ts, nil
 		
@@ -396,14 +407,26 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 	// Validate required fields
 	for _, field := range ts.fields {
 		if field.required && field.value == "" {
-			ts.SetError(fmt.Errorf("required field '%s' is empty", field.name))
-			return nil
+			// Array fields are allowed to be empty (will be sent as [])
+			if field.fieldType != "array" {
+				ts.SetError(fmt.Errorf("required field '%s' is empty", field.name))
+				return nil
+			}
 		}
 	}
 	
 	// Build arguments map
 	args := make(map[string]interface{})
 	for _, field := range ts.fields {
+		// Special handling for array fields - include even if empty
+		if field.fieldType == "array" && field.value == "" {
+			// Only include empty array if field is required or user explicitly entered []
+			if field.required {
+				args[field.name] = []interface{}{}
+			}
+			continue
+		}
+		
 		if field.value != "" {
 			// Try to parse the value based on field type
 			switch field.fieldType {
@@ -438,9 +461,12 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 				} else {
 					// Try parsing as comma-separated
 					parts := strings.Split(field.value, ",")
-					arr := make([]interface{}, len(parts))
-					for i, p := range parts {
-						arr[i] = strings.TrimSpace(p)
+					arr := make([]interface{}, 0, len(parts))
+					for _, p := range parts {
+						trimmed := strings.TrimSpace(p)
+						if trimmed != "" {
+							arr = append(arr, trimmed)
+						}
 					}
 					args[field.name] = arr
 				}
@@ -469,20 +495,29 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 		tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 			return toolSpinnerTickMsg{}
 		}),
-		// Tool execution
+		// Tool execution with minimum display time
 		func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		
-		result, err := ts.mcpService.CallTool(ctx, imcp.CallToolRequest{
-			Name:      ts.tool.Name,
-			Arguments: args,
-		})
-		
-		return toolExecutionCompleteMsg{
-			Result: result,
-			Error:  err,
-		}
+			// Record start time to ensure minimum display duration
+			startTime := time.Now()
+			
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			
+			result, err := ts.mcpService.CallTool(ctx, imcp.CallToolRequest{
+				Name:      ts.tool.Name,
+				Arguments: args,
+			})
+			
+			// Ensure execution is visible for at least 500ms
+			elapsed := time.Since(startTime)
+			if elapsed < 500*time.Millisecond {
+				time.Sleep(500*time.Millisecond - elapsed)
+			}
+			
+			return toolExecutionCompleteMsg{
+				Result: result,
+				Error:  err,
+			}
 		},
 	)
 }
@@ -548,8 +583,12 @@ func (ts *ToolScreen) validateField(index int) {
 func (ts *ToolScreen) View() string {
 	var builder strings.Builder
 	
-	// Title
-	builder.WriteString(ts.titleStyle.Render(fmt.Sprintf("Execute Tool: %s", ts.tool.Name)))
+	// Title with execution count
+	title := fmt.Sprintf("Execute Tool: %s", ts.tool.Name)
+	if ts.executionCount > 0 {
+		title = fmt.Sprintf("Execute Tool: %s (Run #%d)", ts.tool.Name, ts.executionCount+1)
+	}
+	builder.WriteString(ts.titleStyle.Render(title))
 	builder.WriteString("\n")
 	
 	if ts.tool.Description != "" {
@@ -668,9 +707,27 @@ func (ts *ToolScreen) View() string {
 		}
 	}
 	
-	// Result
+	// Result with execution info
 	if ts.result != nil {
 		builder.WriteString("\n")
+		
+		// Show execution header with count and timestamp
+		execInfoStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("99")).
+			Bold(true)
+		
+		execInfo := fmt.Sprintf("Execution #%d", ts.executionCount)
+		if ts.executionCount > 1 {
+			// Add sparkle for re-executions
+			execInfo = fmt.Sprintf("✨ Execution #%d", ts.executionCount)
+		}
+		
+		// Add timestamp
+		execInfo += fmt.Sprintf(" • %s", ts.lastExecution.Format("15:04:05"))
+		
+		builder.WriteString(execInfoStyle.Render(execInfo))
+		builder.WriteString("\n")
+		
 		if ts.result.IsError {
 			builder.WriteString(ts.errorStyle.Render("Error Result:"))
 		} else {

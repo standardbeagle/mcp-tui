@@ -32,15 +32,37 @@ func (c *BaseCommand) WithTimeout(timeout time.Duration) *BaseCommand {
 
 // CreateClient creates and initializes an MCP client
 func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
-	// Get global flags
-	command := cmd.Flag("cmd").Value.String()
-	args := cmd.Flag("args").Value.String()
-	url := cmd.Flag("url").Value.String()
-	transportType := cmd.Flag("transport").Value.String()
+	// Get global flags with nil checks
+	var command, args, url, transportType string
 	
-	// Default to stdio if not specified
+	if flag := cmd.Flag("cmd"); flag != nil && flag.Value != nil {
+		command = flag.Value.String()
+	}
+	if flag := cmd.Flag("args"); flag != nil && flag.Value != nil {
+		args = flag.Value.String()
+	}
+	if flag := cmd.Flag("url"); flag != nil && flag.Value != nil {
+		url = flag.Value.String()
+	}
+	if flag := cmd.Flag("transport"); flag != nil && flag.Value != nil {
+		transportType = flag.Value.String()
+	}
+	
+	// Determine transport type based on provided flags if not explicitly set
 	if transportType == "" {
-		transportType = "stdio"
+		if command != "" {
+			// --cmd provided, use stdio
+			transportType = "stdio"
+		} else if url != "" {
+			// --url provided, determine if http or sse
+			if strings.HasSuffix(url, "/sse") || strings.Contains(url, "sse") {
+				transportType = "sse"
+			} else {
+				transportType = "http"
+			}
+		} else {
+			return fmt.Errorf("either --cmd or --url must be provided")
+		}
 	}
 	
 	// Create connection config
@@ -48,10 +70,14 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 		Type: config.TransportType(transportType),
 	}
 	
+	// Validate and configure based on transport type
 	switch transportType {
 	case "stdio":
 		if command == "" {
 			return fmt.Errorf("command is required for stdio transport (use --cmd flag)")
+		}
+		if url != "" {
+			return fmt.Errorf("cannot use --url with stdio transport")
 		}
 		connConfig.Command = command
 		// Parse args string into slice
@@ -62,6 +88,9 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	case "sse", "http":
 		if url == "" {
 			return fmt.Errorf("URL is required for %s transport (use --url flag)", transportType)
+		}
+		if command != "" {
+			return fmt.Errorf("cannot use --cmd with %s transport", transportType)
 		}
 		connConfig.URL = url
 	default:

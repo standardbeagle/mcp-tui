@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -68,15 +70,74 @@ type ServerInfo struct {
 
 // service implements the Service interface
 type service struct {
-	client *client.Client
-	info   *ServerInfo
+	client    *client.Client
+	info      *ServerInfo
+	requestID int
+	mu        sync.Mutex
 }
 
 // NewService creates a new MCP service
 func NewService() Service {
 	return &service{
-		info: &ServerInfo{},
+		info:      &ServerInfo{},
+		requestID: 0,
 	}
+}
+
+// getNextRequestID returns the next request ID
+func (s *service) getNextRequestID() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requestID++
+	return s.requestID
+}
+
+// Helper functions for MCP logging
+
+func logMCPRequest(method string, params interface{}, id interface{}) {
+	msg := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	}
+	if id != nil {
+		msg["id"] = id
+	}
+	msgJSON, _ := json.Marshal(msg)
+	debug.LogMCPOutgoing(string(msgJSON), nil)
+}
+
+func logMCPResponse(result interface{}, id interface{}) {
+	msg := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result":  result,
+	}
+	msgJSON, _ := json.Marshal(msg)
+	debug.LogMCPIncoming(string(msgJSON), nil)
+}
+
+func logMCPError(code int, message string, id interface{}) {
+	msg := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+		},
+	}
+	msgJSON, _ := json.Marshal(msg)
+	debug.LogMCPIncoming(string(msgJSON), nil)
+}
+
+func logMCPNotification(method string, params interface{}) {
+	msg := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	}
+	msgJSON, _ := json.Marshal(msg)
+	debug.LogMCPIncoming(string(msgJSON), nil)
 }
 
 // Connect establishes connection to MCP server
@@ -133,29 +194,23 @@ func (s *service) Connect(ctx context.Context, config *config.ConnectionConfig) 
 	}
 	
 	// Log the initialization request
-	debug.LogMCPOutgoing("Initialize request", map[string]interface{}{
-		"method": "initialize",
-		"params": initRequest.Params,
-	})
+	reqID := s.getNextRequestID()
+	logMCPRequest("initialize", initRequest.Params, reqID)
 	
 	initResult, err := mcpClient.Initialize(ctx, initRequest)
 	if err != nil {
 		// Log the initialization error
-		debug.LogMCPIncoming("Initialize error", map[string]interface{}{
-			"error": err.Error(),
-		})
+		logMCPError(-32603, err.Error(), reqID)
 		mcpClient.Close()
 		return fmt.Errorf("failed to initialize client: %w", err)
 	}
 	
 	// Log the successful initialization
-	debug.LogMCPIncoming("Initialize response", map[string]interface{}{
-		"result": map[string]interface{}{
-			"protocolVersion": initResult.ProtocolVersion,
-			"serverInfo":      initResult.ServerInfo,
-			"capabilities":    initResult.Capabilities,
-		},
-	})
+	logMCPResponse(map[string]interface{}{
+		"protocolVersion": initResult.ProtocolVersion,
+		"serverInfo":      initResult.ServerInfo,
+		"capabilities":    initResult.Capabilities,
+	}, reqID)
 	
 	s.client = mcpClient
 	s.info.Connected = true
@@ -191,26 +246,20 @@ func (s *service) ListTools(ctx context.Context) ([]mcp.Tool, error) {
 	}
 	
 	// Log the outgoing request
-	debug.LogMCPOutgoing("ListTools request", map[string]interface{}{
-		"method": "tools/list",
-		"params": map[string]interface{}{},
-	})
+	reqID := s.getNextRequestID()
+	logMCPRequest("tools/list", map[string]interface{}{}, reqID)
 	
 	result, err := s.client.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
 		// Log the error response
-		debug.LogMCPIncoming("ListTools error", map[string]interface{}{
-			"error": err.Error(),
-		})
+		logMCPError(-32603, err.Error(), 2)
 		return nil, fmt.Errorf("failed to list tools: %w", err)
 	}
 	
 	// Log the successful response
-	debug.LogMCPIncoming("ListTools response", map[string]interface{}{
-		"result": map[string]interface{}{
-			"tools": result.Tools,
-		},
-	})
+	logMCPResponse(map[string]interface{}{
+		"tools": result.Tools,
+	}, 2)
 	
 	return result.Tools, nil
 }
@@ -230,28 +279,21 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 	}
 	
 	// Log the outgoing request
-	debug.LogMCPOutgoing("CallTool request", map[string]interface{}{
-		"method": "tools/call",
-		"params": mcpReq.Params,
-	})
+	logMCPRequest("tools/call", mcpReq.Params, 3)
 	
 	// Call the tool
 	result, err := s.client.CallTool(ctx, mcpReq)
 	if err != nil {
 		// Log the error response
-		debug.LogMCPIncoming("CallTool error", map[string]interface{}{
-			"error": err.Error(),
-		})
+		logMCPError(-32603, err.Error(), 3)
 		return nil, fmt.Errorf("failed to call tool: %w", err)
 	}
 	
 	// Log the successful response
-	debug.LogMCPIncoming("CallTool response", map[string]interface{}{
-		"result": map[string]interface{}{
-			"content": result.Content,
-			"isError": result.IsError,
-		},
-	})
+	logMCPResponse(map[string]interface{}{
+		"content": result.Content,
+		"isError": result.IsError,
+	}, 3)
 	
 	return &CallToolResult{
 		Content: result.Content,
@@ -267,26 +309,19 @@ func (s *service) ListResources(ctx context.Context) ([]mcp.Resource, error) {
 	}
 	
 	// Log the outgoing request
-	debug.LogMCPOutgoing("ListResources request", map[string]interface{}{
-		"method": "resources/list",
-		"params": map[string]interface{}{},
-	})
+	logMCPRequest("resources/list", map[string]interface{}{}, 4)
 	
 	result, err := s.client.ListResources(ctx, mcp.ListResourcesRequest{})
 	if err != nil {
 		// Log the error response
-		debug.LogMCPIncoming("ListResources error", map[string]interface{}{
-			"error": err.Error(),
-		})
+		logMCPError(-32603, err.Error(), 4)
 		return nil, fmt.Errorf("failed to list resources: %w", err)
 	}
 	
 	// Log the successful response
-	debug.LogMCPIncoming("ListResources response", map[string]interface{}{
-		"result": map[string]interface{}{
-			"resources": result.Resources,
-		},
-	})
+	logMCPResponse(map[string]interface{}{
+		"resources": result.Resources,
+	}, 4)
 	
 	return result.Resources, nil
 }
@@ -309,26 +344,19 @@ func (s *service) ListPrompts(ctx context.Context) ([]mcp.Prompt, error) {
 	}
 	
 	// Log the outgoing request
-	debug.LogMCPOutgoing("ListPrompts request", map[string]interface{}{
-		"method": "prompts/list",
-		"params": map[string]interface{}{},
-	})
+	logMCPRequest("prompts/list", map[string]interface{}{}, 5)
 	
 	result, err := s.client.ListPrompts(ctx, mcp.ListPromptsRequest{})
 	if err != nil {
 		// Log the error response
-		debug.LogMCPIncoming("ListPrompts error", map[string]interface{}{
-			"error": err.Error(),
-		})
+		logMCPError(-32603, err.Error(), 5)
 		return nil, fmt.Errorf("failed to list prompts: %w", err)
 	}
 	
 	// Log the successful response
-	debug.LogMCPIncoming("ListPrompts response", map[string]interface{}{
-		"result": map[string]interface{}{
-			"prompts": result.Prompts,
-		},
-	})
+	logMCPResponse(map[string]interface{}{
+		"prompts": result.Prompts,
+	}, 5)
 	
 	return result.Prompts, nil
 }

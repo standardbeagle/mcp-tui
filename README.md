@@ -47,6 +47,12 @@ mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
 mcp-tui --url http://localhost:8000/mcp
 ```
 
+**Transport Type Selection:**
+- `--cmd` automatically selects STDIO transport
+- `--url` automatically selects HTTP or SSE based on URL pattern
+- `--transport` flag can override automatic detection
+- Cannot use both `--cmd` and `--url` together
+
 **📋 Interactive TUI Mode:**
 ```bash
 mcp-tui  # No arguments = connection setup screen
@@ -228,6 +234,46 @@ This provides:
 - **Error context and stack traces** - Full error details
 - **Performance metrics** - Timing and resource usage
 - **Component-specific logging** - Structured logs by system component
+
+## ⌨️ Keyboard Shortcuts
+
+### Global Shortcuts
+- **Ctrl+L** - Open debug log panel from any screen
+- **Ctrl+C / q** - Quit the application
+- **Tab / Shift+Tab** - Navigate between UI elements
+- **Enter** - Select/execute current item
+
+### Main Screen
+- **↑↓ / j/k** - Navigate through lists
+- **1-9** - Quick select tools by number
+- **PgUp/PgDn** - Page through long lists
+- **Home/End** - Jump to start/end of list
+- **r** - Refresh current tab
+- **Tab** - Switch between tabs (Tools/Resources/Prompts/Events)
+
+### Tool Execution Screen
+- **Tab** - Navigate between form fields
+- **Enter** - Execute tool (when on button)
+- **Ctrl+V** - Paste into current field
+- **Ctrl+C** - Copy result to clipboard (after execution)
+- **b / Alt+←** - Go back to tool list
+- **Esc** - Cancel and go back
+
+### Debug Log Panel
+- **↑↓** - Navigate log entries
+- **Enter** - View detailed JSON for MCP messages
+- **c/y** - Copy current log entry
+- **r** - Refresh logs
+- **x** - Clear all logs
+- **b / Alt+←** - Return to previous screen
+
+### Clipboard Support
+MCP-TUI supports clipboard operations for easy data transfer:
+- **Copy results**: Press Ctrl+C after tool execution to copy the result
+- **Paste inputs**: Press Ctrl+V in any input field to paste from clipboard
+- **Copy logs**: Press c or y in the debug panel to copy log entries
+
+**Note**: Text selection with mouse is not supported in the TUI. Use the built-in copy commands instead.
 
 ### Common Error Scenarios
 
