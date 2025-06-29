@@ -18,6 +18,21 @@ type BaseCommand struct {
 	timeout time.Duration
 }
 
+// getGlobalConnection returns the global connection config if available
+func (c *BaseCommand) getGlobalConnection() *config.ConnectionConfig {
+	// This would need to be passed down from main somehow
+	// For now, we'll use a package variable approach
+	return globalConnectionConfig
+}
+
+// Package variable to store global connection config
+var globalConnectionConfig *config.ConnectionConfig
+
+// SetGlobalConnection sets the global connection config
+func SetGlobalConnection(conn *config.ConnectionConfig) {
+	globalConnectionConfig = conn
+}
+
 // NewBaseCommand creates a new base command
 func NewBaseCommand() *BaseCommand {
 	return &BaseCommand{
@@ -33,75 +48,42 @@ func (c *BaseCommand) WithTimeout(timeout time.Duration) *BaseCommand {
 
 // CreateClient creates and initializes an MCP client
 func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
-	// Get global flags with nil checks
-	var command, url, transportType string
-	var args []string
+	var connConfig *config.ConnectionConfig
 	
-	if flag := cmd.Flag("cmd"); flag != nil && flag.Value != nil {
-		command = flag.Value.String()
-	}
-	if flag := cmd.Flag("args"); flag != nil && flag.Value != nil {
-		// Get the string slice value - this handles multiple --args flags
+	// Check if we have a global connection config (from natural CLI usage)
+	// This is set when using: mcp-tui "server command" tool list
+	if globalConnConfig := c.getGlobalConnection(); globalConnConfig != nil {
+		connConfig = globalConnConfig
+	} else {
+		// Parse from flags
+		cmdFlag, _ := cmd.Flags().GetString("cmd")
+		urlFlag, _ := cmd.Flags().GetString("url")
+		transportFlag, _ := cmd.Flags().GetString("transport")
+		
+		// Handle args - support both comma-separated and multiple flags
+		var argsFlag []string
 		if sliceVal, err := cmd.Flags().GetStringSlice("args"); err == nil {
 			// If we got a single element with commas, split it (legacy format)
 			// Otherwise use as-is (multiple --args flags)
 			if len(sliceVal) == 1 && strings.Contains(sliceVal[0], ",") {
-				args = strings.Split(sliceVal[0], ",")
+				argsFlag = strings.Split(sliceVal[0], ",")
 			} else {
-				args = sliceVal
+				argsFlag = sliceVal
 			}
 		}
-	}
-	if flag := cmd.Flag("url"); flag != nil && flag.Value != nil {
-		url = flag.Value.String()
-	}
-	if flag := cmd.Flag("transport"); flag != nil && flag.Value != nil {
-		transportType = flag.Value.String()
-	}
-	
-	// Determine transport type based on provided flags if not explicitly set
-	if transportType == "" {
-		if command != "" {
-			// --cmd provided, use stdio
-			transportType = "stdio"
-		} else if url != "" {
-			// --url provided, determine if http or sse
-			if strings.HasSuffix(url, "/sse") || strings.Contains(url, "sse") {
-				transportType = "sse"
-			} else {
-				transportType = "http"
-			}
-		} else {
-			return fmt.Errorf("either --cmd or --url must be provided")
+		
+		// Use the unified parser
+		parsedArgs := config.ParseArgs(cmd.Flags().Args(), cmdFlag, urlFlag, argsFlag)
+		connConfig = parsedArgs.Connection
+		
+		// Apply explicit transport type if specified
+		if transportFlag != "" && connConfig != nil {
+			connConfig.Type = config.TransportType(transportFlag)
 		}
 	}
 	
-	// Create connection config
-	connConfig := &config.ConnectionConfig{
-		Type: config.TransportType(transportType),
-	}
-	
-	// Validate and configure based on transport type
-	switch transportType {
-	case "stdio":
-		if command == "" {
-			return fmt.Errorf("command is required for stdio transport (use --cmd flag)")
-		}
-		if url != "" {
-			return fmt.Errorf("cannot use --url with stdio transport")
-		}
-		connConfig.Command = command
-		connConfig.Args = args
-	case "sse", "http":
-		if url == "" {
-			return fmt.Errorf("URL is required for %s transport (use --url flag)", transportType)
-		}
-		if command != "" {
-			return fmt.Errorf("cannot use --cmd with %s transport", transportType)
-		}
-		connConfig.URL = url
-	default:
-		return fmt.Errorf("unsupported transport type: %s", transportType)
+	if connConfig == nil {
+		return fmt.Errorf("no connection specified. Use --cmd for stdio servers or --url for HTTP/SSE servers")
 	}
 	
 	// Create service and connect

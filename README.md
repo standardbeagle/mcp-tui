@@ -40,11 +40,16 @@ make install
 
 **🚀 Super Simple - One Command:**
 ```bash
-# Just put your MCP server command in quotes - that's it!
+# Interactive TUI mode - just put your MCP server command in quotes
 mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
+
+# CLI mode - add subcommands after the server command
+mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool list
+mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool call echo message="Hello"
 
 # For HTTP/SSE servers
 mcp-tui --url http://localhost:8000/mcp
+mcp-tui --url http://localhost:8000/mcp tool list
 ```
 
 **Transport Type Selection:**

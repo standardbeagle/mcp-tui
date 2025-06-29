@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"os"
-	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -18,17 +17,26 @@ import (
 var (
 	version = "0.1.0"
 	cfg     *config.Config
+	
+	// Global connection config that can be passed to subcommands
+	globalConnConfig *config.ConnectionConfig
 )
 
 func main() {
 	// Initialize configuration
 	cfg = config.Default()
 	
-	// Check if this looks like a direct connection command
-	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") && !isKnownSubcommand(os.Args[1]) {
-		// This is likely a connection string, handle it directly
-		handleDirectConnection(os.Args[1:])
-		return
+	// Early parse to check for connection string pattern
+	// This allows: mcp-tui "server command" tool list
+	if len(os.Args) > 1 {
+		// Do a quick pre-parse to see if we have a connection string
+		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
+		if parsedArgs.Connection != nil && parsedArgs.SubCommand != "" {
+			// We have both connection and subcommand, store the connection
+			globalConnConfig = parsedArgs.Connection
+			// Make it available to CLI commands
+			cli.SetGlobalConnection(globalConnConfig)
+		}
 	}
 	
 	// Set up graceful shutdown
@@ -46,6 +54,19 @@ func main() {
 	
 	// Create root command
 	rootCmd := createRootCommand(ctx)
+	
+	// If we detected a connection string with subcommand, we need to adjust the args
+	// so Cobra doesn't treat the connection string as a command
+	if globalConnConfig != nil && len(os.Args) > 2 {
+		// Find where the subcommand starts
+		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
+		if parsedArgs.SubCommand != "" {
+			// Reconstruct args without the connection string
+			newArgs := []string{os.Args[0], parsedArgs.SubCommand}
+			newArgs = append(newArgs, parsedArgs.SubCommandArgs...)
+			os.Args = newArgs
+		}
+	}
 	
 	// Execute
 	if err := rootCmd.Execute(); err != nil {
@@ -82,8 +103,18 @@ Examples:
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			// Parse connection arguments
-			connectionConfig := parseConnectionArgs(cmd, args, url)
+			// Use global connection if available (from pre-parse)
+			connectionConfig := globalConnConfig
+			
+			// If not pre-parsed, parse now
+			if connectionConfig == nil {
+				cmdFlag, _ := cmd.Flags().GetString("cmd")
+				argsFlag, _ := cmd.Flags().GetStringSlice("args")
+				urlFlag, _ := cmd.Flags().GetString("url")
+				
+				parsedArgs := config.ParseArgs(args, cmdFlag, urlFlag, argsFlag)
+				connectionConfig = parsedArgs.Connection
+			}
 			
 			// Run TUI mode with connection config
 			runTUIMode(ctx, connectionConfig)
@@ -140,48 +171,6 @@ func createServerCommand() *cobra.Command {
 	return serverCmd.CreateCommand()
 }
 
-func parseConnectionArgs(cmd *cobra.Command, args []string, url string) *config.ConnectionConfig {
-	// If URL is provided, it's HTTP/SSE mode
-	if url != "" {
-		transportType := config.TransportHTTP
-		if strings.Contains(url, "/events") || strings.Contains(url, "sse") {
-			transportType = config.TransportSSE
-		}
-		
-		return &config.ConnectionConfig{
-			Type: transportType,
-			URL:  url,
-		}
-	}
-	
-	// If command and args are provided via flags
-	if cfg.Command != "" {
-		return &config.ConnectionConfig{
-			Type:    config.TransportStdio,
-			Command: cfg.Command,
-			Args:    cfg.Args,
-		}
-	}
-	
-	// If positional argument is provided, parse it as STDIO command
-	if len(args) > 0 {
-		connectionString := args[0]
-		parts := strings.Fields(connectionString)
-		if len(parts) > 0 {
-			command := parts[0]
-			cmdArgs := parts[1:]
-			
-			return &config.ConnectionConfig{
-				Type:    config.TransportStdio,
-				Command: command,
-				Args:    cmdArgs,
-			}
-		}
-	}
-	
-	// No connection info provided - use interactive mode
-	return nil
-}
 
 func runTUIMode(ctx context.Context, connectionConfig *config.ConnectionConfig) {
 	logger := debug.Component("tui")
@@ -197,81 +186,3 @@ func runTUIMode(ctx context.Context, connectionConfig *config.ConnectionConfig) 
 	logger.Info("TUI mode ended")
 }
 
-// isKnownSubcommand checks if the argument is a known subcommand
-func isKnownSubcommand(arg string) bool {
-	knownCommands := []string{"tool", "resource", "prompt", "server", "completion", "help"}
-	for _, cmd := range knownCommands {
-		if arg == cmd {
-			return true
-		}
-	}
-	return false
-}
-
-// handleDirectConnection handles direct connection strings bypassing Cobra entirely
-func handleDirectConnection(args []string) {
-	// Initialize logging with defaults first
-	debug.InitializeLogging("info", false)
-	
-	// Parse flags from the args manually
-	var debugMode bool
-	var logLevel string = "info"
-	var connectionString string
-	
-	// Simple flag parsing
-	filteredArgs := []string{}
-	for i, arg := range args {
-		if arg == "--debug" {
-			debugMode = true
-		} else if arg == "--log-level" && i+1 < len(args) {
-			logLevel = args[i+1]
-			i++ // skip next arg
-		} else if strings.HasPrefix(arg, "--log-level=") {
-			logLevel = strings.TrimPrefix(arg, "--log-level=")
-		} else if !strings.HasPrefix(arg, "-") {
-			filteredArgs = append(filteredArgs, arg)
-		}
-	}
-	
-	// Reinitialize logging with parsed settings
-	debug.InitializeLogging(logLevel, debugMode)
-	
-	// Get connection string
-	if len(filteredArgs) > 0 {
-		connectionString = filteredArgs[0]
-	}
-	
-	if connectionString == "" {
-		debug.Error("No connection string provided")
-		os.Exit(1)
-	}
-	
-	// Parse connection string into config
-	parts := strings.Fields(connectionString)
-	if len(parts) == 0 {
-		debug.Error("Invalid connection string")
-		os.Exit(1)
-	}
-	
-	connectionConfig := &config.ConnectionConfig{
-		Type:    config.TransportStdio,
-		Command: parts[0],
-		Args:    parts[1:],
-	}
-	
-	// Set up graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	
-	// Set up signal handling
-	sigHandler := platformSignal.NewHandler()
-	sigHandler.Register(func(sig os.Signal) {
-		debug.Info("Received signal, shutting down gracefully", debug.F("signal", sig))
-		cancel()
-	}, os.Interrupt, syscall.SIGTERM)
-	sigHandler.Start()
-	defer sigHandler.Stop()
-	
-	// Run TUI directly
-	runTUIMode(ctx, connectionConfig)
-}
