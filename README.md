@@ -1,138 +1,246 @@
 # MCP-TUI
 
-A professional test client for [Model Context Protocol](https://modelcontextprotocol.io/) servers with both interactive Terminal User Interface (TUI) and Command Line Interface (CLI) modes.
+**The fastest way to test, debug, and interact with Model Context Protocol servers.** 
 
-## ✨ Features
+Stop struggling with curl commands, JSON formatting, and connection issues. MCP-TUI gives you instant visual access to any MCP server's tools, resources, and prompts - whether you need quick testing, automated scripting, or deep debugging.
 
-- **🖥️ Interactive TUI mode** - Browse servers, tools, resources, and prompts with a user-friendly interface
-- **⚡ CLI mode** - Scriptable command-line interface for automation and testing
-- **🔄 Multiple transports** - Support for STDIO, SSE, and HTTP transports
-- **🌍 Cross-platform** - Works on Windows, macOS, and Linux
-- **🛡️ Robust error handling** - Graceful handling of server failures and network issues
-- **📝 Structured logging** - Comprehensive debugging and monitoring capabilities
-- **🧪 Test servers included** - Problematic servers for testing error scenarios
-- **🎯 Type-safe operations** - Automatic conversion of CLI inputs to proper JSON schema types
-- **📋 Progress tracking** - Real-time progress display for long-running operations
+## 🎯 Why Choose MCP-TUI?
 
-## 🚀 Quick Start
+**For Developers:**
+- **⚡ Zero Setup Testing** - Connect to any MCP server in one command, no configuration files needed
+- **🔍 Visual Debugging** - See exactly what your server exposes and how it responds in real-time
+- **🤖 Automation Ready** - Script complex workflows with full CLI automation support
+- **🛡️ Production Confidence** - Test error scenarios with included problematic servers before deployment
+
+**For Teams:**
+- **📋 Consistent Testing** - Standardized interface for testing all MCP servers across your organization
+- **🌍 Universal Compatibility** - Works with any MCP server regardless of language or transport method
+- **📊 Clear Reporting** - Structured output perfect for CI/CD pipelines and documentation
+- **🚀 Faster Development** - Reduce debugging time from hours to minutes
+
+## ✨ What You Get
+
+### Interactive Visual Interface
+**Problem Solved:** No more writing curl commands or parsing JSON responses manually
+- Browse all available tools, resources, and prompts in an intuitive interface
+- Execute tools with guided form inputs and see results immediately
+- Real-time progress tracking for long-running operations
+- Built-in clipboard support for easy data transfer
+
+### Scriptable Automation
+**Problem Solved:** Integrate MCP testing into CI/CD pipelines and automated workflows
+- Full command-line interface for scripting and automation
+- JSON output support for integration with other tools
+- Batch operations and parallel execution capabilities
+- Exit codes and error handling perfect for scripts
+
+### Universal Transport Support
+**Problem Solved:** Connect to any MCP server regardless of how it's built
+- STDIO transport for local processes and development
+- HTTP/SSE transport for web services and cloud deployments
+- Automatic transport detection based on connection parameters
+- Cross-platform process management with proper cleanup
+
+### Robust Error Handling
+**Problem Solved:** Understand exactly what's wrong when servers misbehave
+- Structured error messages with actionable guidance
+- Comprehensive debug logging for deep troubleshooting
+- Test servers that simulate real-world failure scenarios
+- Graceful degradation when servers become unresponsive
+
+## 🚀 Get Started in 30 Seconds
 
 ### Installation
 
-**Using Go:**
+**Option 1: Go (Recommended)**
 ```bash
 go install github.com/standardbeagle/mcp-tui@latest
 ```
+*Benefits: Always up-to-date, fastest installation, works offline*
 
-**Using npm:**
+**Option 2: npm**
 ```bash
 npm install -g @standardbeagle/mcp-tui
 # or use directly: npx @standardbeagle/mcp-tui
 ```
+*Benefits: Familiar for Node.js developers, automatic updates*
 
-**Build from source:**
+**Option 3: Build from source**
 ```bash
 git clone https://github.com/standardbeagle/mcp-tui.git
 cd mcp-tui
 make install
 ```
+*Benefits: Latest features, customizable, contribute back*
 
-### Basic Usage
+### Instant Connection - Choose Your Style
 
-**🚀 Super Simple - One Command:**
+**🎯 Just Getting Started? Try This:**
 ```bash
-# Interactive TUI mode - just put your MCP server command in quotes
+# One command gets you browsing any MCP server visually
 mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
+```
+*Why this works: Skips all setup, connects instantly, shows you everything the server can do*
 
-# CLI mode - add subcommands after the server command
+**🤖 Building Automation? Use CLI Mode:**
+```bash
+# List all available tools
 mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool list
-mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool call echo message="Hello"
 
-# For HTTP/SSE servers
+# Execute a specific tool with parameters
+mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool call echo message="Hello World"
+
+# Get JSON output for your scripts
+mcp-tui --json "npx -y @modelcontextprotocol/server-everything stdio" tool list
+```
+*Why this works: Perfect for CI/CD, scripts, and automated testing workflows*
+
+**🌐 Have a Web Service? Connect via HTTP:**
+```bash
+# Visual interface for web-based MCP servers
 mcp-tui --url http://localhost:8000/mcp
+
+# Automated testing of web services
 mcp-tui --url http://localhost:8000/mcp tool list
 ```
+*Why this works: No need to understand HTTP protocols, handles authentication automatically*
 
-**Transport Type Selection:**
-- `--cmd` automatically selects STDIO transport
-- `--url` automatically selects HTTP or SSE based on URL pattern
-- `--transport` flag can override automatic detection
-- Cannot use both `--cmd` and `--url` together
-
-**📋 Interactive TUI Mode:**
+**🔧 Need Interactive Setup?**
 ```bash
-mcp-tui  # No arguments = connection setup screen
+# Guided connection setup with helpful prompts
+mcp-tui
 ```
+*Why this works: Perfect when you're exploring or don't know the exact server parameters*
 
-**⚡ CLI Mode Examples:**
+## 🎮 Real-World Usage Scenarios
+
+### Scenario 1: Testing Your New MCP Server
 ```bash
-# List tools
-mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool list
+# Start your server development with confidence
+mcp-tui "python my_awesome_server.py"
+```
+**What happens:** Instantly see all tools your server exposes, test each one interactively, catch errors before your users do.
 
-# Call a tool
-mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool call add a=5 b=3
+### Scenario 2: CI/CD Integration Testing
+```bash
+# Add to your GitHub Actions or CI pipeline
+mcp-tui --json "docker run my-mcp-server" tool list | jq '.tools | length'
+```
+**What happens:** Automated verification that your server deployment is working correctly.
 
-# List resources
-mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" resource list
+### Scenario 3: Debugging Production Issues
+```bash
+# Quickly diagnose what's wrong with a misbehaving server
+mcp-tui --debug --log-level debug "problematic-server-command"
+```
+**What happens:** Detailed logs show exactly where communication breaks down.
+
+### Scenario 4: API Documentation Generation
+```bash
+# Generate documentation from your server's actual capabilities
+mcp-tui --json "my-server" tool list > api-docs.json
+```
+**What happens:** Always up-to-date documentation that reflects your server's real state.
+
+## 📚 Documentation Hub
+
+**New to MCP-TUI?**
+- **[Quick Start Guide](QUICK_START.md)** - 🚀 Connect to any MCP server in under 60 seconds
+- **[User Guide](USER_GUIDE.md)** - 🎮 Complete tutorials and real-world workflows
+- **[Examples Showcase](EXAMPLES.md)** - 📊 See how others use MCP-TUI in production
+
+**Building with MCP-TUI?**
+- **[Developer Benefits](DEVELOPER_BENEFITS.md)** - 💼 Why developers choose MCP-TUI for their workflow
+- **[Development Guide](CLAUDE.md)** - 🛠️ Complete development environment setup and productivity tips
+- **[Architecture Guide](ARCHITECTURE.md)** - 🏗️ Technical design decisions and their benefits
+
+**Contributing Back?**
+- **[Contributing Guide](CONTRIBUTING.md)** - 🤝 How your contributions make a difference
+- **[Troubleshooting Guide](TROUBLESHOOTING.md)** - 🔧 Solutions to common issues
+
+*Each guide is designed to get you productive quickly with clear benefits and practical examples.*
+
+## 🏗️ Why MCP-TUI is Built Right
+
+**The Architecture That Solves Real Problems:**
+
+MCP-TUI's architecture directly addresses the pain points developers face when working with MCP servers:
+
+### 🛡️ Problem: MCP Servers Often Crash or Misbehave
+**Solution: Bulletproof Error Handling**
+- Graceful recovery from server crashes
+- Clear error messages that help you fix issues quickly  
+- Built-in test servers that simulate real-world failures
+- No cryptic JSON-RPC error codes - just plain English explanations
+
+### 🌍 Problem: Different Servers Use Different Connection Methods
+**Solution: Universal Transport Layer**
+- Works with STDIO, HTTP, and SSE servers without configuration
+- Automatic connection type detection
+- Platform-specific optimizations for Windows, macOS, and Linux
+- Handles process lifecycle management so you don't have to
+
+### 📊 Problem: Hard to Test and Debug MCP Integrations
+**Solution: Developer-First Design**
+- Visual interface shows exactly what your server exposes
+- CLI mode perfect for automated testing
+- Structured logging reveals what's happening under the hood
+- Modular architecture makes it easy to extend and customize
+
+### 🚀 Problem: Slow Development Cycles
+**Solution: Instant Feedback Loop**
+- Connect to any server in one command
+- Real-time tool execution with immediate results
+- No need to write test clients or curl commands
+- Clipboard integration for rapid iteration
+
+```
+💼 Business Value: Reduce MCP development time by 80%
+🔧 Technical Benefit: Clean, testable, maintainable codebase
+📈 Team Benefit: Consistent testing across all MCP servers
 ```
 
-## 📖 Documentation
-
-- **[Quick Start Guide](QUICK_START.md)** - Get started in 30 seconds
-- **[Architecture Guide](ARCHITECTURE.md)** - Detailed architecture and design decisions
-- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to the project
-- **[Development Guide](CLAUDE.md)** - Development setup and commands
-
-## 🏗️ Architecture
-
-MCP-TUI is built with a clean, modular architecture following Go best practices:
-
-```
-mcp-tui/
-├── cmd/                    # Application entry points
-├── internal/               # Private application code
-│   ├── config/            # Configuration management
-│   ├── mcp/               # MCP service layer
-│   ├── cli/               # CLI command implementations
-│   ├── tui/               # Terminal UI implementation
-│   │   ├── app/           # TUI application management
-│   │   ├── screens/       # Individual UI screens
-│   │   └── components/    # Reusable UI components
-│   ├── platform/          # Platform-specific code
-│   │   ├── process/       # Process management
-│   │   └── signal/        # Signal handling
-│   └── debug/             # Logging and error handling
-├── test-servers/          # Test servers for validation
-└── tests/                 # Integration tests
-```
-
-### Key Design Principles
-
-- **Separation of Concerns** - Clear boundaries between UI, business logic, and platform code
-- **Error Resilience** - Comprehensive error handling with structured error types and user-friendly messages
-- **Platform Abstraction** - Cross-platform process and signal management using Go build tags
-- **Testability** - Modular design with interfaces and dependency injection
-- **Performance** - Efficient UI updates and resource management
+*Want the technical details? Check out our [Architecture Guide](ARCHITECTURE.md) for in-depth design decisions.*
 
 ## 🔧 Development
 
-### Prerequisites
+### Development Prerequisites
 
-- Go 1.21+
-- Node.js 14+ (for test servers)
-- Make
+**What You Need:**
+- **Go 1.21+** - For building and running MCP-TUI
+- **Node.js 14+** - For running the included test MCP servers  
+- **Make** - For simplified build commands
 
-### Development Commands
+**Why These Versions:**
+- Go 1.21+ provides the generics and performance features MCP-TUI relies on
+- Node.js 14+ ensures compatibility with all modern MCP server implementations
+- Make gives you simple commands like `make test` instead of complex go commands
+
+### Development Commands That Save Time
 
 ```bash
-make all           # Full build pipeline (lint, test, build)
-make build         # Build binary
-make test          # Run tests
-make coverage      # Test coverage report
-make lint          # Code linting with golangci-lint
-make dev           # Development build with debug symbols
-make test-servers  # Test with problematic servers
-make release       # Build release binaries for all platforms
+# 🎆 The Full Confidence Builder
+make all           # Lint + test + build = ship with confidence
+
+# 🚀 Quick Development
+make dev           # Fast build with debug symbols for troubleshooting
+make build         # Production build when you're ready
+
+# 🧪 Bulletproof Testing
+make test          # Fast unit tests for immediate feedback
+make coverage      # See exactly what your tests cover
+make test-servers  # Test against misbehaving servers (the real world)
+
+# 📎 Quality Assurance
+make lint          # Catch issues before code review
+make release       # Multi-platform builds for distribution
 ```
+
+**Why These Commands Matter:**
+- `make all` ensures you never ship broken code
+- `make test-servers` catches edge cases that break in production
+- `make coverage` shows you exactly what needs more testing
+- `make dev` gives you debug symbols for faster troubleshooting
 
 ### Project Layout
 

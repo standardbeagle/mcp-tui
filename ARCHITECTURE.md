@@ -223,22 +223,188 @@ make coverage     # Test coverage
 - Responsive UI with async operations
 - Resource cleanup and leak prevention
 
-## Dependencies
+## Dependencies: Carefully Chosen, Thoughtfully Managed
 
-### Core Dependencies
-- `github.com/mark3labs/mcp-go`: MCP protocol implementation
-- `github.com/charmbracelet/bubbletea`: TUI framework
-- `github.com/spf13/cobra`: CLI framework
+**Philosophy:** Every dependency is a commitment. Choose dependencies that align with our values and enhance developer productivity.
 
-### Development Dependencies
-- `golangci-lint`: Code linting
-- Various test frameworks
-- Build and release tools
+### 🌍 Core Dependencies: The Foundation
 
-## Contributing
+**📝 `github.com/mark3labs/mcp-go` - MCP Protocol Implementation**
+- *Why we chose it:* Official, well-maintained Go implementation of MCP specification
+- *What it gives us:* Type-safe protocol handling, automatic compatibility updates
+- *Developer benefit:* Focus on application logic, not protocol details
+- *Risk mitigation:* Active community, clear versioning, comprehensive test suite
 
-1. Follow the established architecture patterns
-2. Add tests for new functionality
-3. Update documentation for changes
-4. Use structured logging and error handling
-5. Maintain platform compatibility
+**🎮 `github.com/charmbracelet/bubbletea` - TUI Framework**
+- *Why we chose it:* Modern, reactive terminal UI framework with excellent architecture
+- *What it gives us:* Component-based UI, smooth animations, responsive interactions
+- *Developer benefit:* Build complex UIs without fighting terminal limitations
+- *Risk mitigation:* Backed by Charm, actively developed, great documentation
+
+**⚡ `github.com/spf13/cobra` - CLI Framework**
+- *Why we chose it:* Industry standard for Go CLI applications
+- *What it gives us:* Consistent command structure, automatic help generation, flag parsing
+- *Developer benefit:* Familiar interface patterns, extensive ecosystem compatibility
+- *Risk mitigation:* Extremely stable, used by kubectl and many other critical tools
+
+### 🛠️ Development Dependencies: Productivity Multipliers
+
+**🔍 `golangci-lint` - Comprehensive Code Analysis**
+- *Why we chose it:* Aggregates 50+ linters into one fast tool
+- *What it gives us:* Consistent code quality, security vulnerability detection
+- *Developer benefit:* Catch issues before code review, maintain high standards
+- *Performance:* Parallel execution, caching, incremental analysis
+
+**🧪 Test Frameworks - Quality Assurance**
+- *Standard library testing:* Zero external dependencies for unit tests
+- *testify/assert:* Readable assertions and mocking capabilities
+- *bubbletea testing:* UI component testing with realistic interactions
+- *Developer benefit:* Comprehensive testing with minimal setup overhead
+
+**📦 Build and Release Tools - Deployment Excellence**
+- *goreleaser:* Cross-platform builds and GitHub releases
+- *Docker multi-stage builds:* Efficient containerization
+- *GitHub Actions:* Automated CI/CD pipeline
+- *Developer benefit:* One-command releases to all platforms
+
+## Contributing: How You Can Make MCP-TUI Even Better
+
+**Philosophy:** The best architectures evolve through thoughtful contributions from diverse perspectives.
+
+### 🎯 Why Your Contribution Matters
+
+**For the MCP Ecosystem:**
+- 🌍 **Accelerate Adoption** - Better tooling means faster MCP ecosystem growth
+- 🛡️ **Improve Reliability** - More eyes on the code means fewer bugs in production
+- 🚀 **Drive Innovation** - Fresh perspectives lead to breakthrough improvements
+
+**For Your Development:**
+- 📊 **Skill Building** - Work with modern Go patterns and architectural principles
+- 🤝 **Community Recognition** - Build reputation in the growing MCP community
+- 🔧 **Solve Your Problems** - Fix the issues that impact your own workflow
+
+### 🛠️ Contribution Guidelines: Quality Through Structure
+
+**1. 🏗️ Follow Established Architecture Patterns**
+- *Why this matters:* Consistency makes the codebase maintainable and predictable
+- *How to succeed:* Study existing code, use the same patterns, ask questions in issues
+- *Examples:* Use the same error handling patterns, follow the same package structure
+- *Benefit:* Your code integrates seamlessly and feels native to the project
+
+**2. 🧪 Add Tests for New Functionality**
+- *Why this matters:* Tests prevent regressions and document expected behavior
+- *How to succeed:* Write tests first (TDD), cover happy path and error cases
+- *Examples:* Unit tests for business logic, integration tests for MCP interactions
+- *Benefit:* Confidence that your changes work and won't break in the future
+
+**3. 📝 Update Documentation for Changes**
+- *Why this matters:* Undocumented features might as well not exist
+- *How to succeed:* Update README, add GoDoc comments, include examples
+- *Examples:* New CLI flags, changed behavior, new architecture components
+- *Benefit:* Users and future contributors understand how to use your work
+
+**4. 🔍 Use Structured Logging and Error Handling**
+- *Why this matters:* Consistent observability makes debugging and monitoring possible
+- *How to succeed:* Use the debug package, follow error wrapping patterns
+- *Examples:* Component-specific loggers, structured error codes, helpful context
+- *Benefit:* Your features integrate with the overall observability strategy
+
+**5. 💻 Maintain Platform Compatibility**
+- *Why this matters:* MCP-TUI users work on Windows, macOS, and Linux
+- *How to succeed:* Test on multiple platforms, use build tags for OS-specific code
+- *Examples:* Process management, signal handling, file path handling
+- *Benefit:* Your contribution works for all users, not just your development environment
+
+### 🚀 High-Impact Contribution Opportunities
+
+**🎆 Quick Wins (1-2 hours)**
+- 📝 **Documentation Improvements** - Fix typos, add examples, clarify confusing sections
+- 🔍 **Test Coverage** - Add tests for uncovered code paths
+- 🛡️ **Bug Fixes** - Resolve issues from the GitHub issue tracker
+- 🎮 **UI Polish** - Improve keyboard shortcuts, error messages, help text
+
+**📈 Medium Impact (1-2 days)**
+- 🔧 **New CLI Commands** - Add missing MCP operations to CLI interface
+- 🎮 **TUI Enhancements** - New screens, better navigation, visual improvements
+- 🧪 **Test Servers** - Add new problematic server scenarios for testing
+- 📊 **Performance Optimizations** - Profile and improve slow operations
+
+**🎆 Major Features (1-2 weeks)**
+- 🔌 **Plugin System** - Design and implement extensibility framework
+- 🌍 **New Transport Types** - Add support for emerging MCP transport methods
+- 📊 **Metrics Dashboard** - Build monitoring and analytics capabilities
+- 🤖 **Configuration Management** - Visual configuration editor and validation
+
+Ready to contribute? Start by reading our [Contributing Guide](CONTRIBUTING.md) and checking out the [good first issue](https://github.com/standardbeagle/mcp-tui/labels/good%20first%20issue) label on GitHub!
+
+## Visual Architecture Diagrams
+
+**Note:** While we can't include actual images in markdown, here are text-based representations of key architectural concepts:
+
+### 🔄 Data Flow Architecture
+
+```
+🤖 User Input → CLI/TUI Layer → MCP Service → Transport → MCP Server
+    ↑                ↓              ↓          ↓         ↓
+📊 Results   ← UI Rendering ← Business Logic ← Protocol ← Server Response
+    ↑                ↑              ↑          ↑         ↑
+🔍 Debug Info ← Error Display ← Error Handling ← Transport ← Error Response
+```
+
+### 🏗️ Component Interaction Model
+
+```
+┌────────────────────────┐
+│      User Interface       │
+│  ┌────────┐ ┌────────┐  │
+│  │   CLI    │ │   TUI    │  │
+│  └────────┘ └────────┘  │
+└───────────┬────────────┘
+             │
+┌────────────┼───────────┐
+│     MCP Service Layer      │
+│  • Connection Management    │
+│  • Tool Operations         │
+│  • Resource Access         │
+└────────────┼───────────┘
+             │
+┌────────────┼───────────┐
+│    Transport Layer         │
+│ ┌──────┐┌─────┐┌──────┐ │
+│ │STDIO││HTTP││ SSE  │ │
+│ └──────┘└─────┘└──────┘ │
+└────────────┼───────────┘
+             │
+┌────────────┼───────────┐
+│      MCP Servers           │
+│  • Any Language            │
+│  • Any Transport           │
+│  • Local or Remote         │
+└────────────────────────┘
+```
+
+### 🛡️ Error Handling Flow
+
+```
+Error Occurs → Wrap with Context → Log Structured Data → User-Friendly Display
+     │               │                  │                    │
+     v               v                  v                    v
+• Network      • Error Code      • Component       • Clear Message
+• Protocol     • Stack Trace     • Severity        • Suggested Fix
+• Server       • User Context    • Correlation     • Recovery Options
+• Tool         • Operation       • Performance     • Help Links
+```
+
+### 🚀 Performance Optimization Points
+
+```
+User Request → UI Layer → Service Layer → Transport → MCP Server
+     │           │          │             │          │
+     v           v          v             v          v
+• Input      • Async    • Connection  • Pooling   • Caching
+  Validation   Operations   Caching       Reuse       Strategies
+• Debouncing • Progress  • Schema      • Streaming • Batching
+• Caching    Tracking     Validation     JSON        Requests
+```
+
+These diagrams illustrate the key architectural concepts and can serve as references when contributing to or extending MCP-TUI.
