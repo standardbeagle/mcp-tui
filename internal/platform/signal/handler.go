@@ -12,16 +12,16 @@ import (
 type Handler interface {
 	// Register registers a handler for specific signals
 	Register(handler func(os.Signal), signals ...os.Signal)
-	
+
 	// RegisterContext creates a context that is cancelled on signals
 	RegisterContext(ctx context.Context, signals ...os.Signal) context.Context
-	
+
 	// Start starts the signal handler
 	Start()
-	
+
 	// Stop stops the signal handler
 	Stop()
-	
+
 	// WaitForSignal blocks until a signal is received
 	WaitForSignal(signals ...os.Signal) os.Signal
 }
@@ -48,11 +48,11 @@ func NewHandler() Handler {
 func (h *handler) Register(handler func(os.Signal), signals ...os.Signal) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	
+
 	for _, sig := range signals {
 		h.handlers[sig] = append(h.handlers[sig], handler)
 	}
-	
+
 	if h.running {
 		signal.Notify(h.sigChan, signals...)
 	}
@@ -61,11 +61,11 @@ func (h *handler) Register(handler func(os.Signal), signals ...os.Signal) {
 // RegisterContext creates a context that is cancelled on signals
 func (h *handler) RegisterContext(ctx context.Context, signals ...os.Signal) context.Context {
 	ctx, cancel := context.WithCancel(ctx)
-	
+
 	h.Register(func(sig os.Signal) {
 		cancel()
 	}, signals...)
-	
+
 	return ctx
 }
 
@@ -77,18 +77,18 @@ func (h *handler) Start() {
 		return
 	}
 	h.running = true
-	
+
 	// Register for all signals we have handlers for
 	allSignals := make([]os.Signal, 0, len(h.handlers))
 	for sig := range h.handlers {
 		allSignals = append(allSignals, sig)
 	}
 	h.mu.Unlock()
-	
+
 	if len(allSignals) > 0 {
 		signal.Notify(h.sigChan, allSignals...)
 	}
-	
+
 	go h.run()
 }
 
@@ -101,7 +101,7 @@ func (h *handler) Stop() {
 	}
 	h.running = false
 	h.mu.Unlock()
-	
+
 	signal.Stop(h.sigChan)
 	close(h.stopChan)
 }
@@ -111,7 +111,7 @@ func (h *handler) WaitForSignal(signals ...os.Signal) os.Signal {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, signals...)
 	defer signal.Stop(sigChan)
-	
+
 	return <-sigChan
 }
 
@@ -132,7 +132,7 @@ func (h *handler) handleSignal(sig os.Signal) {
 	h.mu.RLock()
 	handlers := h.handlers[sig]
 	h.mu.RUnlock()
-	
+
 	for _, handler := range handlers {
 		go handler(sig)
 	}
@@ -142,7 +142,7 @@ func (h *handler) handleSignal(sig os.Signal) {
 var (
 	// InterruptSignals are signals that should cause graceful shutdown
 	InterruptSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
-	
+
 	// TerminationSignals are signals that should cause immediate termination
 	TerminationSignals = []os.Signal{syscall.SIGKILL, syscall.SIGQUIT}
 )

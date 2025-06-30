@@ -47,10 +47,10 @@ type Logger interface {
 	Warn(msg string, fields ...Field)
 	Error(msg string, fields ...Field)
 	Fatal(msg string, fields ...Field)
-	
+
 	WithFields(fields ...Field) Logger
 	WithComponent(component string) Logger
-	
+
 	SetLevel(level LogLevel)
 	SetOutput(w io.Writer)
 }
@@ -117,7 +117,7 @@ func (l *logger) WithFields(fields ...Field) Logger {
 	copy(newFields, l.fields)
 	copy(newFields[len(l.fields):], fields)
 	l.mu.RUnlock()
-	
+
 	return &logger{
 		level:     l.level,
 		output:    l.output,
@@ -132,7 +132,7 @@ func (l *logger) WithComponent(component string) Logger {
 	newFields := make([]Field, len(l.fields))
 	copy(newFields, l.fields)
 	l.mu.RUnlock()
-	
+
 	return &logger{
 		level:     l.level,
 		output:    l.output,
@@ -162,34 +162,34 @@ func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 		l.mu.RUnlock()
 		return
 	}
-	
+
 	output := l.output
 	component := l.component
 	baseFields := l.fields
 	l.mu.RUnlock()
-	
+
 	// Build log entry
 	timestamp := time.Now().Format("2006-01-02T15:04:05.000Z07:00")
-	
+
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("[%s] %s", timestamp, level.String()))
-	
+
 	if component != "" {
 		builder.WriteString(fmt.Sprintf(" [%s]", component))
 	}
-	
+
 	builder.WriteString(fmt.Sprintf(" %s", msg))
-	
+
 	// Add base fields
 	for _, field := range baseFields {
 		builder.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Value))
 	}
-	
+
 	// Add additional fields
 	for _, field := range fields {
 		builder.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Value))
 	}
-	
+
 	// Add caller info for errors and above
 	if level >= LogLevelError {
 		if _, file, line, ok := runtime.Caller(2); ok {
@@ -199,12 +199,12 @@ func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 			builder.WriteString(fmt.Sprintf(" caller=%s:%d", filename, line))
 		}
 	}
-	
+
 	builder.WriteString("\n")
-	
+
 	// Write to output
 	fmt.Fprint(output, builder.String())
-	
+
 	// Also add to log buffer for TUI debug console
 	if logBuffer := GetLogBuffer(); logBuffer != nil {
 		allFields := append(baseFields, fields...)
@@ -278,17 +278,17 @@ func LogLevelFromString(s string) LogLevel {
 // InitializeLogging sets up logging based on environment
 func InitializeLogging(level string, debugMode bool) {
 	logLevel := LogLevelFromString(level)
-	
+
 	if debugMode {
 		logLevel = LogLevelDebug
 	}
-	
+
 	SetGlobalLevel(logLevel)
-	
+
 	// Initialize log buffers for the TUI debug console
-	InitLogBuffer(1000)   // General logs
-	InitMCPLogger(2000)   // MCP protocol logs (more since these are important for debugging)
-	
+	InitLogBuffer(1000) // General logs
+	InitMCPLogger(2000) // MCP protocol logs (more since these are important for debugging)
+
 	// In debug mode, also log to a file
 	if debugMode {
 		// In a real implementation, you might want to log to a file

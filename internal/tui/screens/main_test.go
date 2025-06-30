@@ -13,12 +13,12 @@ import (
 
 func TestMainScreenNavigation(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupFunc      func(*MainScreen)
-		keyMsg         tea.KeyMsg
-		expectedIndex  int
-		expectedTab    int
-		description    string
+		name          string
+		setupFunc     func(*MainScreen)
+		keyMsg        tea.KeyMsg
+		expectedIndex int
+		expectedTab   int
+		description   string
 	}{
 		{
 			name: "vim_navigation_j_down",
@@ -150,20 +150,20 @@ func TestMainScreenNavigation(t *testing.T) {
 			}
 			ms := NewMainScreen(cfg, connConfig)
 			ms.connected = true // Simulate connected state
-			
+
 			// Setup test state
 			tt.setupFunc(ms)
-			
+
 			// Send key message
 			model, cmd := ms.Update(tt.keyMsg)
-			
+
 			// Verify no commands are returned for navigation
 			assert.Nil(t, cmd, "Navigation should not return commands")
-			
+
 			// Cast back to MainScreen
 			updatedMS, ok := model.(*MainScreen)
 			require.True(t, ok, "Model should be MainScreen type")
-			
+
 			// Check the selection index
 			actualIndex := updatedMS.selectedIndex[tt.expectedTab]
 			assert.Equal(t, tt.expectedIndex, actualIndex, tt.description)
@@ -180,19 +180,19 @@ func TestMainScreenRefresh(t *testing.T) {
 	}
 	ms := NewMainScreen(cfg, connConfig)
 	ms.connected = true
-	
+
 	// Test refresh on each tab
 	tabs := []int{0, 1, 2, 3}
 	for _, tab := range tabs {
 		t.Run(fmt.Sprintf("refresh_tab_%d", tab), func(t *testing.T) {
 			ms.activeTab = tab
-			
+
 			// Send 'r' key
 			model, cmd := ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-			
+
 			// Should return a command (refresh)
 			assert.NotNil(t, cmd, "Refresh should return a command")
-			
+
 			// Model should still be MainScreen
 			_, ok := model.(*MainScreen)
 			assert.True(t, ok, "Model should be MainScreen type")
@@ -211,29 +211,29 @@ func TestMainScreenBoundaryConditions(t *testing.T) {
 	ms.connected = true
 	ms.tools = []string{"tool1", "tool2", "tool3"}
 	ms.toolCount = 3
-	
+
 	t.Run("navigation_at_top_boundary", func(t *testing.T) {
 		ms.selectedIndex[0] = 0
-		
+
 		// Try to go up
 		model, _ := ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 		updatedMS := model.(*MainScreen)
-		
+
 		// Should stay at 0
 		assert.Equal(t, 0, updatedMS.selectedIndex[0], "Should stay at top")
 	})
-	
+
 	t.Run("navigation_at_bottom_boundary", func(t *testing.T) {
 		ms.selectedIndex[0] = 2
-		
+
 		// Try to go down
 		model, _ := ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 		updatedMS := model.(*MainScreen)
-		
+
 		// Should stay at 2
 		assert.Equal(t, 2, updatedMS.selectedIndex[0], "Should stay at bottom")
 	})
-	
+
 	t.Run("page_down_near_end", func(t *testing.T) {
 		// Create 15 tools
 		tools := make([]string, 15)
@@ -243,11 +243,11 @@ func TestMainScreenBoundaryConditions(t *testing.T) {
 		ms.tools = tools
 		ms.toolCount = 15
 		ms.selectedIndex[0] = 10
-		
+
 		// Page down should go to last item (14)
 		model, _ := ms.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 		updatedMS := model.(*MainScreen)
-		
+
 		assert.Equal(t, 14, updatedMS.selectedIndex[0], "Should go to last item")
 	})
 }

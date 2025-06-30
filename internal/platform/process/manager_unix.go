@@ -14,42 +14,42 @@ import (
 // unixManager is the Unix-specific implementation of process management
 type unixManager struct {
 	*manager
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 // NewUnixManager creates a new Unix-specific process manager
 func NewUnixManager(ctx context.Context) Manager {
 	ctx, cancel := context.WithCancel(ctx)
-	
+
 	um := &unixManager{
 		manager: &manager{processes: make([]Process, 0)},
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-	
+
 	// Start zombie reaper
 	um.wg.Add(1)
 	go um.zombieReaper()
-	
+
 	return um
 }
 
 // Start overrides the base manager to add Unix-specific process setup
 func (um *unixManager) Start(ctx context.Context, command string, args []string) (Process, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
-	
+
 	// Set process group ID for proper signal handling
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 		Pgid:    0,
 	}
-	
+
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	
+
 	proc := &unixProcess{
 		process: &process{
 			cmd:     cmd,
@@ -57,11 +57,11 @@ func (um *unixManager) Start(ctx context.Context, command string, args []string)
 			args:    args,
 		},
 	}
-	
+
 	um.mu.Lock()
 	um.processes = append(um.processes, proc)
 	um.mu.Unlock()
-	
+
 	return proc, nil
 }
 
@@ -76,10 +76,10 @@ func (um *unixManager) Close() error {
 // zombieReaper continuously reaps zombie processes
 func (um *unixManager) zombieReaper() {
 	defer um.wg.Done()
-	
+
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-um.ctx.Done():
@@ -96,7 +96,7 @@ func (um *unixManager) reapZombies() {
 	processes := make([]Process, len(um.processes))
 	copy(processes, um.processes)
 	um.mu.RUnlock()
-	
+
 	for _, proc := range processes {
 		if unixProc, ok := proc.(*unixProcess); ok {
 			pid := unixProc.PID()
@@ -110,7 +110,7 @@ func (um *unixManager) reapZombies() {
 			}
 		}
 	}
-	
+
 	// Clean up finished processes
 	um.Cleanup()
 }
@@ -124,11 +124,11 @@ type unixProcess struct {
 func (up *unixProcess) Kill() error {
 	up.mu.Lock()
 	defer up.mu.Unlock()
-	
+
 	if up.cmd == nil || up.cmd.Process == nil {
 		return nil
 	}
-	
+
 	return up.killProcessGroup()
 }
 
@@ -137,29 +137,29 @@ func (up *unixProcess) killProcessGroup() error {
 	if up.cmd == nil || up.cmd.Process == nil {
 		return nil
 	}
-	
+
 	pid := up.cmd.Process.Pid
-	
+
 	// Try to get the process group ID
 	pgid, err := syscall.Getpgid(pid)
 	if err != nil {
 		// Process might already be dead
 		return nil
 	}
-	
+
 	// Send SIGTERM to the process group
 	if pgid > 0 {
 		_ = syscall.Kill(-pgid, syscall.SIGTERM)
 	} else {
 		_ = up.cmd.Process.Signal(syscall.SIGTERM)
 	}
-	
+
 	// Wait for graceful shutdown with timeout
 	done := make(chan error, 1)
 	go func() {
 		done <- up.cmd.Wait()
 	}()
-	
+
 	select {
 	case err := <-done:
 		up.markFinished(0)
@@ -171,7 +171,7 @@ func (up *unixProcess) killProcessGroup() error {
 		} else {
 			_ = up.cmd.Process.Kill()
 		}
-		
+
 		// Wait for the process to actually die
 		select {
 		case err := <-done:
@@ -195,15 +195,15 @@ func (up *unixProcess) markFinished(exitCode int) {
 func (up *unixProcess) IsRunning() bool {
 	up.mu.RLock()
 	defer up.mu.RUnlock()
-	
+
 	if up.finished {
 		return false
 	}
-	
+
 	if up.cmd == nil || up.cmd.Process == nil {
 		return false
 	}
-	
+
 	// Check if process exists by sending signal 0
 	err := up.cmd.Process.Signal(syscall.Signal(0))
 	return err == nil

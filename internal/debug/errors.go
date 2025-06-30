@@ -10,34 +10,34 @@ type ErrorCode string
 
 const (
 	// Connection errors
-	ErrorCodeConnectionFailed     ErrorCode = "CONNECTION_FAILED"
-	ErrorCodeConnectionTimeout    ErrorCode = "CONNECTION_TIMEOUT"
-	ErrorCodeConnectionLost       ErrorCode = "CONNECTION_LOST"
-	
+	ErrorCodeConnectionFailed  ErrorCode = "CONNECTION_FAILED"
+	ErrorCodeConnectionTimeout ErrorCode = "CONNECTION_TIMEOUT"
+	ErrorCodeConnectionLost    ErrorCode = "CONNECTION_LOST"
+
 	// Protocol errors
-	ErrorCodeInvalidJSON          ErrorCode = "INVALID_JSON"
-	ErrorCodeProtocolViolation    ErrorCode = "PROTOCOL_VIOLATION"
-	ErrorCodeUnsupportedVersion   ErrorCode = "UNSUPPORTED_VERSION"
-	
+	ErrorCodeInvalidJSON        ErrorCode = "INVALID_JSON"
+	ErrorCodeProtocolViolation  ErrorCode = "PROTOCOL_VIOLATION"
+	ErrorCodeUnsupportedVersion ErrorCode = "UNSUPPORTED_VERSION"
+
 	// Server errors
-	ErrorCodeServerCrash          ErrorCode = "SERVER_CRASH"
-	ErrorCodeServerTimeout        ErrorCode = "SERVER_TIMEOUT"
-	ErrorCodeServerNotResponding  ErrorCode = "SERVER_NOT_RESPONDING"
-	
+	ErrorCodeServerCrash         ErrorCode = "SERVER_CRASH"
+	ErrorCodeServerTimeout       ErrorCode = "SERVER_TIMEOUT"
+	ErrorCodeServerNotResponding ErrorCode = "SERVER_NOT_RESPONDING"
+
 	// Tool errors
-	ErrorCodeToolNotFound         ErrorCode = "TOOL_NOT_FOUND"
-	ErrorCodeToolExecutionFailed  ErrorCode = "TOOL_EXECUTION_FAILED"
-	ErrorCodeInvalidToolArgs      ErrorCode = "INVALID_TOOL_ARGS"
-	
+	ErrorCodeToolNotFound        ErrorCode = "TOOL_NOT_FOUND"
+	ErrorCodeToolExecutionFailed ErrorCode = "TOOL_EXECUTION_FAILED"
+	ErrorCodeInvalidToolArgs     ErrorCode = "INVALID_TOOL_ARGS"
+
 	// Resource errors
-	ErrorCodeResourceNotFound     ErrorCode = "RESOURCE_NOT_FOUND"
-	ErrorCodeResourceReadFailed   ErrorCode = "RESOURCE_READ_FAILED"
-	ErrorCodeInvalidResourceURI   ErrorCode = "INVALID_RESOURCE_URI"
-	
+	ErrorCodeResourceNotFound   ErrorCode = "RESOURCE_NOT_FOUND"
+	ErrorCodeResourceReadFailed ErrorCode = "RESOURCE_READ_FAILED"
+	ErrorCodeInvalidResourceURI ErrorCode = "INVALID_RESOURCE_URI"
+
 	// UI errors
-	ErrorCodeUIRenderFailed       ErrorCode = "UI_RENDER_FAILED"
-	ErrorCodeKeyHandlingFailed    ErrorCode = "KEY_HANDLING_FAILED"
-	
+	ErrorCodeUIRenderFailed    ErrorCode = "UI_RENDER_FAILED"
+	ErrorCodeKeyHandlingFailed ErrorCode = "KEY_HANDLING_FAILED"
+
 	// System errors
 	ErrorCodeProcessStartFailed   ErrorCode = "PROCESS_START_FAILED"
 	ErrorCodeSignalHandlingFailed ErrorCode = "SIGNAL_HANDLING_FAILED"
@@ -45,11 +45,11 @@ const (
 
 // MCPError represents a structured error with context
 type MCPError struct {
-	Code     ErrorCode              `json:"code"`
-	Message  string                 `json:"message"`
-	Details  map[string]interface{} `json:"details,omitempty"`
-	Cause    error                  `json:"-"`
-	Stack    []string               `json:"stack,omitempty"`
+	Code    ErrorCode              `json:"code"`
+	Message string                 `json:"message"`
+	Details map[string]interface{} `json:"details,omitempty"`
+	Cause   error                  `json:"-"`
+	Stack   []string               `json:"stack,omitempty"`
 }
 
 // Error implements the error interface
@@ -120,18 +120,18 @@ func FormatError(err error) string {
 	if err == nil {
 		return ""
 	}
-	
+
 	if mcpErr, ok := err.(*MCPError); ok {
 		return formatMCPError(mcpErr)
 	}
-	
+
 	return err.Error()
 }
 
 // formatMCPError formats an MCP error for user display
 func formatMCPError(err *MCPError) string {
 	var builder strings.Builder
-	
+
 	// Add user-friendly message based on error code
 	switch err.Code {
 	case ErrorCodeConnectionFailed:
@@ -149,7 +149,7 @@ func formatMCPError(err *MCPError) string {
 	default:
 		builder.WriteString(err.Message)
 	}
-	
+
 	// Add specific details if available
 	if len(err.Details) > 0 {
 		builder.WriteString(" (")
@@ -163,7 +163,7 @@ func formatMCPError(err *MCPError) string {
 		}
 		builder.WriteString(")")
 	}
-	
+
 	return builder.String()
 }
 
@@ -172,7 +172,7 @@ func RecoveryHandler() {
 	if r := recover(); r != nil {
 		// In a real implementation, you would log this error
 		// and potentially restart the component that panicked
-		
+
 		var err error
 		switch v := r.(type) {
 		case error:
@@ -182,10 +182,10 @@ func RecoveryHandler() {
 		default:
 			err = fmt.Errorf("unknown panic: %v", v)
 		}
-		
+
 		// Create an MCP error for the panic
 		mcpErr := WrapError(err, "PANIC_RECOVERED", "Recovered from panic")
-		
+
 		// Log the error (in a real implementation)
 		_ = mcpErr
 	}

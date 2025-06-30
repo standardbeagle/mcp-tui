@@ -27,28 +27,28 @@ func TestMainFunctionFlow(t *testing.T) {
 				Args:    []string{"server", "stdio"},
 			},
 			expectedOsArgs: []string{"mcp-tui", "tool", "list"},
-			description: "Should extract connection and adjust os.Args for Cobra",
+			description:    "Should extract connection and adjust os.Args for Cobra",
 		},
 		{
-			name: "TUI mode with connection",
-			args: []string{"mcp-tui", "npx server stdio"},
+			name:           "TUI mode with connection",
+			args:           []string{"mcp-tui", "npx server stdio"},
 			expectedConfig: nil, // No global config set for TUI mode
 			expectedOsArgs: []string{"mcp-tui", "npx server stdio"},
-			description: "TUI mode should not modify os.Args",
+			description:    "TUI mode should not modify os.Args",
 		},
 		{
-			name: "flag-based CLI",
-			args: []string{"mcp-tui", "--cmd", "npx", "--args", "server", "--args", "stdio", "tool", "list"},
+			name:           "flag-based CLI",
+			args:           []string{"mcp-tui", "--cmd", "npx", "--args", "server", "--args", "stdio", "tool", "list"},
 			expectedConfig: nil, // Flags are parsed later by Cobra
 			expectedOsArgs: []string{"mcp-tui", "--cmd", "npx", "--args", "server", "--args", "stdio", "tool", "list"},
-			description: "Flag-based usage should pass through unchanged",
+			description:    "Flag-based usage should pass through unchanged",
 		},
 		{
-			name: "subcommand without connection",
-			args: []string{"mcp-tui", "tool", "list"},
+			name:           "subcommand without connection",
+			args:           []string{"mcp-tui", "tool", "list"},
 			expectedConfig: nil,
 			expectedOsArgs: []string{"mcp-tui", "tool", "list"},
-			description: "Subcommand alone should pass through",
+			description:    "Subcommand alone should pass through",
 		},
 	}
 
@@ -107,8 +107,8 @@ func TestEndToEndScenarios(t *testing.T) {
 		flow        string
 	}{
 		{
-			name:    "natural tool list",
-			command: `mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool list`,
+			name:        "natural tool list",
+			command:     `mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool list`,
 			description: "List tools using natural CLI syntax",
 			flow: `
 1. Main parses args: ["npx -y @modelcontextprotocol/server-everything stdio", "tool", "list"]
@@ -123,8 +123,8 @@ func TestEndToEndScenarios(t *testing.T) {
 7. MCP client connects with: npx -y @modelcontextprotocol/server-everything stdio`,
 		},
 		{
-			name:    "natural tool call",
-			command: `mcp-tui "./brum --mcp" tool call echo message="Hello World"`,
+			name:        "natural tool call",
+			command:     `mcp-tui "./brum --mcp" tool call echo message="Hello World"`,
 			description: "Call a tool with parameters using natural syntax",
 			flow: `
 1. Main parses args: ["./brum --mcp", "tool", "call", "echo", "message=Hello World"]
@@ -138,8 +138,8 @@ func TestEndToEndScenarios(t *testing.T) {
 6. Executes tool with parsed arguments`,
 		},
 		{
-			name:    "flag-based usage",
-			command: `mcp-tui --cmd ./brum --args --mcp tool list`,
+			name:        "flag-based usage",
+			command:     `mcp-tui --cmd ./brum --args --mcp tool list`,
 			description: "Traditional flag-based approach still works",
 			flow: `
 1. No connection string detected in positional args
@@ -150,8 +150,8 @@ func TestEndToEndScenarios(t *testing.T) {
 6. Executes normally`,
 		},
 		{
-			name:    "url-based connection",
-			command: `mcp-tui --url http://localhost:8000/mcp server`,
+			name:        "url-based connection",
+			command:     `mcp-tui --url http://localhost:8000/mcp server`,
 			description: "HTTP/SSE server connection",
 			flow: `
 1. No positional connection string

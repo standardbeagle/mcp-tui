@@ -21,46 +21,46 @@ type MainScreen struct {
 	config           *config.Config
 	connectionConfig *config.ConnectionConfig
 	logger           debug.Logger
-	
+
 	// MCP service
 	mcpService mcp.Service
 	connected  bool
-	
+
 	// Navigation handler
 	navigationHandler *NavigationHandler
-	
+
 	// UI state
-	activeTab    int // 0=tools, 1=resources, 2=prompts, 3=events
-	tools        []string
-	resources    []string
-	prompts      []string
-	events       []debug.MCPLogEntry // Store actual event entries
-	
+	activeTab int // 0=tools, 1=resources, 2=prompts, 3=events
+	tools     []string
+	resources []string
+	prompts   []string
+	events    []debug.MCPLogEntry // Store actual event entries
+
 	// Actual counts (0 when empty, not 1 for empty message)
 	toolCount     int
 	resourceCount int
 	promptCount   int
 	eventCount    int
-	
+
 	// List navigation
 	selectedIndex map[int]int // selected index per tab
-	
+
 	// Event view state
 	showEventDetail bool
 	eventPaneFocus  int // 0=list, 1=detail
-	
+
 	// Connection status
 	connectionStatus string
 	connecting       bool
 	connectingStart  time.Time
-	
+
 	// Styles
-	tabStyle         lipgloss.Style
-	activeTabStyle   lipgloss.Style
-	listStyle        lipgloss.Style
-	selectedStyle    lipgloss.Style
-	statusStyle      lipgloss.Style
-	titleStyle       lipgloss.Style
+	tabStyle       lipgloss.Style
+	activeTabStyle lipgloss.Style
+	listStyle      lipgloss.Style
+	selectedStyle  lipgloss.Style
+	statusStyle    lipgloss.Style
+	titleStyle     lipgloss.Style
 }
 
 // ConnectionStartedMsg indicates connection is starting
@@ -74,10 +74,10 @@ type ConnectionCompleteMsg struct {
 
 // ItemsLoadedMsg contains loaded items for a tab
 type ItemsLoadedMsg struct {
-	Tab        int
-	Items      []string
+	Tab         int
+	Items       []string
 	ActualCount int // The actual count of items (0 when empty)
-	Error      error
+	Error       error
 }
 
 // EventTickMsg is sent periodically to refresh events
@@ -102,20 +102,20 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 		connectionStatus: "Connecting...",
 		connecting:       true,
 	}
-	
+
 	// Initialize styles
 	ms.initStyles()
-	
+
 	// Initialize navigation handler
 	ms.navigationHandler = NewNavigationHandler(ms)
-	
+
 	// Debug the connection config
 	ms.logger.Info("MainScreen created with connection config",
 		debug.F("type", connConfig.Type),
 		debug.F("command", connConfig.Command),
 		debug.F("args", connConfig.Args),
 		debug.F("url", connConfig.URL))
-	
+
 	return ms
 }
 
@@ -125,27 +125,27 @@ func (ms *MainScreen) initStyles() {
 	ms.tabStyle = lipgloss.NewStyle().
 		Padding(0, 1).
 		Foreground(lipgloss.Color("8"))
-	
+
 	ms.activeTabStyle = lipgloss.NewStyle().
 		Padding(0, 1).
 		Foreground(lipgloss.Color("15")).
 		Background(lipgloss.Color("4")).
 		Bold(true)
-	
+
 	ms.listStyle = lipgloss.NewStyle().
 		Padding(1).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("8"))
-	
+
 	ms.selectedStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("0")).
 		Background(lipgloss.Color("6")).
 		Bold(true)
-	
+
 	ms.statusStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("2")).
 		Bold(true)
-	
+
 	ms.titleStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("13")).
 		Bold(true).
@@ -155,7 +155,7 @@ func (ms *MainScreen) initStyles() {
 // Init initializes the main screen
 func (ms *MainScreen) Init() tea.Cmd {
 	ms.logger.Info("Initializing main screen")
-	
+
 	// Start connection
 	return tea.Batch(
 		func() tea.Msg { return ConnectionStartedMsg{} },
@@ -170,10 +170,10 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		ms.UpdateSize(msg.Width, msg.Height)
 		return ms, nil
-		
+
 	case tea.KeyMsg:
 		return ms.handleKeyMsg(msg)
-		
+
 	case ConnectionStartedMsg:
 		ms.connecting = true
 		ms.connectingStart = time.Now()
@@ -182,12 +182,12 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 			return spinnerTickMsg{}
 		})
-		
+
 	case ConnectionCompleteMsg:
 		ms.connecting = false
 		if msg.Success {
 			ms.connected = true
-			ms.connectionStatus = fmt.Sprintf("Connected to %s %s", 
+			ms.connectionStatus = fmt.Sprintf("Connected to %s %s",
 				ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
 			// Load initial data
 			return ms, tea.Batch(
@@ -216,7 +216,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ms.SetError(msg.Error)
 		}
 		return ms, nil
-		
+
 	case ItemsLoadedMsg:
 		switch msg.Tab {
 		case 0: // Tools
@@ -258,11 +258,11 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return ms, nil
-		
+
 	case ErrorMsg:
 		ms.SetError(msg.Error)
 		return ms, nil
-		
+
 	case EventTickMsg:
 		// Only refresh events if we're on the events tab and connected
 		if ms.connected && ms.activeTab == 3 {
@@ -272,7 +272,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 		return ms, ms.tickEvents() // Continue ticking even if not on events tab
-		
+
 	case spinnerTickMsg:
 		// Continue spinner animation while connecting
 		if ms.connecting {
@@ -282,7 +282,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return ms, nil
 	}
-	
+
 	return ms, nil
 }
 
@@ -308,24 +308,24 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ms, nil
 	}
-	
+
 	// Try navigation handler first
 	if handled, model, cmd := ms.navigationHandler.HandleKey(msg); handled {
 		return model, cmd
 	}
-	
+
 	switch msg.String() {
 	case "ctrl+c", "q", "esc":
 		return ms, tea.Quit
-		
+
 	case "tab":
 		ms.activeTab = (ms.activeTab + 1) % 4
 		return ms, nil
-		
+
 	case "shift+tab":
 		ms.activeTab = (ms.activeTab - 1 + 4) % 4
 		return ms, nil
-		
+
 	case "right":
 		// In events tab with detail view, switch panes
 		if ms.activeTab == 3 && ms.showEventDetail {
@@ -334,7 +334,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ms.activeTab = (ms.activeTab + 1) % 4
 		}
 		return ms, nil
-		
+
 	case "left":
 		// In events tab with detail view, switch panes
 		if ms.activeTab == 3 && ms.showEventDetail {
@@ -343,7 +343,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ms.activeTab = (ms.activeTab - 1 + 4) % 4
 		}
 		return ms, nil
-		
+
 	case "b", "alt+left":
 		// In events tab with detail view, close detail
 		if ms.activeTab == 3 && ms.showEventDetail {
@@ -352,15 +352,15 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return ms, nil
 		}
 		return ms, nil
-		
+
 	case "enter":
 		// Execute/show details of selected item
 		return ms.handleItemSelection()
-		
+
 	case "r":
 		// Refresh current tab
 		return ms, ms.refreshCurrentTab()
-		
+
 	case "ctrl+l":
 		// Show debug logs
 		debugScreen := NewDebugScreen()
@@ -372,7 +372,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	
+
 	return ms, nil
 }
 
@@ -419,19 +419,19 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 	if ms.getActualItemCount() == 0 {
 		return ms, nil
 	}
-	
+
 	currentList := ms.getCurrentList()
 	if len(currentList) == 0 {
 		return ms, nil
 	}
-	
+
 	selectedIdx, exists := ms.selectedIndex[ms.activeTab]
 	if !exists || selectedIdx >= len(currentList) {
 		return ms, nil
 	}
-	
+
 	selectedItem := currentList[selectedIdx]
-	
+
 	switch ms.activeTab {
 	case 0: // Tools
 		// Extract tool name from the display string (format: "name - description")
@@ -441,13 +441,13 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 			// Find the actual tool object
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			
+
 			tools, err := ms.mcpService.ListTools(ctx)
 			if err != nil {
 				ms.SetError(fmt.Errorf("failed to get tool details: %v", err))
 				return ms, nil
 			}
-			
+
 			for _, tool := range tools {
 				if tool.Name == toolName {
 					// Create tool screen
@@ -463,23 +463,23 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 			}
 			ms.SetError(fmt.Errorf("tool '%s' not found", toolName))
 		}
-		
+
 	case 1: // Resources
 		// TODO: Implement resource viewer
 		tabName := []string{"tool", "resource", "prompt"}[ms.activeTab]
 		ms.SetStatus(fmt.Sprintf("Selected %s: %s (viewer not implemented)", tabName, selectedItem), StatusInfo)
-		
+
 	case 2: // Prompts
 		// TODO: Implement prompt viewer
 		tabName := []string{"tool", "resource", "prompt", "event"}[ms.activeTab]
 		ms.SetStatus(fmt.Sprintf("Selected %s: %s (viewer not implemented)", tabName, selectedItem), StatusInfo)
-		
+
 	case 3: // Events
 		// Toggle detail view for the selected event
 		ms.showEventDetail = true
 		return ms, nil
 	}
-	
+
 	return ms, nil
 }
 
@@ -502,11 +502,11 @@ func (ms *MainScreen) refreshCurrentTab() tea.Cmd {
 // View renders the main screen
 func (ms *MainScreen) View() string {
 	var builder strings.Builder
-	
+
 	// Title
 	builder.WriteString(ms.titleStyle.Render("MCP Server Interface"))
 	builder.WriteString("\n")
-	
+
 	// Connection status
 	statusColor := "10" // green
 	if !ms.connected {
@@ -516,17 +516,17 @@ func (ms *MainScreen) View() string {
 			statusColor = "9" // red
 		}
 	}
-	
+
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
 	builder.WriteString(statusStyle.Render(ms.connectionStatus))
 	builder.WriteString("\n\n")
-	
+
 	if !ms.connected && !ms.connecting {
 		// Show error with retry option
 		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 		builder.WriteString(errorStyle.Render("Connection failed"))
 		builder.WriteString("\n\n")
-		
+
 		// Show retry options
 		optionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 		builder.WriteString(optionStyle.Render("Press 'r' to retry connection"))
@@ -534,48 +534,48 @@ func (ms *MainScreen) View() string {
 		builder.WriteString(optionStyle.Render("Press 'q' or Ctrl+C to quit"))
 		return builder.String()
 	}
-	
+
 	if ms.connecting {
 		// Show loading spinner
 		spinner := components.NewSpinner(components.SpinnerDots)
 		elapsed := time.Since(ms.connectingStart)
-		
+
 		builder.WriteString("\n\n")
 		spinnerStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("212")).
 			Bold(true)
 		loadingStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("99"))
-			
+
 		builder.WriteString(spinnerStyle.Render(spinner.Frame(elapsed)))
 		builder.WriteString(" ")
 		builder.WriteString(loadingStyle.Render("Connecting to MCP server..."))
-		
+
 		// Show elapsed time
 		if elapsed > 2*time.Second {
 			builder.WriteString(fmt.Sprintf(" (%s)", elapsed.Round(time.Second)))
 		}
 		return builder.String()
 	}
-	
+
 	// Tabs
 	builder.WriteString(ms.renderTabs())
 	builder.WriteString("\n")
-	
+
 	// Horizontal separator
 	if ms.Width() > 0 {
 		separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 		builder.WriteString(separatorStyle.Render(strings.Repeat("─", min(ms.Width(), 80))))
 		builder.WriteString("\n")
 	}
-	
+
 	// Current list or split-pane view for events
 	if ms.activeTab == 3 && ms.showEventDetail {
 		builder.WriteString(ms.renderEventSplitView())
 	} else {
 		builder.WriteString(ms.renderCurrentList())
 	}
-	
+
 	// Bottom separator
 	builder.WriteString("\n")
 	if ms.Width() > 0 {
@@ -589,7 +589,7 @@ func (ms *MainScreen) View() string {
 	case ms.activeTab == 3 && ms.showEventDetail:
 		helpItems = []string{
 			"←/→: Switch panes",
-			"↑↓: Navigate", 
+			"↑↓: Navigate",
 			"b/Alt+←: Close detail",
 			"r: Refresh",
 			"Ctrl+L: Debug Log",
@@ -615,25 +615,25 @@ func (ms *MainScreen) View() string {
 			"q: Quit",
 		}
 	}
-	
+
 	// Style each help item
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	
+
 	var styledHelp []string
 	for _, item := range helpItems {
 		styledHelp = append(styledHelp, helpStyle.Render(item))
 	}
-	
+
 	helpText := strings.Join(styledHelp, separatorStyle.Render(" • "))
 	builder.WriteString(helpText)
-	
+
 	// Status message
 	if statusMsg, _ := ms.StatusMessage(); statusMsg != "" {
 		builder.WriteString("\n\n")
 		builder.WriteString(ms.statusStyle.Render(statusMsg))
 	}
-	
+
 	return builder.String()
 }
 
@@ -641,19 +641,19 @@ func (ms *MainScreen) View() string {
 func (ms *MainScreen) renderTabs() string {
 	tabs := []string{"Tools", "Resources", "Prompts", "Events"}
 	counts := []int{ms.toolCount, ms.resourceCount, ms.promptCount, ms.eventCount}
-	
+
 	var renderedTabs []string
-	
+
 	for i, tab := range tabs {
 		tabText := fmt.Sprintf(" %s (%d) ", tab, counts[i])
-		
+
 		if i == ms.activeTab {
 			renderedTabs = append(renderedTabs, ms.activeTabStyle.Render(tabText))
 		} else {
 			renderedTabs = append(renderedTabs, ms.tabStyle.Render(tabText))
 		}
 	}
-	
+
 	// Join with a more visible separator
 	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	return strings.Join(renderedTabs, separatorStyle.Render(" │ "))
@@ -663,7 +663,7 @@ func (ms *MainScreen) renderTabs() string {
 func (ms *MainScreen) renderCurrentList() string {
 	currentList := ms.getCurrentList()
 	tabNames := []string{"tools", "resources", "prompts", "events"}
-	
+
 	if len(currentList) == 0 {
 		var emptyMsg string
 		switch ms.activeTab {
@@ -683,7 +683,7 @@ func (ms *MainScreen) renderCurrentList() string {
 			Align(lipgloss.Center)
 		return ms.listStyle.Render(emptyStyle.Render(emptyMsg))
 	}
-	
+
 	// Check if we have actual items or just a placeholder message
 	actualCount := 0
 	switch ms.activeTab {
@@ -696,79 +696,137 @@ func (ms *MainScreen) renderCurrentList() string {
 	case 3:
 		actualCount = ms.eventCount
 	}
-	
+
 	// If no actual items, just show the message without selection
 	if actualCount == 0 {
 		return ms.listStyle.Render(currentList[0])
 	}
-	
+
 	var listItems []string
 	selectedIdx := ms.selectedIndex[ms.activeTab]
-	
-	// Calculate viewport height based on terminal size
-	// Reserve space for: title(2) + status(3) + tabs(3) + help(3) + borders(2)
-	reservedHeight := 13
+
+	// Calculate viewport based on available height
+	// Reserve space for: title(2) + status(3) + tabs(3) + help(3) + borders(4)
+	reservedHeight := 15
 	termHeight := ms.Height()
-	maxHeight := termHeight - reservedHeight
-	if maxHeight < 5 {
-		maxHeight = 5 // Minimum visible items
+	availableHeight := termHeight - reservedHeight
+	if availableHeight < 5 {
+		availableHeight = 5 // Minimum visible lines
 	}
-	if maxHeight > 30 {
-		maxHeight = 30 // Maximum to prevent too sparse display
+
+	// Calculate item display widths for proper wrapping calculation
+	listWidth := ms.Width() - 8 // Account for borders and padding
+	if listWidth > 100 {
+		listWidth = 100 // Cap width for readability
 	}
-	
+	if listWidth < 40 {
+		listWidth = 40 // Minimum width
+	}
+
+	// Calculate actual heights of items (accounting for wrapping)
+	itemHeights := make([]int, len(currentList))
+	for i, item := range currentList {
+		// Calculate how many lines this item will take
+		var displayText string
+		switch ms.activeTab {
+		case 0: // Tools
+			if actualCount > 0 {
+				parts := strings.SplitN(item, " - ", 2)
+				if len(parts) == 2 {
+					// Account for number prefix and formatting
+					displayText = fmt.Sprintf("%2d. %s - %s", i+1, parts[0], parts[1])
+				} else {
+					displayText = fmt.Sprintf("%2d. %s", i+1, item)
+				}
+			} else {
+				displayText = item
+			}
+		default:
+			displayText = item
+		}
+
+		// Calculate wrapped lines for this item
+		lines := 1
+		if len(displayText) > listWidth-4 { // Account for selection arrow and padding
+			lines = (len(displayText) + listWidth - 5) / (listWidth - 4)
+		}
+		itemHeights[i] = lines
+	}
+
+	// Find the optimal viewport window
 	startIdx := 0
 	endIdx := len(currentList)
-	
-	// Calculate scroll position if list is too long
-	if len(currentList) > maxHeight {
-		// Keep selected item centered when possible
-		halfView := maxHeight / 2
-		if selectedIdx < halfView {
-			// Near the top
-			startIdx = 0
-		} else if selectedIdx >= len(currentList) - halfView {
-			// Near the bottom
-			startIdx = len(currentList) - maxHeight
-		} else {
-			// Middle - center the selection
-			startIdx = selectedIdx - halfView
+
+	// If content fits, show everything
+	totalHeight := 0
+	for _, height := range itemHeights {
+		totalHeight += height
+	}
+
+	if totalHeight <= availableHeight {
+		// Everything fits, no scrolling needed
+		startIdx = 0
+		endIdx = len(currentList)
+	} else {
+		// Need to scroll - find the best window around the selected item
+
+		// Start with the selected item and expand outward
+		currentHeight := itemHeights[selectedIdx]
+		startIdx = selectedIdx
+		endIdx = selectedIdx + 1
+
+		// Expand upward and downward to fill available space
+		for currentHeight < availableHeight && (startIdx > 0 || endIdx < len(currentList)) {
+			// Try expanding upward first
+			if startIdx > 0 && currentHeight+itemHeights[startIdx-1] <= availableHeight {
+				startIdx--
+				currentHeight += itemHeights[startIdx]
+			} else if endIdx < len(currentList) && currentHeight+itemHeights[endIdx] <= availableHeight {
+				// Expand downward
+				currentHeight += itemHeights[endIdx]
+				endIdx++
+			} else {
+				// Can't expand further without exceeding available height
+				break
+			}
 		}
-		endIdx = startIdx + maxHeight
-		if endIdx > len(currentList) {
-			endIdx = len(currentList)
+
+		// If we still have space and items above, try to include more from the top
+		for startIdx > 0 && currentHeight+itemHeights[startIdx-1] <= availableHeight {
+			startIdx--
+			currentHeight += itemHeights[startIdx]
 		}
 	}
-	
+
 	// Define item styles
 	nameStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("12")) // Bright Blue
-		
+
 	descriptionStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")) // Gray
-		
+
 	numberStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("243")) // Dim gray
-		
+
 	resourceStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("10")) // Green
-		
+
 	promptStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("13")) // Magenta
-		
+
 	eventTimeStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("243")) // Dim gray
-		
+
 	eventMethodStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("14")) // Cyan
-		
+
 	for i := startIdx; i < endIdx; i++ {
 		item := currentList[i]
-		
+
 		// Format the item based on tab type
 		var displayItem string
 		switch ms.activeTab {
@@ -787,7 +845,7 @@ func (ms *MainScreen) renderCurrentList() string {
 			} else {
 				displayItem = item
 			}
-			
+
 		case 1: // Resources
 			parts := strings.SplitN(item, " - ", 2)
 			if len(parts) == 2 {
@@ -797,7 +855,7 @@ func (ms *MainScreen) renderCurrentList() string {
 			} else {
 				displayItem = resourceStyle.Render(item)
 			}
-			
+
 		case 2: // Prompts
 			parts := strings.SplitN(item, " - ", 2)
 			if len(parts) == 2 {
@@ -807,7 +865,7 @@ func (ms *MainScreen) renderCurrentList() string {
 			} else {
 				displayItem = promptStyle.Render(item)
 			}
-			
+
 		case 3: // Events
 			// Parse event format: "[timestamp] direction method"
 			if strings.HasPrefix(item, "[") {
@@ -830,18 +888,18 @@ func (ms *MainScreen) renderCurrentList() string {
 			} else {
 				displayItem = item
 			}
-			
+
 		default:
 			displayItem = item
 		}
-		
+
 		if i == selectedIdx {
 			listItems = append(listItems, ms.selectedStyle.Render(fmt.Sprintf("▶ %s", displayItem)))
 		} else {
 			listItems = append(listItems, fmt.Sprintf("  %s", displayItem))
 		}
 	}
-	
+
 	// Add scroll indicators with styling
 	scrollStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
 	if startIdx > 0 {
@@ -853,7 +911,7 @@ func (ms *MainScreen) renderCurrentList() string {
 		indicator := scrollStyle.Render(fmt.Sprintf("  ↓ %d more below ↓", remaining))
 		listItems = append(listItems, indicator)
 	}
-	
+
 	// Apply dynamic dimensions to list style
 	width := ms.Width()
 	if width > 100 {
@@ -862,28 +920,29 @@ func (ms *MainScreen) renderCurrentList() string {
 	if width < 40 {
 		width = 40 // Minimum width
 	}
-	
-	// Height is based on actual content + borders
-	contentHeight := len(listItems)
+
+	// Calculate actual content height (sum of heights for visible items + scroll indicators)
+	contentHeight := len(listItems) // Start with number of items (including scroll indicators)
+
 	dynamicListStyle := ms.listStyle.
-		Width(width - 4). // Account for margins
+		Width(width - 4).         // Account for margins
 		Height(contentHeight + 2) // Content + padding
-		
+
 	return dynamicListStyle.Render(strings.Join(listItems, "\n"))
 }
 
 // connectToServer starts the connection to the MCP server
 func (ms *MainScreen) connectToServer() tea.Cmd {
 	return func() tea.Msg {
-		ms.logger.Info("Attempting real MCP connection", 
+		ms.logger.Info("Attempting real MCP connection",
 			debug.F("type", ms.connectionConfig.Type),
 			debug.F("command", ms.connectionConfig.Command),
 			debug.F("args", ms.connectionConfig.Args))
-		
+
 		// Use context with timeout
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		
+
 		// Actually connect to the MCP server
 		err := ms.mcpService.Connect(ctx, ms.connectionConfig)
 		if err != nil {
@@ -893,7 +952,7 @@ func (ms *MainScreen) connectToServer() tea.Cmd {
 				Error:   err,
 			}
 		}
-		
+
 		ms.logger.Info("MCP connection successful")
 		return ConnectionCompleteMsg{
 			Success: true,
@@ -913,10 +972,10 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 				Error:       fmt.Errorf("service not connected"),
 			}
 		}
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		tools, err := ms.mcpService.ListTools(ctx)
 		if err != nil {
 			// Check if this is a "not supported" error - treat as normal
@@ -937,7 +996,7 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 				Error:       err,
 			}
 		}
-		
+
 		var toolList []string
 		actualCount := len(tools)
 		if len(tools) == 0 {
@@ -951,7 +1010,7 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 				toolList = append(toolList, fmt.Sprintf("%s - %s", tool.Name, description))
 			}
 		}
-		
+
 		return ItemsLoadedMsg{
 			Tab:         0,
 			Items:       toolList,
@@ -972,10 +1031,10 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 				Error:       fmt.Errorf("service not connected"),
 			}
 		}
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		resources, err := ms.mcpService.ListResources(ctx)
 		if err != nil {
 			// Check if this is a "not supported" error - treat as normal
@@ -996,7 +1055,7 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 				Error:       err,
 			}
 		}
-		
+
 		var resourceList []string
 		actualCount := len(resources)
 		if len(resources) == 0 {
@@ -1010,7 +1069,7 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 				resourceList = append(resourceList, fmt.Sprintf("%s - %s", resource.URI, description))
 			}
 		}
-		
+
 		return ItemsLoadedMsg{
 			Tab:         1,
 			Items:       resourceList,
@@ -1031,10 +1090,10 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 				Error:       fmt.Errorf("service not connected"),
 			}
 		}
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		prompts, err := ms.mcpService.ListPrompts(ctx)
 		if err != nil {
 			// Check if this is a "not supported" error - treat as normal
@@ -1055,7 +1114,7 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 				Error:       err,
 			}
 		}
-		
+
 		var promptList []string
 		actualCount := len(prompts)
 		if len(prompts) == 0 {
@@ -1069,7 +1128,7 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 				promptList = append(promptList, fmt.Sprintf("%s - %s", prompt.Name, description))
 			}
 		}
-		
+
 		return ItemsLoadedMsg{
 			Tab:         2,
 			Items:       promptList,
@@ -1092,7 +1151,7 @@ func (ms *MainScreen) loadEvents() tea.Cmd {
 		// Get all MCP log entries
 		if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
 			allEntries := mcpLogger.GetEntries()
-			
+
 			// Filter for notifications and events without IDs
 			var events []debug.MCPLogEntry
 			for _, entry := range allEntries {
@@ -1101,7 +1160,7 @@ func (ms *MainScreen) loadEvents() tea.Cmd {
 					events = append(events, entry)
 				}
 			}
-			
+
 			return ItemsLoadedMsg{
 				Tab:         3,
 				Items:       nil, // We store events directly
@@ -1109,7 +1168,7 @@ func (ms *MainScreen) loadEvents() tea.Cmd {
 				Error:       nil,
 			}
 		}
-		
+
 		return ItemsLoadedMsg{
 			Tab:         3,
 			Items:       nil,
@@ -1122,47 +1181,47 @@ func (ms *MainScreen) loadEvents() tea.Cmd {
 // renderEventSplitView renders the split-pane view for events
 func (ms *MainScreen) renderEventSplitView() string {
 	var builder strings.Builder
-	
+
 	// Get terminal width to split the panes
 	totalWidth := ms.Width()
 	if totalWidth == 0 {
 		totalWidth = 120 // Default width
 	}
-	
+
 	leftPaneWidth := totalWidth * 40 / 100  // 40% for list
 	rightPaneWidth := totalWidth * 55 / 100 // 55% for detail (5% margin)
-	
+
 	// Create styles for panes
 	leftPaneStyle := lipgloss.NewStyle().
 		Width(leftPaneWidth).
 		Height(20).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("8"))
-		
+
 	rightPaneStyle := lipgloss.NewStyle().
 		Width(rightPaneWidth).
 		Height(20).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("8"))
-		
+
 	// Active pane gets highlighted border
 	if ms.eventPaneFocus == 0 {
 		leftPaneStyle = leftPaneStyle.BorderForeground(lipgloss.Color("6"))
 	} else {
 		rightPaneStyle = rightPaneStyle.BorderForeground(lipgloss.Color("6"))
 	}
-	
+
 	// Render left pane (event list)
 	leftContent := ms.renderEventList()
 	leftPane := leftPaneStyle.Render(leftContent)
-	
+
 	// Render right pane (event detail)
 	rightContent := ms.renderEventDetail()
 	rightPane := rightPaneStyle.Render(rightContent)
-	
+
 	// Join panes horizontally
 	builder.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, " ", rightPane))
-	
+
 	return builder.String()
 }
 
@@ -1171,14 +1230,14 @@ func (ms *MainScreen) renderEventList() string {
 	if len(ms.events) == 0 {
 		return "No events recorded yet"
 	}
-	
+
 	var listItems []string
 	selectedIdx := ms.selectedIndex[3]
-	
+
 	maxHeight := 18 // Slightly less than pane height for padding
 	startIdx := 0
 	endIdx := len(ms.events)
-	
+
 	// Calculate scroll position
 	if len(ms.events) > maxHeight {
 		if selectedIdx >= maxHeight/2 {
@@ -1189,11 +1248,11 @@ func (ms *MainScreen) renderEventList() string {
 		}
 		endIdx = min(startIdx+maxHeight, len(ms.events))
 	}
-	
+
 	for i := startIdx; i < endIdx; i++ {
 		event := ms.events[i]
 		timestamp := event.Timestamp.Format("15:04:05")
-		
+
 		// Format event type and method
 		var eventInfo string
 		switch event.MessageType {
@@ -1204,16 +1263,16 @@ func (ms *MainScreen) renderEventList() string {
 		default:
 			eventInfo = string(event.MessageType)
 		}
-		
+
 		line := fmt.Sprintf("[%s] %s %s", timestamp, event.Direction, eventInfo)
-		
+
 		if i == selectedIdx && ms.eventPaneFocus == 0 {
 			listItems = append(listItems, ms.selectedStyle.Render(fmt.Sprintf("▶ %s", line)))
 		} else {
 			listItems = append(listItems, fmt.Sprintf("  %s", line))
 		}
 	}
-	
+
 	return strings.Join(listItems, "\n")
 }
 
@@ -1222,39 +1281,39 @@ func (ms *MainScreen) renderEventDetail() string {
 	if len(ms.events) == 0 {
 		return "No event selected"
 	}
-	
+
 	selectedIdx := ms.selectedIndex[3]
 	if selectedIdx >= len(ms.events) {
 		return "Invalid selection"
 	}
-	
+
 	event := ms.events[selectedIdx]
-	
+
 	var builder strings.Builder
-	
+
 	// Event header
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	builder.WriteString(headerStyle.Render("Event Details"))
 	builder.WriteString("\n\n")
-	
+
 	// Event metadata
 	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	builder.WriteString(infoStyle.Render(fmt.Sprintf("Time: %s\n", event.Timestamp.Format("15:04:05.000"))))
 	builder.WriteString(infoStyle.Render(fmt.Sprintf("Direction: %s\n", event.Direction)))
 	builder.WriteString(infoStyle.Render(fmt.Sprintf("Type: %s\n", event.MessageType)))
-	
+
 	if event.Method != "" {
 		builder.WriteString(infoStyle.Render(fmt.Sprintf("Method: %s\n", event.Method)))
 	}
-	
+
 	builder.WriteString("\n")
-	
+
 	// JSON content
 	jsonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	builder.WriteString(headerStyle.Render("Message Content:"))
 	builder.WriteString("\n")
 	builder.WriteString(jsonStyle.Render(event.GetFormattedJSON()))
-	
+
 	return builder.String()
 }
 
@@ -1263,18 +1322,18 @@ func isUnsupportedCapabilityError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errStr := strings.ToLower(err.Error())
 	return strings.Contains(errStr, "not supported") ||
-		   strings.Contains(errStr, "method not found") ||
-		   strings.Contains(errStr, "unknown method") ||
-		   strings.Contains(errStr, "not implemented") ||
-		   strings.Contains(errStr, "unsupported") ||
-		   strings.Contains(errStr, "method not available") ||
-		   strings.Contains(errStr, "-32601") || // JSON-RPC method not found
-		   strings.Contains(errStr, "no such method") ||
-		   strings.Contains(errStr, "capability not supported") ||
-		   strings.Contains(errStr, "does not support this functionality")
+		strings.Contains(errStr, "method not found") ||
+		strings.Contains(errStr, "unknown method") ||
+		strings.Contains(errStr, "not implemented") ||
+		strings.Contains(errStr, "unsupported") ||
+		strings.Contains(errStr, "method not available") ||
+		strings.Contains(errStr, "-32601") || // JSON-RPC method not found
+		strings.Contains(errStr, "no such method") ||
+		strings.Contains(errStr, "capability not supported") ||
+		strings.Contains(errStr, "does not support this functionality")
 }
 
 // Utility functions

@@ -25,16 +25,16 @@ func TestCtrlLFunctionality(t *testing.T) {
 
 		// Press Ctrl+L
 		model, cmd := ms.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
-		
+
 		// Should still be main screen but with a transition command
 		assert.IsType(t, &MainScreen{}, model)
 		assert.NotNil(t, cmd, "Should return a command")
-		
+
 		// Execute the command to get the transition message
 		msg := cmd()
 		transitionMsg, ok := msg.(TransitionMsg)
 		require.True(t, ok, "Should return a TransitionMsg")
-		
+
 		// Check that it transitions to DebugScreen
 		assert.IsType(t, &DebugScreen{}, transitionMsg.Transition.Screen)
 	})
@@ -46,16 +46,16 @@ func TestCtrlLFunctionality(t *testing.T) {
 
 		// Press Ctrl+L
 		model, cmd := ts.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
-		
+
 		// Should still be tool screen but with a transition command
 		assert.IsType(t, &ToolScreen{}, model)
 		assert.NotNil(t, cmd, "Should return a command")
-		
+
 		// Execute the command to get the transition message
 		msg := cmd()
 		transitionMsg, ok := msg.(TransitionMsg)
 		require.True(t, ok, "Should return a TransitionMsg")
-		
+
 		// Check that it transitions to DebugScreen
 		assert.IsType(t, &DebugScreen{}, transitionMsg.Transition.Screen)
 	})
@@ -67,16 +67,16 @@ func TestCtrlLFunctionality(t *testing.T) {
 
 		// Press Ctrl+L
 		model, cmd := cs.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
-		
+
 		// Should still be connection screen but with a transition command
 		assert.IsType(t, &ConnectionScreen{}, model)
 		assert.NotNil(t, cmd, "Should return a command")
-		
+
 		// Execute the command to get the transition message
 		msg := cmd()
 		transitionMsg, ok := msg.(TransitionMsg)
 		require.True(t, ok, "Should return a TransitionMsg")
-		
+
 		// Check that it transitions to DebugScreen
 		assert.IsType(t, &DebugScreen{}, transitionMsg.Transition.Screen)
 	})
@@ -87,14 +87,14 @@ func TestCtrlLFunctionality(t *testing.T) {
 
 		// Test various back keys
 		backKeys := []string{"b", "alt+left"}
-		
+
 		for _, key := range backKeys {
 			model, cmd := ds.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
-			
+
 			// Should still be debug screen but with a back command
 			assert.IsType(t, &DebugScreen{}, model)
 			assert.NotNil(t, cmd, "Should return a command for key: %s", key)
-			
+
 			// Execute the command to get the back message
 			msg := cmd()
 			_, ok := msg.(BackMsg)
@@ -115,7 +115,7 @@ func TestCtrlLFunctionality(t *testing.T) {
 
 		// Press Ctrl+L
 		model, cmd := ms.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
-		
+
 		// Should still be main screen with no command
 		assert.IsType(t, &MainScreen{}, model)
 		assert.Nil(t, cmd, "Should not return a command when not connected")
@@ -129,7 +129,7 @@ func TestCtrlLFunctionality(t *testing.T) {
 
 		// Press Ctrl+L while executing
 		model, cmd := ts.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
-		
+
 		// Should still be tool screen with no command
 		assert.IsType(t, &ToolScreen{}, model)
 		assert.Nil(t, cmd, "Should not return a command while executing")
@@ -147,7 +147,7 @@ func TestCtrlLFunctionality(t *testing.T) {
 		model, cmd := ds.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
 		assert.IsType(t, &DebugScreen{}, model)
 		assert.NotNil(t, cmd, "Should return a back command")
-		
+
 		// Verify tab state is preserved
 		debugScreen := model.(*DebugScreen)
 		assert.Equal(t, 1, debugScreen.activeTab, "Tab state should be preserved")

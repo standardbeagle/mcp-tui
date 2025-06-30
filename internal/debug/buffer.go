@@ -22,7 +22,7 @@ func (e LogEntry) String() string {
 	if e.Component != "" {
 		component = fmt.Sprintf(" [%s]", e.Component)
 	}
-	
+
 	fieldsStr := ""
 	if len(e.Fields) > 0 {
 		fieldsStr = " "
@@ -33,7 +33,7 @@ func (e LogEntry) String() string {
 			fieldsStr += fmt.Sprintf("%s=%v", field.Key, field.Value)
 		}
 	}
-	
+
 	return fmt.Sprintf("[%s] %s%s %s%s", timestamp, e.Level, component, e.Message, fieldsStr)
 }
 
@@ -56,7 +56,7 @@ func NewLogBuffer(maxSize int) *LogBuffer {
 func (lb *LogBuffer) Add(level LogLevel, component, message string, fields []Field) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
-	
+
 	entry := LogEntry{
 		Timestamp: time.Now(),
 		Level:     level,
@@ -64,10 +64,10 @@ func (lb *LogBuffer) Add(level LogLevel, component, message string, fields []Fie
 		Message:   message,
 		Fields:    fields,
 	}
-	
+
 	// Add the entry
 	lb.entries = append(lb.entries, entry)
-	
+
 	// Remove old entries if we exceed maxSize
 	if len(lb.entries) > lb.maxSize {
 		// Keep the most recent entries
@@ -80,7 +80,7 @@ func (lb *LogBuffer) Add(level LogLevel, component, message string, fields []Fie
 func (lb *LogBuffer) GetEntries() []LogEntry {
 	lb.mu.RLock()
 	defer lb.mu.RUnlock()
-	
+
 	// Return a copy to avoid race conditions
 	entries := make([]LogEntry, len(lb.entries))
 	copy(entries, lb.entries)

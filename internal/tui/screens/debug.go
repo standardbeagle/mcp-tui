@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/atotto/clipboard"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
@@ -14,19 +14,19 @@ import (
 // DebugScreen shows debug logs and MCP protocol communication
 type DebugScreen struct {
 	*BaseScreen
-	
+
 	// UI state
 	activeTab     int // 0=general logs, 1=MCP protocol, 2=statistics
 	selectedIndex int
 	scrollOffset  int
 	showDetail    bool // Show detailed view of selected MCP log
-	
+
 	// Data
-	generalLogs  []string
-	mcpLogs      []string
-	mcpEntries   []debug.MCPLogEntry // Full MCP log entries for detail view
-	mcpStats     map[string]int
-	
+	generalLogs []string
+	mcpLogs     []string
+	mcpEntries  []debug.MCPLogEntry // Full MCP log entries for detail view
+	mcpStats    map[string]int
+
 	// Styles
 	tabStyle       lipgloss.Style
 	activeTabStyle lipgloss.Style
@@ -42,10 +42,10 @@ func NewDebugScreen() *DebugScreen {
 	ds := &DebugScreen{
 		BaseScreen: NewBaseScreen("Debug", true),
 	}
-	
+
 	ds.initStyles()
 	ds.refreshData()
-	
+
 	return ds
 }
 
@@ -54,36 +54,36 @@ func (ds *DebugScreen) initStyles() {
 	ds.tabStyle = lipgloss.NewStyle().
 		Padding(0, 1).
 		Foreground(lipgloss.Color("8"))
-	
+
 	ds.activeTabStyle = lipgloss.NewStyle().
 		Padding(0, 1).
 		Foreground(lipgloss.Color("15")).
 		Background(lipgloss.Color("4")).
 		Bold(true)
-	
+
 	ds.logStyle = lipgloss.NewStyle().
 		Padding(1).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("8")).
 		Width(120).
 		Height(20)
-	
+
 	ds.selectedStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("0")).
 		Background(lipgloss.Color("6")).
 		Bold(true)
-	
+
 	ds.titleStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("13")).
 		Bold(true).
 		Margin(1, 0)
-	
+
 	ds.statStyle = lipgloss.NewStyle().
 		Padding(0, 1).
 		Margin(0, 1).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("8"))
-	
+
 	ds.detailStyle = lipgloss.NewStyle().
 		Padding(1).
 		Border(lipgloss.RoundedBorder()).
@@ -103,22 +103,22 @@ func (ds *DebugScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		ds.UpdateSize(msg.Width, msg.Height)
 		return ds, nil
-		
+
 	case tea.KeyMsg:
 		return ds.handleKeyMsg(msg)
-		
+
 	case debugDataRefreshMsg:
 		ds.generalLogs = msg.GeneralLogs
 		ds.mcpLogs = msg.MCPLogs
 		ds.mcpEntries = msg.MCPEntries
 		ds.mcpStats = msg.MCPStats
 		return ds, nil
-		
+
 	case StatusMsg:
 		ds.SetStatus(msg.Message, msg.Level)
 		return ds, nil
 	}
-	
+
 	return ds, nil
 }
 
@@ -156,28 +156,28 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ds, nil
 	}
-	
+
 	switch msg.String() {
 	case "ctrl+c", "esc":
 		// Quit the app
 		return ds, tea.Quit
-		
+
 	case "b", "alt+left":
 		// Go back to main screen
 		return ds, func() tea.Msg { return BackMsg{} }
-		
+
 	case "tab", "right":
 		ds.activeTab = (ds.activeTab + 1) % 3
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
-		
+
 	case "shift+tab", "left":
 		ds.activeTab = (ds.activeTab - 1 + 3) % 3
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
-		
+
 	case "up", "k":
 		if ds.activeTab != 2 { // Not in stats tab
 			currentList := ds.getCurrentList()
@@ -189,7 +189,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return ds, nil
-		
+
 	case "down", "j":
 		if ds.activeTab != 2 { // Not in stats tab
 			currentList := ds.getCurrentList()
@@ -201,12 +201,12 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return ds, nil
-		
+
 	case "page_up":
 		ds.selectedIndex = max(0, ds.selectedIndex-10)
 		ds.adjustScrollOffset()
 		return ds, nil
-		
+
 	case "page_down":
 		currentList := ds.getCurrentList()
 		if len(currentList) > 0 {
@@ -214,12 +214,12 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ds.adjustScrollOffset()
 		}
 		return ds, nil
-		
+
 	case "home", "g":
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
-		
+
 	case "end", "G":
 		currentList := ds.getCurrentList()
 		if len(currentList) > 0 {
@@ -227,11 +227,11 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ds.adjustScrollOffset()
 		}
 		return ds, nil
-		
+
 	case "r":
 		// Refresh data
 		return ds, ds.refreshDataCmd()
-		
+
 	case "c":
 		// Clear logs (if not in a list, otherwise copy)
 		if ds.activeTab == 2 { // In stats tab
@@ -239,18 +239,18 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// In log tabs, copy current item
 		return ds, ds.copySelectedItemCmd()
-		
+
 	case "x":
 		// Clear logs
 		return ds, ds.clearLogsCmd()
-		
+
 	case "y":
 		// Copy current selected item to clipboard (vim-like)
 		if ds.activeTab != 2 { // Not in stats tab
 			return ds, ds.copySelectedItemCmd()
 		}
 		return ds, nil
-		
+
 	case "enter":
 		// Show detail view for MCP logs
 		if ds.activeTab == 1 && ds.selectedIndex < len(ds.mcpEntries) {
@@ -258,7 +258,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ds, nil
 	}
-	
+
 	return ds, nil
 }
 
@@ -277,13 +277,13 @@ func (ds *DebugScreen) getCurrentList() []string {
 // adjustScrollOffset adjusts the scroll offset to keep selected item visible
 func (ds *DebugScreen) adjustScrollOffset() {
 	maxVisible := 18 // Approximate number of visible log lines
-	
+
 	if ds.selectedIndex < ds.scrollOffset {
 		ds.scrollOffset = ds.selectedIndex
 	} else if ds.selectedIndex >= ds.scrollOffset+maxVisible {
 		ds.scrollOffset = ds.selectedIndex - maxVisible + 1
 	}
-	
+
 	if ds.scrollOffset < 0 {
 		ds.scrollOffset = 0
 	}
@@ -292,21 +292,21 @@ func (ds *DebugScreen) adjustScrollOffset() {
 // View renders the debug screen
 func (ds *DebugScreen) View() string {
 	var builder strings.Builder
-	
+
 	// Title
 	builder.WriteString(ds.titleStyle.Render("🔍 MCP Debug Console"))
 	builder.WriteString("\n")
-	
+
 	// If showing detail view, render that instead
 	if ds.showDetail {
 		builder.WriteString(ds.renderDetailView())
 		return builder.String()
 	}
-	
+
 	// Tabs
 	builder.WriteString(ds.renderTabs())
 	builder.WriteString("\n\n")
-	
+
 	// Content based on active tab
 	switch ds.activeTab {
 	case 0:
@@ -316,13 +316,13 @@ func (ds *DebugScreen) View() string {
 	case 2:
 		builder.WriteString(ds.renderStats())
 	}
-	
+
 	// Help text
 	builder.WriteString("\n\n")
 	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	builder.WriteString(helpStyle.Render(helpText))
-	
+
 	// Status message
 	if statusMsg, level := ds.StatusMessage(); statusMsg != "" {
 		builder.WriteString("\n\n")
@@ -333,14 +333,14 @@ func (ds *DebugScreen) View() string {
 		case StatusWarning:
 			statusColor = "11" // yellow
 		case StatusError:
-			statusColor = "9"  // red
+			statusColor = "9" // red
 		default:
 			statusColor = "12" // blue
 		}
 		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Bold(true)
 		builder.WriteString(statusStyle.Render(statusMsg))
 	}
-	
+
 	return builder.String()
 }
 
@@ -351,19 +351,19 @@ func (ds *DebugScreen) renderTabs() string {
 		fmt.Sprintf("MCP Protocol (%d)", len(ds.mcpLogs)),
 		"Statistics",
 	}
-	
+
 	var renderedTabs []string
-	
+
 	for i, tab := range tabs {
 		tabText := fmt.Sprintf(" %s ", tab)
-		
+
 		if i == ds.activeTab {
 			renderedTabs = append(renderedTabs, ds.activeTabStyle.Render(tabText))
 		} else {
 			renderedTabs = append(renderedTabs, ds.tabStyle.Render(tabText))
 		}
 	}
-	
+
 	return strings.Join(renderedTabs, "│")
 }
 
@@ -373,14 +373,14 @@ func (ds *DebugScreen) renderLogList(title string, logs []string) string {
 		emptyMsg := fmt.Sprintf("No %s available", strings.ToLower(title))
 		return ds.logStyle.Render(emptyMsg)
 	}
-	
+
 	var listItems []string
 	maxHeight := 18
-	
+
 	// Calculate visible range
 	startIdx := ds.scrollOffset
 	endIdx := min(startIdx+maxHeight, len(logs))
-	
+
 	for i := startIdx; i < endIdx; i++ {
 		logLine := logs[i]
 		if i == ds.selectedIndex {
@@ -389,7 +389,7 @@ func (ds *DebugScreen) renderLogList(title string, logs []string) string {
 			listItems = append(listItems, fmt.Sprintf("  %s", logLine))
 		}
 	}
-	
+
 	// Add scroll indicators
 	if startIdx > 0 {
 		listItems = append([]string{"  ↑ More entries above ↑"}, listItems...)
@@ -397,21 +397,21 @@ func (ds *DebugScreen) renderLogList(title string, logs []string) string {
 	if endIdx < len(logs) {
 		listItems = append(listItems, "  ↓ More entries below ↓")
 	}
-	
+
 	return ds.logStyle.Render(strings.Join(listItems, "\n"))
 }
 
 // renderStats renders MCP protocol statistics
 func (ds *DebugScreen) renderStats() string {
 	var builder strings.Builder
-	
+
 	builder.WriteString("📊 MCP Protocol Statistics\n\n")
-	
+
 	if len(ds.mcpStats) == 0 {
 		builder.WriteString("No MCP communication recorded yet")
 		return builder.String()
 	}
-	
+
 	// Render stats in a grid
 	stats := []struct {
 		label string
@@ -424,7 +424,7 @@ func (ds *DebugScreen) renderStats() string {
 		{"Notifications", "notifications", "11"},
 		{"Errors", "errors", "9"},
 	}
-	
+
 	for _, stat := range stats {
 		value := ds.mcpStats[stat.key]
 		statBox := ds.statStyle.Copy().
@@ -433,13 +433,13 @@ func (ds *DebugScreen) renderStats() string {
 		builder.WriteString(statBox)
 		builder.WriteString("  ")
 	}
-	
+
 	builder.WriteString("\n\n")
-	
+
 	// Additional analysis
 	if total := ds.mcpStats["total"]; total > 0 {
 		builder.WriteString("📈 Analysis:\n")
-		
+
 		errorRate := float64(ds.mcpStats["errors"]) / float64(total) * 100
 		if errorRate > 10 {
 			builder.WriteString(fmt.Sprintf("⚠️  High error rate: %.1f%%\n", errorRate))
@@ -448,13 +448,13 @@ func (ds *DebugScreen) renderStats() string {
 		} else {
 			builder.WriteString("✅ No errors detected\n")
 		}
-		
+
 		if ds.mcpStats["requests"] > 0 && ds.mcpStats["responses"] > 0 {
 			responseRate := float64(ds.mcpStats["responses"]) / float64(ds.mcpStats["requests"]) * 100
 			builder.WriteString(fmt.Sprintf("📤 Response rate: %.1f%%\n", responseRate))
 		}
 	}
-	
+
 	return builder.String()
 }
 
@@ -464,7 +464,7 @@ func (ds *DebugScreen) refreshData() {
 	if logBuffer := debug.GetLogBuffer(); logBuffer != nil {
 		ds.generalLogs = logBuffer.GetEntriesAsStrings()
 	}
-	
+
 	// Get MCP protocol logs
 	if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
 		ds.mcpLogs = mcpLogger.GetEntriesAsStrings()
@@ -496,11 +496,11 @@ func (ds *DebugScreen) clearLogsCmd() tea.Cmd {
 		if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
 			mcpLogger.Clear()
 		}
-		
+
 		// Reset UI state
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
-		
+
 		// Refresh data
 		ds.refreshData()
 		return debugDataRefreshMsg{
@@ -520,16 +520,16 @@ func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
 			ds.SetStatus("Nothing to copy", StatusWarning)
 			return StatusMsg{Message: "Nothing to copy", Level: StatusWarning}
 		}
-		
+
 		selectedItem := currentList[ds.selectedIndex]
-		
+
 		// Copy to clipboard
 		err := clipboard.WriteAll(selectedItem)
 		if err != nil {
 			ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
 			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
 		}
-		
+
 		// Show success message
 		tabName := []string{"general log", "MCP message"}[ds.activeTab]
 		message := fmt.Sprintf("Copied %s to clipboard", tabName)
@@ -541,27 +541,27 @@ func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
 // renderDetailView renders the detailed JSON view of a selected MCP log entry
 func (ds *DebugScreen) renderDetailView() string {
 	var builder strings.Builder
-	
+
 	if ds.selectedIndex >= len(ds.mcpEntries) {
 		builder.WriteString("No entry selected")
 		return builder.String()
 	}
-	
+
 	entry := ds.mcpEntries[ds.selectedIndex]
-	
+
 	// Header
 	builder.WriteString("\n")
 	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
 	builder.WriteString(headerStyle.Render("MCP Message Detail"))
 	builder.WriteString("\n\n")
-	
+
 	// Message info
 	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	builder.WriteString(infoStyle.Render(fmt.Sprintf("Time: %s | Direction: %s | Type: %s",
 		entry.Timestamp.Format("15:04:05.000"),
 		entry.Direction,
 		entry.MessageType)))
-	
+
 	if entry.Method != "" {
 		builder.WriteString(infoStyle.Render(fmt.Sprintf(" | Method: %s", entry.Method)))
 	}
@@ -569,16 +569,16 @@ func (ds *DebugScreen) renderDetailView() string {
 		builder.WriteString(infoStyle.Render(fmt.Sprintf(" | ID: %v", entry.ID)))
 	}
 	builder.WriteString("\n\n")
-	
+
 	// JSON content
 	jsonContent := entry.GetFormattedJSON()
 	builder.WriteString(ds.detailStyle.Render(jsonContent))
-	
+
 	// Help text
 	builder.WriteString("\n\n")
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	builder.WriteString(helpStyle.Render("c/y: Copy JSON • b/Alt+←/Enter: Back"))
-	
+
 	// Status message
 	if statusMsg, level := ds.StatusMessage(); statusMsg != "" {
 		builder.WriteString("\n\n")
@@ -589,14 +589,14 @@ func (ds *DebugScreen) renderDetailView() string {
 		case StatusWarning:
 			statusColor = "11" // yellow
 		case StatusError:
-			statusColor = "9"  // red
+			statusColor = "9" // red
 		default:
 			statusColor = "12" // blue
 		}
 		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Bold(true)
 		builder.WriteString(statusStyle.Render(statusMsg))
 	}
-	
+
 	return builder.String()
 }
 

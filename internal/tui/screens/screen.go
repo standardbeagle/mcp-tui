@@ -7,13 +7,13 @@ import (
 // Screen represents a TUI screen interface
 type Screen interface {
 	tea.Model
-	
+
 	// Name returns the screen name for debugging
 	Name() string
-	
+
 	// CanGoBack returns true if this screen supports going back
 	CanGoBack() bool
-	
+
 	// Reset resets the screen to its initial state
 	Reset()
 }

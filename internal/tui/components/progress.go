@@ -41,7 +41,7 @@ func (p *ProgressBar) Render(percent float64) string {
 	empty := p.width - filled
 
 	bar := strings.Repeat(p.fillChar, filled) + strings.Repeat(p.emptyChar, empty)
-	
+
 	if p.showPercent {
 		return fmt.Sprintf("%s %3.0f%%", p.style.Render(bar), percent)
 	}
@@ -68,12 +68,12 @@ func NewIndeterminateProgress(width int) *IndeterminateProgress {
 func (ip *IndeterminateProgress) Render(elapsed time.Duration) string {
 	// Create a moving block effect
 	position := int(elapsed.Seconds()*10) % (ip.width + 10)
-	
+
 	bar := make([]string, ip.width)
 	for i := 0; i < ip.width; i++ {
 		bar[i] = "░"
 	}
-	
+
 	// Create a 5-character wide moving block
 	blockSize := 5
 	for i := 0; i < blockSize; i++ {
@@ -82,7 +82,7 @@ func (ip *IndeterminateProgress) Render(elapsed time.Duration) string {
 			bar[pos] = "█"
 		}
 	}
-	
+
 	// Apply styles
 	result := ""
 	for _, char := range bar {
@@ -92,20 +92,20 @@ func (ip *IndeterminateProgress) Render(elapsed time.Duration) string {
 			result += ip.style.Render(string(char))
 		}
 	}
-	
+
 	return result
 }
 
 // ProgressMessage shows a progress message with elapsed time
 func ProgressMessage(message string, elapsed time.Duration, showSpinner bool) string {
 	timeStr := formatDuration(elapsed)
-	
+
 	if showSpinner {
 		spinner := NewSpinner(SpinnerLine)
 		spinnerFrame := spinner.Frame(elapsed)
 		return fmt.Sprintf("%s %s (%s)", spinnerFrame, message, timeStr)
 	}
-	
+
 	return fmt.Sprintf("%s (%s)", message, timeStr)
 }
 
@@ -114,14 +114,14 @@ func formatDuration(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
 	}
-	
+
 	minutes := int(d.Minutes())
 	seconds := int(d.Seconds()) % 60
-	
+
 	if minutes < 60 {
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
 	}
-	
+
 	hours := minutes / 60
 	minutes = minutes % 60
 	return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)

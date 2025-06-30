@@ -10,16 +10,16 @@ import (
 type Manager interface {
 	// Start starts a process with the given command and arguments
 	Start(ctx context.Context, command string, args []string) (Process, error)
-	
+
 	// List returns all managed processes
 	List() []Process
-	
+
 	// Kill terminates a process
 	Kill(pid int) error
-	
+
 	// KillAll terminates all managed processes
 	KillAll() error
-	
+
 	// Cleanup removes terminated processes from tracking
 	Cleanup()
 }
@@ -28,22 +28,22 @@ type Manager interface {
 type Process interface {
 	// PID returns the process ID
 	PID() int
-	
+
 	// Command returns the command that started this process
 	Command() string
-	
+
 	// Args returns the arguments passed to the process
 	Args() []string
-	
+
 	// IsRunning returns true if the process is still running
 	IsRunning() bool
-	
+
 	// Kill terminates the process
 	Kill() error
-	
+
 	// Wait waits for the process to terminate
 	Wait() error
-	
+
 	// ExitCode returns the exit code if the process has terminated
 	ExitCode() (int, bool)
 }
@@ -89,15 +89,15 @@ func (p *process) Args() []string {
 func (p *process) IsRunning() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	if p.finished {
 		return false
 	}
-	
+
 	if p.cmd == nil || p.cmd.Process == nil {
 		return false
 	}
-	
+
 	// Platform-specific implementation will be added
 	return true
 }
@@ -106,11 +106,11 @@ func (p *process) IsRunning() bool {
 func (p *process) Kill() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if p.cmd == nil || p.cmd.Process == nil {
 		return nil
 	}
-	
+
 	// Platform-specific implementation will be added
 	return p.cmd.Process.Kill()
 }
@@ -120,16 +120,16 @@ func (p *process) Wait() error {
 	if p.cmd == nil {
 		return nil
 	}
-	
+
 	err := p.cmd.Wait()
-	
+
 	p.mu.Lock()
 	p.finished = true
 	if p.cmd.ProcessState != nil {
 		p.exitCode = p.cmd.ProcessState.ExitCode()
 	}
 	p.mu.Unlock()
-	
+
 	return err
 }
 
@@ -137,7 +137,7 @@ func (p *process) Wait() error {
 func (p *process) ExitCode() (int, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	return p.exitCode, p.finished
 }
 
@@ -157,19 +157,19 @@ func NewManager() Manager {
 // Start starts a new process
 func (m *manager) Start(ctx context.Context, command string, args []string) (Process, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
-	
+
 	// Platform-specific setup will be added
-	
+
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	
+
 	proc := NewProcess(cmd, command, args)
-	
+
 	m.mu.Lock()
 	m.processes = append(m.processes, proc)
 	m.mu.Unlock()
-	
+
 	return proc, nil
 }
 
@@ -177,7 +177,7 @@ func (m *manager) Start(ctx context.Context, command string, args []string) (Pro
 func (m *manager) List() []Process {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	result := make([]Process, len(m.processes))
 	copy(result, m.processes)
 	return result
@@ -187,13 +187,13 @@ func (m *manager) List() []Process {
 func (m *manager) Kill(pid int) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	for _, proc := range m.processes {
 		if proc.PID() == pid {
 			return proc.Kill()
 		}
 	}
-	
+
 	return nil // Process not found, maybe already terminated
 }
 
@@ -203,14 +203,14 @@ func (m *manager) KillAll() error {
 	processes := make([]Process, len(m.processes))
 	copy(processes, m.processes)
 	m.mu.RUnlock()
-	
+
 	var lastErr error
 	for _, proc := range processes {
 		if err := proc.Kill(); err != nil {
 			lastErr = err
 		}
 	}
-	
+
 	return lastErr
 }
 
@@ -218,13 +218,13 @@ func (m *manager) KillAll() error {
 func (m *manager) Cleanup() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	active := make([]Process, 0, len(m.processes))
 	for _, proc := range m.processes {
 		if proc.IsRunning() {
 			active = append(active, proc)
 		}
 	}
-	
+
 	m.processes = active
 }

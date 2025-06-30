@@ -164,9 +164,9 @@ func TestParseArgs(t *testing.T) {
 			description: "Should parse connection for TUI mode",
 		},
 		{
-			name: "flags take precedence",
-			args: []string{"some-command", "tool", "list"},
-			cmdFlag: "override-cmd",
+			name:     "flags take precedence",
+			args:     []string{"some-command", "tool", "list"},
+			cmdFlag:  "override-cmd",
 			argsFlag: []string{"override-arg"},
 			expected: &ParsedArgs{
 				Connection: &ConnectionConfig{
@@ -184,22 +184,22 @@ func TestParseArgs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ParseArgs(tt.args, tt.cmdFlag, tt.urlFlag, tt.argsFlag)
-			
+
 			// Compare connections
 			if !reflect.DeepEqual(result.Connection, tt.expected.Connection) {
-				t.Errorf("%s\nConnection mismatch:\ngot:  %+v\nwant: %+v", 
+				t.Errorf("%s\nConnection mismatch:\ngot:  %+v\nwant: %+v",
 					tt.description, result.Connection, tt.expected.Connection)
 			}
-			
+
 			// Compare subcommand
 			if result.SubCommand != tt.expected.SubCommand {
-				t.Errorf("%s\nSubCommand mismatch: got %q, want %q", 
+				t.Errorf("%s\nSubCommand mismatch: got %q, want %q",
 					tt.description, result.SubCommand, tt.expected.SubCommand)
 			}
-			
+
 			// Compare subcommand args
 			if !reflect.DeepEqual(result.SubCommandArgs, tt.expected.SubCommandArgs) {
-				t.Errorf("%s\nSubCommandArgs mismatch:\ngot:  %v\nwant: %v", 
+				t.Errorf("%s\nSubCommandArgs mismatch:\ngot:  %v\nwant: %v",
 					tt.description, result.SubCommandArgs, tt.expected.SubCommandArgs)
 			}
 		})

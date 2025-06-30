@@ -7,32 +7,32 @@ import (
 // Config holds all application configuration
 type Config struct {
 	// Connection settings
-	Command           string
-	Args              []string
+	Command            string
+	Args               []string
 	ServerCapabilities map[string]interface{}
-	
+
 	// Timeouts
 	ConnectionTimeout time.Duration
 	RequestTimeout    time.Duration
-	
+
 	// Debug settings
-	DebugMode         bool
-	LogLevel          string
-	
+	DebugMode bool
+	LogLevel  string
+
 	// UI settings
-	EnableClipboard   bool
-	ColorScheme       string
+	EnableClipboard bool
+	ColorScheme     string
 }
 
 // Default returns the default configuration
 func Default() *Config {
 	return &Config{
-		ConnectionTimeout: 10 * time.Second,
-		RequestTimeout:    30 * time.Second,
-		DebugMode:         false,
-		LogLevel:          "info",
-		EnableClipboard:   true,
-		ColorScheme:       "default",
+		ConnectionTimeout:  10 * time.Second,
+		RequestTimeout:     30 * time.Second,
+		DebugMode:          false,
+		LogLevel:           "info",
+		EnableClipboard:    true,
+		ColorScheme:        "default",
 		ServerCapabilities: make(map[string]interface{}),
 	}
 }
@@ -48,11 +48,11 @@ const (
 
 // ConnectionConfig holds connection-specific settings
 type ConnectionConfig struct {
-	Type     TransportType
-	Command  string
-	Args     []string
-	URL      string
-	Headers  map[string]string
+	Type    TransportType
+	Command string
+	Args    []string
+	URL     string
+	Headers map[string]string
 }
 
 // Validate checks if the configuration is valid

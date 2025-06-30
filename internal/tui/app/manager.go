@@ -12,7 +12,7 @@ type ScreenManager struct {
 	config           *config.Config
 	connectionConfig *config.ConnectionConfig
 	logger           debug.Logger
-	
+
 	currentScreen screens.Screen
 	screenStack   []screens.Screen
 }
@@ -25,7 +25,7 @@ func NewScreenManager(cfg *config.Config, connConfig *config.ConnectionConfig) *
 		logger:           debug.Component("screen-manager"),
 		screenStack:      make([]screens.Screen, 0),
 	}
-	
+
 	// Initialize the appropriate starting screen
 	if connConfig != nil {
 		// Quick connect mode - go directly to main screen
@@ -34,7 +34,7 @@ func NewScreenManager(cfg *config.Config, connConfig *config.ConnectionConfig) *
 		// Interactive mode - start with connection screen
 		sm.currentScreen = screens.NewConnectionScreen(cfg)
 	}
-	
+
 	return sm
 }
 
@@ -51,33 +51,33 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sm.currentScreen.CanGoBack() {
 			sm.screenStack = append(sm.screenStack, sm.currentScreen)
 		}
-		
+
 		// Transition to new screen
 		sm.currentScreen = msg.Transition.Screen
-		sm.logger.Info("Screen transition", 
+		sm.logger.Info("Screen transition",
 			debug.F("from", sm.getCurrentScreenName()),
 			debug.F("to", msg.Transition.Screen.Name()))
-		
+
 		return sm, sm.currentScreen.Init()
-		
+
 	case screens.BackMsg:
 		// Go back to previous screen if available
 		if len(sm.screenStack) > 0 {
 			// Pop from stack
 			previousScreen := sm.screenStack[len(sm.screenStack)-1]
 			sm.screenStack = sm.screenStack[:len(sm.screenStack)-1]
-			
-			sm.logger.Info("Going back", 
+
+			sm.logger.Info("Going back",
 				debug.F("from", sm.currentScreen.Name()),
 				debug.F("to", previousScreen.Name()))
-			
+
 			sm.currentScreen = previousScreen
 			return sm, nil
 		}
-		
+
 		// No previous screen, handle as quit
 		return sm, tea.Quit
-		
+
 	default:
 		// Forward message to current screen
 		model, cmd := sm.currentScreen.Update(msg)

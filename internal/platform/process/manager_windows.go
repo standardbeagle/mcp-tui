@@ -60,14 +60,14 @@ type ioCounters struct {
 // windowsManager is the Windows-specific implementation
 type windowsManager struct {
 	*manager
-	ctx       context.Context
-	cancel    context.CancelFunc
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewWindowsManager creates a Windows-specific process manager
 func NewWindowsManager(ctx context.Context) Manager {
 	ctx, cancel := context.WithCancel(ctx)
-	
+
 	return &windowsManager{
 		manager: &manager{processes: make([]Process, 0)},
 		ctx:     ctx,
@@ -78,11 +78,11 @@ func NewWindowsManager(ctx context.Context) Manager {
 // Start creates a new process with job object management
 func (wm *windowsManager) Start(ctx context.Context, command string, args []string) (Process, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
-	
+
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	
+
 	proc := &windowsProcess{
 		process: &process{
 			cmd:     cmd,
@@ -90,17 +90,17 @@ func (wm *windowsManager) Start(ctx context.Context, command string, args []stri
 			args:    args,
 		},
 	}
-	
+
 	// Create job object for process management
 	if err := proc.createJobObject(); err != nil {
 		// Continue without job object, but log the error
 		// In a real implementation, you might want to log this
 	}
-	
+
 	wm.mu.Lock()
 	wm.processes = append(wm.processes, proc)
 	wm.mu.Unlock()
-	
+
 	return proc, nil
 }
 
@@ -122,25 +122,25 @@ func (wp *windowsProcess) createJobObject() error {
 	if wp.cmd == nil || wp.cmd.Process == nil {
 		return nil
 	}
-	
+
 	// Create job object
 	jobHandle, err := createJobObject()
 	if err != nil {
 		return err
 	}
-	
+
 	// Configure job to kill all processes when handle is closed
 	if err := setJobObjectLimits(jobHandle); err != nil {
 		closeHandle(jobHandle)
 		return err
 	}
-	
+
 	// Assign process to job
 	if err := assignProcessToJob(jobHandle, wp.cmd.Process.Pid); err != nil {
 		closeHandle(jobHandle)
 		return err
 	}
-	
+
 	wp.jobHandle = jobHandle
 	return nil
 }
@@ -149,11 +149,11 @@ func (wp *windowsProcess) createJobObject() error {
 func (wp *windowsProcess) Kill() error {
 	wp.mu.Lock()
 	defer wp.mu.Unlock()
-	
+
 	if wp.cmd == nil || wp.cmd.Process == nil {
 		return nil
 	}
-	
+
 	// If we have a job handle, terminate the entire job
 	if wp.jobHandle != 0 {
 		terminateJobObject(wp.jobHandle, 1)
@@ -161,16 +161,16 @@ func (wp *windowsProcess) Kill() error {
 		wp.jobHandle = 0
 		time.Sleep(100 * time.Millisecond)
 	}
-	
+
 	// Try graceful termination first
 	wp.cmd.Process.Signal(os.Interrupt)
-	
+
 	// Wait for process to exit
 	done := make(chan error, 1)
 	go func() {
 		done <- wp.cmd.Wait()
 	}()
-	
+
 	select {
 	case err := <-done:
 		wp.markFinished(0)
@@ -178,7 +178,7 @@ func (wp *windowsProcess) Kill() error {
 	case <-time.After(2 * time.Second):
 		// Force kill if it didn't exit
 		err := wp.cmd.Process.Kill()
-		
+
 		select {
 		case <-done:
 			wp.markFinished(0)
@@ -200,20 +200,20 @@ func (wp *windowsProcess) markFinished(exitCode int) {
 func (wp *windowsProcess) IsRunning() bool {
 	wp.mu.RLock()
 	defer wp.mu.RUnlock()
-	
+
 	if wp.finished {
 		return false
 	}
-	
+
 	if wp.cmd == nil || wp.cmd.Process == nil {
 		return false
 	}
-	
+
 	// On Windows, we can check the process state
 	if wp.cmd.ProcessState != nil {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -230,14 +230,14 @@ func createJobObject() (syscall.Handle, error) {
 func setJobObjectLimits(jobHandle syscall.Handle) error {
 	var info jobObjectExtendedLimitInformation
 	info.BasicLimitInformation.LimitFlags = jobObjectLimitKillOnJobClose
-	
+
 	_, _, err := procSetInformationJobObject.Call(
 		uintptr(jobHandle),
 		jobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)),
 		unsafe.Sizeof(info),
 	)
-	
+
 	if err != nil && err != syscall.Errno(0) {
 		return err
 	}
@@ -250,12 +250,12 @@ func assignProcessToJob(jobHandle syscall.Handle, pid int) error {
 		return err
 	}
 	defer syscall.CloseHandle(handle)
-	
+
 	r1, _, err := procAssignProcessToJobObject.Call(
 		uintptr(jobHandle),
 		uintptr(handle),
 	)
-	
+
 	if r1 == 0 {
 		return err
 	}

@@ -20,7 +20,7 @@ const (
 // MCPLogEntry represents a single MCP protocol message
 type MCPLogEntry struct {
 	Timestamp   time.Time      `json:"timestamp"`
-	Direction   string         `json:"direction"`   // "→" (outgoing) or "←" (incoming)
+	Direction   string         `json:"direction"` // "→" (outgoing) or "←" (incoming)
 	MessageType MCPMessageType `json:"messageType"`
 	Method      string         `json:"method,omitempty"`
 	ID          interface{}    `json:"id,omitempty"`
@@ -33,7 +33,7 @@ type MCPLogEntry struct {
 // String formats the MCP log entry for display
 func (e MCPLogEntry) String() string {
 	timestamp := e.Timestamp.Format("15:04:05.000")
-	
+
 	// Format the main message info
 	var mainInfo string
 	switch e.MessageType {
@@ -56,13 +56,13 @@ func (e MCPLogEntry) String() string {
 	case MCPMessageError:
 		mainInfo = fmt.Sprintf("ERR %s", e.Method)
 	}
-	
+
 	// Add truncated raw message for debugging
 	rawPreview := e.RawMessage
 	if len(rawPreview) > 100 {
 		rawPreview = rawPreview[:97] + "..."
 	}
-	
+
 	return fmt.Sprintf("[%s] %s %s | %s", timestamp, e.Direction, mainInfo, rawPreview)
 }
 
@@ -74,13 +74,13 @@ func (e MCPLogEntry) GetFormattedJSON() string {
 		// If it's not valid JSON, return as-is
 		return e.RawMessage
 	}
-	
+
 	// Pretty print with indentation
 	formatted, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return e.RawMessage
 	}
-	
+
 	return string(formatted)
 }
 
@@ -113,13 +113,13 @@ func (ml *MCPLogger) LogIncoming(rawMessage string, parsedMessage interface{}) {
 func (ml *MCPLogger) logMessage(direction, rawMessage string, parsedMessage interface{}) {
 	ml.mu.Lock()
 	defer ml.mu.Unlock()
-	
+
 	entry := MCPLogEntry{
 		Timestamp:  time.Now(),
 		Direction:  direction,
 		RawMessage: rawMessage,
 	}
-	
+
 	// Parse the message to extract structured information
 	if parsedMessage != nil {
 		ml.parseMessage(&entry, parsedMessage)
@@ -130,10 +130,10 @@ func (ml *MCPLogger) logMessage(direction, rawMessage string, parsedMessage inte
 			ml.parseMessage(&entry, jsonMsg)
 		}
 	}
-	
+
 	// Add the entry
 	ml.entries = append(ml.entries, entry)
-	
+
 	// Remove old entries if we exceed maxSize
 	if len(ml.entries) > ml.maxSize {
 		copy(ml.entries, ml.entries[len(ml.entries)-ml.maxSize:])
@@ -147,12 +147,12 @@ func (ml *MCPLogger) parseMessage(entry *MCPLogEntry, msg interface{}) {
 	if !ok {
 		return
 	}
-	
+
 	// Extract ID if present
 	if id, exists := msgMap["id"]; exists {
 		entry.ID = id
 	}
-	
+
 	// Determine message type and extract relevant fields
 	if method, exists := msgMap["method"]; exists {
 		// This is a request or notification
@@ -162,7 +162,7 @@ func (ml *MCPLogger) parseMessage(entry *MCPLogEntry, msg interface{}) {
 		} else {
 			entry.MessageType = MCPMessageNotification
 		}
-		
+
 		if params, exists := msgMap["params"]; exists {
 			entry.Params = params
 		}
@@ -181,7 +181,7 @@ func (ml *MCPLogger) parseMessage(entry *MCPLogEntry, msg interface{}) {
 func (ml *MCPLogger) GetEntries() []MCPLogEntry {
 	ml.mu.RLock()
 	defer ml.mu.RUnlock()
-	
+
 	entries := make([]MCPLogEntry, len(ml.entries))
 	copy(entries, ml.entries)
 	return entries
@@ -215,7 +215,7 @@ func (ml *MCPLogger) Size() int {
 func (ml *MCPLogger) GetStats() map[string]int {
 	ml.mu.RLock()
 	defer ml.mu.RUnlock()
-	
+
 	stats := map[string]int{
 		"total":         len(ml.entries),
 		"requests":      0,
@@ -223,7 +223,7 @@ func (ml *MCPLogger) GetStats() map[string]int {
 		"notifications": 0,
 		"errors":        0,
 	}
-	
+
 	for _, entry := range ml.entries {
 		switch entry.MessageType {
 		case MCPMessageRequest:
@@ -236,7 +236,7 @@ func (ml *MCPLogger) GetStats() map[string]int {
 			stats["errors"]++
 		}
 	}
-	
+
 	return stats
 }
 
@@ -261,7 +261,7 @@ func LogMCPOutgoing(rawMessage string, parsedMessage interface{}) {
 	GetMCPLogger().LogOutgoing(rawMessage, parsedMessage)
 }
 
-// LogMCPIncoming logs an incoming MCP message  
+// LogMCPIncoming logs an incoming MCP message
 func LogMCPIncoming(rawMessage string, parsedMessage interface{}) {
 	GetMCPLogger().LogIncoming(rawMessage, parsedMessage)
 }

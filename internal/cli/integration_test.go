@@ -59,7 +59,7 @@ func TestNaturalCLIIntegration(t *testing.T) {
 
 			// For this test, we'll check the logic directly since mocking cobra.Command
 			// is complex. The real integration happens through the actual CLI.
-			
+
 			// Simulate what CreateClient does
 			var err error
 			if tt.globalConnection == nil {
@@ -67,8 +67,8 @@ func TestNaturalCLIIntegration(t *testing.T) {
 				fmt.Fprintf(os.Stderr, "no connection specified")
 			} else {
 				fmt.Fprintf(os.Stderr, "🔄 Creating MCP service...\n")
-				fmt.Fprintf(os.Stderr, "🚀 Starting process: %s %s\n", 
-					tt.globalConnection.Command, 
+				fmt.Fprintf(os.Stderr, "🚀 Starting process: %s %s\n",
+					tt.globalConnection.Command,
 					strings.Join(tt.globalConnection.Args, " "))
 				fmt.Fprintf(os.Stderr, "⏳ Establishing connection (timeout: 30s)...\n")
 			}
@@ -82,7 +82,7 @@ func TestNaturalCLIIntegration(t *testing.T) {
 			// Verify expected output
 			for _, expected := range tt.expectedOutput {
 				if !strings.Contains(output, expected) {
-					t.Errorf("%s\nExpected output to contain %q\nGot: %s", 
+					t.Errorf("%s\nExpected output to contain %q\nGot: %s",
 						tt.description, expected, output)
 				}
 			}
@@ -90,12 +90,10 @@ func TestNaturalCLIIntegration(t *testing.T) {
 			// If we expect an error, verify it
 			if strings.Contains(strings.Join(tt.expectedOutput, " "), "no connection") {
 				if err == nil || !strings.Contains(err.Error(), "no connection") {
-					t.Errorf("%s\nExpected 'no connection' error, got: %v", 
+					t.Errorf("%s\nExpected 'no connection' error, got: %v",
 						tt.description, err)
 				}
 			}
 		})
 	}
 }
-
-

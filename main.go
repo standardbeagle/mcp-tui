@@ -17,7 +17,7 @@ import (
 var (
 	version = "0.1.0"
 	cfg     *config.Config
-	
+
 	// Global connection config that can be passed to subcommands
 	globalConnConfig *config.ConnectionConfig
 )
@@ -25,7 +25,7 @@ var (
 func main() {
 	// Initialize configuration
 	cfg = config.Default()
-	
+
 	// Early parse to check for connection string pattern
 	// This allows: mcp-tui "server command" tool list
 	if len(os.Args) > 1 {
@@ -33,7 +33,7 @@ func main() {
 		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
 		if parsedArgs.Connection != nil {
 			globalConnConfig = parsedArgs.Connection
-			
+
 			if parsedArgs.SubCommand != "" {
 				// We have both connection and subcommand
 				// Make it available to CLI commands
@@ -42,11 +42,11 @@ func main() {
 			// else: TUI mode with connection string
 		}
 	}
-	
+
 	// Set up graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	// Set up signal handling
 	sigHandler := platformSignal.NewHandler()
 	sigHandler.Register(func(sig os.Signal) {
@@ -55,15 +55,15 @@ func main() {
 	}, os.Interrupt, syscall.SIGTERM)
 	sigHandler.Start()
 	defer sigHandler.Stop()
-	
+
 	// Create root command
 	rootCmd := createRootCommand(ctx)
-	
+
 	// If we detected a connection string, we need to adjust the args
 	// so Cobra doesn't treat the connection string as a command
 	if globalConnConfig != nil {
 		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
-		
+
 		if parsedArgs.SubCommand != "" {
 			// CLI mode: Reconstruct args without the connection string
 			newArgs := []string{os.Args[0], parsedArgs.SubCommand}
@@ -74,7 +74,7 @@ func main() {
 			os.Args = []string{os.Args[0]}
 		}
 	}
-	
+
 	// Execute
 	if err := rootCmd.Execute(); err != nil {
 		debug.Error("Application failed", debug.F("error", err))
@@ -84,7 +84,7 @@ func main() {
 
 func createRootCommand(ctx context.Context) *cobra.Command {
 	var url string
-	
+
 	rootCmd := &cobra.Command{
 		Use:   "mcp-tui [connection-string]",
 		Short: "MCP Test Client with TUI and CLI modes",
@@ -104,30 +104,30 @@ Examples:
 			// Initialize logging based on flags
 			debugMode, _ := cmd.Flags().GetBool("debug")
 			logLevel, _ := cmd.Flags().GetString("log-level")
-			
+
 			debug.InitializeLogging(logLevel, debugMode)
-			
+
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			// Use global connection if available (from pre-parse)
 			connectionConfig := globalConnConfig
-			
+
 			// If not pre-parsed, parse now
 			if connectionConfig == nil {
 				cmdFlag, _ := cmd.Flags().GetString("cmd")
 				argsFlag, _ := cmd.Flags().GetStringSlice("args")
 				urlFlag, _ := cmd.Flags().GetString("url")
-				
+
 				parsedArgs := config.ParseArgs(args, cmdFlag, urlFlag, argsFlag)
 				connectionConfig = parsedArgs.Connection
 			}
-			
+
 			// Run TUI mode with connection config
 			runTUIMode(ctx, connectionConfig)
 		},
 	}
-	
+
 	// Add persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfg.Command, "cmd", "", "Command to run MCP server (STDIO mode)")
 	rootCmd.PersistentFlags().StringSliceVar(&cfg.Args, "args", []string{}, "Arguments for MCP server command")
@@ -136,13 +136,14 @@ Examples:
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	rootCmd.PersistentFlags().BoolVar(&cfg.DebugMode, "debug", false, "Enable debug mode")
 	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	
+	rootCmd.PersistentFlags().Bool("interactive", false, "Launch interactive TUI mode for the connection")
+
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())
 	rootCmd.AddCommand(createResourceCommand())
 	rootCmd.AddCommand(createPromptCommand())
 	rootCmd.AddCommand(createServerCommand())
-	
+
 	return rootCmd
 }
 
@@ -178,18 +179,16 @@ func createServerCommand() *cobra.Command {
 	return serverCmd.CreateCommand()
 }
 
-
 func runTUIMode(ctx context.Context, connectionConfig *config.ConnectionConfig) {
 	logger := debug.Component("tui")
 	logger.Info("Starting TUI mode")
-	
+
 	// Create and run TUI application
 	tuiApp := app.New(cfg, connectionConfig)
 	if err := tuiApp.Run(ctx); err != nil {
 		logger.Error("TUI application failed", debug.F("error", err))
 		os.Exit(1)
 	}
-	
+
 	logger.Info("TUI mode ended")
 }
-

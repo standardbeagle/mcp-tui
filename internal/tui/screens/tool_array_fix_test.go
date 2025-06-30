@@ -25,14 +25,14 @@ func TestToolArrayFieldFix(t *testing.T) {
 				Required: []string{"tags"}, // Required array field
 			},
 		}
-		
+
 		ts := NewToolScreen(tool, nil)
 		require.Len(t, ts.fields, 1)
 		assert.True(t, ts.fields[0].required)
-		
+
 		// User leaves field empty
 		ts.fields[0].value = ""
-		
+
 		// Build arguments - this simulates what happens during execution
 		args := make(map[string]interface{})
 		for _, field := range ts.fields {
@@ -44,17 +44,17 @@ func TestToolArrayFieldFix(t *testing.T) {
 			}
 			// ... rest of the logic
 		}
-		
+
 		// Should include empty array for required field
 		assert.Contains(t, args, "tags")
 		assert.Equal(t, []interface{}{}, args["tags"])
-		
+
 		// Verify JSON encoding
 		jsonBytes, err := json.Marshal(args)
 		require.NoError(t, err)
 		assert.Equal(t, `{"tags":[]}`, string(jsonBytes))
 	})
-	
+
 	t.Run("empty_optional_array_omitted", func(t *testing.T) {
 		tool := mcp.Tool{
 			Name: "test-tool",
@@ -68,14 +68,14 @@ func TestToolArrayFieldFix(t *testing.T) {
 				// No required fields
 			},
 		}
-		
+
 		ts := NewToolScreen(tool, nil)
 		require.Len(t, ts.fields, 1)
 		assert.False(t, ts.fields[0].required)
-		
+
 		// User leaves field empty
 		ts.fields[0].value = ""
-		
+
 		// Build arguments
 		args := make(map[string]interface{})
 		for _, field := range ts.fields {
@@ -86,11 +86,11 @@ func TestToolArrayFieldFix(t *testing.T) {
 				continue
 			}
 		}
-		
+
 		// Should NOT include optional empty array
 		assert.NotContains(t, args, "tags")
 	})
-	
+
 	t.Run("comma_separated_filters_empty_values", func(t *testing.T) {
 		tool := mcp.Tool{
 			Name: "test-tool",
@@ -103,9 +103,9 @@ func TestToolArrayFieldFix(t *testing.T) {
 				},
 			},
 		}
-		
+
 		ts := NewToolScreen(tool, nil)
-		
+
 		testCases := []struct {
 			input    string
 			expected []interface{}
@@ -118,7 +118,7 @@ func TestToolArrayFieldFix(t *testing.T) {
 			{"a,,b", []interface{}{"a", "b"}, "double comma"},
 			{"  a  ,  b  ", []interface{}{"a", "b"}, "spaces trimmed"},
 		}
-		
+
 		for _, tc := range testCases {
 			t.Run(tc.desc, func(t *testing.T) {
 				ts.fields[0].value = tc.input
@@ -134,7 +134,7 @@ func TestToolArrayFieldFix(t *testing.T) {
 						}
 					}
 				}
-				
+
 				if tc.expected == nil {
 					assert.Nil(t, result, tc.desc)
 				} else {

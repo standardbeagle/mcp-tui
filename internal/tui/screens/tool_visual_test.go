@@ -25,13 +25,13 @@ func TestToolReExecutionVisual(t *testing.T) {
 				Required: []string{"location"},
 			},
 		}
-		
+
 		ts := NewToolScreen(tool, nil)
 		ts.fields[0].value = "New York"
-		
+
 		fmt.Println("\n=== Initial Tool Screen ===")
 		fmt.Println(ts.View())
-		
+
 		// First execution
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
@@ -43,13 +43,13 @@ func TestToolReExecutionVisual(t *testing.T) {
 				},
 			},
 		})
-		
+
 		fmt.Println("\n=== After First Execution ===")
 		fmt.Println(ts.View())
-		
+
 		// Wait a bit for different timestamp
 		time.Sleep(100 * time.Millisecond)
-		
+
 		// Second execution - same result
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
@@ -61,10 +61,10 @@ func TestToolReExecutionVisual(t *testing.T) {
 				},
 			},
 		})
-		
+
 		fmt.Println("\n=== After Re-Execution (Same Result) ===")
 		fmt.Println(ts.View())
-		
+
 		// Third execution - different result
 		time.Sleep(100 * time.Millisecond)
 		ts.Update(toolExecutionCompleteMsg{
@@ -77,10 +77,10 @@ func TestToolReExecutionVisual(t *testing.T) {
 				},
 			},
 		})
-		
+
 		fmt.Println("\n=== After Third Execution (Different Result) ===")
 		fmt.Println(ts.View())
-		
+
 		// Show status messages
 		fmt.Println("\n=== Status Messages ===")
 		for i := 1; i <= 3; i++ {

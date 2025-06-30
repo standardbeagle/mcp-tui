@@ -14,56 +14,56 @@ import (
 // ConnectionScreen handles MCP server connection setup
 type ConnectionScreen struct {
 	*BaseScreen
-	config        *config.Config
-	logger        debug.Logger
-	
+	config *config.Config
+	logger debug.Logger
+
 	// UI state
 	transportType config.TransportType
 	command       string
 	args          string
 	url           string
-	
+
 	// Form state
-	focusIndex    int
-	maxFocus      int
-	
+	focusIndex int
+	maxFocus   int
+
 	// Styles
-	focusedStyle  lipgloss.Style
-	blurredStyle  lipgloss.Style
-	titleStyle    lipgloss.Style
-	helpStyle     lipgloss.Style
+	focusedStyle lipgloss.Style
+	blurredStyle lipgloss.Style
+	titleStyle   lipgloss.Style
+	helpStyle    lipgloss.Style
 }
 
 // NewConnectionScreen creates a new connection screen
 func NewConnectionScreen(cfg *config.Config) *ConnectionScreen {
 	cs := &ConnectionScreen{
-		BaseScreen:   NewBaseScreen("Connection", false),
-		config:       cfg,
-		logger:       debug.Component("connection-screen"),
+		BaseScreen:    NewBaseScreen("Connection", false),
+		config:        cfg,
+		logger:        debug.Component("connection-screen"),
 		transportType: config.TransportStdio,
-		maxFocus:     4, // transport, command, args, connect button
+		maxFocus:      4, // transport, command, args, connect button
 	}
-	
+
 	// Initialize styles
 	cs.focusedStyle = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62")).
 		Padding(0, 1)
-	
+
 	cs.blurredStyle = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240")).
 		Padding(0, 1)
-	
+
 	cs.titleStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("205")).
 		Bold(true).
 		Margin(1, 0)
-	
+
 	cs.helpStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		Margin(1, 0)
-	
+
 	return cs
 }
 
@@ -79,19 +79,19 @@ func (cs *ConnectionScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		cs.UpdateSize(msg.Width, msg.Height)
 		return cs, nil
-		
+
 	case tea.KeyMsg:
 		return cs.handleKeyMsg(msg)
-		
+
 	case ErrorMsg:
 		cs.SetError(msg.Error)
 		return cs, nil
-		
+
 	case StatusMsg:
 		cs.SetStatus(msg.Message, msg.Level)
 		return cs, nil
 	}
-	
+
 	return cs, nil
 }
 
@@ -100,7 +100,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q", "esc":
 		return cs, tea.Quit
-		
+
 	case "ctrl+l":
 		// Show debug logs
 		debugScreen := NewDebugScreen()
@@ -111,21 +111,21 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				},
 			}
 		}
-		
+
 	case "tab", "down":
 		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
 		return cs, nil
-		
+
 	case "shift+tab", "up":
 		cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
 		return cs, nil
-		
+
 	case "enter":
 		if cs.focusIndex == cs.maxFocus-1 { // Connect button
 			return cs.handleConnect()
 		}
 		return cs, nil
-		
+
 	case "1", "2", "3":
 		if cs.focusIndex == 0 { // Transport type selection
 			switch msg.String() {
@@ -139,7 +139,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return cs, nil
 	}
-	
+
 	// Handle text input for focused fields
 	switch cs.focusIndex {
 	case 1: // Command input
@@ -148,14 +148,14 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if msg.Type == tea.KeyBackspace && len(cs.command) > 0 {
 			cs.command = cs.command[:len(cs.command)-1]
 		}
-		
+
 	case 2: // Args input
 		if msg.Type == tea.KeyRunes {
 			cs.args += string(msg.Runes)
 		} else if msg.Type == tea.KeyBackspace && len(cs.args) > 0 {
 			cs.args = cs.args[:len(cs.args)-1]
 		}
-		
+
 	case 3: // URL input (for SSE/HTTP)
 		if msg.Type == tea.KeyRunes {
 			cs.url += string(msg.Runes)
@@ -163,24 +163,24 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.url = cs.url[:len(cs.url)-1]
 		}
 	}
-	
+
 	return cs, nil
 }
 
 // handleConnect processes the connection attempt
 func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
-	cs.logger.Info("Attempting to connect", 
+	cs.logger.Info("Attempting to connect",
 		debug.F("transport", cs.transportType),
 		debug.F("command", cs.command),
 		debug.F("args", cs.args),
 		debug.F("url", cs.url))
-	
+
 	// Validate inputs
 	if err := cs.validateInputs(); err != nil {
 		cs.SetError(err)
 		return cs, nil
 	}
-	
+
 	// Create connection config
 	connConfig := &config.ConnectionConfig{
 		Type:    cs.transportType,
@@ -188,9 +188,9 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 		Args:    strings.Fields(cs.args),
 		URL:     cs.url,
 	}
-	
+
 	cs.logger.Info("Connection configuration created", debug.F("config", connConfig))
-	
+
 	// Transition to main screen
 	mainScreen := NewMainScreen(cs.config, connConfig)
 	return mainScreen, mainScreen.Init()
@@ -203,28 +203,28 @@ func (cs *ConnectionScreen) validateInputs() error {
 		if cs.command == "" {
 			return fmt.Errorf("command is required for STDIO transport")
 		}
-		
+
 	case config.TransportSSE, config.TransportHTTP:
 		if cs.url == "" {
 			return fmt.Errorf("URL is required for %s transport", cs.transportType)
 		}
 	}
-	
+
 	return nil
 }
 
 // View renders the connection screen
 func (cs *ConnectionScreen) View() string {
 	var builder strings.Builder
-	
+
 	// Title
 	builder.WriteString(cs.titleStyle.Render("MCP Server Connection"))
 	builder.WriteString("\n\n")
-	
+
 	// Transport type selection
 	builder.WriteString(cs.renderTransportSelection())
 	builder.WriteString("\n")
-	
+
 	// Connection details based on transport type
 	switch cs.transportType {
 	case config.TransportStdio:
@@ -232,21 +232,21 @@ func (cs *ConnectionScreen) View() string {
 	case config.TransportSSE, config.TransportHTTP:
 		builder.WriteString(cs.renderURLFields())
 	}
-	
+
 	// Connect button
 	builder.WriteString("\n")
 	builder.WriteString(cs.renderConnectButton())
-	
+
 	// Status/Error messages
 	if cs.statusMsg != "" {
 		builder.WriteString("\n\n")
 		builder.WriteString(cs.renderStatusMessage())
 	}
-	
+
 	// Help text
 	builder.WriteString("\n\n")
 	builder.WriteString(cs.helpStyle.Render("Tab/Shift+Tab: Navigate • Enter: Connect • Ctrl+L: Debug Log • Esc/Ctrl+C: Quit"))
-	
+
 	return builder.String()
 }
 
@@ -258,20 +258,20 @@ func (cs *ConnectionScreen) renderTransportSelection() string {
 	} else {
 		title = cs.blurredStyle.Render(title)
 	}
-	
+
 	options := []string{
 		fmt.Sprintf("1) STDIO %s", cs.checkmark(cs.transportType == config.TransportStdio)),
 		fmt.Sprintf("2) SSE %s", cs.checkmark(cs.transportType == config.TransportSSE)),
 		fmt.Sprintf("3) HTTP %s", cs.checkmark(cs.transportType == config.TransportHTTP)),
 	}
-	
+
 	return fmt.Sprintf("%s\n%s", title, strings.Join(options, "\n"))
 }
 
 // renderStdioFields renders fields for STDIO transport
 func (cs *ConnectionScreen) renderStdioFields() string {
 	var builder strings.Builder
-	
+
 	// Command field
 	commandLabel := "Command:"
 	commandValue := cs.command
@@ -283,7 +283,7 @@ func (cs *ConnectionScreen) renderStdioFields() string {
 		commandValue = cs.blurredStyle.Render(commandValue)
 	}
 	builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, commandValue))
-	
+
 	// Args field
 	argsLabel := "Arguments:"
 	argsValue := cs.args
@@ -295,7 +295,7 @@ func (cs *ConnectionScreen) renderStdioFields() string {
 		argsValue = cs.blurredStyle.Render(argsValue)
 	}
 	builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, argsValue))
-	
+
 	return builder.String()
 }
 
@@ -310,7 +310,7 @@ func (cs *ConnectionScreen) renderURLFields() string {
 		urlLabel = cs.blurredStyle.Render(urlLabel)
 		urlValue = cs.blurredStyle.Render(urlValue)
 	}
-	
+
 	return fmt.Sprintf("%s\n%s", urlLabel, urlValue)
 }
 
@@ -336,7 +336,7 @@ func (cs *ConnectionScreen) renderStatusMessage() string {
 	default:
 		style = style.Foreground(lipgloss.Color("12"))
 	}
-	
+
 	return style.Render(cs.statusMsg)
 }
 

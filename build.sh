@@ -16,7 +16,14 @@ mkdir -p ~/.local/bin
 
 # Copy to ~/.local/bin
 echo "Installing to ~/.local/bin/mcp-tui..."
-cp mcp-tui ~/.local/bin/
+if ! cp mcp-tui ~/.local/bin/; then
+    echo ""
+    echo "❌ ERROR: Failed to install mcp-tui to ~/.local/bin/"
+    echo "   This may be due to permission issues or the directory not being writable."
+    echo "   Try running with sudo or check that ~/.local/bin exists and is writable."
+    echo ""
+    exit 1
+fi
 
 echo "Installation complete!"
 echo ""

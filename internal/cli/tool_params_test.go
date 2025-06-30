@@ -9,9 +9,9 @@ import (
 // TestToolCallParameterParsing tests how tool call parameters are parsed
 func TestToolCallParameterParsing(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string // Args after "tool call <toolname>"
-		expected map[string]interface{}
+		name        string
+		args        []string // Args after "tool call <toolname>"
+		expected    map[string]interface{}
 		description string
 	}{
 		{
@@ -97,25 +97,25 @@ func TestToolCallParameterParsing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Simulate the parsing logic from handleCall
 			result := make(map[string]interface{})
-			
+
 			for _, arg := range tt.args {
 				parts := splitKeyValue(arg)
 				if len(parts) != 2 {
 					t.Fatalf("Invalid argument format: %s", arg)
 				}
-				
+
 				key := parts[0]
 				value := parts[1]
-				
+
 				// Try to parse as JSON first, then fall back to string
 				var parsedValue interface{}
 				if err := json.Unmarshal([]byte(value), &parsedValue); err != nil {
 					parsedValue = value
 				}
-				
+
 				result[key] = parsedValue
 			}
-			
+
 			// Compare results
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("%s\nParsed parameters mismatch:\ngot:  %+v\nwant: %+v",
@@ -139,14 +139,14 @@ func splitKeyValue(s string) []string {
 func TestCompleteToolCallFlow(t *testing.T) {
 	// This test documents the complete flow but doesn't execute it
 	// since it would require a real MCP server
-	
+
 	scenarios := []struct {
 		command     string
 		description string
 		steps       []string
 	}{
 		{
-			command: `mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool call echo message="Hello World"`,
+			command:     `mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool call echo message="Hello World"`,
 			description: "Natural CLI tool call with string parameter",
 			steps: []string{
 				"1. User runs command with natural syntax",
@@ -161,20 +161,20 @@ func TestCompleteToolCallFlow(t *testing.T) {
 			},
 		},
 		{
-			command: `mcp-tui "./server --mcp" tool call analyze file="/tmp/data.json" format=json depth=3`,
+			command:     `mcp-tui "./server --mcp" tool call analyze file="/tmp/data.json" format=json depth=3`,
 			description: "Complex tool call with multiple typed parameters",
 			steps: []string{
 				"1. Connection: ./server --mcp",
 				"2. Tool: analyze",
 				"3. Parameters parsed as:",
 				"   - file: '/tmp/data.json' (string)",
-				"   - format: 'json' (string)",  
+				"   - format: 'json' (string)",
 				"   - depth: 3 (number)",
 				"4. All parameters sent in single request",
 			},
 		},
 	}
-	
+
 	for _, scenario := range scenarios {
 		t.Run(scenario.description, func(t *testing.T) {
 			t.Logf("\nCommand: %s", scenario.command)

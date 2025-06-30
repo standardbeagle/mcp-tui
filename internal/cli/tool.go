@@ -43,10 +43,10 @@ func (tc *ToolCommand) CreateCommand() *cobra.Command {
 // createListCommand creates the tool list subcommand
 func (tc *ToolCommand) createListCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List available tools",
-		Long:  "List all tools available from the MCP server",
-		PreRunE: tc.PreRunE,
+		Use:      "list",
+		Short:    "List available tools",
+		Long:     "List all tools available from the MCP server",
+		PreRunE:  tc.PreRunE,
 		PostRunE: tc.PostRunE,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return tc.handleList(cmd, args)
@@ -57,11 +57,11 @@ func (tc *ToolCommand) createListCommand() *cobra.Command {
 // createDescribeCommand creates the tool describe subcommand
 func (tc *ToolCommand) createDescribeCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "describe <tool-name>",
-		Short: "Describe a specific tool",
-		Long:  "Get detailed information about a specific tool including its schema",
-		Args:  cobra.ExactArgs(1),
-		PreRunE: tc.PreRunE,
+		Use:      "describe <tool-name>",
+		Short:    "Describe a specific tool",
+		Long:     "Get detailed information about a specific tool including its schema",
+		Args:     cobra.ExactArgs(1),
+		PreRunE:  tc.PreRunE,
 		PostRunE: tc.PostRunE,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return tc.handleDescribe(cmd, args)
@@ -77,8 +77,8 @@ func (tc *ToolCommand) createCallCommand() *cobra.Command {
 		Long: `Call a tool with the provided arguments.
 Arguments should be provided as key=value pairs.
 Example: tool call myTool name=John age=30`,
-		Args:    cobra.MinimumNArgs(1),
-		PreRunE: tc.PreRunE,
+		Args:     cobra.MinimumNArgs(1),
+		PreRunE:  tc.PreRunE,
 		PostRunE: tc.PostRunE,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return tc.handleCall(cmd, args)
@@ -116,40 +116,40 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		Bold(true).
 		Foreground(lipgloss.Color("15")). // White
 		MarginBottom(1)
-		
+
 	toolNameStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("12")) // Bright Blue
-		
+
 	descriptionStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")). // Gray
 		MarginLeft(2)
-		
+
 	countStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")). // Gray
 		Italic(true).
 		MarginTop(1)
-	
+
 	// Header
 	fmt.Println(headerStyle.Render(fmt.Sprintf("Available Tools (%d)", len(tools))))
 	fmt.Println(strings.Repeat("─", 40))
-	
+
 	// Display tools in a nice format
 	for i, tool := range tools {
 		// Add spacing between tools
 		if i > 0 {
 			fmt.Println()
 		}
-		
+
 		// Tool name
 		fmt.Println(toolNameStyle.Render(tool.Name))
-		
+
 		// Description on next line, indented
 		if tool.Description != "" {
 			fmt.Println(descriptionStyle.Render(tool.Description))
 		}
 	}
-	
+
 	// Footer
 	fmt.Println()
 	fmt.Println(countStyle.Render(fmt.Sprintf("Total: %d tools", len(tools))))
@@ -168,7 +168,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	fmt.Fprintf(os.Stderr, "🔍 Looking up tool '%s'...\n", toolName)
-	
+
 	// Get list of tools to find the specific one
 	tools, err := tc.GetService().ListTools(ctx)
 	if err != nil {
@@ -196,21 +196,21 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	labelStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("14")) // Cyan
-		
+
 	toolNameStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("12")) // Bright Blue
-		
+
 	descriptionStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("15")) // White
-		
+
 	schemaStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("10")). // Green
 		MarginLeft(2)
 
 	// Display tool details
 	fmt.Println(labelStyle.Render("Tool:"), toolNameStyle.Render(foundTool.Name))
-	
+
 	if foundTool.Description != "" {
 		fmt.Println()
 		fmt.Println(labelStyle.Render("Description:"))
@@ -221,7 +221,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	if foundTool.InputSchema.Type != "" || foundTool.InputSchema.Properties != nil {
 		fmt.Println()
 		fmt.Println(labelStyle.Render("Input Schema:"))
-		
+
 		// Pretty print the JSON schema
 		schemaJSON, err := json.MarshalIndent(foundTool.InputSchema, "", "  ")
 		if err != nil {
@@ -263,16 +263,16 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "❌ Invalid argument format\n")
 			return fmt.Errorf("invalid argument format: %s (expected key=value)", arg)
 		}
-		
+
 		key := parts[0]
 		value := parts[1]
-		
+
 		// Try to parse as JSON first, then fall back to string
 		var parsedValue interface{}
 		if err := json.Unmarshal([]byte(value), &parsedValue); err != nil {
 			parsedValue = value
 		}
-		
+
 		toolArgs[key] = parsedValue
 	}
 
@@ -280,7 +280,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
-	
+
 	// Call the tool
 	result, err := tc.GetService().CallTool(ctx, mcp.CallToolRequest{
 		Name:      toolName,
@@ -305,7 +305,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		if i > 0 {
 			fmt.Println("\n---")
 		}
-		
+
 		// Handle different content types
 		if textContent, ok := gomcp.AsTextContent(content); ok {
 			// Try to pretty-print JSON if detected
