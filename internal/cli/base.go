@@ -49,7 +49,7 @@ func (c *BaseCommand) WithTimeout(timeout time.Duration) *BaseCommand {
 // CreateClient creates and initializes an MCP client
 func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	var connConfig *config.ConnectionConfig
-	
+
 	// Check if we have a global connection config (from natural CLI usage)
 	// This is set when using: mcp-tui "server command" tool list
 	if globalConnConfig := c.getGlobalConnection(); globalConnConfig != nil {
@@ -59,31 +59,38 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 		cmdFlag, _ := cmd.Flags().GetString("cmd")
 		urlFlag, _ := cmd.Flags().GetString("url")
 		transportFlag, _ := cmd.Flags().GetString("transport")
-		
+
 		// Get args as string slice (multiple --args flags)
 		argsFlag, _ := cmd.Flags().GetStringSlice("args")
-		
+
 		// Use the unified parser
 		parsedArgs := config.ParseArgs(cmd.Flags().Args(), cmdFlag, urlFlag, argsFlag)
 		connConfig = parsedArgs.Connection
-		
-		// Apply explicit transport type if specified
-		if transportFlag != "" && connConfig != nil {
+
+		// Apply explicit transport type if specified (and not the default)
+		if transportFlag != "" && transportFlag != "stdio" && connConfig != nil {
 			connConfig.Type = config.TransportType(transportFlag)
+		} else if urlFlag != "" && connConfig != nil {
+			// Auto-detect transport from URL if not explicitly specified
+			if strings.Contains(urlFlag, "/events") || strings.Contains(urlFlag, "sse") {
+				connConfig.Type = config.TransportSSE
+			} else {
+				connConfig.Type = config.TransportHTTP
+			}
 		}
 	}
-	
+
 	if connConfig == nil {
-		return fmt.Errorf("no connection specified. Use --cmd for stdio servers or --url for HTTP/SSE servers")
+		return fmt.Errorf("no MCP server connection specified\n\nConnection options:\n- Use --cmd for stdio servers: --cmd 'npx @modelcontextprotocol/server-everything stdio'\n- Use --url for HTTP servers: --url 'http://localhost:8080'\n- Use --url for SSE servers: --url 'http://localhost:8080/events'\n\nExamples:\n  mcp-tui tool list --cmd npx --args '@modelcontextprotocol/server-everything,stdio'\n  mcp-tui tool list --url 'http://localhost:8080'")
 	}
-	
+
 	// Create service and connect
 	fmt.Fprintf(os.Stderr, "🔄 Creating MCP service...\n")
 	c.service = mcp.NewService()
-	
+
 	ctx, cancel := c.WithContext()
 	defer cancel()
-	
+
 	// Show connection details
 	switch connConfig.Type {
 	case config.TransportStdio:
@@ -91,9 +98,9 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	case config.TransportHTTP, config.TransportSSE:
 		fmt.Fprintf(os.Stderr, "🌐 Connecting to URL: %s\n", connConfig.URL)
 	}
-	
+
 	fmt.Fprintf(os.Stderr, "⏳ Establishing connection (timeout: %s)...\n", c.timeout)
-	
+
 	if err := c.service.Connect(ctx, connConfig); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Connection failed\n")
 		// Add helpful message for timeout errors
@@ -103,9 +110,9 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 			fmt.Fprintf(os.Stderr, "   - Increasing timeout with --timeout flag\n")
 			fmt.Fprintf(os.Stderr, "   - Verifying the command/URL is correct\n")
 		}
-		return fmt.Errorf("failed to connect: %w", err)
+		return err // The service already provides detailed error messages
 	}
-	
+
 	fmt.Fprintf(os.Stderr, "✅ Connected successfully\n")
 	return nil
 }
@@ -115,12 +122,12 @@ func (c *BaseCommand) CloseClient() error {
 	if c.service == nil {
 		return nil
 	}
-	
+
 	// Disconnect service
 	if err := c.service.Disconnect(); err != nil {
 		return fmt.Errorf("failed to disconnect: %w", err)
 	}
-	
+
 	c.service = nil
 	return nil
 }
@@ -145,7 +152,7 @@ func (c *BaseCommand) HandleError(err error, operation string) error {
 	if err == nil {
 		return nil
 	}
-	
+
 	// Add context to the error
 	return fmt.Errorf("failed to %s: %w", operation, err)
 }
@@ -153,7 +160,7 @@ func (c *BaseCommand) HandleError(err error, operation string) error {
 // ValidateConnection checks if the client is connected
 func (c *BaseCommand) ValidateConnection() error {
 	if c.service == nil || !c.service.IsConnected() {
-		return fmt.Errorf("no connection established")
+		return fmt.Errorf("no MCP server connection established - run the command again with proper connection parameters (--cmd or --url)")
 	}
 	return nil
 }

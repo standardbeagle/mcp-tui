@@ -32,33 +32,33 @@ func (c *ServerCommand) CreateCommand() *cobra.Command {
 		PreRunE: c.PreRunE,
 		RunE:    c.RunE,
 	}
-	
+
 	return cmd
 }
 
 // RunE executes the server command
 func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "📊 Gathering server information...\n")
-	
+
 	info := c.service.GetServerInfo()
-	
+
 	if !info.Connected {
-		fmt.Fprintf(os.Stderr, "❌ Not connected to server\n")
-		return fmt.Errorf("not connected to server")
+		fmt.Fprintf(os.Stderr, "❌ Not connected to MCP server\n")
+		return fmt.Errorf("not connected to MCP server - use 'mcp-tui' to start the TUI and connect to a server, or specify connection parameters with --cmd, --url, etc.")
 	}
-	
+
 	fmt.Fprintf(os.Stderr, "✅ Connected to server\n\n")
-	
+
 	// Print server information
 	fmt.Printf("Server Information\n")
 	fmt.Printf("==================\n\n")
-	
+
 	// Basic info
 	fmt.Printf("Name:     %s\n", info.Name)
 	fmt.Printf("Version:  %s\n", info.Version)
 	fmt.Printf("Protocol: %s\n", info.ProtocolVersion)
 	fmt.Printf("\n")
-	
+
 	// Capabilities
 	fmt.Printf("Capabilities:\n")
 	if len(info.Capabilities) == 0 {
@@ -71,13 +71,13 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 	fmt.Printf("\n")
-	
+
 	// Get counts of available items
 	ctx, cancel := c.WithContext()
 	defer cancel()
-	
+
 	fmt.Fprintf(os.Stderr, "📋 Querying available features...\n")
-	
+
 	// Count tools
 	fmt.Fprintf(os.Stderr, "  • Fetching tools...\n")
 	tools, err := c.service.ListTools(ctx)
@@ -92,7 +92,7 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Available Tools:     Error: %v\n", err)
 	}
-	
+
 	// Count resources
 	fmt.Fprintf(os.Stderr, "  • Fetching resources...\n")
 	resources, err := c.service.ListResources(ctx)
@@ -107,7 +107,7 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Available Resources: Error: %v\n", err)
 	}
-	
+
 	// Count prompts
 	fmt.Fprintf(os.Stderr, "  • Fetching prompts...\n")
 	prompts, err := c.service.ListPrompts(ctx)
@@ -122,8 +122,8 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Available Prompts:   Error: %v\n", err)
 	}
-	
+
 	fmt.Fprintf(os.Stderr, "\n✅ Server information complete\n")
-	
+
 	return nil
 }
