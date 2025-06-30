@@ -33,7 +33,7 @@ func TestConcurrentServiceOperations(t *testing.T) {
 				// Track concurrency
 				current := atomic.AddInt64(&activeRequests, 1)
 				atomic.AddInt64(&totalRequests, 1)
-				
+
 				// Update max if necessary
 				for {
 					max := atomic.LoadInt64(&maxConcurrentRequests)
@@ -577,7 +577,7 @@ func TestMemoryConsistencyUnderConcurrency(t *testing.T) {
 
 		// Each service should have consistent info (no partial/corrupted reads)
 		for _, name := range infoCollection {
-			assert.True(t, strings.HasPrefix(name, "server-"), 
+			assert.True(t, strings.HasPrefix(name, "server-"),
 				"Server name should have expected format: %s", name)
 		}
 	})
@@ -591,7 +591,7 @@ func TestConcurrentResourceAccess(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			atomic.AddInt64(&requestCounter, 1)
-			
+
 			// Add some processing delay
 			time.Sleep(20 * time.Millisecond)
 
@@ -650,11 +650,11 @@ func TestConcurrentResourceAccess(t *testing.T) {
 					opCtx, opCancel := context.WithTimeout(context.Background(), 2*time.Second)
 					_, err := service.ListTools(opCtx)
 					opCancel()
-					
+
 					if err != nil {
 						t.Logf("Service %d operation %d failed: %v", serviceID, j, err)
 					}
-					
+
 					time.Sleep(10 * time.Millisecond)
 				}
 

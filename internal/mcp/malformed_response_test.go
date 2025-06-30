@@ -59,11 +59,11 @@ func TestMalformedJSONResponses(t *testing.T) {
 
 				// Error should indicate JSON parsing issue
 				errorMsg := err.Error()
-				assert.True(t, 
-					strings.Contains(errorMsg, "json") || 
-					strings.Contains(errorMsg, "JSON") ||
-					strings.Contains(errorMsg, "parse") ||
-					strings.Contains(errorMsg, "decode"),
+				assert.True(t,
+					strings.Contains(errorMsg, "json") ||
+						strings.Contains(errorMsg, "JSON") ||
+						strings.Contains(errorMsg, "parse") ||
+						strings.Contains(errorMsg, "decode"),
 					"Error message should indicate JSON issue: %s", errorMsg)
 			})
 		}
@@ -112,13 +112,13 @@ func TestMalformedJSONResponses(t *testing.T) {
 	t.Run("Truncated_Responses", func(t *testing.T) {
 		// Test responses that are cut off at various points
 		fullResponse := `{"protocolVersion":"2024-11-05","serverInfo":{"name":"test-server","version":"1.0.0"},"capabilities":{}}`
-		
+
 		truncationPoints := []int{10, 25, 50, len(fullResponse) - 10, len(fullResponse) - 1}
 
 		for _, point := range truncationPoints {
 			t.Run(fmt.Sprintf("Truncated_At_%d", point), func(t *testing.T) {
 				truncatedResponse := fullResponse[:point]
-				
+
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
@@ -151,14 +151,14 @@ func TestMalformedJSONResponses(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					
+
 					// Create large JSON response
 					w.Write([]byte(`{"protocolVersion":"2024-11-05","serverInfo":{"name":"test","data":"`))
-					
+
 					// Write large amount of data
 					largeData := strings.Repeat("x", size)
 					w.Write([]byte(largeData))
-					
+
 					w.Write([]byte(`"},"capabilities":{}}`))
 				}))
 				defer server.Close()
@@ -189,8 +189,8 @@ func TestMalformedJSONResponses(t *testing.T) {
 func TestCharacterEncodingIssues(t *testing.T) {
 	t.Run("Invalid_UTF8_Sequences", func(t *testing.T) {
 		invalidUTF8Sequences := []struct {
-			name     string
-			data     []byte
+			name string
+			data []byte
 		}{
 			{"Invalid_Start_Byte", []byte{0xFF, 0xFE}},
 			{"Incomplete_Multibyte", []byte{0xC0}},
@@ -204,13 +204,13 @@ func TestCharacterEncodingIssues(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json; charset=utf-8")
 					w.WriteHeader(http.StatusOK)
-					
+
 					// Start with valid JSON structure
 					w.Write([]byte(`{"protocolVersion":"2024-11-05","serverInfo":{"name":"`))
-					
+
 					// Insert invalid UTF-8
 					w.Write(tc.data)
-					
+
 					// Complete JSON structure
 					w.Write([]byte(`"},"capabilities":{}}`))
 				}))
@@ -255,7 +255,7 @@ func TestCharacterEncodingIssues(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json; charset=utf-8")
 					w.WriteHeader(http.StatusOK)
-					
+
 					response := map[string]interface{}{
 						"protocolVersion": "2024-11-05",
 						"serverInfo": map[string]interface{}{
@@ -264,7 +264,7 @@ func TestCharacterEncodingIssues(t *testing.T) {
 						},
 						"capabilities": map[string]interface{}{},
 					}
-					
+
 					json.NewEncoder(w).Encode(response)
 				}))
 				defer server.Close()
@@ -309,7 +309,7 @@ func TestCharacterEncodingIssues(t *testing.T) {
 						w.Header().Set("Content-Type", tc.contentType)
 					}
 					w.WriteHeader(http.StatusOK)
-					
+
 					// Valid JSON content regardless of content type
 					json.NewEncoder(w).Encode(map[string]interface{}{
 						"protocolVersion": "2024-11-05",
@@ -350,12 +350,12 @@ func TestBinaryDataHandling(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			
+
 			// Mix valid JSON with binary data
 			validStart := `{"protocolVersion":"2024-11-05","serverInfo":{"name":"`
 			binaryData := []byte{0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD}
 			validEnd := `"},"capabilities":{}}`
-			
+
 			w.Write([]byte(validStart))
 			w.Write(binaryData)
 			w.Write([]byte(validEnd))
@@ -386,7 +386,7 @@ func TestBinaryDataHandling(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			
+
 			response := map[string]interface{}{
 				"protocolVersion": "2024-11-05",
 				"serverInfo": map[string]interface{}{
@@ -396,7 +396,7 @@ func TestBinaryDataHandling(t *testing.T) {
 				},
 				"capabilities": map[string]interface{}{},
 			}
-			
+
 			json.NewEncoder(w).Encode(response)
 		}))
 		defer server.Close()
@@ -517,13 +517,13 @@ func TestStreamingResponseIssues(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Transfer-Encoding", "chunked")
 			w.WriteHeader(http.StatusOK)
-			
+
 			// Send partial chunk
 			w.Write([]byte(`{"protocolVersion":"2024-11-05"`))
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
-			
+
 			// Simulate incomplete transfer by not finishing
 			time.Sleep(100 * time.Millisecond)
 			// Handler ends without completing the JSON
@@ -547,7 +547,7 @@ func TestStreamingResponseIssues(t *testing.T) {
 	t.Run("Content_Length_Mismatch", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			response := `{"protocolVersion":"2024-11-05","serverInfo":{"name":"test","version":"1.0.0"},"capabilities":{}}`
-			
+
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(response)+100)) // Wrong length
 			w.WriteHeader(http.StatusOK)

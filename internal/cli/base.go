@@ -139,11 +139,6 @@ func (c *BaseCommand) WithContext() (context.Context, context.CancelFunc) {
 
 // PreRunE is a common pre-run function that sets up the client
 func (c *BaseCommand) PreRunE(cmd *cobra.Command, args []string) error {
-	// Check if interactive mode is requested
-	interactive, _ := cmd.Flags().GetBool("interactive")
-	if interactive {
-		return c.LaunchInteractiveMode(cmd, args)
-	}
 	return c.CreateClient(cmd)
 }
 

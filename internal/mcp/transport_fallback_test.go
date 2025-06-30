@@ -106,9 +106,9 @@ func TestTransportFallback(t *testing.T) {
 	t.Run("Connection_Type_Auto_Detection", func(t *testing.T) {
 		// Test automatic transport type detection based on URL patterns
 		testCases := []struct {
-			url                string
-			expectedTransport  config.TransportType
-			description        string
+			url               string
+			expectedTransport config.TransportType
+			description       string
 		}{
 			{"http://example.com/mcp", config.TransportHTTP, "HTTP URL should detect HTTP transport"},
 			{"https://example.com/mcp", config.TransportHTTP, "HTTPS URL should detect HTTP transport"},
@@ -120,7 +120,7 @@ func TestTransportFallback(t *testing.T) {
 			t.Run(tc.description, func(t *testing.T) {
 				// Test the auto-detection logic (if implemented)
 				// This is a placeholder for when auto-detection is added
-				
+
 				connConfig := &config.ConnectionConfig{
 					URL: tc.url,
 				}
@@ -136,8 +136,8 @@ func TestTransportFallback(t *testing.T) {
 		// Test that transports are tried in the correct priority order
 		// This test documents the expected fallback order
 		expectedOrder := []config.TransportType{
-			config.TransportHTTP, // Try HTTP first (fastest)
-			config.TransportSSE,  // Then SSE (streaming)
+			config.TransportHTTP,  // Try HTTP first (fastest)
+			config.TransportSSE,   // Then SSE (streaming)
 			config.TransportStdio, // Finally STDIO (if available)
 		}
 
@@ -150,7 +150,7 @@ func TestTransportFallback(t *testing.T) {
 		// Test scenario where connection succeeds but operations fail
 		partialServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			
+
 			// Connection succeeds
 			if r.URL.Path == "/" {
 				response := map[string]interface{}{
@@ -269,7 +269,7 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 			description string
 		}{
 			{"http://localhost:99999", "Connection refused"},
-			{"http://192.0.2.1:80", "Network unreachable (test IP)"}, 
+			{"http://192.0.2.1:80", "Network unreachable (test IP)"},
 			{"http://example.invalid", "DNS resolution failure"},
 		}
 
@@ -283,7 +283,7 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 				err := service.Connect(ctx, connConfig)
 				assert.Error(t, err, "Connection should fail for %s", tc.description)
 				assert.False(t, service.IsConnected(), "Service should not be connected")
-				
+
 				// Verify error contains meaningful information
 				assert.NotEmpty(t, err.Error(), "Error message should not be empty")
 			})
@@ -294,13 +294,13 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 		// Test SSE connection that gets interrupted
 		interruptibleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
-			
+
 			// Send partial response then close
 			w.Write([]byte("data: {\"partial\":true}\n"))
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
-			
+
 			// Simulate connection interruption
 			time.Sleep(10 * time.Millisecond)
 			// Handler ends, closing connection
@@ -327,11 +327,11 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 	t.Run("Transport_Resource_Exhaustion", func(t *testing.T) {
 		// Test behavior under resource exhaustion conditions
 		service := NewService()
-		
+
 		// Create many concurrent connections to exhaust resources
 		const numConnections = 50
 		servers := make([]*httptest.Server, numConnections)
-		
+
 		for i := 0; i < numConnections; i++ {
 			servers[i] = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Slow response to tie up connections
@@ -364,7 +364,7 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 				Type: config.TransportHTTP,
 				URL:  servers[i].URL,
 			}
-			
+
 			err := service.Connect(ctx, connConfig)
 			if err == nil {
 				successCount++
@@ -376,10 +376,10 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 		}
 
 		t.Logf("Resource exhaustion test: %d successes, %d failures", successCount, failCount)
-		
+
 		// At least some connections should work, even under load
 		assert.True(t, successCount > 0, "At least some connections should succeed")
-		
+
 		// Some failures are expected under resource pressure
 		if failCount > 0 {
 			t.Logf("Resource exhaustion caused %d failures (expected)", failCount)

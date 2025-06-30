@@ -23,9 +23,9 @@ func TestTransportIntegration(t *testing.T) {
 	t.Run("HTTP_Transport_Basic_Connection", func(t *testing.T) {
 		// Create mock HTTP server
 		server := createMockHTTPServer(t, mockServerConfig{
-			hasTools:     true,
-			hasResources: false,
-			hasPrompts:   false,
+			hasTools:      true,
+			hasResources:  false,
+			hasPrompts:    false,
 			responseDelay: 0,
 		})
 		defer server.Close()

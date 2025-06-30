@@ -202,7 +202,7 @@ func (s *service) Connect(ctx context.Context, config *config.ConnectionConfig) 
 		// Log the initialization error
 		logMCPError(-32603, err.Error(), reqID)
 		mcpClient.Close()
-		
+
 		// Provide more detailed error context based on transport type
 		var troubleshooting string
 		switch config.Type {
@@ -234,7 +234,7 @@ Troubleshooting HTTP connection failure:
 		default:
 			troubleshooting = "Check transport configuration and server compatibility"
 		}
-		
+
 		return fmt.Errorf("failed to initialize MCP connection: %w%s", err, troubleshooting)
 	}
 

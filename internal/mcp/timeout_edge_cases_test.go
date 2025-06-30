@@ -76,7 +76,7 @@ func TestConnectionTimeouts(t *testing.T) {
 
 	t.Run("Operation_Timeout_After_Connection", func(t *testing.T) {
 		var operationStarted int32
-		
+
 		// Server that connects quickly but operations are slow
 		operationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -106,7 +106,7 @@ func TestConnectionTimeouts(t *testing.T) {
 		defer operationServer.Close()
 
 		service := NewService()
-		
+
 		// Quick connection timeout (should succeed)
 		connCtx, connCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer connCancel()
@@ -184,10 +184,10 @@ func TestConnectionTimeouts(t *testing.T) {
 
 	t.Run("Multiple_Timeout_Scenarios", func(t *testing.T) {
 		testCases := []struct {
-			name           string
-			serverDelay    time.Duration
-			clientTimeout  time.Duration
-			shouldTimeout  bool
+			name          string
+			serverDelay   time.Duration
+			clientTimeout time.Duration
+			shouldTimeout bool
 		}{
 			{"Fast_Server_Long_Timeout", 100 * time.Millisecond, 1 * time.Second, false},
 			{"Slow_Server_Short_Timeout", 1 * time.Second, 100 * time.Millisecond, true},
@@ -241,7 +241,7 @@ func TestConnectionTimeouts(t *testing.T) {
 func TestNetworkInterruption(t *testing.T) {
 	t.Run("Connection_Interruption_During_Operation", func(t *testing.T) {
 		var serverStopped int32
-		
+
 		// Server that stops after initialization
 		interruptServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -294,7 +294,7 @@ func TestNetworkInterruption(t *testing.T) {
 		defer opCancel()
 
 		tools, err := service.ListTools(opCtx)
-		
+
 		// Operation should fail due to interruption
 		assert.Error(t, err, "Operation should fail due to network interruption")
 		assert.Nil(t, tools, "No tools should be returned")
@@ -306,7 +306,7 @@ func TestNetworkInterruption(t *testing.T) {
 		// Server that sends partial responses
 		partialServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			
+
 			// Send partial JSON and close
 			w.Write([]byte(`{"protocolVersion":"2024-11-05","serverInfo":{"name":"partial"`))
 			// Connection drops here (incomplete JSON)
@@ -367,12 +367,12 @@ func TestTimeoutRecovery(t *testing.T) {
 		// Server that fails first request but succeeds on retry
 		recoveryServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			count := atomic.AddInt32(&requestCount, 1)
-			
+
 			if count == 1 {
 				// First request: simulate timeout by hanging
 				time.Sleep(2 * time.Second)
 			}
-			
+
 			// Subsequent requests: respond quickly
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -417,12 +417,12 @@ func TestTimeoutRecovery(t *testing.T) {
 
 	t.Run("Timeout_With_Cleanup", func(t *testing.T) {
 		// Test that resources are properly cleaned up after timeouts
-		
+
 		// Multiple timeout attempts
 		for i := 0; i < 3; i++ {
 			service := NewService()
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-			
+
 			connConfig := &config.ConnectionConfig{
 				Type: config.TransportHTTP,
 				URL:  "http://localhost:99999", // Non-existent
@@ -431,7 +431,7 @@ func TestTimeoutRecovery(t *testing.T) {
 			err := service.Connect(ctx, connConfig)
 			assert.Error(t, err, "Connection %d should timeout", i+1)
 			assert.False(t, service.IsConnected(), "Service should not be connected after timeout %d", i+1)
-			
+
 			cancel()
 		}
 	})
@@ -485,14 +485,14 @@ func TestEdgeCaseTimeouts(t *testing.T) {
 
 		assert.Error(t, err, "Connection should fail even with long timeout")
 		assert.Less(t, elapsed, 30*time.Second, "Should fail quickly despite long timeout")
-		
+
 		// Use service to avoid "declared and not used" error
 		_ = service.IsConnected()
 	})
 
 	t.Run("Concurrent_Timeout_Operations", func(t *testing.T) {
 		// Test multiple concurrent operations with different timeouts
-		
+
 		// Create server with variable response times
 		variableServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			delay := r.URL.Query().Get("delay")
@@ -504,7 +504,7 @@ func TestEdgeCaseTimeouts(t *testing.T) {
 			case "long":
 				time.Sleep(2 * time.Second)
 			}
-			
+
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"protocolVersion": "2024-11-05",
@@ -527,7 +527,7 @@ func TestEdgeCaseTimeouts(t *testing.T) {
 			wg.Add(1)
 			go func(delay string, timeout time.Duration) {
 				defer wg.Done()
-				
+
 				localService := NewService()
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)
 				defer cancel()

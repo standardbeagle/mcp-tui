@@ -924,6 +924,15 @@ func (ms *MainScreen) renderCurrentList() string {
 	// Calculate actual content height (sum of heights for visible items + scroll indicators)
 	contentHeight := len(listItems) // Start with number of items (including scroll indicators)
 
+	// Ensure the list height doesn't exceed available terminal space
+	maxListHeight := availableHeight
+	if contentHeight+2 > maxListHeight {
+		contentHeight = maxListHeight - 2 // Leave room for padding
+	}
+	if contentHeight < 3 {
+		contentHeight = 3 // Minimum height
+	}
+
 	dynamicListStyle := ms.listStyle.
 		Width(width - 4).         // Account for margins
 		Height(contentHeight + 2) // Content + padding
@@ -1182,25 +1191,36 @@ func (ms *MainScreen) loadEvents() tea.Cmd {
 func (ms *MainScreen) renderEventSplitView() string {
 	var builder strings.Builder
 
-	// Get terminal width to split the panes
+	// Get terminal dimensions to split the panes
 	totalWidth := ms.Width()
+	totalHeight := ms.Height()
 	if totalWidth == 0 {
 		totalWidth = 120 // Default width
+	}
+	if totalHeight == 0 {
+		totalHeight = 30 // Default height
 	}
 
 	leftPaneWidth := totalWidth * 40 / 100  // 40% for list
 	rightPaneWidth := totalWidth * 55 / 100 // 55% for detail (5% margin)
 
+	// Calculate available height for panes (reserve space for header, tabs, help, etc.)
+	reservedHeight := 15
+	paneHeight := totalHeight - reservedHeight
+	if paneHeight < 10 {
+		paneHeight = 10 // Minimum pane height
+	}
+
 	// Create styles for panes
 	leftPaneStyle := lipgloss.NewStyle().
 		Width(leftPaneWidth).
-		Height(20).
+		Height(paneHeight).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("8"))
 
 	rightPaneStyle := lipgloss.NewStyle().
 		Width(rightPaneWidth).
-		Height(20).
+		Height(paneHeight).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("8"))
 
@@ -1234,7 +1254,21 @@ func (ms *MainScreen) renderEventList() string {
 	var listItems []string
 	selectedIdx := ms.selectedIndex[3]
 
-	maxHeight := 18 // Slightly less than pane height for padding
+	// Calculate dynamic max height based on terminal size
+	totalHeight := ms.Height()
+	if totalHeight == 0 {
+		totalHeight = 30
+	}
+	reservedHeight := 15
+	paneHeight := totalHeight - reservedHeight
+	if paneHeight < 10 {
+		paneHeight = 10
+	}
+	maxHeight := paneHeight - 2 // Leave room for borders and padding
+	if maxHeight < 5 {
+		maxHeight = 5
+	}
+
 	startIdx := 0
 	endIdx := len(ms.events)
 

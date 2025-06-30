@@ -34,23 +34,23 @@ func TestZombieProcessAccumulation(t *testing.T) {
 		// Simulate long-running session with many short-lived processes
 		const numProcesses = 50
 		const batchSize = 10
-		
+
 		for batch := 0; batch < numProcesses/batchSize; batch++ {
 			var wg sync.WaitGroup
-			
+
 			// Start batch of processes
 			for i := 0; i < batchSize; i++ {
 				wg.Add(1)
 				go func(id int) {
 					defer wg.Done()
-					
+
 					// Start short-lived process
 					proc, err := manager.Start(ctx, "echo", []string{fmt.Sprintf("test-%d", id)})
 					if err != nil {
 						t.Logf("Failed to start process %d: %v", id, err)
 						return
 					}
-					
+
 					// Wait for process to finish
 					err = proc.Wait()
 					if err != nil {
@@ -58,19 +58,19 @@ func TestZombieProcessAccumulation(t *testing.T) {
 					}
 				}(batch*batchSize + i)
 			}
-			
+
 			wg.Wait()
-			
+
 			// Allow cleanup between batches
 			time.Sleep(200 * time.Millisecond)
 			manager.Cleanup()
-			
+
 			// Check for zombie accumulation
 			currentZombieCount := countZombieProcesses(t)
 			zombieIncrease := currentZombieCount - initialZombieCount
-			
+
 			if zombieIncrease > 5 {
-				t.Errorf("Zombie process accumulation detected: %d zombies after batch %d", 
+				t.Errorf("Zombie process accumulation detected: %d zombies after batch %d",
 					zombieIncrease, batch+1)
 			}
 		}
@@ -78,11 +78,11 @@ func TestZombieProcessAccumulation(t *testing.T) {
 		// Final cleanup and verification
 		manager.Cleanup()
 		time.Sleep(500 * time.Millisecond)
-		
+
 		finalZombieCount := countZombieProcesses(t)
 		finalIncrease := finalZombieCount - initialZombieCount
-		
-		assert.LessOrEqual(t, finalIncrease, 2, 
+
+		assert.LessOrEqual(t, finalIncrease, 2,
 			"Should not accumulate more than 2 zombie processes during long session")
 	})
 
@@ -101,23 +101,23 @@ func TestZombieProcessAccumulation(t *testing.T) {
 		// Rapid process creation
 		const numRoutines = 20
 		const processesPerRoutine = 25
-		
+
 		var wg sync.WaitGroup
-		
+
 		for i := 0; i < numRoutines; i++ {
 			wg.Add(1)
 			go func(routineID int) {
 				defer wg.Done()
-				
+
 				for j := 0; j < processesPerRoutine; j++ {
 					proc, err := manager.Start(ctx, "sleep", []string{"0.1"})
 					if err != nil {
 						atomic.AddInt32(&errors, 1)
 						continue
 					}
-					
+
 					atomic.AddInt32(&processesStarted, 1)
-					
+
 					// Wait for completion
 					go func() {
 						proc.Wait()
@@ -128,7 +128,7 @@ func TestZombieProcessAccumulation(t *testing.T) {
 		}
 
 		wg.Wait()
-		
+
 		// Wait for all processes to finish
 		deadline := time.Now().Add(10 * time.Second)
 		for time.Now().Before(deadline) {
@@ -142,12 +142,12 @@ func TestZombieProcessAccumulation(t *testing.T) {
 		finished := atomic.LoadInt32(&processesFinished)
 		errorCount := atomic.LoadInt32(&errors)
 
-		t.Logf("Rapid process test: %d started, %d finished, %d errors", 
+		t.Logf("Rapid process test: %d started, %d finished, %d errors",
 			started, finished, errorCount)
 
 		assert.Greater(t, started, int32(400), "Should start most processes")
 		assert.LessOrEqual(t, errorCount, started/10, "Error rate should be low")
-		
+
 		// Give cleanup time to work
 		time.Sleep(2 * time.Second)
 		manager.Cleanup()
@@ -166,7 +166,7 @@ func TestZombieProcessAccumulation(t *testing.T) {
 		// Create and destroy many process managers
 		for i := 0; i < 100; i++ {
 			manager := NewUnixManager(ctx)
-			
+
 			// Start a few processes
 			for j := 0; j < 3; j++ {
 				proc, err := manager.Start(ctx, "echo", []string{"test"})
@@ -174,7 +174,7 @@ func TestZombieProcessAccumulation(t *testing.T) {
 					proc.Wait()
 				}
 			}
-			
+
 			manager.Cleanup()
 			manager.Close()
 		}
@@ -183,17 +183,17 @@ func TestZombieProcessAccumulation(t *testing.T) {
 		runtime.GC()
 		runtime.GC()
 		time.Sleep(100 * time.Millisecond)
-		
+
 		var finalStats runtime.MemStats
 		runtime.ReadMemStats(&finalStats)
 
 		memoryIncrease := finalStats.Alloc - initialStats.Alloc
-		
+
 		t.Logf("Memory usage: initial %d bytes, final %d bytes, increase %d bytes",
 			initialStats.Alloc, finalStats.Alloc, memoryIncrease)
 
 		// Allow for reasonable memory increase (100KB)
-		assert.Less(t, memoryIncrease, uint64(100*1024), 
+		assert.Less(t, memoryIncrease, uint64(100*1024),
 			"Process manager should not leak significant memory")
 	})
 }
@@ -205,12 +205,12 @@ func TestGoroutineLeaks(t *testing.T) {
 
 		// Create and destroy multiple process managers
 		const numManagers = 10
-		
+
 		for i := 0; i < numManagers; i++ {
 			ctx, cancel := context.WithCancel(context.Background())
-			
+
 			manager := NewUnixManager(ctx)
-			
+
 			// Start some processes
 			for j := 0; j < 3; j++ {
 				proc, err := manager.Start(ctx, "echo", []string{fmt.Sprintf("test-%d-%d", i, j)})
@@ -220,11 +220,11 @@ func TestGoroutineLeaks(t *testing.T) {
 					}()
 				}
 			}
-			
+
 			// Cleanup
 			cancel()
 			manager.Close()
-			
+
 			// Allow goroutines to finish
 			time.Sleep(50 * time.Millisecond)
 		}
@@ -240,7 +240,7 @@ func TestGoroutineLeaks(t *testing.T) {
 			initialGoroutines, finalGoroutines, goroutineIncrease)
 
 		// Allow for some reasonable increase (reaper goroutines, etc.)
-		assert.LessOrEqual(t, goroutineIncrease, 5, 
+		assert.LessOrEqual(t, goroutineIncrease, 5,
 			"Should not leak significant number of goroutines")
 	})
 
@@ -262,12 +262,12 @@ func TestGoroutineLeaks(t *testing.T) {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				
+
 				proc, err := manager.Start(ctx, "echo", []string{fmt.Sprintf("concurrent-%d", id)})
 				if err != nil {
 					return
 				}
-				
+
 				// Randomly kill or wait for some processes
 				if id%3 == 0 {
 					proc.Kill()
@@ -296,7 +296,7 @@ func TestGoroutineLeaks(t *testing.T) {
 		}
 
 		wg.Wait()
-		
+
 		// Final cleanup
 		time.Sleep(500 * time.Millisecond)
 		runtime.GC()
@@ -307,7 +307,7 @@ func TestGoroutineLeaks(t *testing.T) {
 		t.Logf("Concurrent operations goroutines: initial %d, final %d, increase %d",
 			initialGoroutines, finalGoroutines, goroutineIncrease)
 
-		assert.LessOrEqual(t, goroutineIncrease, 10, 
+		assert.LessOrEqual(t, goroutineIncrease, 10,
 			"Concurrent operations should not leak many goroutines")
 	})
 }
@@ -364,7 +364,7 @@ func TestFileDescriptorLeaks(t *testing.T) {
 			initialFDs, finalFDs, fdIncrease)
 
 		// Allow for some increase but not too much
-		assert.LessOrEqual(t, fdIncrease, 10, 
+		assert.LessOrEqual(t, fdIncrease, 10,
 			"Should not leak significant file descriptors")
 	})
 
@@ -401,7 +401,7 @@ func TestFileDescriptorLeaks(t *testing.T) {
 		t.Logf("Pipe FD test: initial %d, final %d, increase %d",
 			initialFDs, finalFDs, fdIncrease)
 
-		assert.LessOrEqual(t, fdIncrease, 5, 
+		assert.LessOrEqual(t, fdIncrease, 5,
 			"Should not leak pipe file descriptors")
 	})
 }
@@ -438,7 +438,7 @@ func TestLongRunningProcesses(t *testing.T) {
 			}
 		}
 
-		assert.Equal(t, len(processes), runningCount, 
+		assert.Equal(t, len(processes), runningCount,
 			"All started processes should be running")
 
 		// Check process list
@@ -464,7 +464,7 @@ func TestLongRunningProcesses(t *testing.T) {
 			}
 		}
 
-		assert.Equal(t, 0, runningCount, 
+		assert.Equal(t, 0, runningCount,
 			"No processes should be running after cleanup")
 	})
 

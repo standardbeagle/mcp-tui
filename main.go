@@ -136,7 +136,6 @@ Examples:
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	rootCmd.PersistentFlags().BoolVar(&cfg.DebugMode, "debug", false, "Enable debug mode")
 	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().Bool("interactive", false, "Launch interactive TUI mode for the connection")
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())
