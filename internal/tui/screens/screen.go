@@ -16,6 +16,9 @@ type Screen interface {
 
 	// Reset resets the screen to its initial state
 	Reset()
+
+	// IsOverlay returns true if this screen should be displayed as an overlay
+	IsOverlay() bool
 }
 
 // ScreenTransition represents a transition between screens
@@ -31,6 +34,11 @@ type TransitionMsg struct {
 
 // BackMsg is sent when going back to the previous screen
 type BackMsg struct{}
+
+// ToggleOverlayMsg is sent when toggling an overlay screen
+type ToggleOverlayMsg struct {
+	Screen Screen
+}
 
 // ErrorMsg is sent when an error occurs
 type ErrorMsg struct {
@@ -57,6 +65,7 @@ const (
 type BaseScreen struct {
 	name        string
 	canGoBack   bool
+	isOverlay   bool
 	width       int
 	height      int
 	lastError   error
@@ -69,6 +78,16 @@ func NewBaseScreen(name string, canGoBack bool) *BaseScreen {
 	return &BaseScreen{
 		name:      name,
 		canGoBack: canGoBack,
+		isOverlay: false,
+	}
+}
+
+// NewOverlayScreen creates a new overlay screen
+func NewOverlayScreen(name string) *BaseScreen {
+	return &BaseScreen{
+		name:      name,
+		canGoBack: true,
+		isOverlay: true,
 	}
 }
 
@@ -128,4 +147,9 @@ func (bs *BaseScreen) LastError() error {
 // StatusMessage returns the current status message and level
 func (bs *BaseScreen) StatusMessage() (string, StatusLevel) {
 	return bs.statusMsg, bs.statusLevel
+}
+
+// IsOverlay returns whether this screen should be displayed as an overlay
+func (bs *BaseScreen) IsOverlay() bool {
+	return bs.isOverlay
 }

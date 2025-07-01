@@ -15,6 +15,7 @@ type ScreenManager struct {
 
 	currentScreen screens.Screen
 	screenStack   []screens.Screen
+	overlayScreen screens.Screen // Overlay screen that preserves underlying screen
 }
 
 // NewScreenManager creates a new screen manager
@@ -45,8 +46,47 @@ func (sm *ScreenManager) Init() tea.Cmd {
 
 // Update handles messages and screen transitions
 func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// If we have an overlay screen, route messages to it first
+	if sm.overlayScreen != nil {
+		switch msg := msg.(type) {
+		case screens.BackMsg:
+			// For overlay screens, back means close the overlay
+			sm.overlayScreen = nil
+			sm.logger.Info("Closing overlay screen")
+			return sm, nil
+		
+		case screens.ToggleOverlayMsg:
+			// Toggle off the overlay if it's the same screen
+			if msg.Screen != nil && sm.overlayScreen.Name() == msg.Screen.Name() {
+				sm.overlayScreen = nil
+				sm.logger.Info("Toggling off overlay screen")
+				return sm, nil
+			}
+			// Otherwise, replace with new overlay
+			sm.overlayScreen = msg.Screen
+			return sm, sm.overlayScreen.Init()
+		
+		default:
+			// Forward to overlay screen
+			model, cmd := sm.overlayScreen.Update(msg)
+			if newScreen, ok := model.(screens.Screen); ok {
+				sm.overlayScreen = newScreen
+			}
+			return sm, cmd
+		}
+	}
+
+	// Handle messages for main screen flow
 	switch msg := msg.(type) {
 	case screens.TransitionMsg:
+		// Check if this is an overlay screen
+		if msg.Transition.Screen.IsOverlay() {
+			sm.overlayScreen = msg.Transition.Screen
+			sm.logger.Info("Opening overlay screen", debug.F("overlay", msg.Transition.Screen.Name()))
+			return sm, sm.overlayScreen.Init()
+		}
+
+		// Normal screen transition
 		// Push current screen to stack if it can go back
 		if sm.currentScreen.CanGoBack() {
 			sm.screenStack = append(sm.screenStack, sm.currentScreen)
@@ -59,6 +99,15 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			debug.F("to", msg.Transition.Screen.Name()))
 
 		return sm, sm.currentScreen.Init()
+
+	case screens.ToggleOverlayMsg:
+		// Toggle on the overlay
+		if msg.Screen != nil {
+			sm.overlayScreen = msg.Screen
+			sm.logger.Info("Toggling on overlay screen", debug.F("overlay", msg.Screen.Name()))
+			return sm, sm.overlayScreen.Init()
+		}
+		return sm, nil
 
 	case screens.BackMsg:
 		// Go back to previous screen if available
@@ -90,6 +139,10 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the current screen
 func (sm *ScreenManager) View() string {
+	// If we have an overlay screen, render it instead
+	if sm.overlayScreen != nil {
+		return sm.overlayScreen.View()
+	}
 	return sm.currentScreen.View()
 }
 

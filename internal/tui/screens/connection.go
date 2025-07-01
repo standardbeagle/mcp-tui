@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -19,9 +20,11 @@ type ConnectionScreen struct {
 
 	// UI state
 	transportType config.TransportType
-	command       string
-	args          string
-	url           string
+
+	// Text input models
+	commandInput textinput.Model
+	argsInput    textinput.Model
+	urlInput     textinput.Model
 
 	// Form state
 	focusIndex int
@@ -44,6 +47,22 @@ func NewConnectionScreen(cfg *config.Config) *ConnectionScreen {
 		maxFocus:      4, // transport, command, args, connect button
 	}
 
+	// Initialize text input models
+	cs.commandInput = textinput.New()
+	cs.commandInput.Placeholder = "npx, node, python, etc."
+	cs.commandInput.CharLimit = 256
+	cs.commandInput.Width = 50
+
+	cs.argsInput = textinput.New()
+	cs.argsInput.Placeholder = "@modelcontextprotocol/server-everything stdio"
+	cs.argsInput.CharLimit = 512
+	cs.argsInput.Width = 50
+
+	cs.urlInput = textinput.New()
+	cs.urlInput.Placeholder = "http://localhost:3000/sse or http://localhost:3000"
+	cs.urlInput.CharLimit = 512
+	cs.urlInput.Width = 50
+
 	// Initialize styles
 	cs.focusedStyle = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
@@ -63,6 +82,10 @@ func NewConnectionScreen(cfg *config.Config) *ConnectionScreen {
 	cs.helpStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		Margin(1, 0)
+
+	// Focus on command input by default
+	cs.commandInput.Focus()
+	cs.focusIndex = 1
 
 	return cs
 }
@@ -97,27 +120,93 @@ func (cs *ConnectionScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg handles keyboard input
 func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// First, check for global keys that should work regardless of focus
 	switch msg.String() {
-	case "ctrl+c", "q", "esc":
+	case "ctrl+c", "q":
 		return cs, tea.Quit
 
-	case "ctrl+l":
+	case "ctrl+l", "ctrl+d", "f12":
 		// Show debug logs
 		debugScreen := NewDebugScreen()
 		return cs, func() tea.Msg {
-			return TransitionMsg{
-				Transition: ScreenTransition{
-					Screen: debugScreen,
-				},
+			return ToggleOverlayMsg{
+				Screen: debugScreen,
 			}
 		}
+	}
+
+	// Update max focus based on transport type
+	if cs.transportType == config.TransportStdio {
+		cs.maxFocus = 4 // transport, command, args, connect
+	} else {
+		cs.maxFocus = 3 // transport, url, connect
+	}
+
+	// Handle input based on current focus
+	var cmd tea.Cmd
+
+	// If we're in a text input field, handle special navigation keys first
+	isInTextInput := false
+	switch cs.transportType {
+	case config.TransportStdio:
+		isInTextInput = cs.focusIndex == 1 || cs.focusIndex == 2
+	case config.TransportSSE, config.TransportHTTP:
+		isInTextInput = cs.focusIndex == 1
+	}
+
+	if isInTextInput {
+		// Check for navigation keys
+		switch msg.String() {
+		case "esc":
+			// Unfocus current input and go back to transport selection
+			cs.blurAllInputs()
+			cs.focusIndex = 0
+			return cs, nil
+		case "tab", "enter":
+			// Move to next field
+			cs.blurAllInputs()
+			cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
+			cs.updateInputFocus()
+			return cs, nil
+		case "shift+tab":
+			// Move to previous field
+			cs.blurAllInputs()
+			cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
+			cs.updateInputFocus()
+			return cs, nil
+		default:
+			// Pass other keys to the active text input
+			switch cs.transportType {
+			case config.TransportStdio:
+				if cs.focusIndex == 1 {
+					cs.commandInput, cmd = cs.commandInput.Update(msg)
+				} else if cs.focusIndex == 2 {
+					cs.argsInput, cmd = cs.argsInput.Update(msg)
+				}
+			case config.TransportSSE, config.TransportHTTP:
+				if cs.focusIndex == 1 {
+					cs.urlInput, cmd = cs.urlInput.Update(msg)
+				}
+			}
+			return cs, cmd
+		}
+	}
+
+	// Handle non-text-input navigation
+	switch msg.String() {
+	case "esc":
+		return cs, tea.Quit
 
 	case "tab", "down":
+		cs.blurAllInputs()
 		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
+		cs.updateInputFocus()
 		return cs, nil
 
 	case "shift+tab", "up":
+		cs.blurAllInputs()
 		cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
+		cs.updateInputFocus()
 		return cs, nil
 
 	case "enter":
@@ -128,6 +217,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "1", "2", "3":
 		if cs.focusIndex == 0 { // Transport type selection
+			oldTransport := cs.transportType
 			switch msg.String() {
 			case "1":
 				cs.transportType = config.TransportStdio
@@ -136,44 +226,54 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case "3":
 				cs.transportType = config.TransportHTTP
 			}
+			// If transport type changed, reset focus
+			if oldTransport != cs.transportType {
+				cs.blurAllInputs()
+				cs.focusIndex = 1
+				cs.updateInputFocus()
+			}
 		}
 		return cs, nil
-	}
-
-	// Handle text input for focused fields
-	switch cs.focusIndex {
-	case 1: // Command input
-		if msg.Type == tea.KeyRunes {
-			cs.command += string(msg.Runes)
-		} else if msg.Type == tea.KeyBackspace && len(cs.command) > 0 {
-			cs.command = cs.command[:len(cs.command)-1]
-		}
-
-	case 2: // Args input
-		if msg.Type == tea.KeyRunes {
-			cs.args += string(msg.Runes)
-		} else if msg.Type == tea.KeyBackspace && len(cs.args) > 0 {
-			cs.args = cs.args[:len(cs.args)-1]
-		}
-
-	case 3: // URL input (for SSE/HTTP)
-		if msg.Type == tea.KeyRunes {
-			cs.url += string(msg.Runes)
-		} else if msg.Type == tea.KeyBackspace && len(cs.url) > 0 {
-			cs.url = cs.url[:len(cs.url)-1]
-		}
 	}
 
 	return cs, nil
 }
 
+// blurAllInputs removes focus from all text inputs
+func (cs *ConnectionScreen) blurAllInputs() {
+	cs.commandInput.Blur()
+	cs.argsInput.Blur()
+	cs.urlInput.Blur()
+}
+
+// updateInputFocus sets focus on the appropriate input based on current state
+func (cs *ConnectionScreen) updateInputFocus() {
+	switch cs.transportType {
+	case config.TransportStdio:
+		if cs.focusIndex == 1 {
+			cs.commandInput.Focus()
+		} else if cs.focusIndex == 2 {
+			cs.argsInput.Focus()
+		}
+	case config.TransportSSE, config.TransportHTTP:
+		if cs.focusIndex == 1 {
+			cs.urlInput.Focus()
+		}
+	}
+}
+
 // handleConnect processes the connection attempt
 func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
+	// Get values from text inputs
+	command := cs.commandInput.Value()
+	args := cs.argsInput.Value()
+	url := cs.urlInput.Value()
+
 	cs.logger.Info("Attempting to connect",
 		debug.F("transport", cs.transportType),
-		debug.F("command", cs.command),
-		debug.F("args", cs.args),
-		debug.F("url", cs.url))
+		debug.F("command", command),
+		debug.F("args", args),
+		debug.F("url", url))
 
 	// Validate inputs
 	if err := cs.validateInputs(); err != nil {
@@ -184,9 +284,9 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 	// Create connection config
 	connConfig := &config.ConnectionConfig{
 		Type:    cs.transportType,
-		Command: cs.command,
-		Args:    strings.Fields(cs.args),
-		URL:     cs.url,
+		Command: command,
+		Args:    strings.Fields(args),
+		URL:     url,
 	}
 
 	cs.logger.Info("Connection configuration created", debug.F("config", connConfig))
@@ -200,12 +300,12 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 func (cs *ConnectionScreen) validateInputs() error {
 	switch cs.transportType {
 	case config.TransportStdio:
-		if cs.command == "" {
+		if cs.commandInput.Value() == "" {
 			return fmt.Errorf("command is required for STDIO transport")
 		}
 
 	case config.TransportSSE, config.TransportHTTP:
-		if cs.url == "" {
+		if cs.urlInput.Value() == "" {
 			return fmt.Errorf("URL is required for %s transport", cs.transportType)
 		}
 	}
@@ -245,7 +345,7 @@ func (cs *ConnectionScreen) View() string {
 
 	// Help text
 	builder.WriteString("\n\n")
-	builder.WriteString(cs.helpStyle.Render("Tab/Shift+Tab: Navigate • Enter: Connect • Ctrl+L: Debug Log • Esc/Ctrl+C: Quit"))
+	builder.WriteString(cs.helpStyle.Render("Tab/Shift+Tab: Navigate • Enter: Connect • Ctrl+D/F12: Debug Log • Esc/Ctrl+C: Quit"))
 
 	return builder.String()
 }
@@ -274,27 +374,23 @@ func (cs *ConnectionScreen) renderStdioFields() string {
 
 	// Command field
 	commandLabel := "Command:"
-	commandValue := cs.command
 	if cs.focusIndex == 1 {
 		commandLabel = cs.focusedStyle.Render(commandLabel)
-		commandValue = cs.focusedStyle.Render(commandValue + "█")
+		builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, cs.focusedStyle.Render(cs.commandInput.View())))
 	} else {
 		commandLabel = cs.blurredStyle.Render(commandLabel)
-		commandValue = cs.blurredStyle.Render(commandValue)
+		builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, cs.blurredStyle.Render(cs.commandInput.View())))
 	}
-	builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, commandValue))
 
 	// Args field
 	argsLabel := "Arguments:"
-	argsValue := cs.args
 	if cs.focusIndex == 2 {
 		argsLabel = cs.focusedStyle.Render(argsLabel)
-		argsValue = cs.focusedStyle.Render(argsValue + "█")
+		builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, cs.focusedStyle.Render(cs.argsInput.View())))
 	} else {
 		argsLabel = cs.blurredStyle.Render(argsLabel)
-		argsValue = cs.blurredStyle.Render(argsValue)
+		builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, cs.blurredStyle.Render(cs.argsInput.View())))
 	}
-	builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, argsValue))
 
 	return builder.String()
 }
@@ -302,22 +398,26 @@ func (cs *ConnectionScreen) renderStdioFields() string {
 // renderURLFields renders fields for URL-based transports
 func (cs *ConnectionScreen) renderURLFields() string {
 	urlLabel := "URL:"
-	urlValue := cs.url
 	if cs.focusIndex == 1 {
 		urlLabel = cs.focusedStyle.Render(urlLabel)
-		urlValue = cs.focusedStyle.Render(urlValue + "█")
+		return fmt.Sprintf("%s\n%s", urlLabel, cs.focusedStyle.Render(cs.urlInput.View()))
 	} else {
 		urlLabel = cs.blurredStyle.Render(urlLabel)
-		urlValue = cs.blurredStyle.Render(urlValue)
+		return fmt.Sprintf("%s\n%s", urlLabel, cs.blurredStyle.Render(cs.urlInput.View()))
 	}
-
-	return fmt.Sprintf("%s\n%s", urlLabel, urlValue)
 }
 
 // renderConnectButton renders the connect button
 func (cs *ConnectionScreen) renderConnectButton() string {
 	button := "[ Connect ]"
-	if cs.focusIndex == cs.maxFocus-1 {
+	isButtonFocused := false
+	if cs.transportType == config.TransportStdio {
+		isButtonFocused = cs.focusIndex == 3
+	} else {
+		isButtonFocused = cs.focusIndex == 2
+	}
+
+	if isButtonFocused {
 		return cs.focusedStyle.Render(button)
 	}
 	return cs.blurredStyle.Render(button)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"syscall"
 
@@ -182,12 +183,20 @@ func runTUIMode(ctx context.Context, connectionConfig *config.ConnectionConfig) 
 	logger := debug.Component("tui")
 	logger.Info("Starting TUI mode")
 
+	// Disable stderr logging during TUI mode to prevent terminal corruption
+	// Logs will still be captured in the debug buffer for viewing in debug screen
+	debug.SetGlobalOutput(io.Discard)
+
 	// Create and run TUI application
 	tuiApp := app.New(cfg, connectionConfig)
 	if err := tuiApp.Run(ctx); err != nil {
+		// Re-enable stderr logging before exiting
+		debug.SetGlobalOutput(os.Stderr)
 		logger.Error("TUI application failed", debug.F("error", err))
 		os.Exit(1)
 	}
 
+	// Re-enable stderr logging after TUI ends
+	debug.SetGlobalOutput(os.Stderr)
 	logger.Info("TUI mode ended")
 }

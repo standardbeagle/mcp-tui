@@ -40,7 +40,7 @@ type DebugScreen struct {
 // NewDebugScreen creates a new debug screen
 func NewDebugScreen() *DebugScreen {
 	ds := &DebugScreen{
-		BaseScreen: NewBaseScreen("Debug", true),
+		BaseScreen: NewOverlayScreen("Debug"),
 	}
 
 	ds.initStyles()
@@ -162,8 +162,8 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Quit the app
 		return ds, tea.Quit
 
-	case "b", "alt+left":
-		// Go back to main screen
+	case "b", "alt+left", "ctrl+d", "ctrl+l", "f12":
+		// Go back to main screen (toggle off the overlay)
 		return ds, func() tea.Msg { return BackMsg{} }
 
 	case "tab", "right":

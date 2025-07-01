@@ -464,14 +464,12 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Go back to previous screen
 		return ts, func() tea.Msg { return BackMsg{} }
 
-	case "ctrl+l":
+	case "ctrl+l", "ctrl+d", "f12":
 		// Show debug logs
 		debugScreen := NewDebugScreen()
 		return ts, func() tea.Msg {
-			return TransitionMsg{
-				Transition: ScreenTransition{
-					Screen: debugScreen,
-				},
+			return ToggleOverlayMsg{
+				Screen: debugScreen,
 			}
 		}
 

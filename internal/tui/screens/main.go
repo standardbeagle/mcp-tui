@@ -305,6 +305,14 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return spinnerTickMsg{}
 				}),
 			)
+		case "ctrl+l", "ctrl+d", "f12":
+			// Show debug logs even when disconnected
+			debugScreen := NewDebugScreen()
+			return ms, func() tea.Msg {
+				return ToggleOverlayMsg{
+					Screen: debugScreen,
+				}
+			}
 		}
 		return ms, nil
 	}
@@ -361,14 +369,12 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Refresh current tab
 		return ms, ms.refreshCurrentTab()
 
-	case "ctrl+l":
+	case "ctrl+l", "ctrl+d", "f12":
 		// Show debug logs
 		debugScreen := NewDebugScreen()
 		return ms, func() tea.Msg {
-			return TransitionMsg{
-				Transition: ScreenTransition{
-					Screen: debugScreen,
-				},
+			return ToggleOverlayMsg{
+				Screen: debugScreen,
 			}
 		}
 	}
@@ -531,6 +537,8 @@ func (ms *MainScreen) View() string {
 		optionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 		builder.WriteString(optionStyle.Render("Press 'r' to retry connection"))
 		builder.WriteString("\n")
+		builder.WriteString(optionStyle.Render("Press Ctrl+D/F12 to view debug logs"))
+		builder.WriteString("\n")
 		builder.WriteString(optionStyle.Render("Press 'q' or Ctrl+C to quit"))
 		return builder.String()
 	}
@@ -592,7 +600,7 @@ func (ms *MainScreen) View() string {
 			"↑↓: Navigate",
 			"b/Alt+←: Close detail",
 			"r: Refresh",
-			"Ctrl+L: Debug Log",
+			"Ctrl+D/F12: Debug Log",
 			"q: Quit",
 		}
 	case ms.activeTab == 0 && ms.toolCount > 0:
@@ -603,7 +611,7 @@ func (ms *MainScreen) View() string {
 			"PgUp/Dn: Page",
 			"r: Refresh",
 			"Tab: Switch tabs",
-			"Ctrl+L: Debug Log",
+			"Ctrl+D/F12: Debug Log",
 			"q: Quit",
 		}
 	default:
