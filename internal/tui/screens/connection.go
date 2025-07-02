@@ -39,6 +39,11 @@ type ConnectionScreen struct {
 
 // NewConnectionScreen creates a new connection screen
 func NewConnectionScreen(cfg *config.Config) *ConnectionScreen {
+	return NewConnectionScreenWithConfig(cfg, nil)
+}
+
+// NewConnectionScreenWithConfig creates a new connection screen with optional previous config
+func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.ConnectionConfig) *ConnectionScreen {
 	cs := &ConnectionScreen{
 		BaseScreen:    NewBaseScreen("Connection", false),
 		config:        cfg,
@@ -62,6 +67,32 @@ func NewConnectionScreen(cfg *config.Config) *ConnectionScreen {
 	cs.urlInput.Placeholder = "http://localhost:3000/sse or http://localhost:3000"
 	cs.urlInput.CharLimit = 512
 	cs.urlInput.Width = 50
+
+	// Pre-populate fields if previous config is provided
+	if prevConfig != nil {
+		cs.logger.Info("Pre-populating connection screen with previous config",
+			debug.F("type", prevConfig.Type),
+			debug.F("command", prevConfig.Command),
+			debug.F("args", prevConfig.Args),
+			debug.F("url", prevConfig.URL))
+
+		// Set transport type
+		switch prevConfig.Type {
+		case "stdio":
+			cs.transportType = config.TransportStdio
+		case "sse":
+			cs.transportType = config.TransportSSE
+		case "http":
+			cs.transportType = config.TransportHTTP
+		}
+
+		// Set input values
+		cs.commandInput.SetValue(prevConfig.Command)
+		if len(prevConfig.Args) > 0 {
+			cs.argsInput.SetValue(strings.Join(prevConfig.Args, " "))
+		}
+		cs.urlInput.SetValue(prevConfig.URL)
+	}
 
 	// Initialize styles
 	cs.focusedStyle = lipgloss.NewStyle().

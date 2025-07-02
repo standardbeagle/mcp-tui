@@ -338,7 +338,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "b", "e":
 			// Go back to connection screen to edit connection details
 			ms.logger.Info("User requested to go back to connection screen")
-			connScreen := NewConnectionScreen(ms.config)
+			connScreen := NewConnectionScreenWithConfig(ms.config, ms.connectionConfig)
 			return ms, func() tea.Msg {
 				return TransitionMsg{
 					Transition: ScreenTransition{
@@ -421,8 +421,8 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Continue with transition even if disconnect fails
 		}
 		
-		// Transition to connection screen
-		connScreen := NewConnectionScreen(ms.config)
+		// Transition to connection screen with previous config
+		connScreen := NewConnectionScreenWithConfig(ms.config, ms.connectionConfig)
 		return ms, func() tea.Msg {
 			return TransitionMsg{
 				Transition: ScreenTransition{
