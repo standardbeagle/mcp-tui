@@ -431,6 +431,21 @@ Error: PROTOCOL_VIOLATION: missing required field 'protocolVersion'
 Error: SERVER_NOT_RESPONDING: no response to initialize request
 ```
 
+**Debugging JSON Unmarshaling Errors:**
+
+When servers send malformed responses, use `--debug` flag for detailed diagnostics:
+
+```bash
+# Example: Server sends array instead of object for properties field
+mcp-tui --debug --url http://localhost:8080/mcp tool list
+
+# Enhanced error output shows:
+# - Original error message
+# - Raw HTTP response body
+# - Specific field causing the issue
+# - Expected vs received types
+```
+
 ## 🎯 Type System & Validation
 
 ### Automatic Type Conversion

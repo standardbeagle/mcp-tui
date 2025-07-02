@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/mark3labs/mcp-go/client"
@@ -18,6 +19,7 @@ type Service interface {
 	Connect(ctx context.Context, config *config.ConnectionConfig) error
 	Disconnect() error
 	IsConnected() bool
+	SetDebugMode(debug bool)
 
 	// Tool operations
 	ListTools(ctx context.Context) ([]mcp.Tool, error)
@@ -74,6 +76,7 @@ type service struct {
 	info      *ServerInfo
 	requestID int
 	mu        sync.Mutex
+	debugMode bool
 }
 
 // NewService creates a new MCP service
@@ -81,7 +84,15 @@ func NewService() Service {
 	return &service{
 		info:      &ServerInfo{},
 		requestID: 0,
+		debugMode: false,
 	}
+}
+
+// SetDebugMode enables or disables debug mode
+func (s *service) SetDebugMode(debug bool) {
+	s.debugMode = debug
+	// Enable HTTP debugging if in debug mode
+	EnableHTTPDebugging(debug)
 }
 
 // getNextRequestID returns the next request ID
@@ -138,6 +149,18 @@ func logMCPNotification(method string, params interface{}) {
 	}
 	msgJSON, _ := json.Marshal(msg)
 	debug.LogMCPIncoming(string(msgJSON), nil)
+}
+
+// isJSONError checks if an error is related to JSON unmarshaling
+func isJSONError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	errStr := err.Error()
+	return strings.Contains(errStr, "json:") || 
+		strings.Contains(errStr, "unmarshal") ||
+		strings.Contains(errStr, "JSON")
 }
 
 // Connect establishes connection to MCP server
@@ -291,6 +314,31 @@ func (s *service) ListTools(ctx context.Context) ([]mcp.Tool, error) {
 	if err != nil {
 		// Log the error response
 		logMCPError(-32603, err.Error(), reqID)
+		
+		// Check if this is a JSON unmarshaling error
+		if isJSONError(err) {
+			// Get the last HTTP error for more context
+			httpErr := GetLastHTTPError()
+			if httpErr != nil {
+				// Create a detailed error with raw response
+				detailErr := &MCPError{
+					Method:      "tools/list",
+					OriginalErr: err,
+					RawResponse: httpErr.ResponseBody,
+					Details:     analyzeJSONError(err, httpErr.ResponseBody),
+				}
+				
+				if s.debugMode {
+					debug.Error("JSON Unmarshaling Error in tools/list", 
+						debug.F("error", err.Error()),
+						debug.F("rawResponse", tryPrettyPrintJSON(httpErr.ResponseBody)),
+						debug.F("details", detailErr.Details))
+				}
+				
+				return nil, detailErr
+			}
+		}
+		
 		return nil, fmt.Errorf("failed to list tools from MCP server '%s': %w\n\nTroubleshooting:\n- Verify the server supports the tools/list method\n- Check if the server is still responding (try reconnecting)\n- Some servers may require authentication or specific permissions", s.info.Name, err)
 	}
 

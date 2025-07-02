@@ -94,12 +94,18 @@ type spinnerTickMsg struct{}
 
 // NewMainScreen creates a new main screen
 func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *MainScreen {
+	service := mcp.NewService()
+	// Enable debug mode if configured
+	if cfg.DebugMode {
+		service.SetDebugMode(true)
+	}
+	
 	ms := &MainScreen{
 		BaseScreen:       NewBaseScreen("Main", true),
 		config:           cfg,
 		connectionConfig: connConfig,
 		logger:           debug.Component("main-screen"),
-		mcpService:       mcp.NewService(),
+		mcpService:       service,
 		selectedIndex:    make(map[int]int),
 		tools:            []string{},
 		resources:        []string{},

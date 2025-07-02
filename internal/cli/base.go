@@ -87,6 +87,10 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	// Create service and connect
 	fmt.Fprintf(os.Stderr, "🔄 Creating MCP service...\n")
 	c.service = mcp.NewService()
+	
+	// Enable debug mode if flag is set
+	debugMode, _ := cmd.Flags().GetBool("debug")
+	c.service.SetDebugMode(debugMode)
 
 	ctx, cancel := c.WithContext()
 	defer cancel()
