@@ -165,9 +165,12 @@ func isJSONError(err error) bool {
 
 // Connect establishes connection to MCP server
 func (s *service) Connect(ctx context.Context, config *config.ConnectionConfig) error {
+	s.mu.Lock()
 	if s.client != nil {
+		s.mu.Unlock()
 		return fmt.Errorf("already connected to MCP server - disconnect first before connecting to a new server")
 	}
+	s.mu.Unlock()
 
 	var mcpClient *client.Client
 	var err error
@@ -268,17 +271,22 @@ Troubleshooting HTTP connection failure:
 		"capabilities":    initResult.Capabilities,
 	}, reqID)
 
+	s.mu.Lock()
 	s.client = mcpClient
 	s.info.Connected = true
 	s.info.ProtocolVersion = initResult.ProtocolVersion
 	s.info.Name = initResult.ServerInfo.Name
 	s.info.Version = initResult.ServerInfo.Version
+	s.mu.Unlock()
 
 	return nil
 }
 
 // Disconnect closes the connection
 func (s *service) Disconnect() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
 	if s.client == nil {
 		return nil // Already disconnected
 	}
@@ -296,6 +304,8 @@ func (s *service) Disconnect() error {
 
 // IsConnected returns connection status
 func (s *service) IsConnected() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.client != nil && s.info.Connected
 }
 
