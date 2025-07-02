@@ -399,6 +399,26 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Screen: debugScreen,
 			}
 		}
+
+	case "d":
+		// Disconnect and return to connection screen
+		ms.logger.Info("User requested disconnect")
+		
+		// Disconnect from the MCP server
+		if err := ms.mcpService.Disconnect(); err != nil {
+			ms.logger.Error("Failed to disconnect cleanly", debug.F("error", err))
+			// Continue with transition even if disconnect fails
+		}
+		
+		// Transition to connection screen
+		connScreen := NewConnectionScreen(ms.config)
+		return ms, func() tea.Msg {
+			return TransitionMsg{
+				Transition: ScreenTransition{
+					Screen: connScreen,
+				},
+			}
+		}
 	}
 
 	return ms, nil
@@ -625,6 +645,7 @@ func (ms *MainScreen) View() string {
 			"↑↓: Navigate",
 			"b/Alt+←: Close detail",
 			"r: Refresh",
+			"d: Disconnect",
 			"Ctrl+D/F12: Debug Log",
 			"q: Quit",
 		}
@@ -635,6 +656,7 @@ func (ms *MainScreen) View() string {
 			"Enter: Execute",
 			"PgUp/Dn: Page",
 			"r: Refresh",
+			"d: Disconnect",
 			"Tab: Switch tabs",
 			"Ctrl+D/F12: Debug Log",
 			"q: Quit",
@@ -644,6 +666,7 @@ func (ms *MainScreen) View() string {
 			"Tab/↑↓: Navigate",
 			"Enter: Select",
 			"r: Refresh",
+			"d: Disconnect",
 			"Ctrl+L: Debug",
 			"q: Quit",
 		}
