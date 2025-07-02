@@ -335,6 +335,17 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					Screen: debugScreen,
 				}
 			}
+		case "b", "e":
+			// Go back to connection screen to edit connection details
+			ms.logger.Info("User requested to go back to connection screen")
+			connScreen := NewConnectionScreen(ms.config)
+			return ms, func() tea.Msg {
+				return TransitionMsg{
+					Transition: ScreenTransition{
+						Screen: connScreen,
+					},
+				}
+			}
 		}
 		return ms, nil
 	}
@@ -582,6 +593,8 @@ func (ms *MainScreen) View() string {
 		// Show retry options
 		optionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 		builder.WriteString(optionStyle.Render("Press 'r' to retry connection"))
+		builder.WriteString("\n")
+		builder.WriteString(optionStyle.Render("Press 'b' or 'e' to go back and edit connection"))
 		builder.WriteString("\n")
 		builder.WriteString(optionStyle.Render("Press Ctrl+D/F12 to view debug logs"))
 		builder.WriteString("\n")
