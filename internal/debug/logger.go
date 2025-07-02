@@ -87,6 +87,7 @@ type logger struct {
 	logChan chan logEntry
 	done    chan struct{}
 	wg      sync.WaitGroup
+	ready   chan struct{} // Signals when goroutine is ready
 }
 
 // NewLogger creates a new logger
@@ -95,10 +96,13 @@ func NewLogger() Logger {
 		level:   LogLevelInfo,
 		output:  os.Stderr,
 		fields:  make([]Field, 0),
-		logChan: make(chan logEntry, 1000), // Buffered channel for performance
+		logChan: make(chan logEntry, 10000), // Large buffer to prevent drops
 		done:    make(chan struct{}),
+		ready:   make(chan struct{}),
 	}
 	l.start()
+	// Wait for goroutine to be ready
+	<-l.ready
 	return l
 }
 
@@ -178,6 +182,9 @@ func (l *logger) start() {
 	l.wg.Add(1)
 	go func() {
 		defer l.wg.Done()
+		// Signal that we're ready
+		close(l.ready)
+		
 		for {
 			select {
 			case entry := <-l.logChan:
@@ -199,9 +206,19 @@ func (l *logger) start() {
 
 // stop gracefully shuts down the logger
 func (l *logger) stop() {
-	close(l.done)
+	// Prevent double close
+	l.mu.Lock()
+	select {
+	case <-l.done:
+		// Already closed
+		l.mu.Unlock()
+		return
+	default:
+		close(l.done)
+	}
+	l.mu.Unlock()
+	
 	l.wg.Wait()
-	close(l.logChan)
 }
 
 // writeLog writes a log entry to the output
@@ -284,9 +301,8 @@ func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 	case l.logChan <- entry:
 		// Successfully sent
 	default:
-		// Channel is full, drop the message to avoid blocking
-		// In production, you might want to handle this differently
-		log.Printf("Logger channel full, dropping message: %s", msg)
+		// Channel is full, this shouldn't happen with 10k buffer
+		// but we need to handle it to avoid deadlock
 	}
 }
 

@@ -3,11 +3,94 @@ package debug
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// testLoggerSetup creates an isolated logger for testing
+func testLoggerSetup() (*logger, *bytes.Buffer) {
+	var buf bytes.Buffer
+	l := &logger{
+		level:   LogLevelInfo,
+		output:  &buf,
+		fields:  make([]Field, 0),
+		logChan: make(chan logEntry, 10000),
+		done:    make(chan struct{}),
+		ready:   make(chan struct{}),
+	}
+	l.start()
+	// Wait for goroutine to be ready
+	<-l.ready
+	return l, &buf
+}
+
+// testLoggerTeardown properly shuts down the test logger
+func testLoggerTeardown(l *logger) {
+	l.stop()
+}
+
+var testMutex sync.Mutex
+
+// safeBuffer wraps bytes.Buffer with mutex protection
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+func (s *safeBuffer) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.buf.Reset()
+}
+
+// setupGlobalLoggerTest sets up the global logger for testing
+func setupGlobalLoggerTest(t *testing.T) *safeBuffer {
+	testMutex.Lock()
+	
+	// Shutdown any existing global logger
+	Shutdown()
+	
+	// Wait for shutdown to complete
+	time.Sleep(10 * time.Millisecond)
+	
+	// Create a new buffer and logger
+	buf := &safeBuffer{}
+	globalLogger = NewLogger()
+	SetGlobalOutput(buf)
+	
+	// Register cleanup
+	t.Cleanup(func() {
+		// Wait a bit to ensure all messages are processed
+		time.Sleep(20 * time.Millisecond)
+		Shutdown()
+		testMutex.Unlock()
+	})
+	
+	return buf
+}
+
+// syncWait waits for the logger to process messages and returns the output
+func syncWait(buf *safeBuffer) string {
+	// Give enough time for messages to be processed
+	time.Sleep(30 * time.Millisecond)
+	return buf.String()
+}
 
 func TestLogLevel(t *testing.T) {
 	tests := []struct {
@@ -50,26 +133,38 @@ func TestField(t *testing.T) {
 }
 
 func TestLogger(t *testing.T) {
-	var buf bytes.Buffer
-	// Use SetGlobalOutput to redirect output for testing
-	SetGlobalOutput(&buf)
+	l, buf := testLoggerSetup()
+	defer testLoggerTeardown(l)
 
 	// Test component logger
-	logger := Component("test-component")
+	logger := l.WithComponent("test-component")
 	require.NotNil(t, logger)
 
 	// Test basic logging
 	logger.Info("test message")
+	
+	// Wait for processing
+	time.Sleep(20 * time.Millisecond)
+	
 	output := buf.String()
+	if output == "" {
+		t.Logf("Buffer is empty after logging")
+		t.Logf("Logger level: %v", l.level)
+		t.Logf("Logger output: %v", l.output)
+	}
 	assert.Contains(t, output, "INFO")
 	assert.Contains(t, output, "test message")
 	assert.Contains(t, output, "[test-component]")
 
-	// Reset buffer
+	// Clear buffer for next test
 	buf.Reset()
 
 	// Test with fields
 	logger.Error("error occurred", F("error", "test error"), F("code", 123))
+	
+	// Wait for processing
+	time.Sleep(20 * time.Millisecond)
+	
 	output = buf.String()
 	assert.Contains(t, output, "ERROR")
 	assert.Contains(t, output, "error occurred")
@@ -78,8 +173,7 @@ func TestLogger(t *testing.T) {
 }
 
 func TestLoggerWithFields(t *testing.T) {
-	var buf bytes.Buffer
-	SetGlobalOutput(&buf)
+	buf := setupGlobalLoggerTest(t)
 
 	logger := Component("test")
 
@@ -88,15 +182,15 @@ func TestLoggerWithFields(t *testing.T) {
 	require.NotNil(t, enrichedLogger)
 
 	enrichedLogger.Info("user action")
-	output := buf.String()
+	
+	output := syncWait(buf)
 	assert.Contains(t, output, "user action")
 	assert.Contains(t, output, "user=test-user")
 	assert.Contains(t, output, "session=abc123")
 }
 
 func TestLogLevels(t *testing.T) {
-	var buf bytes.Buffer
-	SetGlobalOutput(&buf)
+	buf := setupGlobalLoggerTest(t)
 
 	logger := Component("test")
 
@@ -121,7 +215,8 @@ func TestLogLevels(t *testing.T) {
 			// Also set level on the logger instance
 			logger.SetLevel(tt.setLevel)
 			tt.logFunc("test message")
-			output := buf.String()
+			
+			output := syncWait(buf)
 			assert.Contains(t, output, tt.level)
 			assert.Contains(t, output, "test message")
 		})
@@ -141,8 +236,7 @@ func TestSetGlobalOutput(t *testing.T) {
 }
 
 func TestLoggerConcurrency(t *testing.T) {
-	var buf bytes.Buffer
-	SetGlobalOutput(&buf)
+	buf := setupGlobalLoggerTest(t)
 
 	logger := Component("concurrent")
 
@@ -161,20 +255,14 @@ func TestLoggerConcurrency(t *testing.T) {
 		<-done
 	}
 
-	output := buf.String()
-	// Should contain multiple log entries (might be less than 10 due to race conditions)
+	output := syncWait(buf)
+	// Should contain all 10 log entries
 	lines := strings.Count(output, "concurrent message")
-	assert.GreaterOrEqual(t, lines, 5, "Should have at least 5 concurrent log messages")
-	assert.LessOrEqual(t, lines, 10, "Should have at most 10 concurrent log messages")
+	assert.Equal(t, 10, lines, "Should have exactly 10 concurrent log messages")
 }
 
 func TestFieldIntegration(t *testing.T) {
 	// Test that fields are properly formatted in log output
-	var buf bytes.Buffer
-	SetGlobalOutput(&buf)
-
-	logger := Component("test")
-
 	tests := []struct {
 		name     string
 		field    Field
@@ -187,9 +275,12 @@ func TestFieldIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			buf.Reset()
+			buf := setupGlobalLoggerTest(t)
+			logger := Component("test")
+			
 			logger.Info("test message", tt.field)
-			output := buf.String()
+			
+			output := syncWait(buf)
 			assert.Contains(t, output, tt.expected)
 		})
 	}
