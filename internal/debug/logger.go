@@ -66,6 +66,15 @@ func F(key string, value interface{}) Field {
 	return Field{Key: key, Value: value}
 }
 
+// logEntry represents a log entry to be processed
+type logEntry struct {
+	level     LogLevel
+	component string
+	msg       string
+	fields    []Field
+	timestamp time.Time
+}
+
 // logger implements the Logger interface
 type logger struct {
 	level     LogLevel
@@ -73,15 +82,24 @@ type logger struct {
 	component string
 	fields    []Field
 	mu        sync.RWMutex
+	
+	// Channel-based logging
+	logChan chan logEntry
+	done    chan struct{}
+	wg      sync.WaitGroup
 }
 
 // NewLogger creates a new logger
 func NewLogger() Logger {
-	return &logger{
-		level:  LogLevelInfo,
-		output: os.Stderr,
-		fields: make([]Field, 0),
+	l := &logger{
+		level:   LogLevelInfo,
+		output:  os.Stderr,
+		fields:  make([]Field, 0),
+		logChan: make(chan logEntry, 1000), // Buffered channel for performance
+		done:    make(chan struct{}),
 	}
+	l.start()
+	return l
 }
 
 // Debug logs a debug message
@@ -155,6 +173,87 @@ func (l *logger) SetOutput(w io.Writer) {
 	l.mu.Unlock()
 }
 
+// start begins the logging goroutine
+func (l *logger) start() {
+	l.wg.Add(1)
+	go func() {
+		defer l.wg.Done()
+		for {
+			select {
+			case entry := <-l.logChan:
+				l.writeLog(entry)
+			case <-l.done:
+				// Drain any remaining log entries
+				for {
+					select {
+					case entry := <-l.logChan:
+						l.writeLog(entry)
+					default:
+						return
+					}
+				}
+			}
+		}
+	}()
+}
+
+// stop gracefully shuts down the logger
+func (l *logger) stop() {
+	close(l.done)
+	l.wg.Wait()
+	close(l.logChan)
+}
+
+// writeLog writes a log entry to the output
+func (l *logger) writeLog(entry logEntry) {
+	// Build log entry
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("[%s] %s", entry.timestamp.Format("2006-01-02T15:04:05.000Z07:00"), entry.level.String()))
+
+	if entry.component != "" {
+		builder.WriteString(fmt.Sprintf(" [%s]", entry.component))
+	}
+
+	builder.WriteString(fmt.Sprintf(" %s", entry.msg))
+
+	// Add fields
+	for _, field := range entry.fields {
+		builder.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Value))
+	}
+
+	// Add caller info for errors and above
+	if entry.level >= LogLevelError {
+		// We need to skip through our call stack to find the actual caller
+		// Skip: writeLog -> goroutine -> channel send -> log -> Error/Fatal -> user code
+		for i := 3; i < 10; i++ {
+			if _, file, line, ok := runtime.Caller(i); ok {
+				// Skip internal logger files
+				if !strings.Contains(file, "debug/logger.go") {
+					// Get just the filename, not the full path
+					parts := strings.Split(file, "/")
+					filename := parts[len(parts)-1]
+					builder.WriteString(fmt.Sprintf(" caller=%s:%d", filename, line))
+					break
+				}
+			}
+		}
+	}
+
+	builder.WriteString("\n")
+
+	// Write to output - this is now safe as only one goroutine writes
+	l.mu.RLock()
+	output := l.output
+	l.mu.RUnlock()
+	
+	fmt.Fprint(output, builder.String())
+
+	// Also add to log buffer for TUI debug console
+	if logBuffer := GetLogBuffer(); logBuffer != nil {
+		logBuffer.Add(entry.level, entry.component, entry.msg, entry.fields)
+	}
+}
+
 // log performs the actual logging
 func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 	l.mu.RLock()
@@ -162,53 +261,32 @@ func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 		l.mu.RUnlock()
 		return
 	}
-
-	output := l.output
 	component := l.component
 	baseFields := l.fields
 	l.mu.RUnlock()
 
-	// Build log entry
-	timestamp := time.Now().Format("2006-01-02T15:04:05.000Z07:00")
+	// Combine base fields and additional fields
+	allFields := make([]Field, 0, len(baseFields)+len(fields))
+	allFields = append(allFields, baseFields...)
+	allFields = append(allFields, fields...)
 
-	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("[%s] %s", timestamp, level.String()))
-
-	if component != "" {
-		builder.WriteString(fmt.Sprintf(" [%s]", component))
+	// Create log entry and send to channel
+	entry := logEntry{
+		level:     level,
+		component: component,
+		msg:       msg,
+		fields:    allFields,
+		timestamp: time.Now(),
 	}
 
-	builder.WriteString(fmt.Sprintf(" %s", msg))
-
-	// Add base fields
-	for _, field := range baseFields {
-		builder.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Value))
-	}
-
-	// Add additional fields
-	for _, field := range fields {
-		builder.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Value))
-	}
-
-	// Add caller info for errors and above
-	if level >= LogLevelError {
-		if _, file, line, ok := runtime.Caller(2); ok {
-			// Get just the filename, not the full path
-			parts := strings.Split(file, "/")
-			filename := parts[len(parts)-1]
-			builder.WriteString(fmt.Sprintf(" caller=%s:%d", filename, line))
-		}
-	}
-
-	builder.WriteString("\n")
-
-	// Write to output
-	fmt.Fprint(output, builder.String())
-
-	// Also add to log buffer for TUI debug console
-	if logBuffer := GetLogBuffer(); logBuffer != nil {
-		allFields := append(baseFields, fields...)
-		logBuffer.Add(level, component, msg, allFields)
+	// Non-blocking send to avoid deadlock if channel is full
+	select {
+	case l.logChan <- entry:
+		// Successfully sent
+	default:
+		// Channel is full, drop the message to avoid blocking
+		// In production, you might want to handle this differently
+		log.Printf("Logger channel full, dropping message: %s", msg)
 	}
 }
 
@@ -250,6 +328,13 @@ func SetGlobalLevel(level LogLevel) {
 // SetGlobalOutput sets the global logger output
 func SetGlobalOutput(w io.Writer) {
 	globalLogger.SetOutput(w)
+}
+
+// Shutdown gracefully shuts down the global logger
+func Shutdown() {
+	if l, ok := globalLogger.(*logger); ok {
+		l.stop()
+	}
 }
 
 // Component returns a logger with a component name
