@@ -42,6 +42,12 @@ type MainScreen struct {
 	promptCount   int
 	eventCount    int
 
+	// Loading states
+	toolsLoading     bool
+	resourcesLoading bool
+	promptsLoading   bool
+	eventsLoading    bool
+
 	// List navigation
 	selectedIndex map[int]int // selected index per tab
 
@@ -135,7 +141,8 @@ func (ms *MainScreen) initStyles() {
 	ms.listStyle = lipgloss.NewStyle().
 		Padding(1).
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("8"))
+		BorderForeground(lipgloss.Color("8")).
+		Align(lipgloss.Left)
 
 	ms.selectedStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("0")).
@@ -148,8 +155,7 @@ func (ms *MainScreen) initStyles() {
 
 	ms.titleStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("13")).
-		Bold(true).
-		Margin(1, 0)
+		Bold(true)
 }
 
 // Init initializes the main screen
@@ -169,6 +175,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		ms.UpdateSize(msg.Width, msg.Height)
+		ms.logger.Info("Window size updated", debug.F("width", msg.Width), debug.F("height", msg.Height))
 		return ms, nil
 
 	case tea.KeyMsg:
@@ -189,6 +196,11 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ms.connected = true
 			ms.connectionStatus = fmt.Sprintf("Connected to %s %s",
 				ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
+			// Set loading states for all tabs
+			ms.toolsLoading = true
+			ms.resourcesLoading = true
+			ms.promptsLoading = true
+			ms.eventsLoading = true
 			// Load initial data
 			return ms, tea.Batch(
 				ms.loadTools(),
@@ -220,6 +232,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ItemsLoadedMsg:
 		switch msg.Tab {
 		case 0: // Tools
+			ms.toolsLoading = false
 			if msg.Error != nil {
 				ms.tools = []string{fmt.Sprintf("Error loading tools: %v", msg.Error)}
 				ms.toolCount = 0
@@ -228,6 +241,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ms.toolCount = msg.ActualCount
 			}
 		case 1: // Resources
+			ms.resourcesLoading = false
 			if msg.Error != nil {
 				ms.resources = []string{fmt.Sprintf("Error loading resources: %v", msg.Error)}
 				ms.resourceCount = 0
@@ -236,6 +250,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ms.resourceCount = msg.ActualCount
 			}
 		case 2: // Prompts
+			ms.promptsLoading = false
 			if msg.Error != nil {
 				ms.prompts = []string{fmt.Sprintf("Error loading prompts: %v", msg.Error)}
 				ms.promptCount = 0
@@ -244,6 +259,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ms.promptCount = msg.ActualCount
 			}
 		case 3: // Events
+			ms.eventsLoading = false
 			// Re-fetch events from logger
 			if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
 				allEntries := mcpLogger.GetEntries()
@@ -493,12 +509,16 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 func (ms *MainScreen) refreshCurrentTab() tea.Cmd {
 	switch ms.activeTab {
 	case 0:
+		ms.toolsLoading = true
 		return ms.loadTools()
 	case 1:
+		ms.resourcesLoading = true
 		return ms.loadResources()
 	case 2:
+		ms.promptsLoading = true
 		return ms.loadPrompts()
 	case 3:
+		ms.eventsLoading = true
 		return ms.loadEvents()
 	default:
 		return nil
@@ -509,10 +529,9 @@ func (ms *MainScreen) refreshCurrentTab() tea.Cmd {
 func (ms *MainScreen) View() string {
 	var builder strings.Builder
 
-	// Title
-	builder.WriteString(ms.titleStyle.Render("MCP Server Interface"))
-	builder.WriteString("\n")
-
+	// Title and connection status on same line
+	titleAndStatus := ms.titleStyle.Render("MCP Server Interface") + "\n"
+	
 	// Connection status
 	statusColor := "10" // green
 	if !ms.connected {
@@ -524,8 +543,9 @@ func (ms *MainScreen) View() string {
 	}
 
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
-	builder.WriteString(statusStyle.Render(ms.connectionStatus))
-	builder.WriteString("\n\n")
+	titleAndStatus += statusStyle.Render(ms.connectionStatus) + "\n"
+	
+	builder.WriteString(titleAndStatus)
 
 	if !ms.connected && !ms.connecting {
 		// Show error with retry option
@@ -571,11 +591,13 @@ func (ms *MainScreen) View() string {
 	builder.WriteString("\n")
 
 	// Horizontal separator
-	if ms.Width() > 0 {
-		separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-		builder.WriteString(separatorStyle.Render(strings.Repeat("─", min(ms.Width(), 80))))
-		builder.WriteString("\n")
+	width := ms.Width()
+	if width == 0 {
+		width = 80
 	}
+	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	builder.WriteString(separatorStyle.Render(strings.Repeat("─", width)))
+	builder.WriteString("\n")
 
 	// Current list or split-pane view for events
 	if ms.activeTab == 3 && ms.showEventDetail {
@@ -586,10 +608,7 @@ func (ms *MainScreen) View() string {
 
 	// Bottom separator
 	builder.WriteString("\n")
-	if ms.Width() > 0 {
-		separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-		builder.WriteString(separatorStyle.Render(strings.Repeat("─", min(ms.Width(), 80))))
-	}
+	builder.WriteString(separatorStyle.Render(strings.Repeat("─", width)))
 	builder.WriteString("\n")
 	// Help text with better formatting
 	var helpItems []string
@@ -626,14 +645,14 @@ func (ms *MainScreen) View() string {
 
 	// Style each help item
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	helpSeparatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 
 	var styledHelp []string
 	for _, item := range helpItems {
 		styledHelp = append(styledHelp, helpStyle.Render(item))
 	}
 
-	helpText := strings.Join(styledHelp, separatorStyle.Render(" • "))
+	helpText := strings.Join(styledHelp, helpSeparatorStyle.Render(" • "))
 	builder.WriteString(helpText)
 
 	// Status message
@@ -671,6 +690,53 @@ func (ms *MainScreen) renderTabs() string {
 func (ms *MainScreen) renderCurrentList() string {
 	currentList := ms.getCurrentList()
 	tabNames := []string{"tools", "resources", "prompts", "events"}
+
+	// Check if we're loading first
+	var isLoading bool
+	switch ms.activeTab {
+	case 0:
+		isLoading = ms.toolsLoading
+	case 1:
+		isLoading = ms.resourcesLoading
+	case 2:
+		isLoading = ms.promptsLoading
+	case 3:
+		isLoading = ms.eventsLoading
+	}
+
+	if isLoading {
+		// Get terminal dimensions with better defaults
+		termHeight := ms.Height()
+		termWidth := ms.Width()
+		
+		// Use reasonable defaults if dimensions aren't set yet
+		if termHeight == 0 {
+			termHeight = 30 // Reasonable default height
+		}
+		if termWidth == 0 {
+			termWidth = 80 // Reasonable default width
+		}
+		
+		// Reserve space for: title(1) + connection status(1) + tabs(1) + separators(2) + help(1) + status(2)
+		reservedHeight := 8
+		availableHeight := termHeight - reservedHeight
+		if availableHeight < 5 {
+			availableHeight = 5 // Minimum visible lines
+		}
+
+		loadingMsg := "Loading..."
+		loadingStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("12")).
+			Align(lipgloss.Center).
+			Bold(true)
+		
+		// Create a style that fills available space
+		dynamicLoadingStyle := ms.listStyle.
+			Width(termWidth - 4).
+			Height(availableHeight)
+			
+		return dynamicLoadingStyle.Render(loadingStyle.Render(loadingMsg))
+	}
 
 	if len(currentList) == 0 {
 		var emptyMsg string
@@ -714,19 +780,30 @@ func (ms *MainScreen) renderCurrentList() string {
 	selectedIdx := ms.selectedIndex[ms.activeTab]
 
 	// Calculate viewport based on available height
-	// Reserve space for: title(2) + status(3) + tabs(3) + help(3) + borders(4)
-	reservedHeight := 15
+	// Get terminal dimensions with better defaults
 	termHeight := ms.Height()
+	termWidth := ms.Width()
+	
+	// Use reasonable defaults if dimensions aren't set yet
+	if termHeight == 0 {
+		termHeight = 30 // Reasonable default height
+	}
+	if termWidth == 0 {
+		termWidth = 80 // Reasonable default width
+	}
+	
+	// Log dimensions for debugging
+	ms.logger.Debug("Rendering list", debug.F("termWidth", termWidth), debug.F("termHeight", termHeight), debug.F("availableHeight", termHeight-8))
+	
+	// Reserve space for: title(1) + connection status(1) + tabs(1) + separators(2) + help(1) + status(2)
+	reservedHeight := 8
 	availableHeight := termHeight - reservedHeight
 	if availableHeight < 5 {
 		availableHeight = 5 // Minimum visible lines
 	}
 
-	// Calculate item display widths for proper wrapping calculation
-	listWidth := ms.Width() - 8 // Account for borders and padding
-	if listWidth > 100 {
-		listWidth = 100 // Cap width for readability
-	}
+	// Calculate item display widths - use more of available width
+	listWidth := termWidth - 4 // Only account for minimal borders
 	if listWidth < 40 {
 		listWidth = 40 // Minimum width
 	}
@@ -921,31 +998,49 @@ func (ms *MainScreen) renderCurrentList() string {
 	}
 
 	// Apply dynamic dimensions to list style
-	width := ms.Width()
-	if width > 100 {
-		width = 100 // Cap width for readability
+	// Use the same width calculation as above
+	width := termWidth
+	if width == 0 {
+		width = 80 // Default width
 	}
-	if width < 40 {
-		width = 40 // Minimum width
+	
+	// Calculate inner width for padding lines
+	innerWidth := width - 6 // Account for borders and padding
+	
+	// Pad each line to full width
+	var paddedItems []string
+	for _, item := range listItems {
+		// Remove any ANSI codes for length calculation
+		plainItem := lipgloss.NewStyle().Render(item)
+		visibleLength := lipgloss.Width(plainItem)
+		
+		if visibleLength < innerWidth {
+			// Pad with spaces to reach full width
+			padding := strings.Repeat(" ", innerWidth - visibleLength)
+			paddedItems = append(paddedItems, item + padding)
+		} else {
+			paddedItems = append(paddedItems, item)
+		}
 	}
-
-	// Calculate actual content height (sum of heights for visible items + scroll indicators)
-	contentHeight := len(listItems) // Start with number of items (including scroll indicators)
-
-	// Ensure the list height doesn't exceed available terminal space
-	maxListHeight := availableHeight
-	if contentHeight+2 > maxListHeight {
-		contentHeight = maxListHeight - 2 // Leave room for padding
+	
+	// Join padded items
+	content := strings.Join(paddedItems, "\n")
+	
+	// If content is shorter than available height, add empty lines
+	contentLines := len(paddedItems)
+	if contentLines < availableHeight-2 { // -2 for border padding
+		for i := contentLines; i < availableHeight-2; i++ {
+			content += "\n" + strings.Repeat(" ", innerWidth)
+		}
 	}
-	if contentHeight < 3 {
-		contentHeight = 3 // Minimum height
-	}
-
+	
+	// Create a style that forces the box to fill available space
 	dynamicListStyle := ms.listStyle.
-		Width(width - 4).         // Account for margins
-		Height(contentHeight + 2) // Content + padding
+		Width(width - 4).          // Account for minimal margins
+		Height(availableHeight).   // Set exact height
+		MaxHeight(availableHeight) // Ensure it doesn't grow beyond this
 
-	return dynamicListStyle.Render(strings.Join(listItems, "\n"))
+	return dynamicListStyle.Render(content)
 }
 
 // connectToServer starts the connection to the MCP server
@@ -1203,17 +1298,18 @@ func (ms *MainScreen) renderEventSplitView() string {
 	totalWidth := ms.Width()
 	totalHeight := ms.Height()
 	if totalWidth == 0 {
-		totalWidth = 120 // Default width
+		totalWidth = 80 // Default width
 	}
 	if totalHeight == 0 {
 		totalHeight = 30 // Default height
 	}
 
-	leftPaneWidth := totalWidth * 40 / 100  // 40% for list
-	rightPaneWidth := totalWidth * 55 / 100 // 55% for detail (5% margin)
+	// Use more of the available width
+	leftPaneWidth := (totalWidth - 3) * 40 / 100  // 40% for list
+	rightPaneWidth := (totalWidth - 3) * 60 / 100 // 60% for detail
 
-	// Calculate available height for panes (reserve space for header, tabs, help, etc.)
-	reservedHeight := 15
+	// Calculate available height for panes with same reservation as renderCurrentList
+	reservedHeight := 12
 	paneHeight := totalHeight - reservedHeight
 	if paneHeight < 10 {
 		paneHeight = 10 // Minimum pane height

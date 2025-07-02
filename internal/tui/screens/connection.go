@@ -83,9 +83,8 @@ func NewConnectionScreen(cfg *config.Config) *ConnectionScreen {
 		Foreground(lipgloss.Color("241")).
 		Margin(1, 0)
 
-	// Focus on command input by default
-	cs.commandInput.Focus()
-	cs.focusIndex = 1
+	// Start focus on transport selector
+	cs.focusIndex = 0
 
 	return cs
 }
@@ -174,6 +173,34 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
 			cs.updateInputFocus()
 			return cs, nil
+		case "ctrl+left":
+			// Switch transport type to the left while staying in input
+			switch cs.transportType {
+			case config.TransportStdio:
+				cs.transportType = config.TransportHTTP // Wrap around
+			case config.TransportSSE:
+				cs.transportType = config.TransportStdio
+			case config.TransportHTTP:
+				cs.transportType = config.TransportSSE
+			}
+			// Maintain focus on current input field
+			cs.blurAllInputs()
+			cs.updateInputFocus()
+			return cs, nil
+		case "ctrl+right":
+			// Switch transport type to the right while staying in input
+			switch cs.transportType {
+			case config.TransportStdio:
+				cs.transportType = config.TransportSSE
+			case config.TransportSSE:
+				cs.transportType = config.TransportHTTP
+			case config.TransportHTTP:
+				cs.transportType = config.TransportStdio // Wrap around
+			}
+			// Maintain focus on current input field
+			cs.blurAllInputs()
+			cs.updateInputFocus()
+			return cs, nil
 		default:
 			// Pass other keys to the active text input
 			switch cs.transportType {
@@ -212,6 +239,36 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if cs.focusIndex == cs.maxFocus-1 { // Connect button
 			return cs.handleConnect()
+		}
+		return cs, nil
+
+	case "left":
+		if cs.focusIndex == 0 { // Transport type selection
+			cs.blurAllInputs()
+			switch cs.transportType {
+			case config.TransportStdio:
+				cs.transportType = config.TransportHTTP // Wrap around
+			case config.TransportSSE:
+				cs.transportType = config.TransportStdio
+			case config.TransportHTTP:
+				cs.transportType = config.TransportSSE
+			}
+			// Keep focus on transport selection to allow further arrow navigation
+		}
+		return cs, nil
+
+	case "right":
+		if cs.focusIndex == 0 { // Transport type selection
+			cs.blurAllInputs()
+			switch cs.transportType {
+			case config.TransportStdio:
+				cs.transportType = config.TransportSSE
+			case config.TransportSSE:
+				cs.transportType = config.TransportHTTP
+			case config.TransportHTTP:
+				cs.transportType = config.TransportStdio // Wrap around
+			}
+			// Keep focus on transport selection to allow further arrow navigation
 		}
 		return cs, nil
 
@@ -345,7 +402,8 @@ func (cs *ConnectionScreen) View() string {
 
 	// Help text
 	builder.WriteString("\n\n")
-	builder.WriteString(cs.helpStyle.Render("Tab/Shift+Tab: Navigate • Enter: Connect • Ctrl+D/F12: Debug Log • Esc/Ctrl+C: Quit"))
+	helpText := "←/→: Switch transport • Ctrl+←/→: Switch from input • 1/2/3: Select transport • Tab/Shift+Tab: Navigate • Enter: Connect • Ctrl+D/F12: Debug Log • Esc/Ctrl+C: Quit"
+	builder.WriteString(cs.helpStyle.Render(helpText))
 
 	return builder.String()
 }
@@ -359,13 +417,64 @@ func (cs *ConnectionScreen) renderTransportSelection() string {
 		title = cs.blurredStyle.Render(title)
 	}
 
-	options := []string{
-		fmt.Sprintf("1) STDIO %s", cs.checkmark(cs.transportType == config.TransportStdio)),
-		fmt.Sprintf("2) SSE %s", cs.checkmark(cs.transportType == config.TransportSSE)),
-		fmt.Sprintf("3) HTTP %s", cs.checkmark(cs.transportType == config.TransportHTTP)),
+	// Create horizontal options with proper styling
+	var options []string
+	
+	// STDIO option
+	stdioText := "1) STDIO"
+	if cs.transportType == config.TransportStdio {
+		stdioStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("6")).
+			Bold(true).
+			Padding(0, 1)
+		stdioText = stdioStyle.Render(stdioText + " ✓")
+	} else {
+		stdioStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("7")).
+			Padding(0, 1)
+		stdioText = stdioStyle.Render(stdioText)
 	}
+	options = append(options, stdioText)
+	
+	// SSE option
+	sseText := "2) SSE"
+	if cs.transportType == config.TransportSSE {
+		sseStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("6")).
+			Bold(true).
+			Padding(0, 1)
+		sseText = sseStyle.Render(sseText + " ✓")
+	} else {
+		sseStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("7")).
+			Padding(0, 1)
+		sseText = sseStyle.Render(sseText)
+	}
+	options = append(options, sseText)
+	
+	// HTTP option
+	httpText := "3) HTTP"
+	if cs.transportType == config.TransportHTTP {
+		httpStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("6")).
+			Bold(true).
+			Padding(0, 1)
+		httpText = httpStyle.Render(httpText + " ✓")
+	} else {
+		httpStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("7")).
+			Padding(0, 1)
+		httpText = httpStyle.Render(httpText)
+	}
+	options = append(options, httpText)
 
-	return fmt.Sprintf("%s\n%s", title, strings.Join(options, "\n"))
+	// Join horizontally with spacing
+	horizontalOptions := strings.Join(options, "  ")
+
+	return fmt.Sprintf("%s\n%s", title, horizontalOptions)
 }
 
 // renderStdioFields renders fields for STDIO transport

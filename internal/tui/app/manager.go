@@ -41,7 +41,11 @@ func NewScreenManager(cfg *config.Config, connConfig *config.ConnectionConfig) *
 
 // Init initializes the screen manager
 func (sm *ScreenManager) Init() tea.Cmd {
-	return sm.currentScreen.Init()
+	// Request initial window size and initialize current screen
+	return tea.Batch(
+		tea.WindowSize(),
+		sm.currentScreen.Init(),
+	)
 }
 
 // Update handles messages and screen transitions
@@ -74,6 +78,16 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return sm, cmd
 		}
+	}
+
+	// Handle window size messages for all screens
+	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		// Update current screen size
+		model, cmd := sm.currentScreen.Update(wsMsg)
+		if newScreen, ok := model.(screens.Screen); ok {
+			sm.currentScreen = newScreen
+		}
+		return sm, cmd
 	}
 
 	// Handle messages for main screen flow
