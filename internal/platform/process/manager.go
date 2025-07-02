@@ -2,7 +2,10 @@ package process
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -22,6 +25,9 @@ type Manager interface {
 
 	// Cleanup removes terminated processes from tracking
 	Cleanup()
+
+	// Close terminates all processes and cleans up resources
+	Close() error
 }
 
 // Process represents a managed process
@@ -147,6 +153,44 @@ type manager struct {
 	mu        sync.RWMutex
 }
 
+// validateCommand performs basic validation on command and arguments
+// to prevent command injection and other security issues
+func validateCommand(command string, args []string) error {
+	// Check for empty command
+	if strings.TrimSpace(command) == "" {
+		return fmt.Errorf("command cannot be empty")
+	}
+
+	// Check for shell metacharacters that could be used for injection
+	dangerousChars := []string{";", "&", "|", "`", "$", "(", ")", "{", "}", "<", ">", "\"", "'", "\\", "\n", "\r"}
+	for _, char := range dangerousChars {
+		if strings.Contains(command, char) {
+			return fmt.Errorf("command contains potentially dangerous character: %s", char)
+		}
+	}
+
+	// Validate each argument
+	for i, arg := range args {
+		for _, char := range dangerousChars {
+			// Allow some characters in arguments that are commonly needed (like quotes for JSON)
+			if char == "\"" || char == "'" || char == "{" || char == "}" {
+				continue
+			}
+			if strings.Contains(arg, char) {
+				return fmt.Errorf("argument %d contains potentially dangerous character: %s", i, char)
+			}
+		}
+	}
+
+	// Ensure command is not an absolute path to prevent execution of arbitrary binaries
+	// Allow relative paths and commands in PATH
+	if filepath.IsAbs(command) {
+		return fmt.Errorf("absolute paths are not allowed for security reasons")
+	}
+
+	return nil
+}
+
 // NewManager creates a new process manager
 func NewManager() Manager {
 	return &manager{
@@ -156,6 +200,11 @@ func NewManager() Manager {
 
 // Start starts a new process
 func (m *manager) Start(ctx context.Context, command string, args []string) (Process, error) {
+	// Validate command and arguments for security
+	if err := validateCommand(command, args); err != nil {
+		return nil, fmt.Errorf("command validation failed: %w", err)
+	}
+
 	cmd := exec.CommandContext(ctx, command, args...)
 
 	// Platform-specific setup will be added
@@ -227,4 +276,19 @@ func (m *manager) Cleanup() {
 	}
 
 	m.processes = active
+}
+
+// Close terminates all processes and cleans up resources
+func (m *manager) Close() error {
+	// Kill all processes first
+	if err := m.KillAll(); err != nil {
+		return fmt.Errorf("failed to kill all processes: %w", err)
+	}
+
+	// Clear the process list
+	m.mu.Lock()
+	m.processes = m.processes[:0]
+	m.mu.Unlock()
+
+	return nil
 }

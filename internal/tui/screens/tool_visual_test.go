@@ -27,7 +27,7 @@ func TestToolReExecutionVisual(t *testing.T) {
 		}
 
 		ts := NewToolScreen(tool, nil)
-		ts.fields[0].value = "New York"
+		ts.fields[0].input.SetValue("New York")
 
 		fmt.Println("\n=== Initial Tool Screen ===")
 		fmt.Println(ts.View())

@@ -17,28 +17,28 @@ type MCPError struct {
 
 func (e *MCPError) Error() string {
 	var sb strings.Builder
-	
+
 	sb.WriteString(fmt.Sprintf("MCP Error in %s: %v\n", e.Method, e.OriginalErr))
-	
+
 	if e.RawRequest != "" {
 		sb.WriteString("\nRequest:\n")
 		sb.WriteString(e.RawRequest)
 		sb.WriteString("\n")
 	}
-	
+
 	if e.RawResponse != "" {
 		sb.WriteString("\nRaw Response:\n")
 		sb.WriteString(e.RawResponse)
 		sb.WriteString("\n")
 	}
-	
+
 	if len(e.Details) > 0 {
 		sb.WriteString("\nAdditional Details:\n")
 		for k, v := range e.Details {
 			sb.WriteString(fmt.Sprintf("  %s: %v\n", k, v))
 		}
 	}
-	
+
 	return sb.String()
 }
 
@@ -56,14 +56,14 @@ func tryPrettyPrintJSON(data string) string {
 // analyzeJSONError attempts to provide more specific error information
 func analyzeJSONError(err error, rawData string) map[string]interface{} {
 	details := make(map[string]interface{})
-	
+
 	errStr := err.Error()
-	
+
 	// Check for specific unmarshaling errors
 	if strings.Contains(errStr, "cannot unmarshal array into") {
 		details["issue"] = "Type mismatch: server sent an array where an object was expected"
 		details["hint"] = "The server's response format doesn't match the expected schema"
-		
+
 		// Try to identify the problematic field
 		if strings.Contains(errStr, "properties") {
 			details["problematic_field"] = "properties"
@@ -77,7 +77,7 @@ func analyzeJSONError(err error, rawData string) map[string]interface{} {
 		details["issue"] = "Incomplete JSON response"
 		details["hint"] = "The server may have closed the connection prematurely"
 	}
-	
+
 	// Try to parse the raw data to provide more context
 	if rawData != "" {
 		var rawJSON interface{}
@@ -101,6 +101,6 @@ func analyzeJSONError(err error, rawData string) map[string]interface{} {
 			}
 		}
 	}
-	
+
 	return details
 }

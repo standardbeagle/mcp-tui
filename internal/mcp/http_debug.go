@@ -20,13 +20,13 @@ var (
 
 // HTTPErrorInfo stores information about the last HTTP error
 type HTTPErrorInfo struct {
-	Timestamp   time.Time
-	Method      string
-	URL         string
-	StatusCode  int
-	RequestBody string
+	Timestamp    time.Time
+	Method       string
+	URL          string
+	StatusCode   int
+	RequestBody  string
 	ResponseBody string
-	Headers     map[string]string
+	Headers      map[string]string
 }
 
 // GetLastHTTPError returns the last HTTP error info
@@ -98,7 +98,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 		// Check if this is an error response or contains an error
-		isError := resp.StatusCode >= 400 || 
+		isError := resp.StatusCode >= 400 ||
 			bytes.Contains(bodyBytes, []byte(`"error"`)) ||
 			bytes.Contains(bodyBytes, []byte(`"code":-`))
 
@@ -122,7 +122,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			setLastHTTPError(errorInfo)
 
 			if t.debugMode {
-				debug.Error("HTTP Error Response Captured", 
+				debug.Error("HTTP Error Response Captured",
 					debug.F("url", req.URL.String()),
 					debug.F("statusCode", resp.StatusCode),
 					debug.F("response", tryPrettyPrintJSON(string(bodyBytes))))
@@ -144,23 +144,23 @@ func FormatHTTPError(info *HTTPErrorInfo) string {
 	sb.WriteString(fmt.Sprintf("Method: %s\n", info.Method))
 	sb.WriteString(fmt.Sprintf("URL: %s\n", info.URL))
 	sb.WriteString(fmt.Sprintf("Status Code: %d\n\n", info.StatusCode))
-	
+
 	if info.RequestBody != "" {
 		sb.WriteString("Request Body:\n")
 		sb.WriteString(tryPrettyPrintJSON(info.RequestBody))
 		sb.WriteString("\n\n")
 	}
-	
+
 	sb.WriteString("Response Body:\n")
 	sb.WriteString(tryPrettyPrintJSON(info.ResponseBody))
 	sb.WriteString("\n\n")
-	
+
 	if len(info.Headers) > 0 {
 		sb.WriteString("Response Headers:\n")
 		for k, v := range info.Headers {
 			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
 		}
 	}
-	
+
 	return sb.String()
 }

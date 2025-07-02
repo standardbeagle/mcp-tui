@@ -419,7 +419,7 @@ func (cs *ConnectionScreen) renderTransportSelection() string {
 
 	// Create horizontal options with proper styling
 	var options []string
-	
+
 	// STDIO option
 	stdioText := "1) STDIO"
 	if cs.transportType == config.TransportStdio {
@@ -436,7 +436,7 @@ func (cs *ConnectionScreen) renderTransportSelection() string {
 		stdioText = stdioStyle.Render(stdioText)
 	}
 	options = append(options, stdioText)
-	
+
 	// SSE option
 	sseText := "2) SSE"
 	if cs.transportType == config.TransportSSE {
@@ -453,7 +453,7 @@ func (cs *ConnectionScreen) renderTransportSelection() string {
 		sseText = sseStyle.Render(sseText)
 	}
 	options = append(options, sseText)
-	
+
 	// HTTP option
 	httpText := "3) HTTP"
 	if cs.transportType == config.TransportHTTP {

@@ -72,7 +72,7 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 		updatedTS := model.(*ToolScreen)
 
 		// Check field value
-		assert.Equal(t, "pasted text", updatedTS.fields[0].value)
+		assert.Equal(t, "pasted text", updatedTS.fields[0].input.Value())
 
 		// Check status
 		msg, _ := updatedTS.StatusMessage()
@@ -209,7 +209,7 @@ func TestPhase3InputValidation(t *testing.T) {
 			require.Len(t, ts.fields, 1, "Should have one field")
 
 			// Set field value
-			ts.fields[0].value = tt.inputValue
+			ts.fields[0].input.SetValue(tt.inputValue)
 
 			// Validate
 			ts.validateField(0)
@@ -242,7 +242,7 @@ func TestPhase3ValidationDisplay(t *testing.T) {
 	ts.cursor = 0
 
 	// Set invalid value
-	ts.fields[0].value = "abc"
+	ts.fields[0].input.SetValue("abc")
 	ts.validateField(0)
 
 	view := ts.View()

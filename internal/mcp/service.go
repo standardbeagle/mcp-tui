@@ -156,9 +156,9 @@ func isJSONError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errStr := err.Error()
-	return strings.Contains(errStr, "json:") || 
+	return strings.Contains(errStr, "json:") ||
 		strings.Contains(errStr, "unmarshal") ||
 		strings.Contains(errStr, "JSON")
 }
@@ -314,7 +314,7 @@ func (s *service) ListTools(ctx context.Context) ([]mcp.Tool, error) {
 	if err != nil {
 		// Log the error response
 		logMCPError(-32603, err.Error(), reqID)
-		
+
 		// Check if this is a JSON unmarshaling error
 		if isJSONError(err) {
 			// Get the last HTTP error for more context
@@ -327,18 +327,18 @@ func (s *service) ListTools(ctx context.Context) ([]mcp.Tool, error) {
 					RawResponse: httpErr.ResponseBody,
 					Details:     analyzeJSONError(err, httpErr.ResponseBody),
 				}
-				
+
 				if s.debugMode {
-					debug.Error("JSON Unmarshaling Error in tools/list", 
+					debug.Error("JSON Unmarshaling Error in tools/list",
 						debug.F("error", err.Error()),
 						debug.F("rawResponse", tryPrettyPrintJSON(httpErr.ResponseBody)),
 						debug.F("details", detailErr.Details))
 				}
-				
+
 				return nil, detailErr
 			}
 		}
-		
+
 		return nil, fmt.Errorf("failed to list tools from MCP server '%s': %w\n\nTroubleshooting:\n- Verify the server supports the tools/list method\n- Check if the server is still responding (try reconnecting)\n- Some servers may require authentication or specific permissions", s.info.Name, err)
 	}
 

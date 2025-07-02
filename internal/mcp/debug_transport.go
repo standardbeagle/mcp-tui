@@ -53,7 +53,7 @@ func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		if t.debugMode {
-			debug.Error("HTTP Request Failed", 
+			debug.Error("HTTP Request Failed",
 				debug.F("error", err.Error()),
 				debug.F("method", req.Method),
 				debug.F("url", req.URL.String()))
@@ -71,13 +71,13 @@ func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		// Create a new ReadCloser with the buffered content
 		resp.Body = &debugResponseBody{
-			Reader:       bytes.NewReader(bodyBytes),
-			body:         bodyBytes,
-			debugMode:    t.debugMode,
-			statusCode:   resp.StatusCode,
-			method:       req.Method,
-			url:          req.URL.String(),
-			requestBody:  requestBody,
+			Reader:      bytes.NewReader(bodyBytes),
+			body:        bodyBytes,
+			debugMode:   t.debugMode,
+			statusCode:  resp.StatusCode,
+			method:      req.Method,
+			url:         req.URL.String(),
+			requestBody: requestBody,
 		}
 
 		if t.debugMode {
@@ -95,7 +95,7 @@ func (t *debugTransport) logRequest(req *http.Request) {
 		headers[key] = strings.Join(values, ", ")
 	}
 
-	debug.Info("HTTP Request", 
+	debug.Info("HTTP Request",
 		debug.F("method", req.Method),
 		debug.F("url", req.URL.String()),
 		debug.F("headers", headers))
@@ -114,7 +114,7 @@ func (t *debugTransport) logResponse(resp *http.Response, body []byte) {
 		bodyStr = bodyStr[:5000] + "... (truncated)"
 	}
 
-	debug.Info("HTTP Response", 
+	debug.Info("HTTP Response",
 		debug.F("status", resp.StatusCode),
 		debug.F("headers", headers),
 		debug.F("body", bodyStr))
@@ -123,18 +123,18 @@ func (t *debugTransport) logResponse(resp *http.Response, body []byte) {
 // debugResponseBody wraps the response body to capture and log parsing errors
 type debugResponseBody struct {
 	io.Reader
-	body         []byte
-	debugMode    bool
-	statusCode   int
-	method       string
-	url          string
-	requestBody  []byte
+	body        []byte
+	debugMode   bool
+	statusCode  int
+	method      string
+	url         string
+	requestBody []byte
 }
 
 // Read implements io.Reader
 func (d *debugResponseBody) Read(p []byte) (n int, err error) {
 	n, err = d.Reader.Read(p)
-	
+
 	// If we encounter an EOF and debug mode is on, this is where parsing happens
 	// We can't intercept the actual JSON unmarshaling error here, but we've
 	// already logged the raw response which will help with debugging

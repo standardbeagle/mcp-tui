@@ -31,12 +31,12 @@ func TestToolArrayFieldFix(t *testing.T) {
 		assert.True(t, ts.fields[0].required)
 
 		// User leaves field empty
-		ts.fields[0].value = ""
+		ts.fields[0].input.SetValue("")
 
 		// Build arguments - this simulates what happens during execution
 		args := make(map[string]interface{})
 		for _, field := range ts.fields {
-			if field.fieldType == "array" && field.value == "" {
+			if field.fieldType == "array" && field.input.Value() == "" {
 				if field.required {
 					args[field.name] = []interface{}{}
 				}
@@ -74,12 +74,12 @@ func TestToolArrayFieldFix(t *testing.T) {
 		assert.False(t, ts.fields[0].required)
 
 		// User leaves field empty
-		ts.fields[0].value = ""
+		ts.fields[0].input.SetValue("")
 
 		// Build arguments
 		args := make(map[string]interface{})
 		for _, field := range ts.fields {
-			if field.fieldType == "array" && field.value == "" {
+			if field.fieldType == "array" && field.input.Value() == "" {
 				if field.required {
 					args[field.name] = []interface{}{}
 				}
@@ -121,7 +121,7 @@ func TestToolArrayFieldFix(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.desc, func(t *testing.T) {
-				ts.fields[0].value = tc.input
+				ts.fields[0].input.SetValue(tc.input)
 				// This would happen in executeTool
 				var result []interface{}
 				if tc.input != "" {

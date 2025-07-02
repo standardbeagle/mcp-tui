@@ -34,7 +34,7 @@ func TestArrayFieldBehaviorDocumented(t *testing.T) {
 		require.Equal(t, "array", ts.fields[0].fieldType)
 
 		// User leaves field empty (common scenario)
-		ts.fields[0].value = ""
+		ts.fields[0].input.SetValue("")
 
 		// Simulate what happens during executeTool
 		// With the fix, empty required arrays are now sent as []
@@ -115,7 +115,7 @@ func TestArrayFieldBehaviorDocumented(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				ts := NewToolScreen(tool, nil)
-				ts.fields[0].value = tc.input
+				ts.fields[0].input.SetValue(tc.input)
 				ts.fields[0].required = tc.required
 
 				// This documents the expected behavior after the fix

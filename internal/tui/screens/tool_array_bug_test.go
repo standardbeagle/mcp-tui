@@ -29,7 +29,7 @@ func TestToolArrayFieldBug(t *testing.T) {
 		require.Len(t, ts.fields, 1)
 
 		// Test 1: Empty field value
-		ts.fields[0].value = ""
+		ts.fields[0].input.SetValue("")
 		args := ts.buildArguments()
 
 		// With the current bug, empty string splits to [""]
@@ -43,7 +43,7 @@ func TestToolArrayFieldBug(t *testing.T) {
 		}
 
 		// Test 2: Valid JSON empty array
-		ts.fields[0].value = "[]"
+		ts.fields[0].input.SetValue("[]")
 		args = ts.buildArguments()
 
 		if items, ok := args["items"].([]interface{}); ok {
@@ -52,7 +52,7 @@ func TestToolArrayFieldBug(t *testing.T) {
 		}
 
 		// Test 3: Comma-separated with trailing comma
-		ts.fields[0].value = "a,b,"
+		ts.fields[0].input.SetValue("a,b,")
 		args = ts.buildArguments()
 
 		if items, ok := args["items"].([]interface{}); ok {
@@ -64,7 +64,7 @@ func TestToolArrayFieldBug(t *testing.T) {
 		}
 
 		// Test 4: Just a comma
-		ts.fields[0].value = ","
+		ts.fields[0].input.SetValue(",")
 		args = ts.buildArguments()
 
 		if items, ok := args["items"].([]interface{}); ok {
@@ -92,7 +92,7 @@ func TestToolArrayFieldBug(t *testing.T) {
 		ts := NewToolScreen(tool, nil)
 
 		// User doesn't enter anything in the array field (common case)
-		ts.fields[0].value = ""
+		ts.fields[0].input.SetValue("")
 
 		// First execution
 		args1 := ts.buildArguments()
@@ -102,7 +102,7 @@ func TestToolArrayFieldBug(t *testing.T) {
 		// but then preserves state, subsequent calls might return different results
 
 		// Simulate user entering same empty value again
-		ts.fields[0].value = ""
+		ts.fields[0].input.SetValue("")
 		args2 := ts.buildArguments()
 		t.Logf("Second execution args: %v", args2)
 
@@ -115,15 +115,15 @@ func TestToolArrayFieldBug(t *testing.T) {
 func (ts *ToolScreen) buildArguments() map[string]interface{} {
 	args := make(map[string]interface{})
 	for _, field := range ts.fields {
-		if field.value != "" {
+		if field.input.Value() != "" {
 			switch field.fieldType {
 			case "array":
 				var arr []interface{}
-				if err := json.Unmarshal([]byte(field.value), &arr); err == nil {
+				if err := json.Unmarshal([]byte(field.input.Value()), &arr); err == nil {
 					args[field.name] = arr
 				} else {
 					// Try parsing as comma-separated
-					parts := strings.Split(field.value, ",")
+					parts := strings.Split(field.input.Value(), ",")
 					arr := make([]interface{}, len(parts))
 					for i, p := range parts {
 						arr[i] = strings.TrimSpace(p)
@@ -131,7 +131,7 @@ func (ts *ToolScreen) buildArguments() map[string]interface{} {
 					args[field.name] = arr
 				}
 			default:
-				args[field.name] = field.value
+				args[field.name] = field.input.Value()
 			}
 		}
 	}

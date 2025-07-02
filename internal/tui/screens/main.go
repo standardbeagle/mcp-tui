@@ -99,7 +99,7 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 	if cfg.DebugMode {
 		service.SetDebugMode(true)
 	}
-	
+
 	ms := &MainScreen{
 		BaseScreen:       NewBaseScreen("Main", true),
 		config:           cfg,
@@ -537,7 +537,7 @@ func (ms *MainScreen) View() string {
 
 	// Title and connection status on same line
 	titleAndStatus := ms.titleStyle.Render("MCP Server Interface") + "\n"
-	
+
 	// Connection status
 	statusColor := "10" // green
 	if !ms.connected {
@@ -550,7 +550,7 @@ func (ms *MainScreen) View() string {
 
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
 	titleAndStatus += statusStyle.Render(ms.connectionStatus) + "\n"
-	
+
 	builder.WriteString(titleAndStatus)
 
 	if !ms.connected && !ms.connecting {
@@ -714,7 +714,7 @@ func (ms *MainScreen) renderCurrentList() string {
 		// Get terminal dimensions with better defaults
 		termHeight := ms.Height()
 		termWidth := ms.Width()
-		
+
 		// Use reasonable defaults if dimensions aren't set yet
 		if termHeight == 0 {
 			termHeight = 30 // Reasonable default height
@@ -722,7 +722,7 @@ func (ms *MainScreen) renderCurrentList() string {
 		if termWidth == 0 {
 			termWidth = 80 // Reasonable default width
 		}
-		
+
 		// Reserve space for: title(1) + connection status(1) + tabs(1) + separators(2) + help(1) + status(2)
 		reservedHeight := 8
 		availableHeight := termHeight - reservedHeight
@@ -735,12 +735,12 @@ func (ms *MainScreen) renderCurrentList() string {
 			Foreground(lipgloss.Color("12")).
 			Align(lipgloss.Center).
 			Bold(true)
-		
+
 		// Create a style that fills available space
 		dynamicLoadingStyle := ms.listStyle.
 			Width(termWidth - 4).
 			Height(availableHeight)
-			
+
 		return dynamicLoadingStyle.Render(loadingStyle.Render(loadingMsg))
 	}
 
@@ -789,7 +789,7 @@ func (ms *MainScreen) renderCurrentList() string {
 	// Get terminal dimensions with better defaults
 	termHeight := ms.Height()
 	termWidth := ms.Width()
-	
+
 	// Use reasonable defaults if dimensions aren't set yet
 	if termHeight == 0 {
 		termHeight = 30 // Reasonable default height
@@ -797,10 +797,10 @@ func (ms *MainScreen) renderCurrentList() string {
 	if termWidth == 0 {
 		termWidth = 80 // Reasonable default width
 	}
-	
+
 	// Log dimensions for debugging
 	ms.logger.Debug("Rendering list", debug.F("termWidth", termWidth), debug.F("termHeight", termHeight), debug.F("availableHeight", termHeight-8))
-	
+
 	// Reserve space for: title(1) + connection status(1) + tabs(1) + separators(2) + help(1) + status(2)
 	reservedHeight := 8
 	availableHeight := termHeight - reservedHeight
@@ -1009,29 +1009,29 @@ func (ms *MainScreen) renderCurrentList() string {
 	if width == 0 {
 		width = 80 // Default width
 	}
-	
+
 	// Calculate inner width for padding lines
 	innerWidth := width - 6 // Account for borders and padding
-	
+
 	// Pad each line to full width
 	var paddedItems []string
 	for _, item := range listItems {
 		// Remove any ANSI codes for length calculation
 		plainItem := lipgloss.NewStyle().Render(item)
 		visibleLength := lipgloss.Width(plainItem)
-		
+
 		if visibleLength < innerWidth {
 			// Pad with spaces to reach full width
-			padding := strings.Repeat(" ", innerWidth - visibleLength)
-			paddedItems = append(paddedItems, item + padding)
+			padding := strings.Repeat(" ", innerWidth-visibleLength)
+			paddedItems = append(paddedItems, item+padding)
 		} else {
 			paddedItems = append(paddedItems, item)
 		}
 	}
-	
+
 	// Join padded items
 	content := strings.Join(paddedItems, "\n")
-	
+
 	// If content is shorter than available height, add empty lines
 	contentLines := len(paddedItems)
 	if contentLines < availableHeight-2 { // -2 for border padding
@@ -1039,7 +1039,7 @@ func (ms *MainScreen) renderCurrentList() string {
 			content += "\n" + strings.Repeat(" ", innerWidth)
 		}
 	}
-	
+
 	// Create a style that forces the box to fill available space
 	dynamicListStyle := ms.listStyle.
 		Width(width - 4).          // Account for minimal margins

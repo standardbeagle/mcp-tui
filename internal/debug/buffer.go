@@ -112,17 +112,24 @@ func (lb *LogBuffer) Size() int {
 }
 
 // Global log buffer instance
-var globalLogBuffer *LogBuffer
+var (
+	globalLogBuffer *LogBuffer
+	globalBufferMu  sync.Mutex // Protects globalLogBuffer initialization
+)
 
 // InitLogBuffer initializes the global log buffer
 func InitLogBuffer(maxSize int) {
+	globalBufferMu.Lock()
+	defer globalBufferMu.Unlock()
 	globalLogBuffer = NewLogBuffer(maxSize)
 }
 
 // GetLogBuffer returns the global log buffer
 func GetLogBuffer() *LogBuffer {
+	globalBufferMu.Lock()
+	defer globalBufferMu.Unlock()
 	if globalLogBuffer == nil {
-		InitLogBuffer(1000) // Default size
+		globalLogBuffer = NewLogBuffer(1000) // Default size
 	}
 	return globalLogBuffer
 }

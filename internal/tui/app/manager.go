@@ -58,7 +58,7 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sm.overlayScreen = nil
 			sm.logger.Info("Closing overlay screen")
 			return sm, nil
-		
+
 		case screens.ToggleOverlayMsg:
 			// Toggle off the overlay if it's the same screen
 			if msg.Screen != nil && sm.overlayScreen.Name() == msg.Screen.Name() {
@@ -69,7 +69,7 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Otherwise, replace with new overlay
 			sm.overlayScreen = msg.Screen
 			return sm, sm.overlayScreen.Init()
-		
+
 		default:
 			// Forward to overlay screen
 			model, cmd := sm.overlayScreen.Update(msg)
