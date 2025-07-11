@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,9 +14,9 @@ func TestToolArrayFieldBug(t *testing.T) {
 	t.Run("empty_array_field_behavior", func(t *testing.T) {
 		tool := mcp.Tool{
 			Name: "test-array-tool",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"items": map[string]interface{}{
 						"type":        "array",
 						"description": "List of items",
@@ -79,9 +79,9 @@ func TestToolArrayFieldBug(t *testing.T) {
 
 		tool := mcp.Tool{
 			Name: "test-tool",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"tags": map[string]interface{}{
 						"type": "array",
 					},

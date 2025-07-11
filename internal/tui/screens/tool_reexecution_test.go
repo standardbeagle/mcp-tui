@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
 
 	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
@@ -22,8 +22,8 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		// First execution
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{Type: "text", Text: "Result 1"},
+				Content: []imcp.Content{
+					{Type: "text", Text: "Result 1"},
 				},
 			},
 		})
@@ -34,8 +34,8 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		// Second execution
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{Type: "text", Text: "Result 1"}, // Same result
+				Content: []imcp.Content{
+					imcp.Content{Type: "text", Text: "Result 1"}, // Same result
 				},
 			},
 		})
@@ -53,8 +53,8 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		beforeExec := time.Now()
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{Type: "text", Text: "Test result"},
+				Content: []imcp.Content{
+					imcp.Content{Type: "text", Text: "Test result"},
 				},
 			},
 		})
@@ -80,8 +80,8 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		// First execution
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{Type: "text", Text: "Result"},
+				Content: []imcp.Content{
+					imcp.Content{Type: "text", Text: "Result"},
 				},
 			},
 		})
@@ -94,8 +94,8 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		time.Sleep(10 * time.Millisecond) // Ensure different timestamp
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{Type: "text", Text: "Result"}, // Same result
+				Content: []imcp.Content{
+					imcp.Content{Type: "text", Text: "Result"}, // Same result
 				},
 			},
 		})
@@ -128,8 +128,8 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		for i := 1; i <= 3; i++ {
 			ts.Update(toolExecutionCompleteMsg{
 				Result: &imcp.CallToolResult{
-					Content: []mcp.Content{
-						mcp.TextContent{Type: "text", Text: "Result"},
+					Content: []imcp.Content{
+						imcp.Content{Type: "text", Text: "Result"},
 					},
 				},
 			})
@@ -153,9 +153,9 @@ func TestToolExecutionMinimumDisplayTime(t *testing.T) {
 		// without mocking time or the MCP service
 		tool := mcp.Tool{
 			Name: "fast-tool",
-			InputSchema: mcp.ToolInputSchema{
-				Type:       "object",
-				Properties: map[string]interface{}{},
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
 			},
 		}
 
@@ -182,8 +182,8 @@ func TestToolExecutionCounterPersistence(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{Type: "text", Text: fmt.Sprintf("Result %d", i)},
+				Content: []imcp.Content{
+					imcp.Content{Type: "text", Text: fmt.Sprintf("Result %d", i)},
 				},
 			},
 		})

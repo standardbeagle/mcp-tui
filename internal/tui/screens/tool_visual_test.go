@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
@@ -14,15 +14,15 @@ func TestToolReExecutionVisual(t *testing.T) {
 		tool := mcp.Tool{
 			Name:        "get-weather",
 			Description: "Get current weather for a location",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"location": map[string]interface{}{
 						"type":        "string",
 						"description": "City name or zip code",
 					},
 				},
-				Required: []string{"location"},
+				"required": []string{"location"},
 			},
 		}
 
@@ -35,8 +35,8 @@ func TestToolReExecutionVisual(t *testing.T) {
 		// First execution
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{
+				Content: []imcp.Content{
+					imcp.Content{
 						Type: "text",
 						Text: `{"temp": "72°F", "condition": "Sunny"}`,
 					},
@@ -53,8 +53,8 @@ func TestToolReExecutionVisual(t *testing.T) {
 		// Second execution - same result
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{
+				Content: []imcp.Content{
+					imcp.Content{
 						Type: "text",
 						Text: `{"temp": "72°F", "condition": "Sunny"}`,
 					},
@@ -69,8 +69,8 @@ func TestToolReExecutionVisual(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
-				Content: []mcp.Content{
-					mcp.TextContent{
+				Content: []imcp.Content{
+					imcp.Content{
 						Type: "text",
 						Text: `{"temp": "75°F", "condition": "Partly Cloudy"}`,
 					},

@@ -3,7 +3,7 @@ package screens
 import (
 	"testing"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,15 +16,15 @@ func TestArrayFieldBehaviorDocumented(t *testing.T) {
 
 		tool := mcp.Tool{
 			Name: "data-processor",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"items": map[string]interface{}{
 						"type":        "array",
 						"description": "Items to process",
 					},
 				},
-				Required: []string{"items"},
+				"required": []string{"items"},
 			},
 		}
 
@@ -51,9 +51,9 @@ func TestArrayFieldBehaviorDocumented(t *testing.T) {
 	t.Run("array_input_variations", func(t *testing.T) {
 		tool := mcp.Tool{
 			Name: "test-tool",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"tags": map[string]interface{}{
 						"type": "array",
 					},
@@ -119,7 +119,7 @@ func TestArrayFieldBehaviorDocumented(t *testing.T) {
 				ts.fields[0].required = tc.required
 
 				// This documents the expected behavior after the fix
-				t.Logf("Input: '%s', Required: %v, Expected: %v",
+				t.Logf("Input: '%s', required: %v, Expected: %v",
 					tc.input, tc.required, tc.expectValue)
 			})
 		}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,15 +14,15 @@ func TestToolArrayFieldFix(t *testing.T) {
 	t.Run("empty_required_array_sends_empty_array", func(t *testing.T) {
 		tool := mcp.Tool{
 			Name: "test-tool",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"tags": map[string]interface{}{
 						"type":        "array",
 						"description": "List of tags",
 					},
 				},
-				Required: []string{"tags"}, // Required array field
+				"required": []string{"tags"}, // Required array field
 			},
 		}
 
@@ -58,9 +58,9 @@ func TestToolArrayFieldFix(t *testing.T) {
 	t.Run("empty_optional_array_omitted", func(t *testing.T) {
 		tool := mcp.Tool{
 			Name: "test-tool",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"tags": map[string]interface{}{
 						"type": "array",
 					},
@@ -94,9 +94,9 @@ func TestToolArrayFieldFix(t *testing.T) {
 	t.Run("comma_separated_filters_empty_values", func(t *testing.T) {
 		tool := mcp.Tool{
 			Name: "test-tool",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"items": map[string]interface{}{
 						"type": "array",
 					},

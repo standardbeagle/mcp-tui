@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -157,15 +157,15 @@ func TestToolScreenVisualElements(t *testing.T) {
 	tool := mcp.Tool{
 		Name:        "testTool",
 		Description: "A test tool",
-		InputSchema: mcp.ToolInputSchema{
-			Type: "object",
-			Properties: map[string]interface{}{
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
 				"message": map[string]interface{}{
 					"type":        "string",
 					"description": "The message to echo",
 				},
 			},
-			Required: []string{"message"},
+			"required": []string{"message"},
 		},
 	}
 

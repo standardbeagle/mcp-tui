@@ -6,7 +6,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,8 +26,8 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 
 		// Simulate a result
 		ts.result = &imcp.CallToolResult{
-			Content: []mcp.Content{
-				mcp.TextContent{
+			Content: []imcp.Content{
+				{
 					Type: "text",
 					Text: "Test result",
 				},
@@ -57,9 +57,9 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 
 		tool := mcp.Tool{
 			Name: "test",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]interface{}{
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
 					"input": map[string]interface{}{"type": "string"},
 				},
 			},
@@ -194,14 +194,14 @@ func TestPhase3InputValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tool := mcp.Tool{
 				Name: "test",
-				InputSchema: mcp.ToolInputSchema{
-					Type: "object",
-					Properties: map[string]interface{}{
+				InputSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
 						"field": map[string]interface{}{
 							"type": tt.fieldType,
 						},
 					},
-					Required: []string{"field"},
+					"required": []string{"field"},
 				},
 			}
 
@@ -226,15 +226,15 @@ func TestPhase3InputValidation(t *testing.T) {
 func TestPhase3ValidationDisplay(t *testing.T) {
 	tool := mcp.Tool{
 		Name: "test",
-		InputSchema: mcp.ToolInputSchema{
-			Type: "object",
-			Properties: map[string]interface{}{
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
 				"number": map[string]interface{}{
 					"type":        "number",
 					"description": "A number field",
 				},
 			},
-			Required: []string{"number"},
+			"required": []string{"number"},
 		},
 	}
 

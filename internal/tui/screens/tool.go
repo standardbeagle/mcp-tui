@@ -16,10 +16,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
-	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
@@ -30,7 +29,7 @@ type ToolScreen struct {
 
 	// Tool info
 	tool       mcp.Tool
-	mcpService imcp.Service
+	mcpService mcp.Service
 
 	// Form fields
 	fields []toolField
@@ -41,7 +40,7 @@ type ToolScreen struct {
 	executionStart time.Time
 	executionCount int       // Number of times the tool has been executed
 	lastExecution  time.Time // Time of last execution
-	result         *imcp.CallToolResult
+	result         *mcp.CallToolResult
 	resultJSON     string // Pretty-printed JSON result
 
 	// Result viewing mode
@@ -79,7 +78,7 @@ type resultField struct {
 }
 
 // NewToolScreen creates a new tool execution screen
-func NewToolScreen(tool mcp.Tool, service imcp.Service) *ToolScreen {
+func NewToolScreen(tool mcp.Tool, service mcp.Service) *ToolScreen {
 	ts := &ToolScreen{
 		BaseScreen: NewBaseScreen("Tool", true),
 		logger:     debug.Component("tool-screen"),
@@ -189,17 +188,24 @@ func (ts *ToolScreen) parseSchema() {
 	ts.fields = []toolField{}
 
 	// If no schema, tool takes no parameters
-	if ts.tool.InputSchema.Type == "" && ts.tool.InputSchema.Properties == nil {
+	if ts.tool.InputSchema == nil || len(ts.tool.InputSchema) == 0 {
 		return
 	}
 
 	// Parse properties from the schema
-	if props := ts.tool.InputSchema.Properties; props != nil {
-		// Check required fields
-		requiredMap := make(map[string]bool)
-		for _, req := range ts.tool.InputSchema.Required {
-			requiredMap[req] = true
-		}
+	if propsInterface, ok := ts.tool.InputSchema["properties"]; ok {
+		if props, ok := propsInterface.(map[string]interface{}); ok {
+			// Check required fields
+			requiredMap := make(map[string]bool)
+			if requiredInterface, ok := ts.tool.InputSchema["required"]; ok {
+				if required, ok := requiredInterface.([]interface{}); ok {
+					for _, req := range required {
+						if reqStr, ok := req.(string); ok {
+							requiredMap[reqStr] = true
+						}
+					}
+				}
+			}
 
 		// Create fields from properties
 		for name, propDef := range props {
@@ -239,6 +245,7 @@ func (ts *ToolScreen) parseSchema() {
 			}
 
 			ts.fields = append(ts.fields, field)
+		}
 		}
 	}
 }
@@ -282,8 +289,8 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if i > 0 {
 						resultText.WriteString("\n\n")
 					}
-					if textContent, ok := mcp.AsTextContent(content); ok {
-						text := textContent.Text
+					if content.Type == "text" {
+						text := content.Text
 						// Try to pretty-print JSON
 						var jsonData interface{}
 						if err := json.Unmarshal([]byte(text), &jsonData); err == nil {
@@ -337,7 +344,7 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // toolExecutionCompleteMsg signals tool execution is complete
 type toolExecutionCompleteMsg struct {
-	Result *imcp.CallToolResult
+	Result *mcp.CallToolResult
 	Error  error
 }
 
@@ -624,7 +631,7 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			result, err := ts.mcpService.CallTool(ctx, imcp.CallToolRequest{
+			result, err := ts.mcpService.CallTool(ctx, mcp.CallToolRequest{
 				Name:      ts.tool.Name,
 				Arguments: args,
 			})
