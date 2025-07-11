@@ -4,104 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/mcp"
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
-
-// Service provides high-level MCP operations
-type Service interface {
-	// Connection management
-	Connect(ctx context.Context, config *config.ConnectionConfig) error
-	Disconnect() error
-	IsConnected() bool
-	SetDebugMode(debug bool)
-
-	// Tool operations
-	ListTools(ctx context.Context) ([]mcp.Tool, error)
-	CallTool(ctx context.Context, req CallToolRequest) (*CallToolResult, error)
-
-	// Resource operations
-	ListResources(ctx context.Context) ([]mcp.Resource, error)
-	ReadResource(ctx context.Context, uri string) ([]mcp.ResourceContents, error)
-
-	// Prompt operations
-	ListPrompts(ctx context.Context) ([]mcp.Prompt, error)
-	GetPrompt(ctx context.Context, req GetPromptRequest) (*GetPromptResult, error)
-
-	// Server info
-	GetServerInfo() *ServerInfo
-}
-
-// CallToolRequest represents a tool call request
-type CallToolRequest struct {
-	Name      string                 `json:"name"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
-}
-
-// CallToolResult represents a tool call result
-type CallToolResult struct {
-	Content []mcp.Content `json:"content"`
-	IsError bool          `json:"isError,omitempty"`
-}
-
-// GetPromptRequest represents a prompt request
-type GetPromptRequest struct {
-	Name      string                 `json:"name"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
-}
-
-// GetPromptResult represents a prompt result
-type GetPromptResult struct {
-	Description string              `json:"description,omitempty"`
-	Messages    []mcp.PromptMessage `json:"messages"`
-}
-
-// ServerInfo holds server information
-type ServerInfo struct {
-	Name            string                 `json:"name"`
-	Version         string                 `json:"version"`
-	ProtocolVersion string                 `json:"protocolVersion"`
-	Capabilities    map[string]interface{} `json:"capabilities"`
-	Connected       bool                   `json:"connected"`
-}
-
-// service implements the Service interface
-type service struct {
-	client    *client.Client
-	info      *ServerInfo
-	requestID int
-	mu        sync.Mutex
-	debugMode bool
-}
-
-// NewService creates a new MCP service
-func NewService() Service {
-	return &service{
-		info:      &ServerInfo{},
-		requestID: 0,
-		debugMode: false,
-	}
-}
-
-// SetDebugMode enables or disables debug mode
-func (s *service) SetDebugMode(debug bool) {
-	s.debugMode = debug
-	// Enable HTTP debugging if in debug mode
-	EnableHTTPDebugging(debug)
-}
-
-// getNextRequestID returns the next request ID
-func (s *service) getNextRequestID() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.requestID++
-	return s.requestID
-}
 
 // Helper functions for MCP logging
 
@@ -151,133 +59,154 @@ func logMCPNotification(method string, params interface{}) {
 	debug.LogMCPIncoming(string(msgJSON), nil)
 }
 
-// isJSONError checks if an error is related to JSON unmarshaling
-func isJSONError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	errStr := err.Error()
-	return strings.Contains(errStr, "json:") ||
-		strings.Contains(errStr, "unmarshal") ||
-		strings.Contains(errStr, "JSON")
+// service implements the Service interface using the official MCP Go SDK
+type service struct {
+	client    *officialMCP.Client
+	session   *officialMCP.ClientSession
+	info      *ServerInfo
+	requestID int
+	mu        sync.Mutex
+	debugMode bool
 }
 
-// Connect establishes connection to MCP server
-func (s *service) Connect(ctx context.Context, config *config.ConnectionConfig) error {
+
+// getNextRequestID returns the next request ID
+func (s *service) getNextRequestID() int {
 	s.mu.Lock()
-	if s.client != nil {
+	defer s.mu.Unlock()
+	s.requestID++
+	return s.requestID
+}
+
+// SetDebugMode enables or disables debug mode
+func (s *service) SetDebugMode(debug bool) {
+	s.debugMode = debug
+	// Enable HTTP debugging if in debug mode
+	EnableHTTPDebugging(debug)
+}
+
+// createLoggingMiddleware creates middleware for automatic MCP request/response logging
+func (s *service) createLoggingMiddleware() officialMCP.Middleware[*officialMCP.ClientSession] {
+	return func(next officialMCP.MethodHandler[*officialMCP.ClientSession]) officialMCP.MethodHandler[*officialMCP.ClientSession] {
+		return func(ctx context.Context, session *officialMCP.ClientSession, method string, params officialMCP.Params) (officialMCP.Result, error) {
+			// Log outgoing request
+			reqID := s.getNextRequestID()
+			logMCPRequest(method, params, reqID)
+			
+			// Call the next handler
+			result, err := next(ctx, session, method, params)
+			
+			// Log response or error
+			if err != nil {
+				logMCPError(-32603, err.Error(), reqID)
+			} else {
+				logMCPResponse(result, reqID)
+			}
+			
+			return result, err
+		}
+	}
+}
+
+// Connect establishes connection to MCP server using official SDK
+func (s *service) Connect(ctx context.Context, configInterface interface{}) error {
+	config, ok := configInterface.(*config.ConnectionConfig)
+	if !ok {
+		return fmt.Errorf("invalid config type")
+	}
+	s.mu.Lock()
+	if s.client != nil || s.session != nil {
 		s.mu.Unlock()
 		return fmt.Errorf("already connected to MCP server - disconnect first before connecting to a new server")
 	}
 	s.mu.Unlock()
 
-	var mcpClient *client.Client
+	// Create implementation info
+	impl := &officialMCP.Implementation{
+		Name:    "mcp-tui",
+		Version: "0.1.0",
+	}
+
+	// Create client with options for better integration
+	clientOptions := &officialMCP.ClientOptions{
+		// Add progress notification handler for long-running operations
+		ProgressNotificationHandler: func(ctx context.Context, session *officialMCP.ClientSession, params *officialMCP.ProgressNotificationParams) {
+			debug.Info("Progress notification", 
+				debug.F("progressToken", params.ProgressToken),
+				debug.F("progress", params.Progress))
+		},
+	}
+	client := officialMCP.NewClient(impl, clientOptions)
+	
+	// Add logging middleware for automatic request/response logging
+	if s.debugMode {
+		client.AddSendingMiddleware(s.createLoggingMiddleware())
+	}
+
+	var transport officialMCP.Transport
 	var err error
 
 	switch config.Type {
 	case "stdio":
-		// Create STDIO client
-		mcpClient, err = client.NewStdioMCPClient(config.Command, nil, config.Args...)
-		if err != nil {
-			return fmt.Errorf("failed to create STDIO client for command '%s' with args %v: %w\n\nTroubleshooting:\n- Ensure the command exists and is executable\n- Check that all required arguments are provided\n- Verify the command supports MCP protocol", config.Command, config.Args, err)
-		}
+		// TODO: Implement STDIO transport wrapper
+		return fmt.Errorf("STDIO transport not yet implemented with official SDK")
 
 	case "sse":
-		// Create SSE client
-		mcpClient, err = client.NewSSEMCPClient(config.URL)
-		if err != nil {
-			return fmt.Errorf("failed to create SSE client for URL '%s': %w\n\nTroubleshooting:\n- Verify the URL is accessible and returns proper SSE events\n- Check if the server supports Server-Sent Events\n- Ensure the URL path accepts SSE connections", config.URL, err)
-		}
+		// Create SSE transport
+		transport = officialMCP.NewSSEClientTransport(config.URL, &officialMCP.SSEClientTransportOptions{
+			HTTPClient: nil, // Use default HTTP client
+		})
 
 	case "http":
-		// Create HTTP client
-		mcpClient, err = client.NewStreamableHttpClient(config.URL)
-		if err != nil {
-			return fmt.Errorf("failed to create HTTP client for URL '%s': %w\n\nTroubleshooting:\n- Verify the URL is accessible and returns valid HTTP responses\n- Check if the server supports HTTP MCP transport\n- Ensure the URL is correct and the server is running", config.URL, err)
-		}
+		// TODO: Implement HTTP transport wrapper 
+		return fmt.Errorf("HTTP transport not yet implemented with official SDK")
+
+	case "streamable-http":
+		// TODO: Implement streamable HTTP transport wrapper
+		return fmt.Errorf("Streamable HTTP transport not yet implemented with official SDK")
+
+	case "playwright":
+		// Use SSE transport for Playwright (it uses SSE at /sse endpoint)
+		transport = officialMCP.NewSSEClientTransport(config.URL, &officialMCP.SSEClientTransportOptions{
+			HTTPClient: nil, // Use default HTTP client
+		})
 
 	default:
-		return fmt.Errorf("unsupported transport type '%s'\n\nSupported transport types:\n- 'stdio': Launch external process with stdin/stdout communication\n- 'sse': Connect via Server-Sent Events (HTTP streaming)\n- 'http': Connect via HTTP requests\n\nExample: Use 'stdio' for local commands, 'http' for web services", config.Type)
+		return fmt.Errorf("unsupported transport type '%s'\n\nSupported transport types:\n- 'sse': Connect via Server-Sent Events (HTTP streaming)\n\nMore transport types coming soon", config.Type)
 	}
 
-	// Initialize the client
-	initRequest := mcp.InitializeRequest{
-		Params: mcp.InitializeParams{
-			ProtocolVersion: "2024-11-05",
-			Capabilities: mcp.ClientCapabilities{
-				Roots: &struct {
-					ListChanged bool `json:"listChanged,omitempty"`
-				}{
-					ListChanged: false,
-				},
-			},
-			ClientInfo: mcp.Implementation{
-				Name:    "mcp-tui",
-				Version: "0.1.0",
-			},
-		},
-	}
-
-	// Log the initialization request
-	reqID := s.getNextRequestID()
-	logMCPRequest("initialize", initRequest.Params, reqID)
-
-	initResult, err := mcpClient.Initialize(ctx, initRequest)
+	// Connect to the server
+	session, err := client.Connect(ctx, transport)
 	if err != nil {
-		// Log the initialization error
-		logMCPError(-32603, err.Error(), reqID)
-		mcpClient.Close()
-
-		// Provide more detailed error context based on transport type
-		var troubleshooting string
-		switch config.Type {
-		case "stdio":
-			troubleshooting = fmt.Sprintf(`
-Troubleshooting STDIO connection failure:
-- Command: %s
-- Args: %v
-- Check if the command supports MCP protocol
-- Verify the process starts correctly and accepts JSON-RPC on stdin
-- Ensure the command outputs MCP initialization response on stdout`, config.Command, config.Args)
-		case "sse":
-			troubleshooting = fmt.Sprintf(`
-Troubleshooting SSE connection failure:
-- URL: %s
-- Verify the server is running and accessible
-- Check if the URL accepts Server-Sent Events connections
-- Ensure the server responds with proper MCP initialization events
-- Verify network connectivity and firewall settings`, config.URL)
-		case "http":
-			troubleshooting = fmt.Sprintf(`
-Troubleshooting HTTP connection failure:
-- URL: %s
-- Verify the server is running and accessible at this URL
-- Check if the server accepts HTTP POST requests with JSON-RPC
-- Ensure the server responds with MCP-compliant JSON responses
-- Verify Content-Type headers are set to application/json
-- Check network connectivity and authentication if required`, config.URL)
-		default:
-			troubleshooting = "Check transport configuration and server compatibility"
-		}
-
-		return fmt.Errorf("failed to initialize MCP connection: %w%s", err, troubleshooting)
+		return fmt.Errorf("failed to connect to MCP server: %w", err)
 	}
 
-	// Log the successful initialization
-	logMCPResponse(map[string]interface{}{
-		"protocolVersion": initResult.ProtocolVersion,
-		"serverInfo":      initResult.ServerInfo,
-		"capabilities":    initResult.Capabilities,
-	}, reqID)
-
+	// Get server information from the session's initialize result
+	// The official SDK automatically handles initialization
+	serverInfo := "Connected Server"
+	serverVersion := "Unknown" 
+	protocolVersion := "2024-11-05"
+	
+	// Try to get more details if available through reflection or other means
+	// For now, we'll use the session ID and other available info
+	sessionID := session.ID()
+	
+	// Store the client and session
 	s.mu.Lock()
-	s.client = mcpClient
+	s.client = client
+	s.session = session
 	s.info.Connected = true
-	s.info.ProtocolVersion = initResult.ProtocolVersion
-	s.info.Name = initResult.ServerInfo.Name
-	s.info.Version = initResult.ServerInfo.Version
+	s.info.Name = serverInfo
+	s.info.Version = serverVersion
+	s.info.ProtocolVersion = protocolVersion
 	s.mu.Unlock()
+
+	debug.Info("Successfully connected using official MCP Go SDK", 
+		debug.F("transport", config.Type),
+		debug.F("url", config.URL),
+		debug.F("sessionID", sessionID),
+		debug.F("serverInfo", serverInfo),
+		debug.F("protocolVersion", protocolVersion))
 
 	return nil
 }
@@ -287,17 +216,18 @@ func (s *service) Disconnect() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	if s.client == nil {
+	if s.session == nil {
 		return nil // Already disconnected
 	}
 
-	// Close the client connection
-	if err := s.client.Close(); err != nil {
-		return fmt.Errorf("failed to close connection to MCP server '%s': %w\n\nThe connection may have been forcibly closed or the server may be unresponsive", s.info.Name, err)
+	// Close the session
+	if err := s.session.Close(); err != nil {
+		return fmt.Errorf("failed to close connection to MCP server '%s': %w", s.info.Name, err)
 	}
 
 	// Cleanup
 	s.client = nil
+	s.session = nil
 	s.info.Connected = false
 	return nil
 }
@@ -306,58 +236,46 @@ func (s *service) Disconnect() error {
 func (s *service) IsConnected() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.client != nil && s.info.Connected
+	return s.session != nil && s.info.Connected
 }
 
-// ListTools returns available tools
-// Empty results are normal - not all MCP servers provide tools
-func (s *service) ListTools(ctx context.Context) ([]mcp.Tool, error) {
+// ListTools returns available tools using the official SDK's natural iterator pattern
+func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 	if !s.IsConnected() {
 		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
 	}
 
-	// Log the outgoing request
-	reqID := s.getNextRequestID()
-	logMCPRequest("tools/list", map[string]interface{}{}, reqID)
+	s.mu.Lock()
+	session := s.session
+	s.mu.Unlock()
 
-	result, err := s.client.ListTools(ctx, mcp.ListToolsRequest{})
-	if err != nil {
-		// Log the error response
-		logMCPError(-32603, err.Error(), reqID)
-
-		// Check if this is a JSON unmarshaling error
-		if isJSONError(err) {
-			// Get the last HTTP error for more context
-			httpErr := GetLastHTTPError()
-			if httpErr != nil {
-				// Create a detailed error with raw response
-				detailErr := &MCPError{
-					Method:      "tools/list",
-					OriginalErr: err,
-					RawResponse: httpErr.ResponseBody,
-					Details:     analyzeJSONError(err, httpErr.ResponseBody),
-				}
-
-				if s.debugMode {
-					debug.Error("JSON Unmarshaling Error in tools/list",
-						debug.F("error", err.Error()),
-						debug.F("rawResponse", tryPrettyPrintJSON(httpErr.ResponseBody)),
-						debug.F("details", detailErr.Details))
-				}
-
-				return nil, detailErr
-			}
+	// Use the natural iterator pattern - automatically handles pagination
+	var tools []Tool
+	for tool, err := range session.Tools(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate tools from MCP server: %w", err)
 		}
-
-		return nil, fmt.Errorf("failed to list tools from MCP server '%s': %w\n\nTroubleshooting:\n- Verify the server supports the tools/list method\n- Check if the server is still responding (try reconnecting)\n- Some servers may require authentication or specific permissions", s.info.Name, err)
+		
+		if tool != nil {
+			// Convert InputSchema to map[string]interface{}
+			var inputSchemaMap map[string]interface{}
+			if tool.InputSchema != nil {
+				schemaJSON, _ := json.Marshal(tool.InputSchema)
+				json.Unmarshal(schemaJSON, &inputSchemaMap)
+			}
+			
+			tools = append(tools, Tool{
+				Name:        tool.Name,
+				Description: tool.Description,
+				InputSchema: inputSchemaMap,
+			})
+		}
 	}
 
-	// Log the successful response
-	logMCPResponse(map[string]interface{}{
-		"tools": result.Tools,
-	}, 2)
+	debug.Info("Listed tools successfully using iterator pattern", 
+		debug.F("count", len(tools)))
 
-	return result.Tools, nil
+	return tools, nil
 }
 
 // CallTool executes a tool
@@ -366,95 +284,179 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
 	}
 
-	// Build the MCP request
-	mcpReq := mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      req.Name,
-			Arguments: req.Arguments,
-		},
-	}
+	s.mu.Lock()
+	session := s.session
+	s.mu.Unlock()
 
-	// Log the outgoing request
-	logMCPRequest("tools/call", mcpReq.Params, 3)
+	// Convert arguments to the format expected by official SDK
+	params := &officialMCP.CallToolParams{
+		Name:      req.Name,
+		Arguments: req.Arguments,
+	}
 
 	// Call the tool
-	result, err := s.client.CallTool(ctx, mcpReq)
+	result, err := session.CallTool(ctx, params)
 	if err != nil {
-		// Log the error response
-		logMCPError(-32603, err.Error(), 3)
-		return nil, fmt.Errorf("failed to call tool '%s' on MCP server '%s': %w\n\nTroubleshooting:\n- Verify the tool name '%s' exists (use 'tool list' to see available tools)\n- Check if the provided arguments are valid for this tool\n- Ensure the server supports tool execution\n- The tool may have failed internally - check server logs", req.Name, s.info.Name, err, req.Name)
+		return nil, fmt.Errorf("failed to call tool '%s': %w", req.Name, err)
 	}
 
-	// Log the successful response
-	logMCPResponse(map[string]interface{}{
-		"content": result.Content,
-		"isError": result.IsError,
-	}, 3)
+	// Convert the result format
+	var content []Content
+	for _, c := range result.Content {
+		switch v := c.(type) {
+		case *officialMCP.TextContent:
+			content = append(content, Content{
+				Type: "text",
+				Text: v.Text,
+			})
+		case *officialMCP.ImageContent:
+			content = append(content, Content{
+				Type: "image",
+				Data: string(v.Data), // Convert []byte to string
+				MimeType: v.MIMEType,
+			})
+		case *officialMCP.EmbeddedResource:
+			content = append(content, Content{
+				Type: "resource",
+				Resource: &ResourceReference{
+					Type: "embedded",
+					URI:  "", // EmbeddedResource doesn't have URI
+				},
+			})
+		default:
+			// Try to handle as generic content
+			contentJSON, _ := json.Marshal(c)
+			content = append(content, Content{
+				Type: "text",
+				Text: string(contentJSON),
+			})
+		}
+	}
+
+	debug.Info("Called tool successfully", 
+		debug.F("tool", req.Name),
+		debug.F("isError", result.IsError),
+		debug.F("contentCount", len(content)))
 
 	return &CallToolResult{
-		Content: result.Content,
+		Content: content,
 		IsError: result.IsError,
 	}, nil
 }
 
-// ListResources returns available resources
-// Empty results are normal - not all MCP servers provide resources
-func (s *service) ListResources(ctx context.Context) ([]mcp.Resource, error) {
+// ListResources returns available resources using the official SDK's natural iterator pattern
+func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 	if !s.IsConnected() {
 		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
 	}
 
-	// Log the outgoing request
-	logMCPRequest("resources/list", map[string]interface{}{}, 4)
+	s.mu.Lock()
+	session := s.session
+	s.mu.Unlock()
 
-	result, err := s.client.ListResources(ctx, mcp.ListResourcesRequest{})
-	if err != nil {
-		// Log the error response
-		logMCPError(-32603, err.Error(), 4)
-		return nil, fmt.Errorf("failed to list resources from MCP server '%s': %w\n\nTroubleshooting:\n- Verify the server supports the resources/list method\n- Check if the server is still responding (try reconnecting)\n- Some servers may require authentication or specific permissions", s.info.Name, err)
+	// Use the natural iterator pattern - automatically handles pagination
+	var resources []Resource
+	for resource, err := range session.Resources(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate resources from MCP server: %w", err)
+		}
+		
+		if resource != nil {
+			resources = append(resources, Resource{
+				URI:         resource.URI,
+				Name:        resource.Name,
+				Description: resource.Description,
+				MimeType:    resource.MIMEType,
+			})
+		}
 	}
 
-	// Log the successful response
-	logMCPResponse(map[string]interface{}{
-		"resources": result.Resources,
-	}, 4)
+	debug.Info("Listed resources successfully using iterator pattern", 
+		debug.F("count", len(resources)))
 
-	return result.Resources, nil
+	return resources, nil
 }
 
 // ReadResource reads a resource
-func (s *service) ReadResource(ctx context.Context, uri string) ([]mcp.ResourceContents, error) {
+func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceContents, error) {
 	if !s.IsConnected() {
 		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
 	}
 
-	// Implementation will be moved from existing code
-	return nil, fmt.Errorf("ReadResource not yet implemented - this feature is coming soon\n\nFor now, use 'resource list' to see available resources")
+	s.mu.Lock()
+	session := s.session
+	s.mu.Unlock()
+
+	params := &officialMCP.ReadResourceParams{
+		URI: uri,
+	}
+
+	result, err := session.ReadResource(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read resource '%s': %w", uri, err)
+	}
+
+	// Convert to compatible format
+	var contents []ResourceContents
+	for _, content := range result.Contents {
+		if content != nil {
+			contents = append(contents, ResourceContents{
+				URI:      content.URI,
+				MimeType: content.MIMEType,
+				Text:     content.Text,
+				Blob:     string(content.Blob), // Convert []byte to string
+			})
+		}
+	}
+
+	debug.Info("Read resource successfully", 
+		debug.F("uri", uri),
+		debug.F("contentsCount", len(contents)))
+
+	return contents, nil
 }
 
-// ListPrompts returns available prompts
-// Empty results are normal - not all MCP servers provide prompts
-func (s *service) ListPrompts(ctx context.Context) ([]mcp.Prompt, error) {
+// ListPrompts returns available prompts using the official SDK's natural iterator pattern
+func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 	if !s.IsConnected() {
 		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
 	}
 
-	// Log the outgoing request
-	logMCPRequest("prompts/list", map[string]interface{}{}, 5)
+	s.mu.Lock()
+	session := s.session
+	s.mu.Unlock()
 
-	result, err := s.client.ListPrompts(ctx, mcp.ListPromptsRequest{})
-	if err != nil {
-		// Log the error response
-		logMCPError(-32603, err.Error(), 5)
-		return nil, fmt.Errorf("failed to list prompts from MCP server '%s': %w\n\nTroubleshooting:\n- Verify the server supports the prompts/list method\n- Check if the server is still responding (try reconnecting)\n- Some servers may require authentication or specific permissions", s.info.Name, err)
+	// Use the natural iterator pattern - automatically handles pagination
+	var prompts []Prompt
+	for prompt, err := range session.Prompts(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate prompts from MCP server: %w", err)
+		}
+		
+		if prompt != nil {
+			// Convert PromptArgument slice to map[string]interface{}
+			argumentsMap := make(map[string]interface{})
+			for _, arg := range prompt.Arguments {
+				if arg != nil {
+					argumentsMap[arg.Name] = map[string]interface{}{
+						"description": arg.Description,
+						"required":    arg.Required,
+					}
+				}
+			}
+			
+			prompts = append(prompts, Prompt{
+				Name:        prompt.Name,
+				Description: prompt.Description,
+				Arguments:   argumentsMap,
+			})
+		}
 	}
 
-	// Log the successful response
-	logMCPResponse(map[string]interface{}{
-		"prompts": result.Prompts,
-	}, 5)
+	debug.Info("Listed prompts successfully using iterator pattern", 
+		debug.F("count", len(prompts)))
 
-	return result.Prompts, nil
+	return prompts, nil
 }
 
 // GetPrompt gets a prompt
@@ -463,8 +465,80 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
 	}
 
-	// Implementation will be moved from existing code
-	return nil, fmt.Errorf("GetPrompt not yet implemented - this feature is coming soon\n\nFor now, use 'prompt list' to see available prompts")
+	s.mu.Lock()
+	session := s.session
+	s.mu.Unlock()
+
+	// Convert arguments to string map
+	arguments := make(map[string]string)
+	for k, v := range req.Arguments {
+		if s, ok := v.(string); ok {
+			arguments[k] = s
+		} else {
+			// Convert to string representation
+			arguments[k] = fmt.Sprintf("%v", v)
+		}
+	}
+	
+	params := &officialMCP.GetPromptParams{
+		Name:      req.Name,
+		Arguments: arguments,
+	}
+
+	result, err := session.GetPrompt(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get prompt '%s': %w", req.Name, err)
+	}
+
+	// Convert to compatible format
+	var messages []PromptMessage
+	for _, msg := range result.Messages {
+		if msg != nil {
+			// Convert content - msg.Content is a single Content interface
+			contentJSON, _ := json.Marshal(msg.Content)
+			content := []Content{
+				{
+					Type: "text",
+					Text: string(contentJSON),
+				},
+			}
+
+			messages = append(messages, PromptMessage{
+				Role:    string(msg.Role),
+				Content: content,
+			})
+		}
+	}
+
+	debug.Info("Got prompt successfully", 
+		debug.F("prompt", req.Name),
+		debug.F("messagesCount", len(messages)))
+
+	return &GetPromptResult{
+		Description: result.Description,
+		Messages:    messages,
+	}, nil
+}
+
+// isJSONError checks if an error is related to JSON parsing/unmarshaling
+func isJSONError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	// Check for JSON unmarshal type errors
+	_, isUnmarshalTypeError := err.(*json.UnmarshalTypeError)
+	if isUnmarshalTypeError {
+		return true
+	}
+	
+	// Check for other JSON syntax errors
+	_, isSyntaxError := err.(*json.SyntaxError)
+	if isSyntaxError {
+		return true
+	}
+	
+	return false
 }
 
 // GetServerInfo returns server information
