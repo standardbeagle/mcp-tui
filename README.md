@@ -34,12 +34,12 @@ Stop struggling with curl commands, JSON formatting, and connection issues. MCP-
 - Batch operations and parallel execution capabilities
 - Exit codes and error handling perfect for scripts
 
-### Universal Transport Support
-**Problem Solved:** Connect to any MCP server regardless of how it's built
-- STDIO transport for local processes and development
-- HTTP/SSE transport for web services and cloud deployments
-- Automatic transport detection based on connection parameters
-- Cross-platform process management with proper cleanup
+### Transport Support
+**Problem Solved:** Connect to MCP servers with reliable, standards-compliant transport
+- ✅ **SSE (Server-Sent Events)** transport for web services and cloud deployments
+- 🚧 **STDIO transport** for local processes (coming soon in next release)
+- 🚧 **HTTP transport** for standard web APIs (coming soon in next release)
+- Built on official MCP Go SDK for maximum compatibility and protocol compliance
 
 ### Robust Error Handling
 **Problem Solved:** Understand exactly what's wrong when servers misbehave
@@ -75,23 +75,25 @@ make install
 
 ### Instant Connection - Choose Your Style
 
+> **📝 Current Version Note**: This version uses the official MCP Go SDK and currently supports SSE transport. STDIO and HTTP support coming in the next release. For now, test with MCP servers that provide SSE endpoints.
+
 **🎯 Just Getting Started? Try This:**
 ```bash
-# One command gets you browsing any MCP server visually
-mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
+# Connect to MCP server via SSE (Server-Sent Events)
+mcp-tui --url http://localhost:8000/sse
 ```
-*Why this works: Skips all setup, connects instantly, shows you everything the server can do*
+*Why this works: Connects to any SSE-enabled MCP server, shows you everything it can do*
 
 **🤖 Building Automation? Use CLI Mode:**
 ```bash
-# List all available tools
-mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool list
+# List all available tools via SSE
+mcp-tui --url http://localhost:8000/sse tool list
 
 # Execute a specific tool with parameters
-mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool call echo message="Hello World"
+mcp-tui --url http://localhost:8000/sse tool call echo message="Hello World"
 
 # Get JSON output for your scripts
-mcp-tui --json "npx -y @modelcontextprotocol/server-everything stdio" tool list
+mcp-tui --json --url http://localhost:8000/sse tool list
 ```
 *Why this works: Perfect for CI/CD, scripts, and automated testing workflows*
 
@@ -322,14 +324,16 @@ mcp-tui prompt get <name> [args...]    # Get a prompt with arguments
 
 ### Global Options
 ```bash
---cmd string         # Command to run MCP server (for STDIO)
---args strings       # Arguments for server command (use multiple flags)
---url string         # URL for SSE/HTTP servers
---type string        # Transport type (stdio, sse, http)
+--url string         # URL for SSE servers (primary method)
+--type string        # Transport type (currently: sse)
 --timeout duration   # Connection timeout (default 30s)
 --debug             # Enable debug mode with detailed logging
 --log-level string  # Log level (debug, info, warn, error)
 --json              # Output results in JSON format
+
+# Legacy options (STDIO support coming back soon):
+--cmd string         # Command to run MCP server (not yet implemented)
+--args strings       # Arguments for server command (not yet implemented)
 ```
 
 ## 🔍 Error Handling & Debugging
