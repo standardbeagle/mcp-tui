@@ -163,12 +163,17 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		})
 
 	case "http":
-		// TODO: Implement HTTP transport wrapper 
-		return fmt.Errorf("HTTP transport not yet implemented with official SDK")
+		// For standard HTTP, use streamable HTTP transport
+		// This provides HTTP-based communication with MCP servers
+		transport = officialMCP.NewStreamableClientTransport(config.URL, &officialMCP.StreamableClientTransportOptions{
+			HTTPClient: nil, // Use default HTTP client
+		})
 
 	case "streamable-http":
-		// TODO: Implement streamable HTTP transport wrapper
-		return fmt.Errorf("Streamable HTTP transport not yet implemented with official SDK")
+		// Create streamable HTTP transport using official SDK
+		transport = officialMCP.NewStreamableClientTransport(config.URL, &officialMCP.StreamableClientTransportOptions{
+			HTTPClient: nil, // Use default HTTP client
+		})
 
 	case "playwright":
 		// Use SSE transport for Playwright (it uses SSE at /sse endpoint)
@@ -177,7 +182,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		})
 
 	default:
-		return fmt.Errorf("unsupported transport type '%s'\n\nSupported transport types:\n- 'sse': Connect via Server-Sent Events (HTTP streaming)\n\nMore transport types coming soon", config.Type)
+		return fmt.Errorf("unsupported transport type '%s'\n\nSupported transport types:\n- 'stdio': Connect via command execution (stdin/stdout)\n- 'sse': Connect via Server-Sent Events (HTTP streaming)\n- 'http': Connect via HTTP transport\n- 'streamable-http': Connect via streamable HTTP transport", config.Type)
 	}
 
 	// Connect to the server
