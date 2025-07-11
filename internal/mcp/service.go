@@ -109,11 +109,7 @@ func (s *service) createLoggingMiddleware() officialMCP.Middleware[*officialMCP.
 }
 
 // Connect establishes connection to MCP server using official SDK
-func (s *service) Connect(ctx context.Context, configInterface interface{}) error {
-	config, ok := configInterface.(*config.ConnectionConfig)
-	if !ok {
-		return fmt.Errorf("invalid config type")
-	}
+func (s *service) Connect(ctx context.Context, config *config.ConnectionConfig) error {
 	s.mu.Lock()
 	if s.client != nil || s.session != nil {
 		s.mu.Unlock()
