@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"sync"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/standardbeagle/mcp-tui/internal/config"
+	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 
@@ -109,7 +110,7 @@ func (s *service) createLoggingMiddleware() officialMCP.Middleware[*officialMCP.
 }
 
 // Connect establishes connection to MCP server using official SDK
-func (s *service) Connect(ctx context.Context, config *config.ConnectionConfig) error {
+func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfig) error {
 	s.mu.Lock()
 	if s.client != nil || s.session != nil {
 		s.mu.Unlock()
@@ -144,8 +145,16 @@ func (s *service) Connect(ctx context.Context, config *config.ConnectionConfig) 
 
 	switch config.Type {
 	case "stdio":
-		// TODO: Implement STDIO transport wrapper
-		return fmt.Errorf("STDIO transport not yet implemented with official SDK")
+		// Validate command for security before execution
+		if err := configPkg.ValidateCommand(config.Command, config.Args); err != nil {
+			return fmt.Errorf("command validation failed: %w", err)
+		}
+		
+		// Create command for STDIO transport
+		cmd := exec.Command(config.Command, config.Args...)
+		
+		// Create STDIO transport using official SDK
+		transport = officialMCP.NewCommandTransport(cmd)
 
 	case "sse":
 		// Create SSE transport
