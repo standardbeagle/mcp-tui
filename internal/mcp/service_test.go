@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -227,4 +228,40 @@ func TestServerInfo(t *testing.T) {
 	// Test that we get the same instance
 	info2 := service.GetServerInfo()
 	assert.Same(t, info, info2)
+}
+
+func TestSchemaErrorHandling(t *testing.T) {
+	tests := []struct {
+		name        string
+		errType     error
+		shouldMatch bool
+	}{
+		{
+			name:        "json syntax error",
+			errType:     &json.SyntaxError{},
+			shouldMatch: true,
+		},
+		{
+			name:        "json unmarshal type error",
+			errType:     &json.UnmarshalTypeError{},
+			shouldMatch: true,
+		},
+		{
+			name:        "generic error",
+			errType:     fmt.Errorf("generic error"),
+			shouldMatch: false,
+		},
+		{
+			name:        "nil error",
+			errType:     nil,
+			shouldMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isJSONError(tt.errType)
+			assert.Equal(t, tt.shouldMatch, result, "isJSONError should correctly identify JSON errors")
+		})
+	}
 }
