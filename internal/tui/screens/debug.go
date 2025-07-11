@@ -3,12 +3,14 @@ package screens
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 // DebugScreen shows debug logs and MCP protocol communication
@@ -16,7 +18,7 @@ type DebugScreen struct {
 	*BaseScreen
 
 	// UI state
-	activeTab     int // 0=general logs, 1=MCP protocol, 2=statistics
+	activeTab     int // 0=general logs, 1=MCP protocol, 2=HTTP debug, 3=statistics
 	selectedIndex int
 	scrollOffset  int
 	showDetail    bool // Show detailed view of selected MCP log
@@ -167,19 +169,19 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ds, func() tea.Msg { return BackMsg{} }
 
 	case "tab", "right":
-		ds.activeTab = (ds.activeTab + 1) % 3
+		ds.activeTab = (ds.activeTab + 1) % 4
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
 
 	case "shift+tab", "left":
-		ds.activeTab = (ds.activeTab - 1 + 3) % 3
+		ds.activeTab = (ds.activeTab - 1 + 4) % 4
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
 
 	case "up", "k":
-		if ds.activeTab != 2 { // Not in stats tab
+		if ds.activeTab != 3 { // Not in stats tab
 			currentList := ds.getCurrentList()
 			if len(currentList) > 0 {
 				if ds.selectedIndex > 0 {
@@ -191,7 +193,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ds, nil
 
 	case "down", "j":
-		if ds.activeTab != 2 { // Not in stats tab
+		if ds.activeTab != 3 { // Not in stats tab
 			currentList := ds.getCurrentList()
 			if len(currentList) > 0 {
 				if ds.selectedIndex < len(currentList)-1 {
@@ -234,7 +236,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "c":
 		// Clear logs (if not in a list, otherwise copy)
-		if ds.activeTab == 2 { // In stats tab
+		if ds.activeTab == 3 { // In stats tab
 			return ds, ds.clearLogsCmd()
 		}
 		// In log tabs, copy current item
@@ -246,7 +248,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "y":
 		// Copy current selected item to clipboard (vim-like)
-		if ds.activeTab != 2 { // Not in stats tab
+		if ds.activeTab != 3 { // Not in stats tab
 			return ds, ds.copySelectedItemCmd()
 		}
 		return ds, nil
@@ -269,6 +271,12 @@ func (ds *DebugScreen) getCurrentList() []string {
 		return ds.generalLogs
 	case 1:
 		return ds.mcpLogs
+	case 2:
+		// HTTP debug tab - return HTTP error summary if available
+		if httpInfo := mcp.GetLastHTTPError(); httpInfo != nil {
+			return []string{mcp.FormatHTTPError(httpInfo)}
+		}
+		return []string{"No HTTP debugging information available"}
 	default:
 		return []string{}
 	}
@@ -314,6 +322,8 @@ func (ds *DebugScreen) View() string {
 	case 1:
 		builder.WriteString(ds.renderLogList("MCP Protocol", ds.mcpLogs))
 	case 2:
+		builder.WriteString(ds.renderHTTPDebug())
+	case 3:
 		builder.WriteString(ds.renderStats())
 	}
 
@@ -349,6 +359,7 @@ func (ds *DebugScreen) renderTabs() string {
 	tabs := []string{
 		fmt.Sprintf("General (%d)", len(ds.generalLogs)),
 		fmt.Sprintf("MCP Protocol (%d)", len(ds.mcpLogs)),
+		"HTTP Debug",
 		"Statistics",
 	}
 
@@ -458,6 +469,66 @@ func (ds *DebugScreen) renderStats() string {
 	return builder.String()
 }
 
+// renderHTTPDebug renders HTTP debugging information
+func (ds *DebugScreen) renderHTTPDebug() string {
+	var builder strings.Builder
+
+	builder.WriteString("🌐 HTTP Transport Debug Information\n\n")
+
+	httpInfo := mcp.GetLastHTTPError()
+	if httpInfo == nil {
+		builder.WriteString("No HTTP requests captured yet.\n\n")
+		builder.WriteString("💡 Tips for HTTP debugging:\n")
+		builder.WriteString("• Enable debug mode with --debug flag\n")
+		builder.WriteString("• Try connecting to an SSE or HTTP transport\n")
+		builder.WriteString("• HTTP state is captured automatically for SSE connections\n")
+		return ds.logStyle.Render(builder.String())
+	}
+
+	// Format the detailed HTTP information
+	detailedInfo := mcp.FormatHTTPError(httpInfo)
+	builder.WriteString(detailedInfo)
+
+	// Add analysis if this looks like the SSE connection issue
+	if strings.Contains(httpInfo.ResponseBody, "connection closed") || 
+		strings.Contains(httpInfo.URL, "sse") {
+		builder.WriteString("\n🔍 SSE Connection Analysis:\n")
+		
+		if httpInfo.ConnectionDetails != nil {
+			conn := httpInfo.ConnectionDetails
+			if !conn.ConnectionReused {
+				builder.WriteString("• Fresh connection established (not reused)\n")
+			} else {
+				builder.WriteString(fmt.Sprintf("• Connection reused (idle: %v)\n", conn.IdleTime))
+			}
+			
+			totalTime := conn.DNSLookupTime + conn.ConnectTime + conn.TLSTime + conn.FirstByteTime
+			builder.WriteString(fmt.Sprintf("• Total connection time: %v\n", totalTime))
+			
+			if conn.FirstByteTime > 5*time.Second {
+				builder.WriteString("⚠️  Slow first byte time - server may be overloaded\n")
+			}
+		}
+		
+		if httpInfo.SSEInfo != nil {
+			sse := httpInfo.SSEInfo
+			builder.WriteString(fmt.Sprintf("• Stream duration: %v\n", sse.StreamDuration))
+			
+			if sse.StreamDuration < 100*time.Millisecond {
+				builder.WriteString("⚠️  Very short stream duration - connection dropped quickly\n")
+			}
+		}
+		
+		builder.WriteString("\n💡 Possible causes for SSE 'connection closed':\n")
+		builder.WriteString("• Server timeout - check server keepalive settings\n")
+		builder.WriteString("• Client HTTP timeout - default Go client may timeout\n")
+		builder.WriteString("• Network interruption or proxy interference\n")
+		builder.WriteString("• Server not sending proper SSE headers or heartbeat\n")
+	}
+
+	return ds.logStyle.Render(builder.String())
+}
+
 // refreshData refreshes the debug data from the loggers
 func (ds *DebugScreen) refreshData() {
 	// Get general logs
@@ -531,7 +602,11 @@ func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
 		}
 
 		// Show success message
-		tabName := []string{"general log", "MCP message"}[ds.activeTab]
+		tabNames := []string{"general log", "MCP message", "HTTP debug info", "statistics"}
+		tabName := "item"
+		if ds.activeTab < len(tabNames) {
+			tabName = tabNames[ds.activeTab]
+		}
 		message := fmt.Sprintf("Copied %s to clipboard", tabName)
 		ds.SetStatus(message, StatusSuccess)
 		return StatusMsg{Message: message, Level: StatusSuccess}
