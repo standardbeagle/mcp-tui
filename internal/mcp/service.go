@@ -256,8 +256,24 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 			// Convert InputSchema to map[string]interface{}
 			var inputSchemaMap map[string]interface{}
 			if tool.InputSchema != nil {
-				schemaJSON, _ := json.Marshal(tool.InputSchema)
-				json.Unmarshal(schemaJSON, &inputSchemaMap)
+				schemaJSON, err := json.Marshal(tool.InputSchema)
+				if err != nil {
+					debug.Error("Failed to marshal tool InputSchema", 
+						debug.F("tool", tool.Name),
+						debug.F("error", err))
+					// Continue with nil schema rather than failing entirely
+					inputSchemaMap = nil
+				} else {
+					err = json.Unmarshal(schemaJSON, &inputSchemaMap)
+					if err != nil {
+						debug.Error("Failed to unmarshal tool InputSchema", 
+							debug.F("tool", tool.Name),
+							debug.F("schemaJSON", string(schemaJSON)),
+							debug.F("error", err))
+						// Continue with nil schema rather than failing entirely
+						inputSchemaMap = nil
+					}
+				}
 			}
 			
 			tools = append(tools, Tool{
@@ -434,6 +450,12 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 			argumentsMap := make(map[string]interface{})
 			for _, arg := range prompt.Arguments {
 				if arg != nil {
+					// Validate argument name is not empty
+					if arg.Name == "" {
+						debug.Error("Prompt argument has empty name", 
+							debug.F("prompt", prompt.Name))
+						continue
+					}
 					argumentsMap[arg.Name] = map[string]interface{}{
 						"description": arg.Description,
 						"required":    arg.Required,
