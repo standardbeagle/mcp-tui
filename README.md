@@ -36,9 +36,10 @@ Stop struggling with curl commands, JSON formatting, and connection issues. MCP-
 
 ### Transport Support
 **Problem Solved:** Connect to MCP servers with reliable, standards-compliant transport
+- ✅ **STDIO transport** for local processes and command execution
 - ✅ **SSE (Server-Sent Events)** transport for web services and cloud deployments
-- 🚧 **STDIO transport** for local processes (coming soon in next release)
-- 🚧 **HTTP transport** for standard web APIs (coming soon in next release)
+- ✅ **HTTP transport** for standard web APIs and RESTful services
+- ✅ **Streamable HTTP** transport for advanced MCP protocol compliance
 - Built on official MCP Go SDK for maximum compatibility and protocol compliance
 
 ### Robust Error Handling
@@ -75,18 +76,24 @@ make install
 
 ### Instant Connection - Choose Your Style
 
-> **📝 Current Version Note**: This version uses the official MCP Go SDK and currently supports SSE transport. STDIO and HTTP support coming in the next release. For now, test with MCP servers that provide SSE endpoints.
+> **📝 Current Version Note**: This version uses the official MCP Go SDK and supports all major transport types: STDIO, SSE, HTTP, and Streamable HTTP. Command validation security ensures safe execution of STDIO commands.
 
 **🎯 Just Getting Started? Try This:**
 ```bash
-# Connect to MCP server via SSE (Server-Sent Events)
+# Connect to MCP server via STDIO (local process)
+mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
+
+# Or connect via SSE (Server-Sent Events) for web servers
 mcp-tui --url http://localhost:8000/sse
 ```
-*Why this works: Connects to any SSE-enabled MCP server, shows you everything it can do*
+*Why this works: STDIO connects to local processes, SSE connects to web servers*
 
 **🤖 Building Automation? Use CLI Mode:**
 ```bash
-# List all available tools via SSE
+# List all available tools via STDIO  
+mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool list
+
+# Or via SSE
 mcp-tui --url http://localhost:8000/sse tool list
 
 # Execute a specific tool with parameters

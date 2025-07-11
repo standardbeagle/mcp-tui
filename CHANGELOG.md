@@ -7,16 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **BREAKING**: Migrated from mark3labs/mcp-go to official modelcontextprotocol/go-sdk
-- **BREAKING**: Only SSE transport is currently supported (STDIO and HTTP coming soon)
-- **BREAKING**: Service interface now uses type-safe `*config.ConnectionConfig` parameter instead of `interface{}`
-
 ### Added
+- **NEW**: STDIO transport support for local process execution with command validation security
+- **NEW**: HTTP transport support for standard web APIs using StreamableClientTransport
+- **NEW**: Streamable HTTP transport for advanced MCP protocol compliance
+- **NEW**: Comprehensive command injection prevention with security validation
+- **NEW**: Complete transport test suite with validation coverage
 - Comprehensive error handling for JSON schema operations
 - Improved logging for schema conversion failures
 - Type safety enforcement for connection configuration
 - Missing `isJSONError` function for test compatibility
+
+### Changed
+- **BREAKING**: Migrated from mark3labs/mcp-go to official modelcontextprotocol/go-sdk
+- **COMPLETE**: All major transport types now supported (STDIO, SSE, HTTP, Streamable HTTP)
+- **BREAKING**: Service interface now uses type-safe `*config.ConnectionConfig` parameter instead of `interface{}`
+- Updated CLI help text to reflect all supported transport types
+- Enhanced error messages to show complete list of supported transports
+
+### Security
+- Added command validation to prevent command injection attacks in STDIO transport
+- Dangerous command patterns (`;`, `&&`, `|`, etc.) are automatically blocked
+- Path validation prevents directory traversal attacks
 
 ### Fixed
 - Critical compilation error in test suite
