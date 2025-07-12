@@ -33,6 +33,11 @@ type Service interface {
 	GetConnectionHealth() map[string]interface{}
 	ConfigureReconnection(maxAttempts int, delay time.Duration)
 	ConfigureHealthCheck(interval time.Duration)
+	
+	// Error handling and diagnostics
+	GetErrorStatistics() map[string]interface{}
+	GetErrorReport() map[string]interface{}
+	ResetErrorStatistics()
 }
 
 // Tool represents an MCP tool

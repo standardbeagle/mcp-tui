@@ -10,6 +10,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
@@ -70,6 +71,7 @@ type service struct {
 	debugMode       bool
 	transportFactory transports.TransportFactory
 	sessionManager  *session.Manager
+	errorHandler    *errors.ErrorHandler
 }
 
 
@@ -119,6 +121,11 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// Initialize session manager if not already done
 	if s.sessionManager == nil {
 		s.sessionManager = session.NewManager()
+	}
+	
+	// Initialize error handler if not already done
+	if s.errorHandler == nil {
+		s.errorHandler = errors.NewErrorHandler()
 	}
 	
 	// Check if already connected
@@ -250,7 +257,14 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 	var tools []Tool
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {
-			return nil, fmt.Errorf("failed to iterate tools from MCP server: %w", err)
+			// Classify and handle the error
+			classified := s.errorHandler.HandleError(ctx, err, "list_tools", map[string]interface{}{
+				"session_id": session.ID(),
+			})
+			
+			// Return user-friendly error
+			userError := s.errorHandler.CreateUserFriendlyError(classified)
+			return nil, fmt.Errorf("failed to iterate tools from MCP server: %w", userError)
 		}
 		
 		if tool != nil {
@@ -617,5 +631,85 @@ func (s *service) ConfigureHealthCheck(interval time.Duration) {
 	
 	if s.sessionManager != nil {
 		s.sessionManager.SetHealthCheckInterval(interval)
+	}
+}
+
+// GetErrorStatistics returns error handling statistics
+func (s *service) GetErrorStatistics() map[string]interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager == nil {
+		return map[string]interface{}{
+			"error": "no session manager available",
+		}
+	}
+	
+	stats := s.sessionManager.GetErrorStatistics()
+	if stats == nil {
+		return map[string]interface{}{
+			"error": "no error statistics available",
+		}
+	}
+	
+	// Convert to map for JSON serialization
+	result := map[string]interface{}{
+		"total_errors":       stats.TotalErrors,
+		"recoverable_errors": stats.RecoverableErrors,
+		"retry_attempts":     stats.RetryAttempts,
+		"start_time":         stats.StartTime.Format(time.RFC3339),
+		"uptime":            time.Since(stats.StartTime).String(),
+	}
+	
+	// Convert enum keys to strings
+	if len(stats.ErrorsByCategory) > 0 {
+		categories := make(map[string]int)
+		for category, count := range stats.ErrorsByCategory {
+			categories[category.String()] = count
+		}
+		result["errors_by_category"] = categories
+	}
+	
+	if len(stats.ErrorsBySeverity) > 0 {
+		severities := make(map[string]int)
+		for severity, count := range stats.ErrorsBySeverity {
+			severities[severity.String()] = count
+		}
+		result["errors_by_severity"] = severities
+	}
+	
+	if stats.LastError != nil {
+		result["last_error"] = map[string]interface{}{
+			"category":    stats.LastError.Category.String(),
+			"severity":    stats.LastError.Severity.String(),
+			"message":     stats.LastError.Message,
+			"recoverable": stats.LastError.Recoverable,
+		}
+	}
+	
+	return result
+}
+
+// GetErrorReport returns a detailed error report
+func (s *service) GetErrorReport() map[string]interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager == nil {
+		return map[string]interface{}{
+			"error": "no session manager available",
+		}
+	}
+	
+	return s.sessionManager.GetErrorReport()
+}
+
+// ResetErrorStatistics clears error statistics
+func (s *service) ResetErrorStatistics() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager != nil {
+		s.sessionManager.ResetErrorStatistics()
 	}
 }

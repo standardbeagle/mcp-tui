@@ -8,6 +8,7 @@ import (
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
@@ -46,7 +47,7 @@ func (s State) String() string {
 type Info struct {
 	State           State
 	ConnectedAt     time.Time
-	LastError       error
+	LastError       *errors.ClassifiedError
 	ReconnectCount  int
 	TransportType   transports.TransportType
 	ServerInfo      map[string]interface{}
@@ -67,6 +68,9 @@ type Manager struct {
 	maxReconnectAttempts int
 	reconnectDelay       time.Duration
 	healthCheckInterval  time.Duration
+	
+	// Error handling
+	errorHandler *errors.ErrorHandler
 }
 
 // NewManager creates a new session manager
@@ -78,6 +82,7 @@ func NewManager() *Manager {
 		maxReconnectAttempts: 3,
 		reconnectDelay:       2 * time.Second,
 		healthCheckInterval:  30 * time.Second,
+		errorHandler:         errors.NewErrorHandler(),
 	}
 }
 
@@ -112,10 +117,19 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 	// Attempt connection
 	session, err := client.Connect(connectCtx, transport)
 	if err != nil {
+		// Classify and handle the error
+		classified := m.errorHandler.HandleError(connectCtx, err, "session_connect", map[string]interface{}{
+			"transport_type": transportType,
+			"state": "connecting",
+		})
+		
 		m.setState(StateFailed)
-		m.info.LastError = err
+		m.info.LastError = classified
 		cancel()
-		return fmt.Errorf("session connection failed: %w", err)
+		
+		// Return user-friendly error
+		userError := m.errorHandler.CreateUserFriendlyError(classified)
+		return fmt.Errorf("session connection failed: %w", userError)
 	}
 	
 	// Successfully connected
@@ -261,6 +275,42 @@ func (m *Manager) SetHealthCheckInterval(interval time.Duration) {
 		debug.F("interval", interval))
 }
 
+// GetErrorStatistics returns error handling statistics
+func (m *Manager) GetErrorStatistics() *errors.ErrorStatistics {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	if m.errorHandler == nil {
+		return nil
+	}
+	
+	return m.errorHandler.GetStatistics()
+}
+
+// GetErrorReport returns a detailed error report
+func (m *Manager) GetErrorReport() map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	if m.errorHandler == nil {
+		return map[string]interface{}{
+			"error": "no error handler available",
+		}
+	}
+	
+	return m.errorHandler.GetErrorReport()
+}
+
+// ResetErrorStatistics clears error statistics
+func (m *Manager) ResetErrorStatistics() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	if m.errorHandler != nil {
+		m.errorHandler.ResetStatistics()
+	}
+}
+
 // IsConnected returns true if session is currently connected
 func (m *Manager) IsConnected() bool {
 	m.mu.RLock()
@@ -335,21 +385,29 @@ func (m *Manager) handleConnectionFailure(err error) {
 		return // Already handling failure or not connected
 	}
 	
-	debug.Error("Session manager: Connection failure detected", debug.F("error", err))
+	// Classify the error
+	classified := m.errorHandler.HandleError(context.Background(), err, "health_check", map[string]interface{}{
+		"transport_type": m.info.TransportType,
+		"state": "connected",
+		"session_id": m.info.SessionID,
+	})
 	
-	// Check if we should attempt reconnection
-	if m.info.ReconnectCount >= m.maxReconnectAttempts {
-		debug.Error("Session manager: Max reconnection attempts reached", 
+	debug.Error("Session manager: Connection failure detected", debug.F("classified", classified.Category))
+	
+	// Check if we should attempt reconnection based on error classification
+	if m.info.ReconnectCount >= m.maxReconnectAttempts || !classified.Recoverable {
+		debug.Error("Session manager: Cannot reconnect", 
 			debug.F("attempts", m.info.ReconnectCount),
-			debug.F("maxAttempts", m.maxReconnectAttempts))
+			debug.F("maxAttempts", m.maxReconnectAttempts),
+			debug.F("recoverable", classified.Recoverable))
 		m.setState(StateFailed)
-		m.info.LastError = fmt.Errorf("max reconnection attempts reached: %w", err)
+		m.info.LastError = classified
 		return
 	}
 	
 	// Mark as reconnecting and attempt reconnection
 	m.setState(StateReconnecting)
-	m.info.LastError = err
+	m.info.LastError = classified
 	m.info.ReconnectCount++
 	
 	// Start reconnection attempt in background
@@ -374,8 +432,13 @@ func (m *Manager) attemptReconnection() {
 	if client == nil || transport == nil || contextStrategy == nil {
 		debug.Error("Session manager: Cannot reconnect - missing connection components")
 		m.mu.Lock()
+		// Create classified error for missing components
+		err := fmt.Errorf("reconnection failed: missing connection components")
+		classified := m.errorHandler.HandleError(context.Background(), err, "session_reconnect", map[string]interface{}{
+			"reason": "missing_connection_components",
+		})
 		m.setState(StateFailed)
-		m.info.LastError = fmt.Errorf("reconnection failed: missing connection components")
+		m.info.LastError = classified
 		m.mu.Unlock()
 		return
 	}
@@ -387,17 +450,25 @@ func (m *Manager) attemptReconnection() {
 	// Try to reconnect
 	session, err := client.Connect(connectCtx, transport)
 	if err != nil {
+		// Classify reconnection error
+		classified := m.errorHandler.HandleError(connectCtx, err, "session_reconnect", map[string]interface{}{
+			"transport_type": m.info.TransportType,
+			"attempt": m.info.ReconnectCount,
+		})
+		
 		debug.Error("Session manager: Reconnection failed", 
 			debug.F("attempt", m.info.ReconnectCount),
-			debug.F("error", err))
+			debug.F("category", classified.Category),
+			debug.F("recoverable", classified.Recoverable))
 		
 		m.mu.Lock()
-		if m.info.ReconnectCount >= m.maxReconnectAttempts {
+		if m.info.ReconnectCount >= m.maxReconnectAttempts || !classified.Recoverable {
 			m.setState(StateFailed)
-			m.info.LastError = fmt.Errorf("reconnection failed after %d attempts: %w", m.info.ReconnectCount, err)
+			m.info.LastError = classified
 		} else {
 			// Will try again on next health check failure
 			m.setState(StateConnected) // Revert to connected to allow retry
+			m.info.LastError = classified
 		}
 		m.mu.Unlock()
 		cancel()
