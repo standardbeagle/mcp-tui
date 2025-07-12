@@ -44,6 +44,10 @@ type Service interface {
 	GetRecentEvents(count int) interface{}
 	ExportEvents() ([]byte, error)
 	ClearEvents()
+	
+	// Configuration management
+	GetConfiguration() map[string]interface{}
+	UpdateConfiguration(config map[string]interface{}) error
 }
 
 // Tool represents an MCP tool

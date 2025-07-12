@@ -18,6 +18,11 @@ const (
 	TransportStreamableHTTP   TransportType = "streamable-http"
 )
 
+// String returns the string representation of the transport type
+func (t TransportType) String() string {
+	return string(t)
+}
+
 // TransportConfig holds the configuration for creating transports
 type TransportConfig struct {
 	Type TransportType

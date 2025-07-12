@@ -14,6 +14,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
+	. "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 )
 
 // Helper functions for MCP logging
@@ -73,6 +74,7 @@ type service struct {
 	transportFactory transports.TransportFactory
 	sessionManager  *session.Manager
 	errorHandler    *errors.ErrorHandler
+	config          *UnifiedConfig // Add unified configuration
 }
 
 
@@ -119,6 +121,22 @@ func (s *service) createLoggingMiddleware() officialMCP.Middleware[*officialMCP.
 	}
 }
 
+// NewServiceWithConfig creates a new MCP service with unified configuration
+func NewServiceWithConfig(config *UnifiedConfig) Service {
+	if config == nil {
+		config = Default()
+	}
+	
+	return &service{
+		info: &ServerInfo{
+			Connected: false,
+			Capabilities: make(map[string]interface{}),
+		},
+		debugMode: config.Debug.Enabled,
+		config:    config,
+	}
+}
+
 // Connect establishes connection to MCP server using official SDK
 func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfig) error {
 	s.mu.Lock()
@@ -127,6 +145,16 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// Initialize session manager if not already done
 	if s.sessionManager == nil {
 		s.sessionManager = session.NewManager()
+		
+		// Configure session manager based on unified config
+		if s.config != nil {
+			s.sessionManager.SetDebugEnabled(s.config.Debug.Enabled)
+			s.sessionManager.SetReconnectionPolicy(
+				s.config.Session.MaxReconnectAttempts,
+				s.config.Session.ReconnectDelay,
+			)
+			s.sessionManager.SetHealthCheckInterval(s.config.Session.HealthCheckInterval)
+		}
 	}
 	
 	// Initialize error handler if not already done
@@ -788,4 +816,72 @@ func (s *service) ClearEvents() {
 	if s.sessionManager != nil {
 		s.sessionManager.ClearEvents()
 	}
+}
+
+// GetConfiguration returns the current unified configuration
+func (s *service) GetConfiguration() map[string]interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.config == nil {
+		return map[string]interface{}{
+			"error": "no configuration available",
+		}
+	}
+	
+	// Convert config to map for JSON serialization
+	configJSON, err := json.Marshal(s.config)
+	if err != nil {
+		return map[string]interface{}{
+			"error": fmt.Sprintf("failed to serialize configuration: %v", err),
+		}
+	}
+	
+	var configMap map[string]interface{}
+	if err := json.Unmarshal(configJSON, &configMap); err != nil {
+		return map[string]interface{}{
+			"error": fmt.Sprintf("failed to deserialize configuration: %v", err),
+		}
+	}
+	
+	return configMap
+}
+
+// UpdateConfiguration updates the service configuration
+func (s *service) UpdateConfiguration(configMap map[string]interface{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// Convert map to JSON and then to UnifiedConfig
+	configJSON, err := json.Marshal(configMap)
+	if err != nil {
+		return fmt.Errorf("failed to serialize configuration: %w", err)
+	}
+	
+	newConfig := &UnifiedConfig{}
+	if err := json.Unmarshal(configJSON, newConfig); err != nil {
+		return fmt.Errorf("failed to deserialize configuration: %w", err)
+	}
+	
+	// Validate the new configuration
+	if err := newConfig.Validate(); err != nil {
+		return fmt.Errorf("configuration validation failed: %w", err)
+	}
+	
+	// Apply configuration changes
+	oldDebugMode := s.debugMode
+	s.config = newConfig
+	s.debugMode = newConfig.Debug.Enabled
+	
+	// Update session manager if debug mode changed
+	if oldDebugMode != s.debugMode && s.sessionManager != nil {
+		s.sessionManager.SetDebugEnabled(s.debugMode)
+	}
+	
+	// Update HTTP debugging if mode changed
+	if oldDebugMode != s.debugMode {
+		EnableHTTPDebugging(s.debugMode)
+	}
+	
+	return nil
 }
