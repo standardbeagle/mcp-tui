@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "defaultServer": "everything",
+  "servers": {
+    "everything": {
+      "id": "everything",
+      "name": "Everything Server",
+      "description": "Official MCP server with everything for testing",
+      "icon": "🌟",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything", "stdio"],
+      "success": false
+    }
+  }
+}

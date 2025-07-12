@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/tui/models"
 	"github.com/standardbeagle/mcp-tui/internal/tui/screens"
 )
 
@@ -32,11 +33,50 @@ func NewScreenManager(cfg *config.Config, connConfig *config.ConnectionConfig) *
 		// Quick connect mode - go directly to main screen
 		sm.currentScreen = screens.NewMainScreen(cfg, connConfig)
 	} else {
-		// Interactive mode - start with connection screen
-		sm.currentScreen = screens.NewConnectionScreen(cfg)
+		// Check for auto-connect scenarios
+		autoConnectConfig := sm.checkAutoConnect()
+		if autoConnectConfig != nil {
+			sm.logger.Info("Auto-connecting to saved connection",
+				debug.F("transport", autoConnectConfig.Type),
+				debug.F("command", autoConnectConfig.Command),
+				debug.F("url", autoConnectConfig.URL))
+			sm.currentScreen = screens.NewMainScreen(cfg, autoConnectConfig)
+		} else {
+			// Interactive mode - start with connection screen
+			sm.currentScreen = screens.NewConnectionScreen(cfg)
+		}
 	}
 
 	return sm
+}
+
+// checkAutoConnect checks if we should auto-connect to a saved connection
+func (sm *ScreenManager) checkAutoConnect() *config.ConnectionConfig {
+	// Create connections manager and try to load connections
+	connectionsManager := models.NewConnectionsManager()
+	if err := connectionsManager.LoadConnections(); err != nil {
+		sm.logger.Debug("Could not load connections for auto-connect check", debug.F("error", err))
+		return nil
+	}
+
+	// Check if auto-connect should happen
+	if !connectionsManager.ShouldAutoConnect() {
+		return nil
+	}
+
+	// Get the auto-connect entry
+	entry := connectionsManager.GetAutoConnectEntry()
+	if entry == nil {
+		sm.logger.Debug("No auto-connect entry found despite ShouldAutoConnect returning true")
+		return nil
+	}
+
+	sm.logger.Info("Found auto-connect configuration",
+		debug.F("name", entry.Name),
+		debug.F("transport", entry.Transport))
+
+	// Convert to connection config and return
+	return entry.ToConnectionConfig()
 }
 
 // Init initializes the screen manager

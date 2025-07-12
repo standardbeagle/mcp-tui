@@ -246,6 +246,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ms.tools = msg.Items
 				ms.toolCount = msg.ActualCount
 			}
+			ms.ensureInitialFocus(0)
 		case 1: // Resources
 			ms.resourcesLoading = false
 			if msg.Error != nil {
@@ -255,6 +256,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ms.resources = msg.Items
 				ms.resourceCount = msg.ActualCount
 			}
+			ms.ensureInitialFocus(1)
 		case 2: // Prompts
 			ms.promptsLoading = false
 			if msg.Error != nil {
@@ -264,6 +266,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ms.prompts = msg.Items
 				ms.promptCount = msg.ActualCount
 			}
+			ms.ensureInitialFocus(2)
 		case 3: // Events
 			ms.eventsLoading = false
 			// Re-fetch events from logger
@@ -278,6 +281,7 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ms.events = events
 				ms.eventCount = len(events)
 			}
+			ms.ensureInitialFocus(3)
 		}
 		return ms, nil
 
@@ -361,10 +365,12 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "tab":
 		ms.activeTab = (ms.activeTab + 1) % 4
+		ms.ensureInitialFocus(ms.activeTab)
 		return ms, nil
 
 	case "shift+tab":
 		ms.activeTab = (ms.activeTab - 1 + 4) % 4
+		ms.ensureInitialFocus(ms.activeTab)
 		return ms, nil
 
 	case "right":
@@ -459,6 +465,52 @@ func (ms *MainScreen) getCurrentList() []string {
 // getActualItemCount returns the actual number of items (excluding placeholder messages)
 func (ms *MainScreen) getActualItemCount() int {
 	switch ms.activeTab {
+	case 0:
+		return ms.toolCount
+	case 1:
+		return ms.resourceCount
+	case 2:
+		return ms.promptCount
+	case 3:
+		return ms.eventCount
+	default:
+		return 0
+	}
+}
+
+// ensureInitialFocus ensures that a tab has an initial focus set when items are loaded
+func (ms *MainScreen) ensureInitialFocus(tabIndex int) {
+	// Only set initial focus if the tab doesn't already have a selection
+	if _, exists := ms.selectedIndex[tabIndex]; !exists {
+		// Get the current list for this tab
+		var currentList []string
+		switch tabIndex {
+		case 0:
+			currentList = ms.tools
+		case 1:
+			currentList = ms.resources
+		case 2:
+			currentList = ms.prompts
+		case 3:
+			// For events, we need to handle the actual events list
+			currentList = make([]string, len(ms.events))
+		default:
+			return
+		}
+
+		// Set initial focus to first item if list is not empty and has actual content
+		if len(currentList) > 0 && ms.getActualItemCountForTab(tabIndex) > 0 {
+			ms.selectedIndex[tabIndex] = 0
+			ms.logger.Debug("Set initial focus for tab", 
+				debug.F("tab", tabIndex), 
+				debug.F("items", len(currentList)))
+		}
+	}
+}
+
+// getActualItemCountForTab returns the actual item count for a specific tab
+func (ms *MainScreen) getActualItemCountForTab(tabIndex int) int {
+	switch tabIndex {
 	case 0:
 		return ms.toolCount
 	case 1:
