@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
-	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
@@ -214,7 +213,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Find the specific tool
-	var foundTool *gomcp.Tool
+	var foundTool *mcp.Tool
 	for _, tool := range tools {
 		if tool.Name == toolName {
 			foundTool = &tool
@@ -255,7 +254,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display input schema if available
-	if foundTool.InputSchema.Type != "" || foundTool.InputSchema.Properties != nil {
+	if foundTool.InputSchema != nil && len(foundTool.InputSchema) > 0 {
 		fmt.Println()
 		fmt.Println(labelStyle.Render("Input Schema:"))
 
@@ -350,9 +349,9 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		}
 
 		// Handle different content types
-		if textContent, ok := gomcp.AsTextContent(content); ok {
+		if content.Type == "text" {
 			// Try to pretty-print JSON if detected
-			text := textContent.Text
+			text := content.Text
 			if formatted := tryFormatJSON(text); formatted != "" {
 				fmt.Println(formatted)
 			} else {

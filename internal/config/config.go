@@ -41,9 +41,10 @@ func Default() *Config {
 type TransportType string
 
 const (
-	TransportStdio = TransportType("stdio")
-	TransportSSE   = TransportType("sse")
-	TransportHTTP  = TransportType("http")
+	TransportStdio          = TransportType("stdio")
+	TransportSSE            = TransportType("sse") 
+	TransportHTTP           = TransportType("http")
+	TransportStreamableHTTP = TransportType("streamable-http")
 )
 
 // ConnectionConfig holds connection-specific settings

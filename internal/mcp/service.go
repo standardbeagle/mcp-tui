@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"sync"
+	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
 // Helper functions for MCP logging
@@ -62,12 +64,12 @@ func logMCPNotification(method string, params interface{}) {
 
 // service implements the Service interface using the official MCP Go SDK
 type service struct {
-	client    *officialMCP.Client
-	session   *officialMCP.ClientSession
-	info      *ServerInfo
-	requestID int
-	mu        sync.Mutex
-	debugMode bool
+	info            *ServerInfo
+	requestID       int
+	mu              sync.Mutex
+	debugMode       bool
+	transportFactory transports.TransportFactory
+	sessionManager  *session.Manager
 }
 
 
@@ -112,11 +114,17 @@ func (s *service) createLoggingMiddleware() officialMCP.Middleware[*officialMCP.
 // Connect establishes connection to MCP server using official SDK
 func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfig) error {
 	s.mu.Lock()
-	if s.client != nil || s.session != nil {
-		s.mu.Unlock()
+	defer s.mu.Unlock()
+	
+	// Initialize session manager if not already done
+	if s.sessionManager == nil {
+		s.sessionManager = session.NewManager()
+	}
+	
+	// Check if already connected
+	if s.sessionManager.IsConnected() {
 		return fmt.Errorf("already connected to MCP server - disconnect first before connecting to a new server")
 	}
-	s.mu.Unlock()
 
 	// Create implementation info
 	impl := &officialMCP.Implementation{
@@ -140,55 +148,30 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		client.AddSendingMiddleware(s.createLoggingMiddleware())
 	}
 
-	var transport officialMCP.Transport
-	var err error
-
-	switch config.Type {
-	case "stdio":
-		// Validate command for security before execution
-		if err := configPkg.ValidateCommand(config.Command, config.Args); err != nil {
-			return fmt.Errorf("command validation failed: %w", err)
-		}
-		
-		// Create command for STDIO transport
-		cmd := exec.Command(config.Command, config.Args...)
-		
-		// Create STDIO transport using official SDK
-		transport = officialMCP.NewCommandTransport(cmd)
-
-	case "sse":
-		// Create SSE transport
-		transport = officialMCP.NewSSEClientTransport(config.URL, &officialMCP.SSEClientTransportOptions{
-			HTTPClient: nil, // Use default HTTP client
-		})
-
-	case "http":
-		// For standard HTTP, use streamable HTTP transport
-		// This provides HTTP-based communication with MCP servers
-		transport = officialMCP.NewStreamableClientTransport(config.URL, &officialMCP.StreamableClientTransportOptions{
-			HTTPClient: nil, // Use default HTTP client
-		})
-
-	case "streamable-http":
-		// Create streamable HTTP transport using official SDK
-		transport = officialMCP.NewStreamableClientTransport(config.URL, &officialMCP.StreamableClientTransportOptions{
-			HTTPClient: nil, // Use default HTTP client
-		})
-
-	case "playwright":
-		// Use SSE transport for Playwright (it uses SSE at /sse endpoint)
-		transport = officialMCP.NewSSEClientTransport(config.URL, &officialMCP.SSEClientTransportOptions{
-			HTTPClient: nil, // Use default HTTP client
-		})
-
-	default:
-		return fmt.Errorf("unsupported transport type '%s'\n\nSupported transport types:\n- 'stdio': Connect via command execution (stdin/stdout)\n- 'sse': Connect via Server-Sent Events (HTTP streaming)\n- 'http': Connect via HTTP transport\n- 'streamable-http': Connect via streamable HTTP transport", config.Type)
+	// Initialize transport factory if not already done
+	if s.transportFactory == nil {
+		s.transportFactory = transports.NewFactory()
 	}
 
-	// Connect to the server
-	session, err := client.Connect(ctx, transport)
+	// Convert to new transport config format
+	transportConfig := transports.FromConnectionConfig(config, s.debugMode, 30*time.Second)
+	
+	// Create transport using factory
+	transport, contextStrategy, err := s.transportFactory.CreateTransport(transportConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create transport: %w", err)
+	}
+	
+	// Use session manager to establish connection
+	err = s.sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type)
 	if err != nil {
 		return fmt.Errorf("failed to connect to MCP server: %w", err)
+	}
+	
+	// Get session from manager for server info
+	session := s.sessionManager.GetSession()
+	if session == nil {
+		return fmt.Errorf("session manager connected but no session available")
 	}
 
 	// Get server information from the session's initialize result
@@ -201,15 +184,11 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// For now, we'll use the session ID and other available info
 	sessionID := session.ID()
 	
-	// Store the client and session
-	s.mu.Lock()
-	s.client = client
-	s.session = session
+	// Update server info
 	s.info.Connected = true
 	s.info.Name = serverInfo
 	s.info.Version = serverVersion
 	s.info.ProtocolVersion = protocolVersion
-	s.mu.Unlock()
 
 	debug.Info("Successfully connected using official MCP Go SDK", 
 		debug.F("transport", config.Type),
@@ -226,18 +205,17 @@ func (s *service) Disconnect() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	if s.session == nil {
+	if s.sessionManager == nil {
 		return nil // Already disconnected
 	}
 
-	// Close the session
-	if err := s.session.Close(); err != nil {
-		return fmt.Errorf("failed to close connection to MCP server '%s': %w", s.info.Name, err)
+	// Use session manager to cleanly disconnect
+	if err := s.sessionManager.Disconnect(); err != nil {
+		debug.Error("Session manager disconnect failed", debug.F("error", err))
+		// Continue with cleanup even if disconnect failed
 	}
 
-	// Cleanup
-	s.client = nil
-	s.session = nil
+	// Update server info
 	s.info.Connected = false
 	return nil
 }
@@ -246,7 +224,12 @@ func (s *service) Disconnect() error {
 func (s *service) IsConnected() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.session != nil && s.info.Connected
+	
+	if s.sessionManager == nil {
+		return false
+	}
+	
+	return s.sessionManager.IsConnected() && s.info.Connected
 }
 
 // ListTools returns available tools using the official SDK's natural iterator pattern
@@ -256,8 +239,12 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 	}
 
 	s.mu.Lock()
-	session := s.session
+	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
+	
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
 
 	// Use the natural iterator pattern - automatically handles pagination
 	var tools []Tool
@@ -311,8 +298,12 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 	}
 
 	s.mu.Lock()
-	session := s.session
+	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
+	
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
 
 	// Convert arguments to the format expected by official SDK
 	params := &officialMCP.CallToolParams{
@@ -377,8 +368,12 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 	}
 
 	s.mu.Lock()
-	session := s.session
+	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
+	
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
 
 	// Use the natural iterator pattern - automatically handles pagination
 	var resources []Resource
@@ -410,8 +405,12 @@ func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceConte
 	}
 
 	s.mu.Lock()
-	session := s.session
+	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
+	
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
 
 	params := &officialMCP.ReadResourceParams{
 		URI: uri,
@@ -449,8 +448,12 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 	}
 
 	s.mu.Lock()
-	session := s.session
+	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
+	
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
 
 	// Use the natural iterator pattern - automatically handles pagination
 	var prompts []Prompt
@@ -498,8 +501,12 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 	}
 
 	s.mu.Lock()
-	session := s.session
+	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
+	
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
 
 	// Convert arguments to string map
 	arguments := make(map[string]string)

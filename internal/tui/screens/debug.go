@@ -489,10 +489,15 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 	detailedInfo := mcp.FormatHTTPError(httpInfo)
 	builder.WriteString(detailedInfo)
 
-	// Add analysis if this looks like the SSE connection issue
-	if strings.Contains(httpInfo.ResponseBody, "connection closed") || 
-		strings.Contains(httpInfo.URL, "sse") {
-		builder.WriteString("\n🔍 SSE Connection Analysis:\n")
+	// Add analysis for connection issues
+	isSSERequest := strings.Contains(httpInfo.URL, "sse") || 
+		strings.Contains(httpInfo.Headers["Accept"], "text/event-stream")
+	hasConnectionError := strings.Contains(httpInfo.ResponseBody, "connection") ||
+		strings.Contains(httpInfo.ResponseBody, "context") ||
+		httpInfo.StatusCode == 0
+		
+	if isSSERequest || hasConnectionError {
+		builder.WriteString("\n🔍 Connection Analysis:\n")
 		
 		if httpInfo.ConnectionDetails != nil {
 			conn := httpInfo.ConnectionDetails
@@ -508,6 +513,14 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 			if conn.FirstByteTime > 5*time.Second {
 				builder.WriteString("⚠️  Slow first byte time - server may be overloaded\n")
 			}
+			
+			// Analyze specific timing issues
+			if conn.DNSLookupTime > 1*time.Second {
+				builder.WriteString("⚠️  Slow DNS lookup - check DNS configuration\n")
+			}
+			if conn.ConnectTime > 3*time.Second {
+				builder.WriteString("⚠️  Slow TCP connection - network or server issues\n")
+			}
 		}
 		
 		if httpInfo.SSEInfo != nil {
@@ -519,11 +532,29 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 			}
 		}
 		
-		builder.WriteString("\n💡 Possible causes for SSE 'connection closed':\n")
-		builder.WriteString("• Server timeout - check server keepalive settings\n")
-		builder.WriteString("• Client HTTP timeout - default Go client may timeout\n")
-		builder.WriteString("• Network interruption or proxy interference\n")
-		builder.WriteString("• Server not sending proper SSE headers or heartbeat\n")
+		// Error-specific analysis
+		if httpInfo.StatusCode == 0 {
+			builder.WriteString("\n🚨 Connection Failed Before Response:\n")
+			if strings.Contains(httpInfo.ResponseBody, "context deadline exceeded") {
+				builder.WriteString("• Client timeout - increase --timeout flag\n")
+			} else if strings.Contains(httpInfo.ResponseBody, "context canceled") {
+				builder.WriteString("• Request was canceled - check if server is running\n")
+			} else if strings.Contains(httpInfo.ResponseBody, "connection refused") {
+				builder.WriteString("• Server not listening on specified port\n")
+			} else if strings.Contains(httpInfo.ResponseBody, "no such host") {
+				builder.WriteString("• DNS resolution failed - check hostname\n")
+			}
+		}
+		
+		builder.WriteString("\n💡 Troubleshooting steps:\n")
+		if isSSERequest {
+			builder.WriteString("• For SSE: Check server sends proper headers (Content-Type: text/event-stream)\n")
+			builder.WriteString("• Verify server implements SSE heartbeat/keepalive\n")
+		}
+		builder.WriteString("• Try: curl -v http://localhost:5001/sse to test server directly\n")
+		builder.WriteString("• Check server logs for connection errors\n")
+		builder.WriteString("• Increase timeout: --timeout 60s\n")
+		builder.WriteString("• Test with different transport: --transport http\n")
 	}
 
 	return ds.logStyle.Render(builder.String())

@@ -207,10 +207,26 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	// Execute the request
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
+		// Even on failure, capture the connection details for debugging
+		headers := make(map[string]string)
+		errorInfo := &HTTPErrorInfo{
+			Timestamp:         time.Now(),
+			Method:           req.Method,
+			URL:              req.URL.String(),
+			StatusCode:       0, // No response received
+			RequestBody:      string(requestBody),
+			ResponseBody:     fmt.Sprintf("HTTP Request Failed: %v", err),
+			Headers:          headers,
+			ConnectionDetails: connInfo,
+		}
+		
+		setLastHTTPError(errorInfo)
+		
 		if t.debugMode {
 			debug.Error("HTTP request failed", 
 				debug.F("url", req.URL.String()),
 				debug.F("error", err),
+				debug.F("errorType", fmt.Sprintf("%T", err)),
 				debug.F("connectionDetails", connInfo))
 		}
 		return nil, err
