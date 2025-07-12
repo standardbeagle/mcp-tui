@@ -1,84 +1,166 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to MCP-TUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2024-07-12
 
-### Added
-- **NEW**: STDIO transport support for local process execution with command validation security
-- **NEW**: HTTP transport support for standard web APIs using StreamableClientTransport
-- **NEW**: Streamable HTTP transport for advanced MCP protocol compliance
-- **NEW**: Comprehensive command injection prevention with security validation
-- **NEW**: Complete transport test suite with validation coverage
-- Comprehensive error handling for JSON schema operations
-- Improved logging for schema conversion failures
-- Type safety enforcement for connection configuration
-- Missing `isJSONError` function for test compatibility
+### 🚀 Major Features Added
 
-### Changed
-- **BREAKING**: Migrated from mark3labs/mcp-go to official modelcontextprotocol/go-sdk
-- **COMPLETE**: All major transport types now supported (STDIO, SSE, HTTP, Streamable HTTP)
-- **BREAKING**: Service interface now uses type-safe `*config.ConnectionConfig` parameter instead of `interface{}`
-- Updated CLI help text to reflect all supported transport types
-- Enhanced error messages to show complete list of supported transports
+#### Revolutionary UI Navigation System
+- **Tabbed Interface**: Visual tabs for Saved, Discovery, and Manual modes with arrow key navigation
+- **File Discovery**: Automatically finds Claude Desktop, VS Code MCP, and MCP-TUI configuration files
+- **Combined Command Input**: Default single-line input for commands like "brum --mcp" (toggle with 'C')
+- **Smart Auto-Connect**: Automatically connects to single servers or default server configurations
 
-### Security
-- Added command validation to prevent command injection attacks in STDIO transport
-- Dangerous command patterns (`;`, `&&`, `|`, etc.) are automatically blocked
-- Path validation prevents directory traversal attacks
+#### Enhanced Connection Management
+- **Saved Connections**: Visual connection cards with icons, descriptions, and tagging
+- **Configuration Compatibility**: Support for Claude Desktop, VS Code MCP, and native formats
+- **Server Enumeration**: Display individual server names and descriptions from discovered files
+- **Recent Connections**: Track connection history and success rates
 
-### Fixed
-- Critical compilation error in test suite
-- Unsafe interface{} parameter replaced with type-safe alternative
-- JSON schema conversion now gracefully handles errors
-- Prompt argument validation to prevent empty names
+#### Improved User Experience
+- **Input Priority**: Form fields take precedence over UI navigation keys
+- **Visual Focus Management**: Clear focus indicators and consistent navigation behavior
+- **Enhanced Help System**: Context-aware help text and keyboard shortcuts
+- **Error Prevention**: Only show configuration files with valid MCP server definitions
 
-### Removed
-- Legacy mark3labs/mcp-go dependency
-- mark3labs-specific transport implementations
-- Unsafe type assertions in connection handling
+### 🔧 Technical Improvements
 
-## Migration Guide
+#### Security Enhancements
+- **MCP Validation**: Only display JSON files with actual MCP server configurations
+- **Input Sanitization**: Enhanced command validation and path safety checks
+- **Configuration Parsing**: Robust parsing of multiple configuration formats
 
-### From mark3labs SDK to Official SDK
+#### Performance Optimizations
+- **Efficient Discovery**: Fast file system scanning with intelligent filtering
+- **Memory Management**: Optimized connection and file handling
+- **Responsive UI**: Non-blocking operations with proper async handling
 
-#### Transport Support
-- **Currently Supported**: SSE (Server-Sent Events)
-  ```bash
-  # SSE connection example
-  mcp-tui --url http://localhost:8000/sse
-  ```
+### 🐛 Bug Fixes
 
-- **Not Yet Implemented**: STDIO, HTTP, Streamable HTTP
-  - These transports will be added in future releases
-  - Use SSE transport as alternative for testing
+#### Navigation Issues
+- **Fixed**: Initial focus problems in main screen lists
+- **Fixed**: Command input appearing limited to 3 characters
+- **Fixed**: Navigation requiring down/up arrow to select items
 
-#### API Changes
-- `Connect()` method now requires `*config.ConnectionConfig` instead of `interface{}`
-- This change improves type safety but shouldn't affect existing usage
-- All CLI and TUI functionality preserved
+#### Input Handling
+- **Fixed**: Key priority conflicts between UI navigation and text input
+- **Fixed**: Arrow keys interfering with text editing in input fields
+- **Fixed**: Tab navigation between form fields and UI elements
 
-#### Error Handling
-- JSON schema errors are now logged but don't crash the application
-- Invalid schemas continue processing with nil values
-- More detailed error messages for debugging
+### 🔄 Changed
 
-#### Testing
-- Official SDK provides better MCP protocol compliance
-- Test coverage maintained for core functionality
-- Some error message assertions may need updating
+#### Default Behaviors
+- **Combined command input is now the default** for STDIO transport
+- **Tab navigation** replaces 'M' key for mode switching
+- **Arrow keys** navigate between tabs when not in text input fields
 
-### Troubleshooting
+#### UI Improvements
+- **Enhanced connection screen** with visual cards and server lists
+- **Improved mode selector** with clear visual indicators
+- **Better error messages** with actionable guidance
 
-#### Connection Issues
-- Ensure your MCP server supports SSE transport
-- For Playwright server, use SSE endpoint: `http://localhost:PORT/sse`
-- Check server logs for detailed error information
+### 📖 Documentation
 
-#### Schema Errors
-- Schema conversion errors are logged but processing continues
-- Check debug output for detailed schema error information
-- Report persistent schema issues for investigation
+#### Updated Documentation
+- **README**: Updated with new features and examples
+- **CLAUDE.md**: Enhanced development instructions
+- **CONFIG_REFERENCE.md**: Comprehensive configuration examples
+- **Architecture documentation**: Updated for new UI system
+
+#### New Examples
+- **Single-server configurations** for quick setup
+- **Development presets** for common workflows  
+- **Multi-transport examples** for complex deployments
+- **Production setups** with security considerations
+
+### 🚧 Breaking Changes
+
+#### UI Navigation
+- **Mode switching**: 'M' key replaced with arrow key navigation
+- **Tab focus**: New tab/content focus model may require learning
+- **Input behavior**: Some key combinations work differently
+
+#### Configuration
+- **File discovery**: Only shows files with valid MCP configurations
+- **Default input mode**: Combined command input is now default
+
+### 🏗️ Internal Changes
+
+#### Architecture Improvements
+- **Connection management model** with comprehensive format support
+- **File discovery system** with intelligent configuration parsing
+- **Enhanced screen management** with proper focus handling
+- **Improved error handling** throughout the UI system
+
+#### Code Quality
+- **Enhanced type safety** in configuration handling
+- **Better separation of concerns** between UI and business logic
+- **Improved test coverage** for new features
+- **Consistent coding patterns** across modules
+
+## [0.1.0] - 2024-07-01
+
+### 🎉 Initial Release
+
+#### Core Features
+- **Terminal User Interface (TUI)** for interactive MCP server testing
+- **Command Line Interface (CLI)** for automation and scripting
+- **Multiple Transport Support**: STDIO, SSE, HTTP, and Streamable HTTP
+- **Comprehensive Error Handling** with structured error types
+- **Cross-Platform Support** for Windows, macOS, and Linux
+
+#### Security Features
+- **Command Validation**: Prevents command injection and path traversal
+- **Input Sanitization**: Safe handling of user input and server responses
+- **Process Management**: Secure process lifecycle management
+- **Resource Limits**: Protection against resource exhaustion
+
+#### Developer Experience
+- **Rich Documentation**: Comprehensive guides and examples
+- **Test Infrastructure**: Problematic servers for edge case testing
+- **Debug Support**: Detailed logging and error reporting
+- **Build Automation**: Makefile with common development tasks
+
+#### Protocol Compliance
+- **MCP Specification**: Full compliance with Model Context Protocol
+- **Transport Reliability**: Robust handling of connection issues
+- **Message Validation**: Proper JSON-RPC message handling
+- **Error Recovery**: Graceful handling of server failures
+
+---
+
+## Version History Summary
+
+- **v0.2.0**: Revolutionary UI improvements with file discovery and enhanced navigation
+- **v0.1.0**: Initial release with core MCP testing functionality
+
+## Upgrade Guide
+
+### From v0.1.0 to v0.2.0
+
+#### UI Changes
+1. **New navigation**: Use ←/→ arrows instead of 'M' to switch modes
+2. **Combined input**: Commands now default to single-line input
+3. **File discovery**: Check the Discovery tab for existing configurations
+
+#### Configuration
+1. **Auto-discovery**: MCP-TUI now finds existing config files automatically
+2. **Saved connections**: Import existing configurations or create new ones
+3. **Format support**: Works with Claude Desktop and VS Code MCP configs
+
+#### Compatibility
+- All existing CLI commands work unchanged
+- Configuration files are backward compatible
+- No breaking changes to scripting interfaces
+
+## Support
+
+For issues, questions, or contributions:
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/standardbeagle/mcp-tui/issues)
+- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/standardbeagle/mcp-tui/discussions)
+- 📖 **Documentation**: [Project README](README.md)
+- 🤝 **Contributing**: [Contributing Guide](CONTRIBUTING.md)

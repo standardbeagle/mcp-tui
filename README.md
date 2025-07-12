@@ -49,9 +49,12 @@ Stop struggling with curl commands, JSON formatting, and connection issues. MCP-
 - Test servers that simulate real-world failure scenarios
 - Graceful degradation when servers become unresponsive
 
-### Saved Connections & Auto-Connect
-**Problem Solved:** Stop re-typing server configurations and connection details
-- Save frequently used server configurations with visual names and icons
+### Enhanced Navigation & File Discovery
+**Problem Solved:** Stop re-typing server configurations and struggle to find existing configs
+- **Tabbed interface** with visual navigation between saved/discovered/manual modes
+- **Smart file discovery** automatically finds Claude Desktop, VS Code, and MCP configs
+- **Combined command input** - type "brum --mcp" in one field, not separate command/args
+- **Arrow key navigation** between tabs and intuitive UI flow
 - Auto-connect to single server setups or configured default servers
 - Compatible with Claude Desktop and VS Code MCP configurations
 - Recent connections tracking with success status
@@ -82,22 +85,22 @@ make install
 ```
 *Benefits: Latest features, customizable, contribute back*
 
-### Instant Connection - Choose Your Style
+### Instant Connection - Enhanced Experience
 
-> **📝 Current Version Note**: This version uses the official MCP Go SDK and supports all major transport types: STDIO, SSE, HTTP, and Streamable HTTP. Command validation security ensures safe execution of STDIO commands.
+> **✨ New in v0.2.0**: Revolutionary UI with saved connections, file discovery, tabbed navigation, and combined command input. Built on the official MCP Go SDK with comprehensive security validation.
 
 **🎯 Just Getting Started? Try This:**
 ```bash
-# Quick connect to MCP server via STDIO (local process)
+# Open the enhanced TUI with file discovery and saved connections
+mcp-tui
+
+# Quick connect to MCP server via STDIO (single command line)
 mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
 
 # Or connect via SSE (Server-Sent Events) for web servers
 mcp-tui --url http://localhost:8000/sse
-
-# Use saved connections for quick access
-mcp-tui  # Opens connection screen with saved servers (if any)
 ```
-*Why this works: STDIO connects to local processes, SSE connects to web servers, saved connections remember your favorites*
+*What's new: Visual tabs, file discovery finds existing configs, combined command input, arrow key navigation*
 
 **💡 Smart Auto-Connect:**
 If you have a saved configuration file with a single server or default server, MCP-TUI will auto-connect immediately:
@@ -108,7 +111,7 @@ mcp-tui  # Connects automatically!
 
 **🤖 Building Automation? Use CLI Mode:**
 ```bash
-# List all available tools via STDIO  
+# List all available tools via STDIO (combined command input) 
 mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool list
 
 # Or via SSE
@@ -120,7 +123,7 @@ mcp-tui --url http://localhost:8000/sse tool call echo message="Hello World"
 # Get JSON output for your scripts
 mcp-tui --json --url http://localhost:8000/sse tool list
 ```
-*Why this works: Perfect for CI/CD, scripts, and automated testing workflows*
+*Why this works: Combined command input, perfect for CI/CD, scripts, and automated testing workflows*
 
 **🌐 Have a Web Service? Connect via HTTP:**
 ```bash

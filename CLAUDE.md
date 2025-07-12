@@ -2,23 +2,29 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Recent Updates (2025-01-12)
+## Recent Updates (2025-01-12) - v0.2.0 Release
 
-This project has recently implemented comprehensive improvements to configuration management, saved connections, auto-connect functionality, and navigation fixes.
+This project has implemented revolutionary UI improvements making MCP-TUI significantly more user-friendly and practical.
 
-### New Features Added
-- **Saved Connections Management**: Visual connection cards with icons, descriptions, and tagging
-- **Auto-Connect Support**: Automatic connection to single servers or default servers  
-- **Multi-Format Configuration Support**: Compatible with Claude Desktop, VS Code MCP, and native formats
-- **Navigation Focus Fixes**: Resolved initial focus issues in main screen lists
-- **Comprehensive Examples**: Added development presets, production setups, and multi-transport configurations
+### Major Features Added
+- **Tabbed Navigation System**: Visual tabs with arrow key navigation between Saved/Discovery/Manual modes
+- **File Discovery Engine**: Automatically finds Claude Desktop, VS Code MCP, and MCP-TUI configuration files
+- **Combined Command Input**: Default single-line input for commands like "brum --mcp" (press 'C' to toggle)
+- **Enhanced Connection Management**: Visual connection cards with server enumeration and descriptions
+- **Smart Input Priority**: Form fields take precedence over UI navigation keys
 
-### Key Files Added/Modified
-- `internal/tui/models/connections.go` - Connections management model
-- `internal/tui/screens/connection.go` - Enhanced connection screen with saved connections UI
-- `internal/tui/app/manager.go` - Auto-connect functionality in screen manager
+### Key Technical Improvements
+- **MCP Validation**: Only shows JSON files with actual MCP server configurations
+- **Multi-Format Support**: Compatible with Claude Desktop, VS Code MCP, and native formats
+- **Enhanced Navigation**: Fixed focus issues and improved keyboard navigation throughout
+- **Server Enumeration**: Display individual server names and descriptions from discovered files
+
+### Key Files Modified
+- `internal/tui/models/connections.go` - Enhanced with file discovery and server enumeration
+- `internal/tui/screens/connection.go` - Revolutionary tabbed interface and navigation
+- `internal/tui/app/manager.go` - Auto-connect functionality 
 - `internal/tui/screens/main.go` - Navigation focus fixes
-- `examples/` - Multiple configuration examples and comprehensive documentation
+- `examples/` - Comprehensive configuration examples
 
 ## Project Overview
 
