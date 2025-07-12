@@ -38,6 +38,12 @@ type Service interface {
 	GetErrorStatistics() map[string]interface{}
 	GetErrorReport() map[string]interface{}
 	ResetErrorStatistics()
+	
+	// Event tracing and debugging
+	GetTracingStatistics() map[string]interface{}
+	GetRecentEvents(count int) interface{}
+	ExportEvents() ([]byte, error)
+	ClearEvents()
 }
 
 // Tool represents an MCP tool

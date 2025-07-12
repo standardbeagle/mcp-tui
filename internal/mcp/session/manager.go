@@ -8,6 +8,7 @@ import (
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
@@ -71,6 +72,11 @@ type Manager struct {
 	
 	// Error handling
 	errorHandler *errors.ErrorHandler
+	
+	// Debug and tracing
+	eventTracer       *mcpDebug.EventTracer
+	transportDebugger *mcpDebug.TransportDebugger
+	debugEnabled      bool
 }
 
 // NewManager creates a new session manager
@@ -83,7 +89,22 @@ func NewManager() *Manager {
 		reconnectDelay:       2 * time.Second,
 		healthCheckInterval:  30 * time.Second,
 		errorHandler:         errors.NewErrorHandler(),
+		eventTracer:          mcpDebug.NewEventTracer(1000), // Buffer up to 1000 events
+		debugEnabled:         false,
 	}
+}
+
+// SetDebugEnabled enables or disables debug tracing
+func (m *Manager) SetDebugEnabled(enabled bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.debugEnabled = enabled
+	if m.eventTracer != nil {
+		m.eventTracer.SetEnabled(enabled)
+	}
+	
+	debug.Info("Session manager debug mode changed", debug.F("enabled", enabled))
 }
 
 // Connect establishes a new session with proper lifecycle management
@@ -110,13 +131,30 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 	m.info.LastError = nil
 	m.info.ReconnectCount = 0
 	
+	// Initialize transport debugger for this transport type
+	if m.eventTracer != nil {
+		m.transportDebugger = mcpDebug.NewTransportDebugger(m.eventTracer, string(transportType))
+	}
+	
 	debug.Info("Session manager: Starting connection", 
 		debug.F("transport", transportType),
 		debug.F("state", m.info.State))
 	
+	// Trace connection start
+	var connectionStartEvent *mcpDebug.Event
+	if m.transportDebugger != nil {
+		connectionStartEvent = m.transportDebugger.TraceConnectionStart("session_connect")
+	}
+	
 	// Attempt connection
 	session, err := client.Connect(connectCtx, transport)
 	if err != nil {
+		// Trace connection failure
+		if m.transportDebugger != nil {
+			m.transportDebugger.TraceConnectionEnd(connectionStartEvent, false, err.Error())
+			m.transportDebugger.TraceTransportError("session_connect", err, nil)
+		}
+		
 		// Classify and handle the error
 		classified := m.errorHandler.HandleError(connectCtx, err, "session_connect", map[string]interface{}{
 			"transport_type": transportType,
@@ -137,6 +175,17 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 	m.setState(StateConnected)
 	m.info.ConnectedAt = time.Now()
 	m.info.SessionID = session.ID()
+	
+	// Trace successful connection
+	if m.transportDebugger != nil {
+		m.transportDebugger.TraceConnectionEnd(connectionStartEvent, true, "")
+		m.eventTracer.SetSessionID(m.info.SessionID)
+		m.eventTracer.TraceSessionState("connected", map[string]interface{}{
+			"session_id": m.info.SessionID,
+			"transport_type": transportType,
+			"connected_at": m.info.ConnectedAt,
+		})
+	}
 	
 	debug.Info("Session manager: Connection established", 
 		debug.F("sessionID", m.info.SessionID),
@@ -308,6 +357,62 @@ func (m *Manager) ResetErrorStatistics() {
 	
 	if m.errorHandler != nil {
 		m.errorHandler.ResetStatistics()
+	}
+}
+
+// GetEventTracer returns the event tracer for direct access
+func (m *Manager) GetEventTracer() *mcpDebug.EventTracer {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	return m.eventTracer
+}
+
+// GetTracingStatistics returns event tracing statistics
+func (m *Manager) GetTracingStatistics() map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	if m.eventTracer == nil {
+		return map[string]interface{}{
+			"error": "no event tracer available",
+		}
+	}
+	
+	return m.eventTracer.GetStatistics()
+}
+
+// GetRecentEvents returns the most recent traced events
+func (m *Manager) GetRecentEvents(count int) []*mcpDebug.Event {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	if m.eventTracer == nil {
+		return nil
+	}
+	
+	return m.eventTracer.GetRecentEvents(count)
+}
+
+// ExportEvents exports all traced events in JSON format
+func (m *Manager) ExportEvents() ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	if m.eventTracer == nil {
+		return nil, fmt.Errorf("no event tracer available")
+	}
+	
+	return m.eventTracer.ExportEvents()
+}
+
+// ClearEvents clears all traced events
+func (m *Manager) ClearEvents() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	if m.eventTracer != nil {
+		m.eventTracer.Clear()
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
@@ -88,6 +89,11 @@ func (s *service) SetDebugMode(debug bool) {
 	s.debugMode = debug
 	// Enable HTTP debugging if in debug mode
 	EnableHTTPDebugging(debug)
+	
+	// Enable session manager debug tracing
+	if s.sessionManager != nil {
+		s.sessionManager.SetDebugEnabled(debug)
+	}
 }
 
 // createLoggingMiddleware creates middleware for automatic MCP request/response logging
@@ -139,19 +145,32 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		Version: "0.1.0",
 	}
 
-	// Create client with options for better integration
-	clientOptions := &officialMCP.ClientOptions{
-		// Add progress notification handler for long-running operations
-		ProgressNotificationHandler: func(ctx context.Context, session *officialMCP.ClientSession, params *officialMCP.ProgressNotificationParams) {
-			debug.Info("Progress notification", 
-				debug.F("progressToken", params.ProgressToken),
-				debug.F("progress", params.Progress))
-		},
+	// Create client with enhanced debugging capabilities
+	var client *officialMCP.Client
+	if s.debugMode && s.sessionManager != nil {
+		// Use debug client with event tracing
+		eventTracer := s.sessionManager.GetEventTracer()
+		if eventTracer != nil {
+			client = mcpDebug.CreateDebugClient(impl, eventTracer)
+		} else {
+			// Fallback to regular client
+			client = officialMCP.NewClient(impl, &officialMCP.ClientOptions{})
+		}
+	} else {
+		// Create regular client
+		clientOptions := &officialMCP.ClientOptions{
+			// Add progress notification handler for long-running operations
+			ProgressNotificationHandler: func(ctx context.Context, session *officialMCP.ClientSession, params *officialMCP.ProgressNotificationParams) {
+				debug.Info("Progress notification", 
+					debug.F("progressToken", params.ProgressToken),
+					debug.F("progress", params.Progress))
+			},
+		}
+		client = officialMCP.NewClient(impl, clientOptions)
 	}
-	client := officialMCP.NewClient(impl, clientOptions)
 	
-	// Add logging middleware for automatic request/response logging
-	if s.debugMode {
+	// Add logging middleware for automatic request/response logging (if not using debug client)
+	if s.debugMode && s.sessionManager.GetEventTracer() == nil {
 		client.AddSendingMiddleware(s.createLoggingMiddleware())
 	}
 
@@ -711,5 +730,62 @@ func (s *service) ResetErrorStatistics() {
 	
 	if s.sessionManager != nil {
 		s.sessionManager.ResetErrorStatistics()
+	}
+}
+
+// GetTracingStatistics returns event tracing statistics
+func (s *service) GetTracingStatistics() map[string]interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager == nil {
+		return map[string]interface{}{
+			"error": "no session manager available",
+		}
+	}
+	
+	return s.sessionManager.GetTracingStatistics()
+}
+
+// GetRecentEvents returns the most recent traced events
+func (s *service) GetRecentEvents(count int) interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager == nil {
+		return map[string]interface{}{
+			"error": "no session manager available",
+		}
+	}
+	
+	events := s.sessionManager.GetRecentEvents(count)
+	if events == nil {
+		return map[string]interface{}{
+			"error": "no events available",
+		}
+	}
+	
+	return events
+}
+
+// ExportEvents exports all traced events in JSON format
+func (s *service) ExportEvents() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager == nil {
+		return nil, fmt.Errorf("no session manager available")
+	}
+	
+	return s.sessionManager.ExportEvents()
+}
+
+// ClearEvents clears all traced events
+func (s *service) ClearEvents() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager != nil {
+		s.sessionManager.ClearEvents()
 	}
 }
