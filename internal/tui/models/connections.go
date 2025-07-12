@@ -435,12 +435,21 @@ func (cm *ConnectionsManager) GetRecentConnections() []*ConnectionEntry {
 
 // DiscoveredConfigFile represents a configuration file found in the filesystem
 type DiscoveredConfigFile struct {
-	Path        string  `json:"path"`
-	Name        string  `json:"name"`
-	Format      string  `json:"format"` // "claude-desktop", "vscode", "mcp-tui", "unknown"
-	ServerCount int     `json:"serverCount"`
-	Accessible bool    `json:"accessible"`
-	Error       string  `json:"error,omitempty"`
+	Path        string        `json:"path"`
+	Name        string        `json:"name"`
+	Format      string        `json:"format"` // "claude-desktop", "vscode", "mcp-tui", "unknown"
+	ServerCount int           `json:"serverCount"`
+	Accessible  bool          `json:"accessible"`
+	Error       string        `json:"error,omitempty"`
+	Servers     []ServerInfo  `json:"servers,omitempty"`
+}
+
+type ServerInfo struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Command     string   `json:"command,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	Transport   string   `json:"transport"`
 }
 
 // DiscoverConfigFiles finds configuration files in common locations
@@ -464,7 +473,9 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 		fullPath := filepath.Join(cwd, pattern)
 		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
 			config := cm.analyzeConfigFile(fullPath)
-			discovered = append(discovered, config)
+			if config != nil { // Only include files with valid MCP config
+				discovered = append(discovered, config)
+			}
 		}
 	}
 
@@ -478,7 +489,9 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 		for _, path := range userConfigPaths {
 			if info, err := os.Stat(path); err == nil && !info.IsDir() {
 				config := cm.analyzeConfigFile(path)
-				discovered = append(discovered, config)
+				if config != nil { // Only include files with valid MCP config
+					discovered = append(discovered, config)
+				}
 			}
 		}
 
@@ -487,7 +500,9 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 		if claudePath != "" {
 			if info, err := os.Stat(claudePath); err == nil && !info.IsDir() {
 				config := cm.analyzeConfigFile(claudePath)
-				discovered = append(discovered, config)
+				if config != nil { // Only include files with valid MCP config
+					discovered = append(discovered, config)
+				}
 			}
 		}
 	}
@@ -515,33 +530,59 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	// Determine format by trying to parse
 	serverCount := 0
 	
-	// Try Claude Desktop format
+	// Try Claude Desktop format - must have mcpServers node
 	var claudeConfig struct {
 		MCPServers map[string]interface{} `json:"mcpServers"`
 	}
-	if err := json.Unmarshal(data, &claudeConfig); err == nil && claudeConfig.MCPServers != nil {
+	if err := json.Unmarshal(data, &claudeConfig); err == nil && claudeConfig.MCPServers != nil && len(claudeConfig.MCPServers) > 0 {
 		config.Format = "claude-desktop"
 		serverCount = len(claudeConfig.MCPServers)
+		config.Servers = cm.extractClaudeDesktopServers(claudeConfig.MCPServers)
 	} else {
-		// Try VS Code format
+		// Try VS Code format - must have servers node
 		var vscodeConfig struct {
 			Servers map[string]interface{} `json:"servers"`
 		}
-		if err := json.Unmarshal(data, &vscodeConfig); err == nil && vscodeConfig.Servers != nil {
+		if err := json.Unmarshal(data, &vscodeConfig); err == nil && vscodeConfig.Servers != nil && len(vscodeConfig.Servers) > 0 {
 			config.Format = "vscode"
 			serverCount = len(vscodeConfig.Servers)
+			config.Servers = cm.extractVSCodeServers(vscodeConfig.Servers)
 		} else {
-			// Try MCP-TUI native format
+			// Try MCP-TUI native format - must have servers node with content
 			var nativeConfig ConnectionsConfig
-			if err := json.Unmarshal(data, &nativeConfig); err == nil && nativeConfig.Servers != nil {
+			if err := json.Unmarshal(data, &nativeConfig); err == nil && nativeConfig.Servers != nil && len(nativeConfig.Servers) > 0 {
 				config.Format = "mcp-tui"
 				serverCount = len(nativeConfig.Servers)
+				config.Servers = cm.extractNativeServers(nativeConfig.Servers)
 			} else {
-				// Check for package.json with MCP references
-				if strings.Contains(strings.ToLower(string(data)), "mcp") || strings.Contains(strings.ToLower(string(data)), "model-context-protocol") {
-					config.Format = "package.json"
-					// Rough count of potential MCP references
-					serverCount = strings.Count(strings.ToLower(string(data)), "mcp")
+				// Check for package.json with MCP references - only include if has actual MCP servers
+				if filepath.Base(filePath) == "package.json" {
+					var packageJSON map[string]interface{}
+					if err := json.Unmarshal(data, &packageJSON); err == nil {
+						if scripts, ok := packageJSON["scripts"].(map[string]interface{}); ok {
+							mcpScriptCount := 0
+							for name, script := range scripts {
+								if scriptStr, ok := script.(string); ok {
+									if strings.Contains(strings.ToLower(name), "mcp") || 
+									   strings.Contains(strings.ToLower(scriptStr), "mcp") ||
+									   strings.Contains(strings.ToLower(scriptStr), "model-context-protocol") {
+										mcpScriptCount++
+									}
+								}
+							}
+							if mcpScriptCount > 0 {
+								config.Format = "package.json"
+								serverCount = mcpScriptCount
+							} else {
+								// No MCP-related content found
+								config.Format = "unknown"
+							}
+						} else {
+							config.Format = "unknown"
+						}
+					} else {
+						config.Format = "unknown"
+					}
 				} else {
 					config.Format = "unknown"
 				}
@@ -550,7 +591,105 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	}
 
 	config.ServerCount = serverCount
+	
+	// Only return files with valid MCP configuration (serverCount > 0)
+	if serverCount == 0 || config.Format == "unknown" {
+		return nil
+	}
+	
 	return config
+}
+
+// extractClaudeDesktopServers extracts server information from Claude Desktop format
+func (cm *ConnectionsManager) extractClaudeDesktopServers(mcpServers map[string]interface{}) []ServerInfo {
+	var servers []ServerInfo
+	
+	for name, serverData := range mcpServers {
+		if serverMap, ok := serverData.(map[string]interface{}); ok {
+			server := ServerInfo{
+				Name:      name,
+				Transport: "stdio", // Claude Desktop format is typically stdio
+			}
+			
+			if command, ok := serverMap["command"].(string); ok {
+				server.Command = command
+			}
+			
+			if args, ok := serverMap["args"].([]interface{}); ok {
+				for _, arg := range args {
+					if argStr, ok := arg.(string); ok {
+						server.Args = append(server.Args, argStr)
+					}
+				}
+			}
+			
+			// Try to generate a description
+			if server.Command != "" {
+				server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
+			}
+			
+			servers = append(servers, server)
+		}
+	}
+	
+	return servers
+}
+
+// extractVSCodeServers extracts server information from VS Code MCP format
+func (cm *ConnectionsManager) extractVSCodeServers(vscodeServers map[string]interface{}) []ServerInfo {
+	var servers []ServerInfo
+	
+	for name, serverData := range vscodeServers {
+		if serverMap, ok := serverData.(map[string]interface{}); ok {
+			server := ServerInfo{
+				Name:      name,
+				Transport: "stdio", // VS Code format is typically stdio
+			}
+			
+			if command, ok := serverMap["command"].(string); ok {
+				server.Command = command
+			}
+			
+			if args, ok := serverMap["args"].([]interface{}); ok {
+				for _, arg := range args {
+					if argStr, ok := arg.(string); ok {
+						server.Args = append(server.Args, argStr)
+					}
+				}
+			}
+			
+			// Try to generate a description
+			if server.Command != "" {
+				server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
+			}
+			
+			servers = append(servers, server)
+		}
+	}
+	
+	return servers
+}
+
+// extractNativeServers extracts server information from MCP-TUI native format
+func (cm *ConnectionsManager) extractNativeServers(nativeServers map[string]*ConnectionEntry) []ServerInfo {
+	var servers []ServerInfo
+	
+	for name, entry := range nativeServers {
+		server := ServerInfo{
+			Name:        name,
+			Description: entry.Description,
+			Transport:   string(entry.Transport),
+		}
+		
+		if entry.Transport == "stdio" {
+			server.Command = entry.Command
+			server.Args = entry.Args
+		}
+		
+		servers = append(servers, server)
+	}
+	
+	return servers
 }
 
 // deduplicateAndSort removes duplicate configs and sorts by relevance

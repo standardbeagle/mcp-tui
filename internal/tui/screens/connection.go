@@ -34,6 +34,11 @@ type ConnectionScreen struct {
 	transportType config.TransportType
 	connectionsList []string
 	connectionIndex int
+	
+	// Tab management
+	availableTabs []string
+	activeTabIndex int
+	tabFocused    bool
 
 	// Text input models
 	commandInput    textinput.Model
@@ -163,20 +168,20 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 		Padding(1, 2).
 		Margin(0, 1)
 
+	// Build available tabs
+	cs.buildAvailableTabs()
+
 	// Determine initial view mode and focus
-	if len(cs.savedConnections) > 0 {
-		cs.viewMode = "saved"
+	if len(cs.availableTabs) > 0 {
+		cs.viewMode = cs.availableTabs[0]
+		cs.activeTabIndex = 0
+		cs.tabFocused = true
 		cs.focusIndex = 0
-		cs.maxFocus = 3 // saved connections, manual entry, connect
-	} else if len(cs.discoveredFiles) > 0 {
-		cs.viewMode = "discovery"
-		cs.focusIndex = 0
-		cs.maxFocus = 2 // discovered files, manual entry
 	} else {
 		cs.viewMode = "manual"
 		cs.focusIndex = 0
-		cs.maxFocus = 4 // transport, command, args, connect
 	}
+	cs.updateMaxFocus()
 
 	return cs
 }
@@ -205,6 +210,19 @@ func (cs *ConnectionScreen) getCurrentConnection() *models.ConnectionEntry {
 func (cs *ConnectionScreen) Init() tea.Cmd {
 	cs.logger.Debug("Initializing connection screen")
 	return nil
+}
+
+// buildAvailableTabs determines which tabs should be available
+func (cs *ConnectionScreen) buildAvailableTabs() {
+	cs.availableTabs = nil
+	
+	if len(cs.savedConnections) > 0 {
+		cs.availableTabs = append(cs.availableTabs, "saved")
+	}
+	if len(cs.discoveredFiles) > 0 {
+		cs.availableTabs = append(cs.availableTabs, "discovery")
+	}
+	cs.availableTabs = append(cs.availableTabs, "manual")
 }
 
 // Update handles messages for the connection screen
@@ -245,30 +263,48 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "m":
-		// Cycle between modes: saved -> discovery -> manual -> saved
-		cs.blurAllInputs()
-		switch cs.viewMode {
-		case "saved":
-			if len(cs.discoveredFiles) > 0 {
-				cs.viewMode = "discovery"
-			} else {
-				cs.viewMode = "manual"
-			}
-		case "discovery":
-			cs.viewMode = "manual"
-		case "manual":
-			if len(cs.savedConnections) > 0 {
-				cs.viewMode = "saved"
-			} else if len(cs.discoveredFiles) > 0 {
-				cs.viewMode = "discovery"
-			}
+	case "left":
+		// Check if any text input is currently focused
+		if cs.isAnyInputFocused() {
+			// Let text input handle the key
+			break
 		}
-		cs.focusIndex = 0
-		cs.updateMaxFocus()
-		return cs, nil
+		if cs.tabFocused && len(cs.availableTabs) > 1 {
+			// Navigate tabs with left arrow
+			cs.activeTabIndex = (cs.activeTabIndex - 1 + len(cs.availableTabs)) % len(cs.availableTabs)
+			cs.viewMode = cs.availableTabs[cs.activeTabIndex]
+			cs.focusIndex = 0
+			cs.updateMaxFocus()
+			cs.blurAllInputs()
+			return cs, nil
+		}
+		// Delegate to mode-specific handler for other left arrow behavior
+		break
+
+	case "right":
+		// Check if any text input is currently focused
+		if cs.isAnyInputFocused() {
+			// Let text input handle the key
+			break
+		}
+		if cs.tabFocused && len(cs.availableTabs) > 1 {
+			// Navigate tabs with right arrow
+			cs.activeTabIndex = (cs.activeTabIndex + 1) % len(cs.availableTabs)
+			cs.viewMode = cs.availableTabs[cs.activeTabIndex]
+			cs.focusIndex = 0
+			cs.updateMaxFocus()
+			cs.blurAllInputs()
+			return cs, nil
+		}
+		// Delegate to mode-specific handler for other right arrow behavior
+		break
 
 	case "c":
+		// Check if any text input is currently focused
+		if cs.isAnyInputFocused() {
+			// Let text input handle the key
+			break
+		}
 		// Toggle between combined and separate command inputs (only in manual STDIO mode)
 		if cs.viewMode == "manual" && cs.transportType == config.TransportStdio {
 			cs.usesCombined = !cs.usesCombined
@@ -278,6 +314,26 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.updateInputFocus()
 		}
 		return cs, nil
+		
+	case "tab":
+		// If tabs are focused, move to content focus  
+		if cs.tabFocused && len(cs.availableTabs) > 0 {
+			cs.tabFocused = false
+			cs.focusIndex = 0
+			return cs, nil
+		}
+		// Otherwise delegate to mode-specific handler
+		break
+		
+	case "shift+tab":
+		// Return to tab focus if we have multiple tabs
+		if !cs.tabFocused && len(cs.availableTabs) > 1 {
+			cs.tabFocused = true
+			cs.blurAllInputs()
+			return cs, nil
+		}
+		// Otherwise delegate to mode-specific handler
+		break
 	}
 
 	// Handle saved connections mode
@@ -617,6 +673,14 @@ func (cs *ConnectionScreen) blurAllInputs() {
 	cs.combinedInput.Blur()
 }
 
+// isAnyInputFocused returns true if any text input field is currently focused
+func (cs *ConnectionScreen) isAnyInputFocused() bool {
+	return cs.commandInput.Focused() || 
+		   cs.argsInput.Focused() || 
+		   cs.urlInput.Focused() || 
+		   cs.combinedInput.Focused()
+}
+
 // updateInputFocus sets focus on the appropriate input based on current state
 func (cs *ConnectionScreen) updateInputFocus() {
 	switch cs.transportType {
@@ -716,8 +780,8 @@ func (cs *ConnectionScreen) View() string {
 	builder.WriteString(cs.titleStyle.Render("MCP Server Connection"))
 	builder.WriteString("\n\n")
 
-	// Show mode selector if saved connections or discovered files exist
-	if len(cs.savedConnections) > 0 || len(cs.discoveredFiles) > 0 {
+	// Show mode selector tabs if multiple modes are available
+	if len(cs.availableTabs) > 1 {
 		builder.WriteString(cs.renderModeSelector())
 		builder.WriteString("\n\n")
 	}
@@ -759,37 +823,53 @@ func (cs *ConnectionScreen) View() string {
 	return builder.String()
 }
 
-// renderModeSelector renders the mode selection between saved, discovery, and manual
+// renderModeSelector renders the tabbed mode selection interface
 func (cs *ConnectionScreen) renderModeSelector() string {
-	var buttons []string
+	if len(cs.availableTabs) <= 1 {
+		return ""
+	}
 
-	// Saved connections button
-	if len(cs.savedConnections) > 0 {
-		style := cs.blurredStyle
-		if cs.viewMode == "saved" {
-			style = cs.focusedStyle
+	var tabs []string
+	
+	for i, tabMode := range cs.availableTabs {
+		var tabText string
+		switch tabMode {
+		case "saved":
+			tabText = fmt.Sprintf("📋 Saved (%d)", len(cs.savedConnections))
+		case "discovery":
+			tabText = fmt.Sprintf("📁 Discovered (%d)", len(cs.discoveredFiles))
+		case "manual":
+			tabText = "⌨️  Manual Entry"
 		}
-		buttons = append(buttons, style.Render(fmt.Sprintf("📋 Saved (%d)", len(cs.savedConnections))))
-	}
 
-	// Discovered files button
-	if len(cs.discoveredFiles) > 0 {
-		style := cs.blurredStyle
-		if cs.viewMode == "discovery" {
-			style = cs.focusedStyle
+		// Style based on whether this tab is active and if tabs are focused
+		var style lipgloss.Style
+		if i == cs.activeTabIndex {
+			if cs.tabFocused {
+				style = cs.focusedStyle.Copy().
+					BorderStyle(lipgloss.RoundedBorder()).
+					BorderForeground(lipgloss.Color("205")).
+					Padding(0, 1)
+			} else {
+				style = cs.focusedStyle.Copy().
+					BorderStyle(lipgloss.RoundedBorder()).
+					BorderForeground(lipgloss.Color("240")).
+					Padding(0, 1)
+			}
+		} else {
+			style = cs.blurredStyle.Copy().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("238")).
+				Padding(0, 1)
 		}
-		buttons = append(buttons, style.Render(fmt.Sprintf("📁 Discovered (%d)", len(cs.discoveredFiles))))
+
+		tabs = append(tabs, style.Render(tabText))
 	}
 
-	// Manual entry button
-	manualStyle := cs.blurredStyle
-	if cs.viewMode == "manual" {
-		manualStyle = cs.focusedStyle
-	}
-	buttons = append(buttons, manualStyle.Render("⌨️  Manual Entry"))
-
-	return strings.Join(buttons, "  ") + "\n" +
-		cs.helpStyle.Render("Press 'M' to switch between modes")
+	tabRow := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
+	helpText := cs.helpStyle.Render("←/→: Switch tabs • Tab: Enter content • Ctrl+D: Debug • Esc: Quit")
+	
+	return tabRow + "\n" + helpText
 }
 
 // renderSavedConnections renders the saved connections interface
@@ -886,19 +966,40 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 			formatIcon = "📦"
 		}
 
+		// File header with path
 		cardContent.WriteString(fmt.Sprintf("%s %s\n", formatIcon, file.Name))
-		cardContent.WriteString(fmt.Sprintf("Path: %s\n", file.Path))
-		cardContent.WriteString(fmt.Sprintf("Format: %s\n", file.Format))
+		cardContent.WriteString(fmt.Sprintf("📂 %s\n", file.Path))
 		
-		if file.Accessible {
-			if file.ServerCount > 0 {
-				cardContent.WriteString(fmt.Sprintf("Servers: %d\n", file.ServerCount))
-				cardContent.WriteString("✅ Ready to load")
-			} else {
-				cardContent.WriteString("⚠️  No servers found")
+		if file.Accessible && len(file.Servers) > 0 {
+			cardContent.WriteString(fmt.Sprintf("\nServers (%d):\n", len(file.Servers)))
+			
+			// List servers with name and description
+			for j, server := range file.Servers {
+				serverLine := fmt.Sprintf("  • %s", server.Name)
+				if server.Description != "" {
+					serverLine += fmt.Sprintf(" - %s", server.Description)
+				} else if server.Command != "" {
+					cmdSummary := server.Command
+					if len(server.Args) > 0 {
+						cmdSummary += " " + strings.Join(server.Args, " ")
+					}
+					if len(cmdSummary) > 50 {
+						cmdSummary = cmdSummary[:47] + "..."
+					}
+					serverLine += fmt.Sprintf(" - %s", cmdSummary)
+				}
+				
+				cardContent.WriteString(serverLine)
+				if j < len(file.Servers)-1 {
+					cardContent.WriteString("\n")
+				}
 			}
+			
+			cardContent.WriteString("\n\n✅ Ready to load")
+		} else if file.Accessible {
+			cardContent.WriteString("\n⚠️  No servers found")
 		} else {
-			cardContent.WriteString(fmt.Sprintf("❌ Error: %s", file.Error))
+			cardContent.WriteString(fmt.Sprintf("\n❌ Error: %s", file.Error))
 		}
 
 		card := style.Render(cardContent.String())
