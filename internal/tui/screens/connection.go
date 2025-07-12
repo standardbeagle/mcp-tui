@@ -74,6 +74,7 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 		connectionsManager: models.NewConnectionsManager(),
 		viewMode:           "saved",
 		transportType:      config.TransportStdio,
+		usesCombined:       true, // Default to combined command input
 		maxFocus:           4, // will be updated based on mode
 	}
 

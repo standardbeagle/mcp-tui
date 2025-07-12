@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem", "stdio", "/home/user/Documents"]
+    },
+    "everything": {
+      "command": "npx", 
+      "args": ["@modelcontextprotocol/server-everything", "stdio"]
+    }
+  }
+}
