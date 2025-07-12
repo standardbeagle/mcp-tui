@@ -24,8 +24,13 @@ type ConnectionScreen struct {
 	savedConnections   map[string]*models.ConnectionEntry
 	selectedConnection *models.ConnectionEntry
 
+	// File discovery
+	discoveredFiles    []*models.DiscoveredConfigFile
+	discoveryIndex     int
+	showDiscovery      bool
+
 	// UI state
-	viewMode      string // "saved" or "manual"
+	viewMode      string // "saved", "manual", or "discovery"
 	transportType config.TransportType
 	connectionsList []string
 	connectionIndex int
@@ -73,6 +78,10 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 	}
 	cs.savedConnections = cs.connectionsManager.GetConnections()
 	cs.buildConnectionsList()
+
+	// Discover configuration files
+	cs.discoveredFiles = cs.connectionsManager.DiscoverConfigFiles()
+	cs.logger.Debug("Discovered configuration files", debug.F("count", len(cs.discoveredFiles)))
 
 	// Initialize text input models
 	cs.commandInput = textinput.New()
@@ -159,6 +168,10 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 		cs.viewMode = "saved"
 		cs.focusIndex = 0
 		cs.maxFocus = 3 // saved connections, manual entry, connect
+	} else if len(cs.discoveredFiles) > 0 {
+		cs.viewMode = "discovery"
+		cs.focusIndex = 0
+		cs.maxFocus = 2 // discovered files, manual entry
 	} else {
 		cs.viewMode = "manual"
 		cs.focusIndex = 0
@@ -233,17 +246,26 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "m":
-		// Toggle between saved and manual mode
-		if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
-			cs.viewMode = "manual"
-			cs.focusIndex = 0
-			cs.updateMaxFocus()
-		} else if cs.viewMode == "manual" && len(cs.savedConnections) > 0 {
-			cs.viewMode = "saved"
-			cs.focusIndex = 0
-			cs.updateMaxFocus()
-		}
+		// Cycle between modes: saved -> discovery -> manual -> saved
 		cs.blurAllInputs()
+		switch cs.viewMode {
+		case "saved":
+			if len(cs.discoveredFiles) > 0 {
+				cs.viewMode = "discovery"
+			} else {
+				cs.viewMode = "manual"
+			}
+		case "discovery":
+			cs.viewMode = "manual"
+		case "manual":
+			if len(cs.savedConnections) > 0 {
+				cs.viewMode = "saved"
+			} else if len(cs.discoveredFiles) > 0 {
+				cs.viewMode = "discovery"
+			}
+		}
+		cs.focusIndex = 0
+		cs.updateMaxFocus()
 		return cs, nil
 
 	case "c":
@@ -261,6 +283,11 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle saved connections mode
 	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
 		return cs.handleSavedConnectionsInput(msg)
+	}
+
+	// Handle file discovery mode
+	if cs.viewMode == "discovery" && len(cs.discoveredFiles) > 0 {
+		return cs.handleDiscoveryInput(msg)
 	}
 
 	// Handle manual entry mode
@@ -302,6 +329,45 @@ func (cs *ConnectionScreen) handleSavedConnectionsInput(msg tea.KeyMsg) (tea.Mod
 		} else if cs.focusIndex == cs.maxFocus-1 {
 			// Connect button
 			return cs.handleSavedConnectionConnect()
+		}
+		return cs, nil
+	}
+
+	return cs, nil
+}
+
+// handleDiscoveryInput handles input for file discovery mode
+func (cs *ConnectionScreen) handleDiscoveryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return cs, tea.Quit
+
+	case "tab", "down":
+		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
+		return cs, nil
+
+	case "shift+tab", "up":
+		cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
+		return cs, nil
+
+	case "left":
+		if cs.focusIndex == 0 && len(cs.discoveredFiles) > 0 {
+			// Navigate discovered files
+			cs.discoveryIndex = (cs.discoveryIndex - 1 + len(cs.discoveredFiles)) % len(cs.discoveredFiles)
+		}
+		return cs, nil
+
+	case "right":
+		if cs.focusIndex == 0 && len(cs.discoveredFiles) > 0 {
+			// Navigate discovered files
+			cs.discoveryIndex = (cs.discoveryIndex + 1) % len(cs.discoveredFiles)
+		}
+		return cs, nil
+
+	case "enter":
+		if cs.focusIndex == 0 {
+			// Load selected discovered file
+			return cs.handleDiscoveredFileLoad()
 		}
 		return cs, nil
 	}
@@ -451,9 +517,20 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 
 // updateMaxFocus updates the max focus based on current mode and transport
 func (cs *ConnectionScreen) updateMaxFocus() {
-	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
-		cs.maxFocus = 2 // saved connections, connect button
-	} else {
+	switch cs.viewMode {
+	case "saved":
+		if len(cs.savedConnections) > 0 {
+			cs.maxFocus = 2 // saved connections, connect button
+		} else {
+			cs.maxFocus = 1 // just connect button
+		}
+	case "discovery":
+		if len(cs.discoveredFiles) > 0 {
+			cs.maxFocus = 1 // discovered files selection only
+		} else {
+			cs.maxFocus = 1
+		}
+	default: // "manual"
 		// Manual entry mode
 		if cs.transportType == config.TransportStdio {
 			if cs.usesCombined {
@@ -488,6 +565,48 @@ func (cs *ConnectionScreen) handleSavedConnectionConnect() (tea.Model, tea.Cmd) 
 	// Transition to main screen
 	mainScreen := NewMainScreen(cs.config, connConfig)
 	return mainScreen, mainScreen.Init()
+}
+
+// handleDiscoveredFileLoad loads connections from the selected discovered file
+func (cs *ConnectionScreen) handleDiscoveredFileLoad() (tea.Model, tea.Cmd) {
+	if cs.discoveryIndex < 0 || cs.discoveryIndex >= len(cs.discoveredFiles) {
+		cs.SetError(fmt.Errorf("no configuration file selected"))
+		return cs, nil
+	}
+
+	selectedFile := cs.discoveredFiles[cs.discoveryIndex]
+	if !selectedFile.Accessible {
+		cs.SetError(fmt.Errorf("configuration file is not accessible: %s", selectedFile.Error))
+		return cs, nil
+	}
+
+	cs.logger.Info("Loading connections from discovered file",
+		debug.F("path", selectedFile.Path),
+		debug.F("format", selectedFile.Format),
+		debug.F("serverCount", selectedFile.ServerCount))
+
+	// Load connections from the discovered file
+	if err := cs.connectionsManager.LoadFromDiscovered(selectedFile); err != nil {
+		cs.SetError(fmt.Errorf("failed to load configuration: %w", err))
+		return cs, nil
+	}
+
+	// Refresh saved connections
+	cs.savedConnections = cs.connectionsManager.GetConnections()
+	cs.buildConnectionsList()
+
+	// Switch to saved connections mode if we loaded any
+	if len(cs.savedConnections) > 0 {
+		cs.viewMode = "saved"
+		cs.focusIndex = 0
+		cs.connectionIndex = 0
+		cs.updateMaxFocus()
+		cs.SetStatus(fmt.Sprintf("Loaded %d connections from %s", len(cs.savedConnections), selectedFile.Name), StatusSuccess)
+	} else {
+		cs.SetError(fmt.Errorf("no valid connections found in %s", selectedFile.Name))
+	}
+
+	return cs, nil
 }
 
 // blurAllInputs removes focus from all text inputs
@@ -597,22 +716,35 @@ func (cs *ConnectionScreen) View() string {
 	builder.WriteString(cs.titleStyle.Render("MCP Server Connection"))
 	builder.WriteString("\n\n")
 
-	// Show mode selector if saved connections exist
-	if len(cs.savedConnections) > 0 {
+	// Show mode selector if saved connections or discovered files exist
+	if len(cs.savedConnections) > 0 || len(cs.discoveredFiles) > 0 {
 		builder.WriteString(cs.renderModeSelector())
 		builder.WriteString("\n\n")
 	}
 
 	// Render based on current mode
-	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
-		builder.WriteString(cs.renderSavedConnections())
-	} else {
+	switch cs.viewMode {
+	case "saved":
+		if len(cs.savedConnections) > 0 {
+			builder.WriteString(cs.renderSavedConnections())
+		} else {
+			builder.WriteString("No saved connections available")
+		}
+	case "discovery":
+		if len(cs.discoveredFiles) > 0 {
+			builder.WriteString(cs.renderDiscoveredFiles())
+		} else {
+			builder.WriteString("No configuration files found")
+		}
+	default: // "manual"
 		builder.WriteString(cs.renderManualEntry())
 	}
 
-	// Connect button
-	builder.WriteString("\n")
-	builder.WriteString(cs.renderConnectButton())
+	// Connect button (only for saved connections and manual entry)
+	if cs.viewMode != "discovery" {
+		builder.WriteString("\n")
+		builder.WriteString(cs.renderConnectButton())
+	}
 
 	// Status/Error messages
 	if cs.statusMsg != "" {
@@ -627,21 +759,36 @@ func (cs *ConnectionScreen) View() string {
 	return builder.String()
 }
 
-// renderModeSelector renders the mode selection between saved and manual
+// renderModeSelector renders the mode selection between saved, discovery, and manual
 func (cs *ConnectionScreen) renderModeSelector() string {
-	savedStyle := cs.blurredStyle
-	manualStyle := cs.blurredStyle
+	var buttons []string
 
-	if cs.viewMode == "saved" {
-		savedStyle = cs.focusedStyle
-	} else {
-		manualStyle = cs.focusedStyle
+	// Saved connections button
+	if len(cs.savedConnections) > 0 {
+		style := cs.blurredStyle
+		if cs.viewMode == "saved" {
+			style = cs.focusedStyle
+		}
+		buttons = append(buttons, style.Render(fmt.Sprintf("📋 Saved (%d)", len(cs.savedConnections))))
 	}
 
-	savedButton := savedStyle.Render(fmt.Sprintf("📋 Saved (%d)", len(cs.savedConnections)))
-	manualButton := manualStyle.Render("⌨️  Manual Entry")
+	// Discovered files button
+	if len(cs.discoveredFiles) > 0 {
+		style := cs.blurredStyle
+		if cs.viewMode == "discovery" {
+			style = cs.focusedStyle
+		}
+		buttons = append(buttons, style.Render(fmt.Sprintf("📁 Discovered (%d)", len(cs.discoveredFiles))))
+	}
 
-	return fmt.Sprintf("%s  %s", savedButton, manualButton) + "\n" +
+	// Manual entry button
+	manualStyle := cs.blurredStyle
+	if cs.viewMode == "manual" {
+		manualStyle = cs.focusedStyle
+	}
+	buttons = append(buttons, manualStyle.Render("⌨️  Manual Entry"))
+
+	return strings.Join(buttons, "  ") + "\n" +
 		cs.helpStyle.Render("Press 'M' to switch between modes")
 }
 
@@ -700,6 +847,72 @@ func (cs *ConnectionScreen) renderSavedConnections() string {
 	return builder.String()
 }
 
+// renderDiscoveredFiles renders the discovered configuration files interface
+func (cs *ConnectionScreen) renderDiscoveredFiles() string {
+	var builder strings.Builder
+
+	builder.WriteString("Discovered Configuration Files:\n")
+
+	if len(cs.discoveredFiles) == 0 {
+		builder.WriteString(cs.blurredStyle.Render("No configuration files found"))
+		return builder.String()
+	}
+
+	// Render files in a list layout
+	for i, file := range cs.discoveredFiles {
+		isSelected := i == cs.discoveryIndex
+		isFocused := cs.focusIndex == 0
+
+		var style lipgloss.Style
+		if isFocused && isSelected {
+			style = cs.selectedCardStyle
+		} else {
+			style = cs.cardStyle
+		}
+
+		// Build file card content
+		var cardContent strings.Builder
+		
+		// Format icon
+		formatIcon := "📄"
+		switch file.Format {
+		case "claude-desktop":
+			formatIcon = "🤖"
+		case "vscode":
+			formatIcon = "📝"
+		case "mcp-tui":
+			formatIcon = "🔧"
+		case "package.json":
+			formatIcon = "📦"
+		}
+
+		cardContent.WriteString(fmt.Sprintf("%s %s\n", formatIcon, file.Name))
+		cardContent.WriteString(fmt.Sprintf("Path: %s\n", file.Path))
+		cardContent.WriteString(fmt.Sprintf("Format: %s\n", file.Format))
+		
+		if file.Accessible {
+			if file.ServerCount > 0 {
+				cardContent.WriteString(fmt.Sprintf("Servers: %d\n", file.ServerCount))
+				cardContent.WriteString("✅ Ready to load")
+			} else {
+				cardContent.WriteString("⚠️  No servers found")
+			}
+		} else {
+			cardContent.WriteString(fmt.Sprintf("❌ Error: %s", file.Error))
+		}
+
+		card := style.Render(cardContent.String())
+		builder.WriteString(card)
+
+		// Add spacing between cards
+		if i < len(cs.discoveredFiles)-1 {
+			builder.WriteString("\n")
+		}
+	}
+
+	return builder.String()
+}
+
 // renderManualEntry renders the manual connection entry interface
 func (cs *ConnectionScreen) renderManualEntry() string {
 	var builder strings.Builder
@@ -723,15 +936,18 @@ func (cs *ConnectionScreen) renderManualEntry() string {
 func (cs *ConnectionScreen) renderHelpText() string {
 	var helpText string
 
-	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
-		helpText = "←/→: Navigate connections • Enter: Connect • M: Manual mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
-	} else {
+	switch cs.viewMode {
+	case "saved":
+		helpText = "←/→: Navigate connections • Enter: Connect • M: Switch mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
+	case "discovery":
+		helpText = "←/→: Navigate files • Enter: Load config • M: Switch mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
+	default: // "manual"
 		helpText = "←/→: Switch transport • 1/2/3: Select transport • Tab/Shift+Tab: Navigate • Enter: Connect"
 		if cs.transportType == config.TransportStdio {
 			helpText += " • C: Toggle command mode"
 		}
-		if len(cs.savedConnections) > 0 {
-			helpText += " • M: Saved connections"
+		if len(cs.savedConnections) > 0 || len(cs.discoveredFiles) > 0 {
+			helpText += " • M: Switch mode"
 		}
 		helpText += " • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
 	}

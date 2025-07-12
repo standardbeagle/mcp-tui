@@ -432,3 +432,211 @@ func (cm *ConnectionsManager) GetRecentConnections() []*ConnectionEntry {
 
 	return recent
 }
+
+// DiscoveredConfigFile represents a configuration file found in the filesystem
+type DiscoveredConfigFile struct {
+	Path        string  `json:"path"`
+	Name        string  `json:"name"`
+	Format      string  `json:"format"` // "claude-desktop", "vscode", "mcp-tui", "unknown"
+	ServerCount int     `json:"serverCount"`
+	Accessible bool    `json:"accessible"`
+	Error       string  `json:"error,omitempty"`
+}
+
+// DiscoverConfigFiles finds configuration files in common locations
+func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
+	var discovered []*DiscoveredConfigFile
+
+	// Current directory patterns
+	currentDirPatterns := []string{
+		".mcp.json",
+		".claude.json", 
+		"mcp.json",
+		"mcp-config.json",
+		"connections.json",
+		".vscode/mcp.json",
+		"package.json", // May contain MCP server configs
+	}
+
+	// Check current directory
+	cwd, _ := os.Getwd()
+	for _, pattern := range currentDirPatterns {
+		fullPath := filepath.Join(cwd, pattern)
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			config := cm.analyzeConfigFile(fullPath)
+			discovered = append(discovered, config)
+		}
+	}
+
+	// Check user config directory
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		userConfigPaths := []string{
+			filepath.Join(homeDir, ".config", "mcp-tui", "connections.json"),
+			filepath.Join(homeDir, ".config", "mcp", "config.json"),
+		}
+
+		for _, path := range userConfigPaths {
+			if info, err := os.Stat(path); err == nil && !info.IsDir() {
+				config := cm.analyzeConfigFile(path)
+				discovered = append(discovered, config)
+			}
+		}
+
+		// Claude Desktop config
+		claudePath := cm.getClaudeDesktopConfigPath()
+		if claudePath != "" {
+			if info, err := os.Stat(claudePath); err == nil && !info.IsDir() {
+				config := cm.analyzeConfigFile(claudePath)
+				discovered = append(discovered, config)
+			}
+		}
+	}
+
+	// Remove duplicates and sort by relevance
+	return cm.deduplicateAndSort(discovered)
+}
+
+// analyzeConfigFile analyzes a configuration file to determine its type and contents
+func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConfigFile {
+	config := &DiscoveredConfigFile{
+		Path:        filePath,
+		Name:        filepath.Base(filePath),
+		Accessible:  true,
+	}
+
+	// Try to read and parse the file
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		config.Accessible = false
+		config.Error = err.Error()
+		return config
+	}
+
+	// Determine format by trying to parse
+	serverCount := 0
+	
+	// Try Claude Desktop format
+	var claudeConfig struct {
+		MCPServers map[string]interface{} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(data, &claudeConfig); err == nil && claudeConfig.MCPServers != nil {
+		config.Format = "claude-desktop"
+		serverCount = len(claudeConfig.MCPServers)
+	} else {
+		// Try VS Code format
+		var vscodeConfig struct {
+			Servers map[string]interface{} `json:"servers"`
+		}
+		if err := json.Unmarshal(data, &vscodeConfig); err == nil && vscodeConfig.Servers != nil {
+			config.Format = "vscode"
+			serverCount = len(vscodeConfig.Servers)
+		} else {
+			// Try MCP-TUI native format
+			var nativeConfig ConnectionsConfig
+			if err := json.Unmarshal(data, &nativeConfig); err == nil && nativeConfig.Servers != nil {
+				config.Format = "mcp-tui"
+				serverCount = len(nativeConfig.Servers)
+			} else {
+				// Check for package.json with MCP references
+				if strings.Contains(strings.ToLower(string(data)), "mcp") || strings.Contains(strings.ToLower(string(data)), "model-context-protocol") {
+					config.Format = "package.json"
+					// Rough count of potential MCP references
+					serverCount = strings.Count(strings.ToLower(string(data)), "mcp")
+				} else {
+					config.Format = "unknown"
+				}
+			}
+		}
+	}
+
+	config.ServerCount = serverCount
+	return config
+}
+
+// deduplicateAndSort removes duplicate configs and sorts by relevance
+func (cm *ConnectionsManager) deduplicateAndSort(configs []*DiscoveredConfigFile) []*DiscoveredConfigFile {
+	seen := make(map[string]bool)
+	var unique []*DiscoveredConfigFile
+
+	for _, config := range configs {
+		if !seen[config.Path] {
+			seen[config.Path] = true
+			unique = append(unique, config)
+		}
+	}
+
+	// Sort by relevance: current dir first, then by server count, then by format priority
+	for i := 0; i < len(unique); i++ {
+		for j := i + 1; j < len(unique); j++ {
+			if cm.isMoreRelevant(unique[i], unique[j]) {
+				unique[i], unique[j] = unique[j], unique[i]
+			}
+		}
+	}
+
+	return unique
+}
+
+// isMoreRelevant determines if config a is more relevant than config b
+func (cm *ConnectionsManager) isMoreRelevant(a, b *DiscoveredConfigFile) bool {
+	// Current directory files are more relevant
+	cwd, _ := os.Getwd()
+	aInCwd := strings.HasPrefix(a.Path, cwd)
+	bInCwd := strings.HasPrefix(b.Path, cwd)
+	
+	if aInCwd && !bInCwd {
+		return false // a is better
+	}
+	if !aInCwd && bInCwd {
+		return true // b is better
+	}
+
+	// Higher server count is more relevant
+	if a.ServerCount != b.ServerCount {
+		return a.ServerCount < b.ServerCount // b is better if it has more servers
+	}
+
+	// Format priority: mcp-tui > claude-desktop > vscode > package.json > unknown
+	formatPriority := map[string]int{
+		"mcp-tui":       1,
+		"claude-desktop": 2,
+		"vscode":        3,
+		"package.json":  4,
+		"unknown":       5,
+	}
+
+	aPrio, aExists := formatPriority[a.Format]
+	bPrio, bExists := formatPriority[b.Format]
+	
+	if !aExists {
+		aPrio = 6
+	}
+	if !bExists {
+		bPrio = 6
+	}
+
+	return aPrio > bPrio // b is better if it has lower priority number
+}
+
+// LoadFromDiscovered loads connections from a discovered configuration file
+func (cm *ConnectionsManager) LoadFromDiscovered(discoveredConfig *DiscoveredConfigFile) error {
+	if !discoveredConfig.Accessible {
+		return fmt.Errorf("configuration file is not accessible: %s", discoveredConfig.Error)
+	}
+
+	// Clear current config and load from the selected file
+	cm.config = &ConnectionsConfig{
+		Version: "1.0",
+		Servers: make(map[string]*ConnectionEntry),
+	}
+
+	if cm.loadFromSource(discoveredConfig.Path) {
+		cm.logger.Info("Loaded connections from discovered file", 
+			debug.F("path", discoveredConfig.Path),
+			debug.F("format", discoveredConfig.Format),
+			debug.F("serverCount", discoveredConfig.ServerCount))
+		return nil
+	}
+
+	return fmt.Errorf("failed to load configuration from %s", discoveredConfig.Path)
+}
