@@ -31,9 +31,11 @@ type ConnectionScreen struct {
 	connectionIndex int
 
 	// Text input models
-	commandInput textinput.Model
-	argsInput    textinput.Model
-	urlInput     textinput.Model
+	commandInput    textinput.Model
+	argsInput       textinput.Model
+	urlInput        textinput.Model
+	combinedInput   textinput.Model // Single line for full command
+	usesCombined    bool            // Whether to use combined input
 
 	// Form state
 	focusIndex int
@@ -74,19 +76,24 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 
 	// Initialize text input models
 	cs.commandInput = textinput.New()
-	cs.commandInput.Placeholder = "npx, node, python, etc."
-	cs.commandInput.CharLimit = 256
-	cs.commandInput.Width = 50
+	cs.commandInput.Placeholder = "npx, node, python, brum, etc."
+	cs.commandInput.CharLimit = 1024
+	cs.commandInput.Width = 80
 
 	cs.argsInput = textinput.New()
 	cs.argsInput.Placeholder = "@modelcontextprotocol/server-everything stdio"
-	cs.argsInput.CharLimit = 512
-	cs.argsInput.Width = 50
+	cs.argsInput.CharLimit = 2048
+	cs.argsInput.Width = 80
 
 	cs.urlInput = textinput.New()
 	cs.urlInput.Placeholder = "http://localhost:3000/sse or http://localhost:3000"
-	cs.urlInput.CharLimit = 512
-	cs.urlInput.Width = 50
+	cs.urlInput.CharLimit = 1024
+	cs.urlInput.Width = 80
+
+	cs.combinedInput = textinput.New()
+	cs.combinedInput.Placeholder = "brum --mcp   or   npx -y @modelcontextprotocol/server-everything stdio"
+	cs.combinedInput.CharLimit = 2048
+	cs.combinedInput.Width = 80
 
 	// Pre-populate fields if previous config is provided
 	if prevConfig != nil {
@@ -238,6 +245,17 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		cs.blurAllInputs()
 		return cs, nil
+
+	case "c":
+		// Toggle between combined and separate command inputs (only in manual STDIO mode)
+		if cs.viewMode == "manual" && cs.transportType == config.TransportStdio {
+			cs.usesCombined = !cs.usesCombined
+			cs.blurAllInputs()
+			cs.focusIndex = 1 // Focus on first input field
+			cs.updateMaxFocus()
+			cs.updateInputFocus()
+		}
+		return cs, nil
 	}
 
 	// Handle saved connections mode
@@ -303,7 +321,11 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 	isInTextInput := false
 	switch cs.transportType {
 	case config.TransportStdio:
-		isInTextInput = cs.focusIndex == 1 || cs.focusIndex == 2
+		if cs.usesCombined {
+			isInTextInput = cs.focusIndex == 1
+		} else {
+			isInTextInput = cs.focusIndex == 1 || cs.focusIndex == 2
+		}
 	case config.TransportSSE, config.TransportHTTP:
 		isInTextInput = cs.focusIndex == 1
 	}
@@ -332,10 +354,16 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 			// Pass other keys to the active text input
 			switch cs.transportType {
 			case config.TransportStdio:
-				if cs.focusIndex == 1 {
-					cs.commandInput, cmd = cs.commandInput.Update(msg)
-				} else if cs.focusIndex == 2 {
-					cs.argsInput, cmd = cs.argsInput.Update(msg)
+				if cs.usesCombined {
+					if cs.focusIndex == 1 {
+						cs.combinedInput, cmd = cs.combinedInput.Update(msg)
+					}
+				} else {
+					if cs.focusIndex == 1 {
+						cs.commandInput, cmd = cs.commandInput.Update(msg)
+					} else if cs.focusIndex == 2 {
+						cs.argsInput, cmd = cs.argsInput.Update(msg)
+					}
 				}
 			case config.TransportSSE, config.TransportHTTP:
 				if cs.focusIndex == 1 {
@@ -428,7 +456,11 @@ func (cs *ConnectionScreen) updateMaxFocus() {
 	} else {
 		// Manual entry mode
 		if cs.transportType == config.TransportStdio {
-			cs.maxFocus = 4 // transport, command, args, connect
+			if cs.usesCombined {
+				cs.maxFocus = 3 // transport, combined command, connect
+			} else {
+				cs.maxFocus = 4 // transport, command, args, connect
+			}
 		} else {
 			cs.maxFocus = 3 // transport, url, connect
 		}
@@ -463,16 +495,23 @@ func (cs *ConnectionScreen) blurAllInputs() {
 	cs.commandInput.Blur()
 	cs.argsInput.Blur()
 	cs.urlInput.Blur()
+	cs.combinedInput.Blur()
 }
 
 // updateInputFocus sets focus on the appropriate input based on current state
 func (cs *ConnectionScreen) updateInputFocus() {
 	switch cs.transportType {
 	case config.TransportStdio:
-		if cs.focusIndex == 1 {
-			cs.commandInput.Focus()
-		} else if cs.focusIndex == 2 {
-			cs.argsInput.Focus()
+		if cs.usesCombined {
+			if cs.focusIndex == 1 {
+				cs.combinedInput.Focus()
+			}
+		} else {
+			if cs.focusIndex == 1 {
+				cs.commandInput.Focus()
+			} else if cs.focusIndex == 2 {
+				cs.argsInput.Focus()
+			}
 		}
 	case config.TransportSSE, config.TransportHTTP:
 		if cs.focusIndex == 1 {
@@ -484,8 +523,26 @@ func (cs *ConnectionScreen) updateInputFocus() {
 // handleConnect processes the connection attempt
 func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 	// Get values from text inputs
-	command := cs.commandInput.Value()
-	args := cs.argsInput.Value()
+	var command, args string
+	
+	if cs.transportType == config.TransportStdio && cs.usesCombined {
+		// Parse combined command input
+		combinedCmd := cs.combinedInput.Value()
+		if combinedCmd != "" {
+			// Split command into command and args
+			fields := strings.Fields(combinedCmd)
+			if len(fields) > 0 {
+				command = fields[0]
+				if len(fields) > 1 {
+					args = strings.Join(fields[1:], " ")
+				}
+			}
+		}
+	} else {
+		command = cs.commandInput.Value()
+		args = cs.argsInput.Value()
+	}
+	
 	url := cs.urlInput.Value()
 
 	cs.logger.Info("Attempting to connect",
@@ -670,6 +727,9 @@ func (cs *ConnectionScreen) renderHelpText() string {
 		helpText = "←/→: Navigate connections • Enter: Connect • M: Manual mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
 	} else {
 		helpText = "←/→: Switch transport • 1/2/3: Select transport • Tab/Shift+Tab: Navigate • Enter: Connect"
+		if cs.transportType == config.TransportStdio {
+			helpText += " • C: Toggle command mode"
+		}
 		if len(cs.savedConnections) > 0 {
 			helpText += " • M: Saved connections"
 		}
@@ -752,24 +812,42 @@ func (cs *ConnectionScreen) renderTransportSelection() string {
 func (cs *ConnectionScreen) renderStdioFields() string {
 	var builder strings.Builder
 
-	// Command field
-	commandLabel := "Command:"
-	if cs.focusIndex == 1 {
-		commandLabel = cs.focusedStyle.Render(commandLabel)
-		builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, cs.focusedStyle.Render(cs.commandInput.View())))
-	} else {
-		commandLabel = cs.blurredStyle.Render(commandLabel)
-		builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, cs.blurredStyle.Render(cs.commandInput.View())))
-	}
+	// Show mode toggle hint
+	modeHint := cs.helpStyle.Render("Press 'C' to toggle between single line and separate fields")
+	builder.WriteString(modeHint)
+	builder.WriteString("\n\n")
 
-	// Args field
-	argsLabel := "Arguments:"
-	if cs.focusIndex == 2 {
-		argsLabel = cs.focusedStyle.Render(argsLabel)
-		builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, cs.focusedStyle.Render(cs.argsInput.View())))
+	if cs.usesCombined {
+		// Combined command input
+		combinedLabel := "Full Command:"
+		if cs.focusIndex == 1 {
+			combinedLabel = cs.focusedStyle.Render(combinedLabel)
+			builder.WriteString(fmt.Sprintf("%s\n%s", combinedLabel, cs.focusedStyle.Render(cs.combinedInput.View())))
+		} else {
+			combinedLabel = cs.blurredStyle.Render(combinedLabel)
+			builder.WriteString(fmt.Sprintf("%s\n%s", combinedLabel, cs.blurredStyle.Render(cs.combinedInput.View())))
+		}
 	} else {
-		argsLabel = cs.blurredStyle.Render(argsLabel)
-		builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, cs.blurredStyle.Render(cs.argsInput.View())))
+		// Separate command and args fields
+		// Command field
+		commandLabel := "Command:"
+		if cs.focusIndex == 1 {
+			commandLabel = cs.focusedStyle.Render(commandLabel)
+			builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, cs.focusedStyle.Render(cs.commandInput.View())))
+		} else {
+			commandLabel = cs.blurredStyle.Render(commandLabel)
+			builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, cs.blurredStyle.Render(cs.commandInput.View())))
+		}
+
+		// Args field
+		argsLabel := "Arguments:"
+		if cs.focusIndex == 2 {
+			argsLabel = cs.focusedStyle.Render(argsLabel)
+			builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, cs.focusedStyle.Render(cs.argsInput.View())))
+		} else {
+			argsLabel = cs.blurredStyle.Render(argsLabel)
+			builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, cs.blurredStyle.Render(cs.argsInput.View())))
+		}
 	}
 
 	return builder.String()
@@ -790,12 +868,7 @@ func (cs *ConnectionScreen) renderURLFields() string {
 // renderConnectButton renders the connect button
 func (cs *ConnectionScreen) renderConnectButton() string {
 	button := "[ Connect ]"
-	isButtonFocused := false
-	if cs.transportType == config.TransportStdio {
-		isButtonFocused = cs.focusIndex == 3
-	} else {
-		isButtonFocused = cs.focusIndex == 2
-	}
+	isButtonFocused := cs.focusIndex == cs.maxFocus-1
 
 	if isButtonFocused {
 		return cs.focusedStyle.Render(button)
