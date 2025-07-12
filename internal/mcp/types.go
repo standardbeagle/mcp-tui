@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"time"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 )
 
@@ -27,6 +28,11 @@ type Service interface {
 
 	// Server info
 	GetServerInfo() *ServerInfo
+	
+	// Connection health and monitoring
+	GetConnectionHealth() map[string]interface{}
+	ConfigureReconnection(maxAttempts int, delay time.Duration)
+	ConfigureHealthCheck(interval time.Duration)
 }
 
 // Tool represents an MCP tool

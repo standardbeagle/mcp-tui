@@ -207,6 +207,60 @@ func (m *Manager) GetInfo() *Info {
 	return &infoCopy
 }
 
+// GetConnectionHealth returns detailed connection health information
+func (m *Manager) GetConnectionHealth() map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	health := map[string]interface{}{
+		"state":               m.info.State.String(),
+		"connected":           m.info.State == StateConnected,
+		"reconnect_count":     m.info.ReconnectCount,
+		"max_reconnect_attempts": m.maxReconnectAttempts,
+		"health_check_interval": m.healthCheckInterval.String(),
+		"transport_type":      string(m.info.TransportType),
+	}
+	
+	if !m.info.ConnectedAt.IsZero() {
+		health["connected_at"] = m.info.ConnectedAt.Format(time.RFC3339)
+		health["connection_duration"] = time.Since(m.info.ConnectedAt).String()
+	}
+	
+	if m.info.LastError != nil {
+		health["last_error"] = m.info.LastError.Error()
+	}
+	
+	if m.info.SessionID != "" {
+		health["session_id"] = m.info.SessionID
+	}
+	
+	return health
+}
+
+// SetReconnectionPolicy allows customizing reconnection behavior
+func (m *Manager) SetReconnectionPolicy(maxAttempts int, delay time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.maxReconnectAttempts = maxAttempts
+	m.reconnectDelay = delay
+	
+	debug.Info("Session manager: Reconnection policy updated", 
+		debug.F("maxAttempts", maxAttempts),
+		debug.F("delay", delay))
+}
+
+// SetHealthCheckInterval allows customizing health check frequency
+func (m *Manager) SetHealthCheckInterval(interval time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.healthCheckInterval = interval
+	
+	debug.Info("Session manager: Health check interval updated", 
+		debug.F("interval", interval))
+}
+
 // IsConnected returns true if session is currently connected
 func (m *Manager) IsConnected() bool {
 	m.mu.RLock()
@@ -251,15 +305,134 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 	m.mu.RLock()
 	session := m.session
 	state := m.info.State
+	transportType := m.info.TransportType
 	m.mu.RUnlock()
 	
 	if state != StateConnected || session == nil {
 		return // Not in a state that needs health checking
 	}
 	
-	// For now, we'll just log that health checking is active
-	// In the future, this could ping the server or check connection status
-	debug.Debug("Session manager: Health check performed", 
+	// For now, perform a simple health check by verifying session is valid
+	// In the future, this could be enhanced with actual server ping
+	if session.ID() == "" {
+		debug.Error("Session manager: Health check failed - session has no ID")
+		m.handleConnectionFailure(fmt.Errorf("health check failed: session has no ID"))
+		return
+	}
+	
+	debug.Debug("Session manager: Health check passed", 
 		debug.F("sessionID", session.ID()),
-		debug.F("state", state))
+		debug.F("state", state),
+		debug.F("transport", transportType))
+}
+
+// handleConnectionFailure handles connection failures and triggers reconnection if appropriate
+func (m *Manager) handleConnectionFailure(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	if m.info.State != StateConnected {
+		return // Already handling failure or not connected
+	}
+	
+	debug.Error("Session manager: Connection failure detected", debug.F("error", err))
+	
+	// Check if we should attempt reconnection
+	if m.info.ReconnectCount >= m.maxReconnectAttempts {
+		debug.Error("Session manager: Max reconnection attempts reached", 
+			debug.F("attempts", m.info.ReconnectCount),
+			debug.F("maxAttempts", m.maxReconnectAttempts))
+		m.setState(StateFailed)
+		m.info.LastError = fmt.Errorf("max reconnection attempts reached: %w", err)
+		return
+	}
+	
+	// Mark as reconnecting and attempt reconnection
+	m.setState(StateReconnecting)
+	m.info.LastError = err
+	m.info.ReconnectCount++
+	
+	// Start reconnection attempt in background
+	go m.attemptReconnection()
+}
+
+// attemptReconnection attempts to reconnect the session
+func (m *Manager) attemptReconnection() {
+	debug.Info("Session manager: Starting reconnection attempt", 
+		debug.F("attempt", m.info.ReconnectCount),
+		debug.F("delay", m.reconnectDelay))
+	
+	// Wait before attempting reconnection
+	time.Sleep(m.reconnectDelay)
+	
+	m.mu.Lock()
+	client := m.client
+	transport := m.transport
+	contextStrategy := m.contextStrategy
+	m.mu.Unlock()
+	
+	if client == nil || transport == nil || contextStrategy == nil {
+		debug.Error("Session manager: Cannot reconnect - missing connection components")
+		m.mu.Lock()
+		m.setState(StateFailed)
+		m.info.LastError = fmt.Errorf("reconnection failed: missing connection components")
+		m.mu.Unlock()
+		return
+	}
+	
+	// Create new connection context
+	connectCtx := contextStrategy.GetConnectionContext(context.Background())
+	connectCtx, cancel := context.WithCancel(connectCtx)
+	
+	// Try to reconnect
+	session, err := client.Connect(connectCtx, transport)
+	if err != nil {
+		debug.Error("Session manager: Reconnection failed", 
+			debug.F("attempt", m.info.ReconnectCount),
+			debug.F("error", err))
+		
+		m.mu.Lock()
+		if m.info.ReconnectCount >= m.maxReconnectAttempts {
+			m.setState(StateFailed)
+			m.info.LastError = fmt.Errorf("reconnection failed after %d attempts: %w", m.info.ReconnectCount, err)
+		} else {
+			// Will try again on next health check failure
+			m.setState(StateConnected) // Revert to connected to allow retry
+		}
+		m.mu.Unlock()
+		cancel()
+		return
+	}
+	
+	// Successfully reconnected
+	m.mu.Lock()
+	// Clean up old session if it still exists
+	if m.session != nil {
+		if closeErr := m.session.Close(); closeErr != nil {
+			debug.Error("Session manager: Failed to close old session during reconnection", 
+				debug.F("error", closeErr))
+		}
+	}
+	
+	// Update with new session
+	if m.closeFunc != nil {
+		m.closeFunc() // Cancel old context
+	}
+	m.closeFunc = cancel
+	m.session = session
+	m.setState(StateConnected)
+	m.info.ConnectedAt = time.Now()
+	m.info.SessionID = session.ID()
+	m.info.LastError = nil
+	// Keep reconnect count for monitoring
+	
+	debug.Info("Session manager: Reconnection successful", 
+		debug.F("attempt", m.info.ReconnectCount),
+		debug.F("newSessionID", m.info.SessionID))
+	m.mu.Unlock()
+	
+	// Restart health monitoring if needed
+	if contextStrategy.RequiresLongLivedConnection() {
+		go m.startHealthMonitoring(connectCtx)
+	}
 }

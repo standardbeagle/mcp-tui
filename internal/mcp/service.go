@@ -584,3 +584,38 @@ func isJSONError(err error) bool {
 func (s *service) GetServerInfo() *ServerInfo {
 	return s.info
 }
+
+// GetConnectionHealth returns detailed connection health information
+func (s *service) GetConnectionHealth() map[string]interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager == nil {
+		return map[string]interface{}{
+			"state": "no_session_manager",
+			"connected": false,
+		}
+	}
+	
+	return s.sessionManager.GetConnectionHealth()
+}
+
+// ConfigureReconnection allows customizing reconnection behavior
+func (s *service) ConfigureReconnection(maxAttempts int, delay time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager != nil {
+		s.sessionManager.SetReconnectionPolicy(maxAttempts, delay)
+	}
+}
+
+// ConfigureHealthCheck allows customizing health check frequency
+func (s *service) ConfigureHealthCheck(interval time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.sessionManager != nil {
+		s.sessionManager.SetHealthCheckInterval(interval)
+	}
+}
