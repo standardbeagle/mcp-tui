@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "defaultServer": "everything",
+  "servers": {
+    "everything": {
+      "id": "everything",
+      "name": "Everything Server",
+      "description": "Official MCP server with all features for testing",
+      "icon": "🌟",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything", "stdio"],
+      "success": false,
+      "tags": ["testing", "development"]
+    },
+    "filesystem-home": {
+      "id": "filesystem-home",
+      "name": "Home Directory",
+      "description": "Access your home directory files",
+      "icon": "🏠",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "~"],
+      "success": false,
+      "tags": ["filesystem", "home"]
+    },
+    "filesystem-workspace": {
+      "id": "filesystem-workspace",
+      "name": "Workspace Files",
+      "description": "Access current workspace directory",
+      "icon": "💼",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "success": false,
+      "tags": ["filesystem", "workspace"]
+    },
+    "sqlite-local": {
+      "id": "sqlite-local",
+      "name": "Local SQLite DB",
+      "description": "Local SQLite database access",
+      "icon": "🗄️",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "./database.db"],
+      "success": false,
+      "tags": ["database", "sqlite"]
+    }
+  }
+}

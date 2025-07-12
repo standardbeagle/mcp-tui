@@ -15,12 +15,63 @@ MCP configurations can be written in JSON or YAML format. The examples in this d
 
 ### File Locations
 
-- **MCP-TUI**: `~/.config/mcp-tui/config.{json,yaml}` or specified via `--config` flag
-- **Claude Desktop**: 
-  - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-  - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+MCP-TUI searches for configuration files in this order:
+
+1. **Command-line specified**: `--config path/to/config.json`
+2. **Project-local**: `.mcp.json`, `.claude.json` in current directory
+3. **User config**: `~/.config/mcp-tui/connections.json` (saved connections format)
+4. **Claude Desktop**: 
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+   - Linux: `~/.config/Claude/claude_desktop_config.json`
+5. **VS Code workspace**: `.vscode/mcp.json`
 
 ## MCP-TUI Configuration
+
+MCP-TUI supports two configuration approaches:
+
+1. **Unified Configuration**: Comprehensive structure for advanced features
+2. **Saved Connections**: Simplified format for managing multiple servers
+
+### Saved Connections Format (Recommended)
+
+The saved connections format provides an intuitive way to manage multiple MCP servers with features like auto-connect, recent connections, and visual organization:
+
+```json
+{
+  "version": "1.0",
+  "defaultServer": "filesystem",
+  "servers": {
+    "filesystem": {
+      "id": "filesystem",
+      "name": "Local Filesystem",
+      "description": "Access local files and directories",
+      "icon": "📁",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"],
+      "success": false,
+      "tags": ["local", "files"],
+      "lastUsed": "2025-01-12T10:30:00Z"
+    }
+  },
+  "recentConnections": [
+    {
+      "serverId": "filesystem",
+      "lastUsed": "2025-01-12T10:30:00Z",
+      "success": true
+    }
+  ]
+}
+```
+
+Key features:
+- **Auto-connect**: Set `defaultServer` or configure single server for automatic connection
+- **Visual organization**: Icons, names, descriptions, and tags for easy identification
+- **Recent connections**: Tracks usage history and success status
+- **Environment variables**: Supports `${env:VAR_NAME}` substitution
+
+### Unified Configuration
 
 MCP-TUI uses a comprehensive configuration structure that supports multiple aspects of MCP client behavior.
 
@@ -287,10 +338,26 @@ Equivalent MCP-TUI configuration:
 }
 ```
 
-## Further Examples
+## Example Files in This Directory
 
+### Saved Connections Format
+- `single-server-config.json` - Simple auto-connect setup
+- `development-preset.json` - Common development tools
+- `multi-transport-config.json` - All transport types with saved connections
+- `production-setup.json` - Production environment configuration
+
+### Unified Configuration Format
 - `mcp-config.json` - Basic MCP-TUI configuration
 - `mcp-config.yaml` - Same configuration in YAML format
-- `claude-desktop-config.json` - Claude Desktop multi-server example
 - `multi-server-config.json` - Multiple servers with different transports
 - `transport-examples.json` - Examples for each transport type
+
+### Compatibility Formats
+- `claude-desktop-config.json` - Claude Desktop multi-server example
+
+### Quick Start
+
+1. **Copy a preset**: Use `development-preset.json` as a starting point
+2. **Auto-connect setup**: Copy `single-server-config.json` for immediate connection
+3. **Multi-environment**: Use `production-setup.json` for complex setups
+4. **All features**: Check `multi-transport-config.json` for comprehensive example

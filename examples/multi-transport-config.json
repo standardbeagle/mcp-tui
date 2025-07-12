@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "defaultServer": "filesystem",
+  "servers": {
+    "filesystem": {
+      "id": "filesystem",
+      "name": "Local Filesystem",
+      "description": "Access local files and directories",
+      "icon": "📁",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/workspace"],
+      "success": false,
+      "tags": ["local", "files"]
+    },
+    "api-server": {
+      "id": "api-server",
+      "name": "API Gateway",
+      "description": "REST API integration server",
+      "icon": "🌐",
+      "transport": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "X-API-Key": "${env:API_KEY}",
+        "Content-Type": "application/json"
+      },
+      "success": false,
+      "tags": ["api", "remote"]
+    },
+    "event-stream": {
+      "id": "event-stream",
+      "name": "Event Stream Server",
+      "description": "Real-time event streaming via SSE",
+      "icon": "⚡",
+      "transport": "sse",
+      "url": "http://localhost:3000/sse",
+      "headers": {
+        "Authorization": "Bearer ${env:EVENT_TOKEN}"
+      },
+      "success": false,
+      "tags": ["events", "realtime"]
+    },
+    "memory": {
+      "id": "memory",
+      "name": "Memory Server",
+      "description": "Persistent memory storage",
+      "icon": "🧠",
+      "transport": "stdio",
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "mcp-memory:/data", "mcp/memory-server"],
+      "success": false,
+      "tags": ["memory", "docker"]
+    }
+  },
+  "recentConnections": [
+    {
+      "serverId": "filesystem",
+      "lastUsed": "2025-01-12T10:30:00Z",
+      "success": true
+    },
+    {
+      "serverId": "api-server",
+      "lastUsed": "2025-01-12T09:15:00Z",
+      "success": true
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "version": "1.0",
+  "servers": {
+    "auth-service": {
+      "id": "auth-service",
+      "name": "Authentication Service",
+      "description": "Production authentication API",
+      "icon": "🔐",
+      "transport": "http",
+      "url": "https://auth.company.com/mcp",
+      "headers": {
+        "X-Service-Key": "${env:AUTH_SERVICE_KEY}",
+        "X-Environment": "production"
+      },
+      "success": false,
+      "tags": ["auth", "production", "api"]
+    },
+    "user-data": {
+      "id": "user-data",
+      "name": "User Data Service",
+      "description": "Production user data API",
+      "icon": "👤",
+      "transport": "http",
+      "url": "https://users.company.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:USER_SERVICE_TOKEN}",
+        "X-Client-Version": "1.0.0"
+      },
+      "success": false,
+      "tags": ["users", "production", "api"]
+    },
+    "monitoring": {
+      "id": "monitoring",
+      "name": "Monitoring Events",
+      "description": "Real-time monitoring and alerts",
+      "icon": "📊",
+      "transport": "sse",
+      "url": "https://monitor.company.com/events",
+      "headers": {
+        "Authorization": "Bearer ${env:MONITOR_TOKEN}",
+        "X-Stream-Type": "alerts"
+      },
+      "success": false,
+      "tags": ["monitoring", "production", "events"]
+    },
+    "analytics": {
+      "id": "analytics",
+      "name": "Analytics Database",
+      "description": "Production analytics PostgreSQL",
+      "icon": "🐘",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "${env:ANALYTICS_DB_URL}"],
+      "environment": {
+        "PGPASSWORD": "${env:ANALYTICS_DB_PASSWORD}"
+      },
+      "success": false,
+      "tags": ["analytics", "production", "database"]
+    }
+  }
+}
