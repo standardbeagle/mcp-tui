@@ -1,0 +1,140 @@
+{
+  "stdio_examples": {
+    "npm_package": {
+      "connection": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-everything", "stdio"]
+      }
+    },
+    "python_server": {
+      "connection": {
+        "type": "stdio",
+        "command": "python",
+        "args": ["server.py", "--mode", "mcp"]
+      }
+    },
+    "node_server": {
+      "connection": {
+        "type": "stdio",
+        "command": "node",
+        "args": ["dist/index.js"]
+      }
+    },
+    "go_binary": {
+      "connection": {
+        "type": "stdio",
+        "command": "./mcp-server",
+        "args": ["--config", "server.conf"]
+      }
+    },
+    "docker_container": {
+      "connection": {
+        "type": "stdio",
+        "command": "docker",
+        "args": ["run", "-i", "my-mcp-server:latest"]
+      }
+    }
+  },
+  
+  "http_examples": {
+    "basic_http": {
+      "connection": {
+        "type": "http",
+        "url": "http://localhost:8080/mcp"
+      }
+    },
+    "https_with_auth": {
+      "connection": {
+        "type": "http",
+        "url": "https://api.example.com/mcp",
+        "headers": {
+          "Authorization": "Bearer ${API_TOKEN}",
+          "X-API-Version": "2025-01-01"
+        }
+      },
+      "transport": {
+        "http": {
+          "tls_min_version": "1.3",
+          "timeout": "60s"
+        }
+      }
+    },
+    "http_with_proxy": {
+      "connection": {
+        "type": "http",
+        "url": "http://internal.corp.com/mcp"
+      },
+      "transport": {
+        "http": {
+          "proxy_url": "http://proxy.corp.com:8080",
+          "proxy_headers": {
+            "Proxy-Authorization": "Basic ${PROXY_AUTH}"
+          }
+        }
+      }
+    }
+  },
+  
+  "sse_examples": {
+    "basic_sse": {
+      "connection": {
+        "type": "sse",
+        "url": "http://localhost:3000/sse"
+      }
+    },
+    "sse_with_auth": {
+      "connection": {
+        "type": "sse",
+        "url": "https://stream.example.com/mcp/sse",
+        "headers": {
+          "Authorization": "Bearer ${STREAM_TOKEN}"
+        }
+      },
+      "transport": {
+        "sse": {
+          "reconnect_interval": "5s",
+          "max_reconnect_attempts": 10,
+          "buffer_size": 16384,
+          "read_timeout": "0s"
+        }
+      }
+    },
+    "sse_with_event_filtering": {
+      "connection": {
+        "type": "sse",
+        "url": "http://localhost:3000/events"
+      },
+      "transport": {
+        "sse": {
+          "event_types": ["tool", "resource", "log"],
+          "ignore_events": ["heartbeat", "ping"]
+        }
+      }
+    }
+  },
+  
+  "streamable_http_examples": {
+    "basic_streamable": {
+      "connection": {
+        "type": "streamable-http",
+        "url": "http://localhost:8080/mcp/stream"
+      }
+    },
+    "streamable_with_chunking": {
+      "connection": {
+        "type": "streamable-http",
+        "url": "https://api.example.com/v2/mcp"
+      },
+      "transport": {
+        "http": {
+          "timeout": "0s",
+          "default_headers": {
+            "Accept": "application/x-ndjson",
+            "X-Stream-Mode": "chunked"
+          }
+        }
+      }
+    }
+  }
+}

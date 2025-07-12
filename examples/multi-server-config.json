@@ -1,0 +1,106 @@
+{
+  "servers": [
+    {
+      "name": "filesystem",
+      "connection": {
+        "type": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/home/user/projects",
+          "/home/user/documents"
+        ]
+      },
+      "description": "File system access server",
+      "enabled": true
+    },
+    {
+      "name": "weather-api",
+      "connection": {
+        "type": "http",
+        "url": "http://localhost:8000/mcp"
+      },
+      "description": "Weather data API server",
+      "enabled": true,
+      "transport": {
+        "http": {
+          "headers": {
+            "Authorization": "Bearer ${WEATHER_API_KEY}"
+          }
+        }
+      }
+    },
+    {
+      "name": "database",
+      "connection": {
+        "type": "stdio",
+        "command": "python",
+        "args": [
+          "/opt/mcp-servers/database/server.py",
+          "--config",
+          "/etc/mcp/database.conf"
+        ]
+      },
+      "description": "Database access server",
+      "enabled": true,
+      "session": {
+        "health_check_interval": "60s",
+        "max_reconnect_attempts": 5
+      }
+    },
+    {
+      "name": "realtime-data",
+      "connection": {
+        "type": "sse",
+        "url": "http://localhost:3000/sse",
+        "headers": {
+          "X-API-Key": "${REALTIME_API_KEY}"
+        }
+      },
+      "description": "Real-time data streaming server",
+      "enabled": true,
+      "transport": {
+        "sse": {
+          "reconnect_interval": "10s",
+          "max_reconnect_attempts": 10,
+          "buffer_size": 16384
+        }
+      }
+    },
+    {
+      "name": "development-server",
+      "connection": {
+        "type": "stdio",
+        "command": "./dev-server",
+        "args": ["--mcp", "--verbose"],
+        "working_directory": "/home/user/dev/my-mcp-server"
+      },
+      "description": "Local development MCP server",
+      "enabled": false,
+      "debug": {
+        "enabled": true,
+        "log_level": "debug"
+      }
+    }
+  ],
+  "defaults": {
+    "connection": {
+      "connection_timeout": "30s",
+      "request_timeout": "30s",
+      "health_check_timeout": "5s"
+    },
+    "session": {
+      "health_check_interval": "30s",
+      "max_reconnect_attempts": 3,
+      "reconnect_delay": "2s",
+      "reconnect_backoff": "exponential"
+    },
+    "error_handling": {
+      "enable_classification": true,
+      "user_friendly_messages": true,
+      "enable_retry": true,
+      "max_retry_attempts": 3
+    }
+  }
+}

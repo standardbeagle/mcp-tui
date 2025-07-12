@@ -10,6 +10,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/tui/models"
 )
 
 // ConnectionScreen handles MCP server connection setup
@@ -18,8 +19,16 @@ type ConnectionScreen struct {
 	config *config.Config
 	logger debug.Logger
 
+	// Connections management
+	connectionsManager *models.ConnectionsManager
+	savedConnections   map[string]*models.ConnectionEntry
+	selectedConnection *models.ConnectionEntry
+
 	// UI state
+	viewMode      string // "saved" or "manual"
 	transportType config.TransportType
+	connectionsList []string
+	connectionIndex int
 
 	// Text input models
 	commandInput textinput.Model
@@ -35,6 +44,8 @@ type ConnectionScreen struct {
 	blurredStyle lipgloss.Style
 	titleStyle   lipgloss.Style
 	helpStyle    lipgloss.Style
+	cardStyle    lipgloss.Style
+	selectedCardStyle lipgloss.Style
 }
 
 // NewConnectionScreen creates a new connection screen
@@ -45,12 +56,21 @@ func NewConnectionScreen(cfg *config.Config) *ConnectionScreen {
 // NewConnectionScreenWithConfig creates a new connection screen with optional previous config
 func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.ConnectionConfig) *ConnectionScreen {
 	cs := &ConnectionScreen{
-		BaseScreen:    NewBaseScreen("Connection", false),
-		config:        cfg,
-		logger:        debug.Component("connection-screen"),
-		transportType: config.TransportStdio,
-		maxFocus:      4, // transport, command, args, connect button
+		BaseScreen:         NewBaseScreen("Connection", false),
+		config:             cfg,
+		logger:             debug.Component("connection-screen"),
+		connectionsManager: models.NewConnectionsManager(),
+		viewMode:           "saved",
+		transportType:      config.TransportStdio,
+		maxFocus:           4, // will be updated based on mode
 	}
+
+	// Load saved connections
+	if err := cs.connectionsManager.LoadConnections(); err != nil {
+		cs.logger.Error("Failed to load connections", debug.F("error", err))
+	}
+	cs.savedConnections = cs.connectionsManager.GetConnections()
+	cs.buildConnectionsList()
 
 	// Initialize text input models
 	cs.commandInput = textinput.New()
@@ -114,10 +134,51 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 		Foreground(lipgloss.Color("241")).
 		Margin(1, 0)
 
-	// Start focus on transport selector
-	cs.focusIndex = 0
+	cs.cardStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(1, 2).
+		Margin(0, 1)
+
+	cs.selectedCardStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Background(lipgloss.Color("235")).
+		Padding(1, 2).
+		Margin(0, 1)
+
+	// Determine initial view mode and focus
+	if len(cs.savedConnections) > 0 {
+		cs.viewMode = "saved"
+		cs.focusIndex = 0
+		cs.maxFocus = 3 // saved connections, manual entry, connect
+	} else {
+		cs.viewMode = "manual"
+		cs.focusIndex = 0
+		cs.maxFocus = 4 // transport, command, args, connect
+	}
 
 	return cs
+}
+
+// buildConnectionsList builds the list of connection names for UI display
+func (cs *ConnectionScreen) buildConnectionsList() {
+	cs.connectionsList = make([]string, 0, len(cs.savedConnections))
+	for _, entry := range cs.savedConnections {
+		cs.connectionsList = append(cs.connectionsList, entry.ID)
+	}
+}
+
+// getCurrentConnection returns the currently selected saved connection
+func (cs *ConnectionScreen) getCurrentConnection() *models.ConnectionEntry {
+	if cs.viewMode != "saved" || len(cs.connectionsList) == 0 {
+		return nil
+	}
+	if cs.connectionIndex < 0 || cs.connectionIndex >= len(cs.connectionsList) {
+		return nil
+	}
+	connectionID := cs.connectionsList[cs.connectionIndex]
+	return cs.savedConnections[connectionID]
 }
 
 // Init initializes the connection screen
@@ -163,14 +224,77 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Screen: debugScreen,
 			}
 		}
+
+	case "m":
+		// Toggle between saved and manual mode
+		if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
+			cs.viewMode = "manual"
+			cs.focusIndex = 0
+			cs.updateMaxFocus()
+		} else if cs.viewMode == "manual" && len(cs.savedConnections) > 0 {
+			cs.viewMode = "saved"
+			cs.focusIndex = 0
+			cs.updateMaxFocus()
+		}
+		cs.blurAllInputs()
+		return cs, nil
 	}
 
-	// Update max focus based on transport type
-	if cs.transportType == config.TransportStdio {
-		cs.maxFocus = 4 // transport, command, args, connect
-	} else {
-		cs.maxFocus = 3 // transport, url, connect
+	// Handle saved connections mode
+	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
+		return cs.handleSavedConnectionsInput(msg)
 	}
+
+	// Handle manual entry mode
+	return cs.handleManualEntryInput(msg)
+}
+
+// handleSavedConnectionsInput handles input for saved connections mode
+func (cs *ConnectionScreen) handleSavedConnectionsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return cs, tea.Quit
+
+	case "tab", "down":
+		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
+		return cs, nil
+
+	case "shift+tab", "up":
+		cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
+		return cs, nil
+
+	case "left":
+		if cs.focusIndex == 0 && len(cs.connectionsList) > 0 {
+			// Navigate saved connections
+			cs.connectionIndex = (cs.connectionIndex - 1 + len(cs.connectionsList)) % len(cs.connectionsList)
+		}
+		return cs, nil
+
+	case "right":
+		if cs.focusIndex == 0 && len(cs.connectionsList) > 0 {
+			// Navigate saved connections
+			cs.connectionIndex = (cs.connectionIndex + 1) % len(cs.connectionsList)
+		}
+		return cs, nil
+
+	case "enter":
+		if cs.focusIndex == 0 {
+			// Select current saved connection and connect
+			return cs.handleSavedConnectionConnect()
+		} else if cs.focusIndex == cs.maxFocus-1 {
+			// Connect button
+			return cs.handleSavedConnectionConnect()
+		}
+		return cs, nil
+	}
+
+	return cs, nil
+}
+
+// handleManualEntryInput handles input for manual entry mode
+func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Update max focus based on transport type
+	cs.updateMaxFocus()
 
 	// Handle input based on current focus
 	var cmd tea.Cmd
@@ -202,34 +326,6 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Move to previous field
 			cs.blurAllInputs()
 			cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
-			cs.updateInputFocus()
-			return cs, nil
-		case "ctrl+left":
-			// Switch transport type to the left while staying in input
-			switch cs.transportType {
-			case config.TransportStdio:
-				cs.transportType = config.TransportHTTP // Wrap around
-			case config.TransportSSE:
-				cs.transportType = config.TransportStdio
-			case config.TransportHTTP:
-				cs.transportType = config.TransportSSE
-			}
-			// Maintain focus on current input field
-			cs.blurAllInputs()
-			cs.updateInputFocus()
-			return cs, nil
-		case "ctrl+right":
-			// Switch transport type to the right while staying in input
-			switch cs.transportType {
-			case config.TransportStdio:
-				cs.transportType = config.TransportSSE
-			case config.TransportSSE:
-				cs.transportType = config.TransportHTTP
-			case config.TransportHTTP:
-				cs.transportType = config.TransportStdio // Wrap around
-			}
-			// Maintain focus on current input field
-			cs.blurAllInputs()
 			cs.updateInputFocus()
 			return cs, nil
 		default:
@@ -284,7 +380,6 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case config.TransportHTTP:
 				cs.transportType = config.TransportSSE
 			}
-			// Keep focus on transport selection to allow further arrow navigation
 		}
 		return cs, nil
 
@@ -299,7 +394,6 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case config.TransportHTTP:
 				cs.transportType = config.TransportStdio // Wrap around
 			}
-			// Keep focus on transport selection to allow further arrow navigation
 		}
 		return cs, nil
 
@@ -325,6 +419,43 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return cs, nil
+}
+
+// updateMaxFocus updates the max focus based on current mode and transport
+func (cs *ConnectionScreen) updateMaxFocus() {
+	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
+		cs.maxFocus = 2 // saved connections, connect button
+	} else {
+		// Manual entry mode
+		if cs.transportType == config.TransportStdio {
+			cs.maxFocus = 4 // transport, command, args, connect
+		} else {
+			cs.maxFocus = 3 // transport, url, connect
+		}
+	}
+}
+
+// handleSavedConnectionConnect connects using the selected saved connection
+func (cs *ConnectionScreen) handleSavedConnectionConnect() (tea.Model, tea.Cmd) {
+	currentConnection := cs.getCurrentConnection()
+	if currentConnection == nil {
+		cs.SetError(fmt.Errorf("no connection selected"))
+		return cs, nil
+	}
+
+	cs.logger.Info("Connecting to saved connection",
+		debug.F("name", currentConnection.Name),
+		debug.F("transport", currentConnection.Transport))
+
+	// Convert to connection config
+	connConfig := currentConnection.ToConnectionConfig()
+
+	// Update last used
+	cs.connectionsManager.UpdateLastUsed(currentConnection.ID, false) // Will be updated to true on success
+
+	// Transition to main screen
+	mainScreen := NewMainScreen(cs.config, connConfig)
+	return mainScreen, mainScreen.Init()
 }
 
 // blurAllInputs removes focus from all text inputs
@@ -409,16 +540,17 @@ func (cs *ConnectionScreen) View() string {
 	builder.WriteString(cs.titleStyle.Render("MCP Server Connection"))
 	builder.WriteString("\n\n")
 
-	// Transport type selection
-	builder.WriteString(cs.renderTransportSelection())
-	builder.WriteString("\n")
+	// Show mode selector if saved connections exist
+	if len(cs.savedConnections) > 0 {
+		builder.WriteString(cs.renderModeSelector())
+		builder.WriteString("\n\n")
+	}
 
-	// Connection details based on transport type
-	switch cs.transportType {
-	case config.TransportStdio:
-		builder.WriteString(cs.renderStdioFields())
-	case config.TransportSSE, config.TransportHTTP:
-		builder.WriteString(cs.renderURLFields())
+	// Render based on current mode
+	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
+		builder.WriteString(cs.renderSavedConnections())
+	} else {
+		builder.WriteString(cs.renderManualEntry())
 	}
 
 	// Connect button
@@ -433,10 +565,118 @@ func (cs *ConnectionScreen) View() string {
 
 	// Help text
 	builder.WriteString("\n\n")
-	helpText := "←/→: Switch transport • Ctrl+←/→: Switch from input • 1/2/3: Select transport • Tab/Shift+Tab: Navigate • Enter: Connect • Ctrl+D/F12: Debug Log • Esc/Ctrl+C: Quit"
-	builder.WriteString(cs.helpStyle.Render(helpText))
+	builder.WriteString(cs.renderHelpText())
 
 	return builder.String()
+}
+
+// renderModeSelector renders the mode selection between saved and manual
+func (cs *ConnectionScreen) renderModeSelector() string {
+	savedStyle := cs.blurredStyle
+	manualStyle := cs.blurredStyle
+
+	if cs.viewMode == "saved" {
+		savedStyle = cs.focusedStyle
+	} else {
+		manualStyle = cs.focusedStyle
+	}
+
+	savedButton := savedStyle.Render(fmt.Sprintf("📋 Saved (%d)", len(cs.savedConnections)))
+	manualButton := manualStyle.Render("⌨️  Manual Entry")
+
+	return fmt.Sprintf("%s  %s", savedButton, manualButton) + "\n" +
+		cs.helpStyle.Render("Press 'M' to switch between modes")
+}
+
+// renderSavedConnections renders the saved connections interface
+func (cs *ConnectionScreen) renderSavedConnections() string {
+	var builder strings.Builder
+
+	builder.WriteString("Saved Connections:\n")
+
+	if len(cs.connectionsList) == 0 {
+		builder.WriteString(cs.blurredStyle.Render("No saved connections found"))
+		return builder.String()
+	}
+
+	// Render connections in a grid layout
+	for i, connectionID := range cs.connectionsList {
+		connection := cs.savedConnections[connectionID]
+		if connection == nil {
+			continue
+		}
+
+		isSelected := i == cs.connectionIndex
+		isFocused := cs.focusIndex == 0
+
+		var style lipgloss.Style
+		if isFocused && isSelected {
+			style = cs.selectedCardStyle
+		} else {
+			style = cs.cardStyle
+		}
+
+		// Build connection card content
+		var cardContent strings.Builder
+		cardContent.WriteString(fmt.Sprintf("%s %s\n", connection.Icon, connection.Name))
+		cardContent.WriteString(fmt.Sprintf("Transport: %s\n", connection.Transport))
+		
+		if connection.Command != "" {
+			cardContent.WriteString(fmt.Sprintf("Command: %s\n", connection.Command))
+		}
+		if connection.URL != "" {
+			cardContent.WriteString(fmt.Sprintf("URL: %s\n", connection.URL))
+		}
+		if connection.Description != "" {
+			cardContent.WriteString(fmt.Sprintf("Description: %s", connection.Description))
+		}
+
+		card := style.Render(cardContent.String())
+		builder.WriteString(card)
+
+		// Add spacing between cards
+		if i < len(cs.connectionsList)-1 {
+			builder.WriteString("\n")
+		}
+	}
+
+	return builder.String()
+}
+
+// renderManualEntry renders the manual connection entry interface
+func (cs *ConnectionScreen) renderManualEntry() string {
+	var builder strings.Builder
+
+	// Transport type selection
+	builder.WriteString(cs.renderTransportSelection())
+	builder.WriteString("\n")
+
+	// Connection details based on transport type
+	switch cs.transportType {
+	case config.TransportStdio:
+		builder.WriteString(cs.renderStdioFields())
+	case config.TransportSSE, config.TransportHTTP:
+		builder.WriteString(cs.renderURLFields())
+	}
+
+	return builder.String()
+}
+
+// renderHelpText renders context-appropriate help text
+func (cs *ConnectionScreen) renderHelpText() string {
+	var helpText string
+
+	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
+		helpText = "←/→: Navigate connections • Enter: Connect • M: Manual mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
+	} else {
+		helpText = "←/→: Switch transport • 1/2/3: Select transport • Tab/Shift+Tab: Navigate • Enter: Connect"
+		if len(cs.savedConnections) > 0 {
+			helpText += " • M: Saved connections"
+		}
+		helpText += " • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
+	}
+
+	return cs.helpStyle.Render(helpText)
 }
 
 // renderTransportSelection renders the transport type selection

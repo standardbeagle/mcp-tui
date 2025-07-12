@@ -1,0 +1,66 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/username/Desktop",
+        "/Users/username/Downloads"
+      ]
+    },
+    "weather": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/weather",
+        "run",
+        "weather.py"
+      ]
+    },
+    "github": {
+      "command": "node",
+      "args": [
+        "/path/to/github/dist/index.js"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your_github_pat_here"
+      }
+    },
+    "sqlite": {
+      "command": "npx",
+      "args": [
+        "mcp-server-sqlite",
+        "--db-path",
+        "/path/to/database.db"
+      ]
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-puppeteer"
+      ]
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://localhost/mydb"
+      ]
+    },
+    "custom-local": {
+      "command": "python",
+      "args": [
+        "/path/to/custom/server.py",
+        "--port",
+        "3000"
+      ],
+      "env": {
+        "API_KEY": "your-api-key",
+        "DEBUG": "true"
+      }
+    }
+  }
+}

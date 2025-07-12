@@ -1,0 +1,78 @@
+connection:
+  type: stdio
+  command: npx
+  args:
+    - "-y"
+    - "@modelcontextprotocol/server-everything"
+    - "stdio"
+  connection_timeout: 30s
+  request_timeout: 30s
+  health_check_timeout: 5s
+  deny_unsafe_commands: true
+
+transport:
+  http:
+    timeout: 30s
+    max_idle_conns: 100
+    max_idle_conns_per_host: 10
+    idle_conn_timeout: 90s
+    tls_min_version: "1.2"
+    user_agent: "mcp-tui/0.1.0"
+  
+  stdio:
+    command_validation: true
+    max_processes: 10
+    process_timeout: 300s
+    kill_timeout: 10s
+  
+  sse:
+    reconnect_interval: 5s
+    max_reconnect_attempts: 5
+    buffer_size: 8192
+    read_timeout: 30s
+    write_timeout: 10s
+
+session:
+  health_check_interval: 30s
+  health_check_timeout: 5s
+  max_reconnect_attempts: 3
+  reconnect_delay: 2s
+  reconnect_backoff: exponential
+  max_reconnect_delay: 60s
+  enable_persistence: false
+  persistence_interval: 60s
+
+error_handling:
+  enable_classification: true
+  user_friendly_messages: true
+  max_error_history: 1000
+  error_reporting: false
+  enable_retry: true
+  max_retry_attempts: 3
+  retry_delay: 1s
+  retry_backoff: exponential
+
+debug:
+  enabled: false
+  log_level: info
+  event_tracing: false
+  max_traced_events: 1000
+  http_debugging: false
+  http_trace_body: false
+  http_trace_headers: false
+  pretty_print: true
+  colored_output: true
+  timestamp_format: "2006-01-02T15:04:05Z07:00"
+  export_events: false
+  export_format: json
+
+cli:
+  output_format: table
+  quiet_mode: false
+  verbose_mode: false
+  no_color: false
+  show_progress: true
+  progress_style: bar
+  enable_clipboard: true
+  enable_paging: true
+  page_size: 25
