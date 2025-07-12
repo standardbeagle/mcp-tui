@@ -49,6 +49,14 @@ Stop struggling with curl commands, JSON formatting, and connection issues. MCP-
 - Test servers that simulate real-world failure scenarios
 - Graceful degradation when servers become unresponsive
 
+### Saved Connections & Auto-Connect
+**Problem Solved:** Stop re-typing server configurations and connection details
+- Save frequently used server configurations with visual names and icons
+- Auto-connect to single server setups or configured default servers
+- Compatible with Claude Desktop and VS Code MCP configurations
+- Recent connections tracking with success status
+- Environment variable substitution for secure credential management
+
 ## 🚀 Get Started in 30 Seconds
 
 ### Installation
@@ -80,13 +88,23 @@ make install
 
 **🎯 Just Getting Started? Try This:**
 ```bash
-# Connect to MCP server via STDIO (local process)
+# Quick connect to MCP server via STDIO (local process)
 mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
 
 # Or connect via SSE (Server-Sent Events) for web servers
 mcp-tui --url http://localhost:8000/sse
+
+# Use saved connections for quick access
+mcp-tui  # Opens connection screen with saved servers (if any)
 ```
-*Why this works: STDIO connects to local processes, SSE connects to web servers*
+*Why this works: STDIO connects to local processes, SSE connects to web servers, saved connections remember your favorites*
+
+**💡 Smart Auto-Connect:**
+If you have a saved configuration file with a single server or default server, MCP-TUI will auto-connect immediately:
+```bash
+# Create ~/.config/mcp-tui/connections.json or copy examples/single-server-config.json
+mcp-tui  # Connects automatically!
+```
 
 **🤖 Building Automation? Use CLI Mode:**
 ```bash
