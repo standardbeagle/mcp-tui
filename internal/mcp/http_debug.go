@@ -93,15 +93,8 @@ type debugRoundTripper struct {
 }
 
 func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Only intercept MCP-related requests or SSE requests
-	isMCPRequest := strings.Contains(req.URL.Path, "mcp") || 
-		strings.Contains(req.URL.Path, "sse") ||
-		strings.Contains(req.Header.Get("Content-Type"), "json-rpc") ||
-		strings.Contains(req.Header.Get("Accept"), "text/event-stream")
-	
-	if !isMCPRequest {
-		return t.base.RoundTrip(req)
-	}
+	// Intercept all HTTP requests when debug mode is enabled
+	// Any HTTP endpoint can serve MCP protocol - don't filter by URL path
 
 	// Capture connection details with httptrace
 	connInfo := &ConnectionInfo{}
@@ -110,6 +103,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
 			dnsStart = time.Now()
+			SetConnectionState(StageDNSLookup, "DNS lookup started", info.Host, nil)
 			if t.debugMode {
 				debug.Info("DNS lookup started", debug.F("host", info.Host))
 			}
@@ -126,6 +120,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		},
 		ConnectStart: func(network, addr string) {
 			connectStart = time.Now()
+			SetConnectionState(StageTCPConnect, "TCP connection started", addr, nil)
 			if t.debugMode {
 				debug.Info("TCP connection started", debug.F("addr", addr))
 			}
@@ -143,6 +138,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		},
 		TLSHandshakeStart: func() {
 			tlsStart = time.Now()
+			SetConnectionState(StageTLSHandshake, "TLS handshake started", req.URL.String(), nil)
 			if t.debugMode {
 				debug.Info("TLS handshake started")
 			}
@@ -197,6 +193,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 
+	SetConnectionState(StageRequestSent, "MCP initialize request sent", req.URL.String(), nil)
 	if t.debugMode {
 		debug.Info("Starting HTTP request", 
 			debug.F("method", req.Method),
@@ -204,9 +201,11 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			debug.F("headers", req.Header))
 	}
 
-	// Execute the request
+	// Execute the request  
+	SetConnectionState(StageWaitingResponse, "Waiting for server response", req.URL.String(), nil)
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
+		SetConnectionState(StageFailed, "Request failed", req.URL.String(), err)
 		// Even on failure, capture the connection details for debugging
 		headers := make(map[string]string)
 		errorInfo := &HTTPErrorInfo{
@@ -232,6 +231,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, err
 	}
 
+	SetConnectionState(StageResponseReceived, "Response received", req.URL.String(), nil)
 	// Capture response body
 	if resp.Body != nil {
 		bodyBytes, err := io.ReadAll(resp.Body)

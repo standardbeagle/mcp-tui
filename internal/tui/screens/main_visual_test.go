@@ -29,7 +29,10 @@ func TestMainScreenVisualElements(t *testing.T) {
 
 	t.Run("tab_separators", func(t *testing.T) {
 		// Set up some data
-		ms.tools = []string{"tool1", "tool2"}
+		ms.tools = []mcp.Tool{
+			{Name: "tool1", Description: "Tool 1 description"},
+			{Name: "tool2", Description: "Tool 2 description"},
+		}
 		ms.toolCount = 2
 		ms.resources = []string{"resource1"}
 		ms.resourceCount = 1
@@ -58,10 +61,10 @@ func TestMainScreenVisualElements(t *testing.T) {
 
 	t.Run("numbered_tools", func(t *testing.T) {
 		ms.activeTab = 0 // Tools tab
-		ms.tools = []string{
-			"echo - Returns the provided message",
-			"add - Adds two numbers",
-			"multiply - Multiplies two numbers",
+		ms.tools = []mcp.Tool{
+			{Name: "echo", Description: "Returns the provided message"},
+			{Name: "add", Description: "Adds two numbers"},
+			{Name: "multiply", Description: "Multiplies two numbers"},
 		}
 		ms.toolCount = 3
 		ms.selectedIndex[0] = 1
@@ -76,9 +79,12 @@ func TestMainScreenVisualElements(t *testing.T) {
 
 	t.Run("scroll_indicators", func(t *testing.T) {
 		// Create many tools to trigger scrolling
-		tools := make([]string, 30)
+		tools := make([]mcp.Tool, 30)
 		for i := 0; i < 30; i++ {
-			tools[i] = "tool - Description"
+			tools[i] = mcp.Tool{
+				Name:        "tool",
+				Description: "Description",
+			}
 		}
 		ms.tools = tools
 		ms.toolCount = 30
@@ -134,7 +140,11 @@ func TestMainScreenVisualElements(t *testing.T) {
 		ms.connected = true
 		ms.connecting = false
 		ms.activeTab = 0
-		ms.tools = []string{"tool1", "tool2", "tool3"}
+		ms.tools = []mcp.Tool{
+			{Name: "tool1", Description: "Tool 1 description"},
+			{Name: "tool2", Description: "Tool 2 description"},
+			{Name: "tool3", Description: "Tool 3 description"},
+		}
 		ms.toolCount = 3
 		ms.selectedIndex[0] = 0
 

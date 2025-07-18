@@ -749,7 +749,18 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 		URL:     url,
 	}
 
-	cs.logger.Info("Connection configuration created", debug.F("config", connConfig))
+	// Log what we're actually connecting to
+	switch cs.transportType {
+	case config.TransportStdio:
+		cs.logger.Info("Connecting to MCP server", 
+			debug.F("transport", "stdio"),
+			debug.F("command", command),
+			debug.F("args", args))
+	case config.TransportHTTP, config.TransportSSE:
+		cs.logger.Info("Connecting to MCP server", 
+			debug.F("transport", cs.transportType),
+			debug.F("url", url))
+	}
 
 	// Transition to main screen
 	mainScreen := NewMainScreen(cs.config, connConfig)

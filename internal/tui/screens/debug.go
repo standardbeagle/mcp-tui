@@ -479,9 +479,9 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 	if httpInfo == nil {
 		builder.WriteString("No HTTP requests captured yet.\n\n")
 		builder.WriteString("💡 Tips for HTTP debugging:\n")
-		builder.WriteString("• Enable debug mode with --debug flag\n")
+		builder.WriteString("• Debug mode is always enabled\n")
 		builder.WriteString("• Try connecting to an SSE or HTTP transport\n")
-		builder.WriteString("• HTTP state is captured automatically for SSE connections\n")
+		builder.WriteString("• HTTP state is captured automatically for all connections\n")
 		return ds.logStyle.Render(builder.String())
 	}
 

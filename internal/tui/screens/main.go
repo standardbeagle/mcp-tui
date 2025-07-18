@@ -31,7 +31,8 @@ type MainScreen struct {
 
 	// UI state
 	activeTab int // 0=tools, 1=resources, 2=prompts, 3=events
-	tools     []string
+	tools     []mcp.Tool      // Store actual tool objects for two-panel display
+	toolStrings []string      // Keep for backward compatibility with other tabs
 	resources []string
 	prompts   []string
 	events    []debug.MCPLogEntry // Store actual event entries
@@ -54,6 +55,11 @@ type MainScreen struct {
 	// Event view state
 	showEventDetail bool
 	eventPaneFocus  int // 0=list, 1=detail
+	
+	// Tool split view state
+	toolPaneFocus    int // 0=list, 1=detail (for future use)
+	toolListScroll   int // Scroll position for tool list
+	toolDetailScroll int // Scroll position for tool description
 
 	// Connection status
 	connectionStatus string
@@ -86,6 +92,14 @@ type ItemsLoadedMsg struct {
 	Error       error
 }
 
+// ToolsLoadedMsg contains loaded tools with full data structure
+type ToolsLoadedMsg struct {
+	Tools       []mcp.Tool
+	Items       []string    // Backward compatible string format
+	ActualCount int
+	Error       error
+}
+
 // EventTickMsg is sent periodically to refresh events
 type EventTickMsg struct{}
 
@@ -107,7 +121,8 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 		logger:           debug.Component("main-screen"),
 		mcpService:       service,
 		selectedIndex:    make(map[int]int),
-		tools:            []string{},
+		tools:            []mcp.Tool{},
+		toolStrings:      []string{},
 		resources:        []string{},
 		prompts:          []string{},
 		events:           []debug.MCPLogEntry{},
@@ -190,7 +205,17 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ConnectionStartedMsg:
 		ms.connecting = true
 		ms.connectingStart = time.Now()
-		ms.connectionStatus = "Connecting to MCP server..."
+		// Show what we're actually connecting to
+		switch ms.connectionConfig.Type {
+		case config.TransportStdio:
+			ms.connectionStatus = fmt.Sprintf("Connecting to stdio: %s %s", 
+				ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
+		case config.TransportHTTP, config.TransportSSE:
+			ms.connectionStatus = fmt.Sprintf("Connecting to %s: %s", 
+				ms.connectionConfig.Type, ms.connectionConfig.URL)
+		default:
+			ms.connectionStatus = fmt.Sprintf("Connecting via %s...", ms.connectionConfig.Type)
+		}
 		// Start ticker for spinner animation
 		return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 			return spinnerTickMsg{}
@@ -235,18 +260,25 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return ms, nil
 
+	case ToolsLoadedMsg:
+		ms.toolsLoading = false
+		if msg.Error != nil {
+			ms.tools = []mcp.Tool{}
+			ms.toolStrings = []string{fmt.Sprintf("Error loading tools: %v", msg.Error)}
+			ms.toolCount = 0
+		} else {
+			ms.tools = msg.Tools
+			ms.toolStrings = msg.Items
+			ms.toolCount = msg.ActualCount
+		}
+		ms.ensureInitialFocus(0)
+		return ms, nil
+
 	case ItemsLoadedMsg:
 		switch msg.Tab {
-		case 0: // Tools
-			ms.toolsLoading = false
-			if msg.Error != nil {
-				ms.tools = []string{fmt.Sprintf("Error loading tools: %v", msg.Error)}
-				ms.toolCount = 0
-			} else {
-				ms.tools = msg.Items
-				ms.toolCount = msg.ActualCount
-			}
-			ms.ensureInitialFocus(0)
+		case 0: // Tools - handled by ToolsLoadedMsg now
+			// This case is now handled by ToolsLoadedMsg above
+			return ms, nil
 		case 1: // Resources
 			ms.resourcesLoading = false
 			if msg.Error != nil {
@@ -302,6 +334,16 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinnerTickMsg:
 		// Continue spinner animation while connecting
 		if ms.connecting {
+			// Update connection status with detailed HTTP progress for HTTP/SSE transports
+			if ms.connectionConfig.Type == config.TransportHTTP || ms.connectionConfig.Type == config.TransportSSE {
+				if detailedStatus := ms.mcpService.GetConnectionDisplayMessage(); detailedStatus != "" {
+					ms.connectionStatus = detailedStatus
+					// Add diagnostic message if helpful
+					if diagnostic := ms.mcpService.GetServerDiagnosticMessage(); diagnostic != "" {
+						ms.connectionStatus += fmt.Sprintf("\n💡 %s", diagnostic)
+					}
+				}
+			}
 			return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 				return spinnerTickMsg{}
 			})
@@ -391,6 +433,25 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ms, nil
 
+	case "ctrl+up":
+		// Scroll description panel up in tool split view
+		if ms.activeTab == 0 && len(ms.tools) > 0 {
+			if ms.toolDetailScroll > 0 {
+				ms.toolDetailScroll -= 5 // Scroll up by 5 lines
+				if ms.toolDetailScroll < 0 {
+					ms.toolDetailScroll = 0
+				}
+			}
+		}
+		return ms, nil
+
+	case "ctrl+down":
+		// Scroll description panel down in tool split view
+		if ms.activeTab == 0 && len(ms.tools) > 0 {
+			ms.toolDetailScroll += 5 // Scroll down by 5 lines
+		}
+		return ms, nil
+
 	case "b", "alt+left":
 		// In events tab with detail view, close detail
 		if ms.activeTab == 3 && ms.showEventDetail {
@@ -445,7 +506,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (ms *MainScreen) getCurrentList() []string {
 	switch ms.activeTab {
 	case 0:
-		return ms.tools
+		return ms.toolStrings
 	case 1:
 		return ms.resources
 	case 2:
@@ -486,7 +547,7 @@ func (ms *MainScreen) ensureInitialFocus(tabIndex int) {
 		var currentList []string
 		switch tabIndex {
 		case 0:
-			currentList = ms.tools
+			currentList = ms.toolStrings
 		case 1:
 			currentList = ms.resources
 		case 2:
@@ -690,9 +751,11 @@ func (ms *MainScreen) View() string {
 	builder.WriteString(separatorStyle.Render(strings.Repeat("─", width)))
 	builder.WriteString("\n")
 
-	// Current list or split-pane view for events
+	// Current list or split-pane view for tools and events
 	if ms.activeTab == 3 && ms.showEventDetail {
 		builder.WriteString(ms.renderEventSplitView())
+	} else if ms.activeTab == 0 && len(ms.tools) > 0 {
+		builder.WriteString(ms.renderToolSplitView())
 	} else {
 		builder.WriteString(ms.renderCurrentList())
 	}
@@ -1171,8 +1234,8 @@ func (ms *MainScreen) connectToServer() tea.Cmd {
 func (ms *MainScreen) loadTools() tea.Cmd {
 	return func() tea.Msg {
 		if !ms.mcpService.IsConnected() {
-			return ItemsLoadedMsg{
-				Tab:         0,
+			return ToolsLoadedMsg{
+				Tools:       []mcp.Tool{},
 				Items:       []string{"Not connected to MCP server"},
 				ActualCount: 0,
 				Error:       fmt.Errorf("service not connected"),
@@ -1187,16 +1250,16 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 			// Check if this is a "not supported" error - treat as normal
 			if isUnsupportedCapabilityError(err) {
 				ms.logger.Info("Server doesn't support tools - this is normal", debug.F("error", err))
-				return ItemsLoadedMsg{
-					Tab:         0,
+				return ToolsLoadedMsg{
+					Tools:       []mcp.Tool{},
 					Items:       []string{"This MCP server doesn't provide any tools"},
 					ActualCount: 0,
 					Error:       nil,
 				}
 			}
 			ms.logger.Error("Failed to load tools", debug.F("error", err))
-			return ItemsLoadedMsg{
-				Tab:         0,
+			return ToolsLoadedMsg{
+				Tools:       []mcp.Tool{},
 				Items:       []string{fmt.Sprintf("Error loading tools: %v", err)},
 				ActualCount: 0,
 				Error:       err,
@@ -1217,8 +1280,8 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 			}
 		}
 
-		return ItemsLoadedMsg{
-			Tab:         0,
+		return ToolsLoadedMsg{
+			Tools:       tools,
 			Items:       toolList,
 			ActualCount: actualCount,
 			Error:       nil,
@@ -1441,6 +1504,244 @@ func (ms *MainScreen) renderEventSplitView() string {
 	builder.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, " ", rightPane))
 
 	return builder.String()
+}
+
+// renderToolSplitView renders the tool list in a two-pane layout (1/3 - 2/3 split)
+func (ms *MainScreen) renderToolSplitView() string {
+	var builder strings.Builder
+
+	// Get terminal dimensions to split the panes
+	totalWidth := ms.Width()
+	totalHeight := ms.Height()
+	if totalWidth == 0 {
+		totalWidth = 80 // Default width
+	}
+	if totalHeight == 0 {
+		totalHeight = 30 // Default height
+	}
+
+	// Use 1/3 - 2/3 split as requested
+	leftPaneWidth := (totalWidth - 3) * 33 / 100  // 33% for tool names
+	rightPaneWidth := (totalWidth - 3) * 67 / 100 // 67% for description
+
+	// Calculate available height for panes with same reservation as renderCurrentList
+	reservedHeight := 12
+	paneHeight := totalHeight - reservedHeight
+	if paneHeight < 10 {
+		paneHeight = 10 // Minimum pane height
+	}
+
+	// Create styles for panes
+	leftPaneStyle := lipgloss.NewStyle().
+		Width(leftPaneWidth).
+		Height(paneHeight).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("12")). // Blue for tools
+		BorderTop(true).
+		BorderLeft(true).
+		BorderRight(true).
+		BorderBottom(true)
+
+	rightPaneStyle := lipgloss.NewStyle().
+		Width(rightPaneWidth).
+		Height(paneHeight).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8")). // Gray for description
+		BorderTop(true).
+		BorderLeft(false). // No left border to connect with left pane
+		BorderRight(true).
+		BorderBottom(true)
+
+	// Render left pane (tool names)
+	leftContent := ms.renderToolList()
+	leftPane := leftPaneStyle.Render(leftContent)
+
+	// Render right pane (tool description)
+	rightContent := ms.renderToolDetail()
+	rightPane := rightPaneStyle.Render(rightContent)
+
+	// Join panes horizontally
+	builder.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane))
+
+	return builder.String()
+}
+
+// renderToolList renders the tool names for the left pane with scrolling
+func (ms *MainScreen) renderToolList() string {
+	if len(ms.tools) == 0 {
+		return "No tools available"
+	}
+
+	// Calculate available height for the left pane
+	totalHeight := ms.Height()
+	if totalHeight == 0 {
+		totalHeight = 30
+	}
+	reservedHeight := 12
+	paneHeight := totalHeight - reservedHeight
+	if paneHeight < 10 {
+		paneHeight = 10
+	}
+	
+	// Account for border - subtract 2 for top/bottom borders
+	availableLines := paneHeight - 2
+	if availableLines < 1 {
+		availableLines = 1
+	}
+
+	selectedIdx := ms.selectedIndex[0] // Tools are tab 0
+	
+	// Calculate scroll window
+	startIdx := 0
+	endIdx := len(ms.tools)
+	
+	if len(ms.tools) > availableLines {
+		// Need scrolling - center the selected item
+		startIdx = selectedIdx - availableLines/2
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		if startIdx > len(ms.tools)-availableLines {
+			startIdx = len(ms.tools) - availableLines
+		}
+		endIdx = startIdx + availableLines
+		if endIdx > len(ms.tools) {
+			endIdx = len(ms.tools)
+		}
+	}
+
+	var listItems []string
+	nameStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("12")) // Bright Blue
+
+	numberStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")) // Dim gray
+
+	for i := startIdx; i < endIdx; i++ {
+		tool := ms.tools[i]
+		line := fmt.Sprintf("%2d. %s", i+1, tool.Name)
+		
+		if i == selectedIdx {
+			listItems = append(listItems, ms.selectedStyle.Render("▶ "+line))
+		} else {
+			number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
+			name := nameStyle.Render(tool.Name)
+			listItems = append(listItems, "  "+number+name)
+		}
+	}
+
+	return strings.Join(listItems, "\n")
+}
+
+// renderToolDetail renders the tool description and parameter info for the right pane with scrolling
+func (ms *MainScreen) renderToolDetail() string {
+	if len(ms.tools) == 0 {
+		return "No tool selected"
+	}
+
+	selectedIdx := ms.selectedIndex[0] // Tools are tab 0
+	if selectedIdx >= len(ms.tools) {
+		return "Invalid tool selection"
+	}
+
+	tool := ms.tools[selectedIdx]
+	
+	// Build full content first
+	var contentBuilder strings.Builder
+
+	// Tool name header
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	contentBuilder.WriteString(headerStyle.Render("Tool: " + tool.Name))
+	contentBuilder.WriteString("\n\n")
+
+	// Parameter count
+	paramCount := 0
+	if tool.InputSchema != nil {
+		if properties, ok := tool.InputSchema["properties"].(map[string]interface{}); ok {
+			paramCount = len(properties)
+		}
+	}
+	
+	paramStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	contentBuilder.WriteString(paramStyle.Render(fmt.Sprintf("Parameters: %d", paramCount)))
+	contentBuilder.WriteString("\n\n")
+
+	// Raw description (no formatting for debugging)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	if tool.Description != "" {
+		contentBuilder.WriteString(descStyle.Render("Description:"))
+		contentBuilder.WriteString("\n")
+		contentBuilder.WriteString(tool.Description)
+	} else {
+		contentBuilder.WriteString(descStyle.Render("No description available"))
+	}
+
+	fullContent := contentBuilder.String()
+	
+	// Calculate available height for scrolling
+	totalHeight := ms.Height()
+	if totalHeight == 0 {
+		totalHeight = 30
+	}
+	reservedHeight := 12
+	paneHeight := totalHeight - reservedHeight
+	if paneHeight < 10 {
+		paneHeight = 10
+	}
+	
+	// Account for border - subtract 2 for top/bottom borders  
+	availableLines := paneHeight - 2
+	if availableLines < 1 {
+		availableLines = 1
+	}
+
+	// Split content into lines
+	lines := strings.Split(fullContent, "\n")
+	
+	// If content fits, return as-is
+	if len(lines) <= availableLines {
+		return fullContent
+	}
+	
+	// Apply scrolling using toolDetailScroll offset
+	startIdx := ms.toolDetailScroll
+	if startIdx >= len(lines) {
+		startIdx = len(lines) - 1
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		ms.toolDetailScroll = startIdx
+	}
+	
+	endIdx := startIdx + availableLines
+	if endIdx > len(lines) {
+		endIdx = len(lines)
+	}
+	
+	visibleLines := lines[startIdx:endIdx]
+	
+	// Add scroll indicators if there's more content
+	if len(lines) > availableLines {
+		// Add scroll position indicator
+		scrollInfo := fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, len(lines))
+		
+		if len(visibleLines) > 0 {
+			// Add top indicator if not at the beginning
+			if startIdx > 0 {
+				visibleLines[0] = "▲ " + visibleLines[0] + " ▲"
+			}
+			
+			// Add bottom indicator if not at the end  
+			if endIdx < len(lines) {
+				visibleLines[len(visibleLines)-1] += " ▼ (Ctrl+Up/Down to scroll)" + scrollInfo
+			} else {
+				visibleLines[len(visibleLines)-1] += scrollInfo
+			}
+		}
+	}
+	
+	return strings.Join(visibleLines, "\n")
 }
 
 // renderEventList renders the event list for the left pane

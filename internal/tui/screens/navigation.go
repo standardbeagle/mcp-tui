@@ -76,7 +76,16 @@ func (nh *NavigationHandler) moveSelection(offset int) tea.Model {
 		newPos = len(currentList) - 1
 	}
 
+	// Check if selection actually changed
+	selectionChanged := current != newPos
+	
 	nh.screen.selectedIndex[nh.screen.activeTab] = newPos
+	
+	// Reset description scroll when tool selection changes
+	if selectionChanged && nh.screen.activeTab == 0 {
+		nh.screen.toolDetailScroll = 0
+	}
+	
 	return nh.screen
 }
 
@@ -84,6 +93,10 @@ func (nh *NavigationHandler) moveSelection(offset int) tea.Model {
 func (nh *NavigationHandler) jumpToFirst() tea.Model {
 	if nh.screen.getActualItemCount() > 0 {
 		nh.screen.selectedIndex[nh.screen.activeTab] = 0
+		// Reset description scroll when tool selection changes
+		if nh.screen.activeTab == 0 {
+			nh.screen.toolDetailScroll = 0
+		}
 	}
 	return nh.screen
 }
@@ -94,6 +107,10 @@ func (nh *NavigationHandler) jumpToLast() tea.Model {
 		currentList := nh.screen.getCurrentList()
 		if len(currentList) > 0 {
 			nh.screen.selectedIndex[nh.screen.activeTab] = len(currentList) - 1
+			// Reset description scroll when tool selection changes
+			if nh.screen.activeTab == 0 {
+				nh.screen.toolDetailScroll = 0
+			}
 		}
 	}
 	return nh.screen
@@ -115,6 +132,10 @@ func (nh *NavigationHandler) quickSelect(key string) tea.Model {
 
 	if idx < len(currentList) {
 		nh.screen.selectedIndex[nh.screen.activeTab] = idx
+		// Reset description scroll when tool selection changes
+		if nh.screen.activeTab == 0 {
+			nh.screen.toolDetailScroll = 0
+		}
 		// For now, just update selection. The user can press Enter to activate.
 		// This keeps navigation separate from actions.
 		return nh.screen

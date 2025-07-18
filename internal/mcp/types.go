@@ -48,6 +48,10 @@ type Service interface {
 	// Configuration management
 	GetConfiguration() map[string]interface{}
 	UpdateConfiguration(config map[string]interface{}) error
+	
+	// Connection state and diagnostics
+	GetConnectionDisplayMessage() string
+	GetServerDiagnosticMessage() string
 }
 
 // Tool represents an MCP tool

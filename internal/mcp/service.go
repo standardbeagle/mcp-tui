@@ -210,6 +210,23 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// Convert to new transport config format
 	transportConfig := transports.FromConnectionConfig(config, s.debugMode, 30*time.Second)
 	
+	// Log the actual connection details
+	switch config.Type {
+	case configPkg.TransportStdio:
+		debug.Info("Connecting to MCP server", 
+			debug.F("transport", "stdio"),
+			debug.F("command", config.Command),
+			debug.F("args", config.Args))
+	case configPkg.TransportHTTP, configPkg.TransportSSE:
+		debug.Info("Connecting to MCP server", 
+			debug.F("transport", config.Type),
+			debug.F("url", config.URL))
+	default:
+		debug.Info("Connecting to MCP server", 
+			debug.F("transport", config.Type),
+			debug.F("config", config))
+	}
+	
 	// Create transport using factory
 	transport, contextStrategy, err := s.transportFactory.CreateTransport(transportConfig)
 	if err != nil {
@@ -884,4 +901,14 @@ func (s *service) UpdateConfiguration(configMap map[string]interface{}) error {
 	}
 	
 	return nil
+}
+
+// GetConnectionDisplayMessage returns the current connection state display message
+func (s *service) GetConnectionDisplayMessage() string {
+	return GetConnectionDisplayMessage()
+}
+
+// GetServerDiagnosticMessage returns diagnostic guidance for server-side issues
+func (s *service) GetServerDiagnosticMessage() string {
+	return GetServerDiagnosticMessage()
 }

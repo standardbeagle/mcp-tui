@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 func TestMainScreenNavigation(t *testing.T) {
@@ -23,7 +24,11 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "vim_navigation_j_down",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []string{"tool1", "tool2", "tool3"}
+				ms.tools = []mcp.Tool{
+					{Name: "tool1", Description: "Tool 1 description"},
+					{Name: "tool2", Description: "Tool 2 description"},
+					{Name: "tool3", Description: "Tool 3 description"},
+				}
 				ms.toolCount = 3
 				ms.selectedIndex[0] = 0
 			},
@@ -35,7 +40,11 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "vim_navigation_k_up",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []string{"tool1", "tool2", "tool3"}
+				ms.tools = []mcp.Tool{
+					{Name: "tool1", Description: "Tool 1 description"},
+					{Name: "tool2", Description: "Tool 2 description"},
+					{Name: "tool3", Description: "Tool 3 description"},
+				}
 				ms.toolCount = 3
 				ms.selectedIndex[0] = 2
 			},
@@ -47,7 +56,13 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "number_key_selection",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []string{"tool1", "tool2", "tool3", "tool4", "tool5"}
+				ms.tools = []mcp.Tool{
+					{Name: "tool1", Description: "Tool 1 description"},
+					{Name: "tool2", Description: "Tool 2 description"},
+					{Name: "tool3", Description: "Tool 3 description"},
+					{Name: "tool4", Description: "Tool 4 description"},
+					{Name: "tool5", Description: "Tool 5 description"},
+				}
 				ms.toolCount = 5
 				ms.selectedIndex[0] = 0
 			},
@@ -59,7 +74,10 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "number_key_out_of_bounds",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []string{"tool1", "tool2"}
+				ms.tools = []mcp.Tool{
+					{Name: "tool1", Description: "Tool 1 description"},
+					{Name: "tool2", Description: "Tool 2 description"},
+				}
 				ms.toolCount = 2
 				ms.selectedIndex[0] = 0
 			},
@@ -72,9 +90,12 @@ func TestMainScreenNavigation(t *testing.T) {
 			name: "page_down",
 			setupFunc: func(ms *MainScreen) {
 				// Create 20 tools
-				tools := make([]string, 20)
+				tools := make([]mcp.Tool, 20)
 				for i := 0; i < 20; i++ {
-					tools[i] = fmt.Sprintf("tool%d", i+1)
+					tools[i] = mcp.Tool{
+						Name:        fmt.Sprintf("tool%d", i+1),
+						Description: fmt.Sprintf("Description for tool %d", i+1),
+					}
 				}
 				ms.tools = tools
 				ms.toolCount = 20
@@ -89,9 +110,12 @@ func TestMainScreenNavigation(t *testing.T) {
 			name: "page_up",
 			setupFunc: func(ms *MainScreen) {
 				// Create 20 tools
-				tools := make([]string, 20)
+				tools := make([]mcp.Tool, 20)
 				for i := 0; i < 20; i++ {
-					tools[i] = fmt.Sprintf("tool%d", i+1)
+					tools[i] = mcp.Tool{
+						Name:        fmt.Sprintf("tool%d", i+1),
+						Description: fmt.Sprintf("Description for tool %d", i+1),
+					}
 				}
 				ms.tools = tools
 				ms.toolCount = 20
@@ -105,7 +129,13 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "home_key",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []string{"tool1", "tool2", "tool3", "tool4", "tool5"}
+				ms.tools = []mcp.Tool{
+					{Name: "tool1", Description: "Tool 1 description"},
+					{Name: "tool2", Description: "Tool 2 description"},
+					{Name: "tool3", Description: "Tool 3 description"},
+					{Name: "tool4", Description: "Tool 4 description"},
+					{Name: "tool5", Description: "Tool 5 description"},
+				}
 				ms.toolCount = 5
 				ms.selectedIndex[0] = 3
 			},
@@ -117,7 +147,13 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "end_key",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []string{"tool1", "tool2", "tool3", "tool4", "tool5"}
+				ms.tools = []mcp.Tool{
+					{Name: "tool1", Description: "Tool 1 description"},
+					{Name: "tool2", Description: "Tool 2 description"},
+					{Name: "tool3", Description: "Tool 3 description"},
+					{Name: "tool4", Description: "Tool 4 description"},
+					{Name: "tool5", Description: "Tool 5 description"},
+				}
 				ms.toolCount = 5
 				ms.selectedIndex[0] = 1
 			},
@@ -129,7 +165,7 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "navigation_with_no_items",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []string{}
+				ms.tools = []mcp.Tool{}
 				ms.toolCount = 0
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}},
@@ -209,7 +245,11 @@ func TestMainScreenBoundaryConditions(t *testing.T) {
 	}
 	ms := NewMainScreen(cfg, connConfig)
 	ms.connected = true
-	ms.tools = []string{"tool1", "tool2", "tool3"}
+	ms.tools = []mcp.Tool{
+		{Name: "tool1", Description: "Tool 1 description"},
+		{Name: "tool2", Description: "Tool 2 description"},
+		{Name: "tool3", Description: "Tool 3 description"},
+	}
 	ms.toolCount = 3
 
 	t.Run("navigation_at_top_boundary", func(t *testing.T) {
@@ -236,9 +276,12 @@ func TestMainScreenBoundaryConditions(t *testing.T) {
 
 	t.Run("page_down_near_end", func(t *testing.T) {
 		// Create 15 tools
-		tools := make([]string, 15)
+		tools := make([]mcp.Tool, 15)
 		for i := 0; i < 15; i++ {
-			tools[i] = fmt.Sprintf("tool%d", i+1)
+			tools[i] = mcp.Tool{
+				Name:        fmt.Sprintf("tool%d", i+1),
+				Description: fmt.Sprintf("Description for tool %d", i+1),
+			}
 		}
 		ms.tools = tools
 		ms.toolCount = 15

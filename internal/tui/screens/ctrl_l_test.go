@@ -172,10 +172,10 @@ func TestCtrlLHelpTextDisplay(t *testing.T) {
 		assert.Contains(t, view, "Tab", "Should show navigation help")
 		// The main screen dynamically shows help, but we need to check for actual items
 		// Let's add some tools to make the help text visible
-		ms.tools = []string{"Tool 1"}
+		ms.tools = []mcp.Tool{{Name: "Tool 1", Description: "Tool 1 description"}}
 		ms.toolCount = 1
 		view = ms.View()
-		assert.Contains(t, view, "Ctrl+L: Debug Log", "Should show Ctrl+L in help when connected")
+		assert.Contains(t, view, "Ctrl+D/F12: Debug Log", "Should show Ctrl+D/F12 in help when connected")
 	})
 
 	t.Run("ToolScreen_ShowsNavigationHelp", func(t *testing.T) {
@@ -192,7 +192,7 @@ func TestCtrlLHelpTextDisplay(t *testing.T) {
 		cs := NewConnectionScreen(cfg)
 
 		view := cs.View()
-		assert.Contains(t, view, "Ctrl+L: Debug Log", "Should show Ctrl+L help text")
+		assert.Contains(t, view, "Ctrl+D: Debug", "Should show Ctrl+D help text")
 	})
 
 	t.Run("DebugScreen_ShowsBackOptions", func(t *testing.T) {
