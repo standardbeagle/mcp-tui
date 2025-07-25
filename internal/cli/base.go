@@ -12,10 +12,19 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
+// OutputFormat represents supported output formats
+type OutputFormat string
+
+const (
+	OutputFormatText OutputFormat = "text"
+	OutputFormatJSON OutputFormat = "json"
+)
+
 // BaseCommand provides common functionality for all CLI commands
 type BaseCommand struct {
-	service mcp.Service
-	timeout time.Duration
+	service      mcp.Service
+	timeout      time.Duration
+	outputFormat OutputFormat
 }
 
 // getGlobalConnection returns the global connection config if available
@@ -36,7 +45,8 @@ func SetGlobalConnection(conn *config.ConnectionConfig) {
 // NewBaseCommand creates a new base command
 func NewBaseCommand() *BaseCommand {
 	return &BaseCommand{
-		timeout: 30 * time.Second,
+		timeout:      30 * time.Second,
+		outputFormat: OutputFormatText,
 	}
 }
 
@@ -44,6 +54,25 @@ func NewBaseCommand() *BaseCommand {
 func (c *BaseCommand) WithTimeout(timeout time.Duration) *BaseCommand {
 	c.timeout = timeout
 	return c
+}
+
+// SetOutputFormat sets the output format for the command
+func (c *BaseCommand) SetOutputFormat(cmd *cobra.Command) error {
+	format, _ := cmd.Flags().GetString("output")
+	switch format {
+	case "text", "":
+		c.outputFormat = OutputFormatText
+	case "json":
+		c.outputFormat = OutputFormatJSON
+	default:
+		return fmt.Errorf("unsupported output format: %s (supported: text, json)", format)
+	}
+	return nil
+}
+
+// GetOutputFormat returns the current output format
+func (c *BaseCommand) GetOutputFormat() OutputFormat {
+	return c.outputFormat
 }
 
 // CreateClient creates and initializes an MCP client
@@ -143,6 +172,9 @@ func (c *BaseCommand) WithContext() (context.Context, context.CancelFunc) {
 
 // PreRunE is a common pre-run function that sets up the client
 func (c *BaseCommand) PreRunE(cmd *cobra.Command, args []string) error {
+	if err := c.SetOutputFormat(cmd); err != nil {
+		return err
+	}
 	return c.CreateClient(cmd)
 }
 

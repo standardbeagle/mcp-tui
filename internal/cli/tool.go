@@ -68,6 +68,9 @@ func (tc *ToolCommand) CreateCommand() *cobra.Command {
 		Long:  "List, describe, and call tools provided by the MCP server",
 	}
 
+	// Add output format flag to all subcommands
+	cmd.PersistentFlags().StringP("output", "o", "text", "Output format (text, json)")
+
 	// Add subcommands
 	cmd.AddCommand(tc.createListCommand())
 	cmd.AddCommand(tc.createDescribeCommand())
@@ -133,15 +136,40 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	fmt.Fprintf(os.Stderr, "📋 Fetching available tools...\n")
+	// Only show progress messages for text output
+	if tc.GetOutputFormat() == OutputFormatText {
+		fmt.Fprintf(os.Stderr, "📋 Fetching available tools...\n")
+	}
+
 	tools, err := tc.GetService().ListTools(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
+		if tc.GetOutputFormat() == OutputFormatText {
+			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
+		}
 		return tc.HandleError(err, "list tools")
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ Tools retrieved successfully\n\n")
+	if tc.GetOutputFormat() == OutputFormatText {
+		fmt.Fprintf(os.Stderr, "✅ Tools retrieved successfully\n\n")
+	}
 
+	// Handle JSON output format
+	if tc.GetOutputFormat() == OutputFormatJSON {
+		outputData := map[string]interface{}{
+			"tools": tools,
+			"count": len(tools),
+		}
+
+		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal tools to JSON: %w", err)
+		}
+
+		fmt.Println(string(jsonBytes))
+		return nil
+	}
+
+	// Text output format
 	if len(tools) == 0 {
 		fmt.Println("No tools available from this MCP server")
 		return nil
@@ -203,12 +231,17 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	fmt.Fprintf(os.Stderr, "🔍 Looking up tool '%s'...\n", toolName)
+	// Only show progress messages for text output
+	if tc.GetOutputFormat() == OutputFormatText {
+		fmt.Fprintf(os.Stderr, "🔍 Looking up tool '%s'...\n", toolName)
+	}
 
 	// Get list of tools to find the specific one
 	tools, err := tc.GetService().ListTools(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
+		if tc.GetOutputFormat() == OutputFormatText {
+			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
+		}
 		return tc.HandleError(err, "list tools")
 	}
 
@@ -222,11 +255,27 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	}
 
 	if foundTool == nil {
-		fmt.Fprintf(os.Stderr, "❌ Tool not found\n")
+		if tc.GetOutputFormat() == OutputFormatText {
+			fmt.Fprintf(os.Stderr, "❌ Tool not found\n")
+		}
 		return fmt.Errorf("tool '%s' not found", toolName)
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ Tool found\n\n")
+	// Handle JSON output format
+	if tc.GetOutputFormat() == OutputFormatJSON {
+		jsonBytes, err := json.MarshalIndent(foundTool, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal tool to JSON: %w", err)
+		}
+
+		fmt.Println(string(jsonBytes))
+		return nil
+	}
+
+	// Text output format
+	if tc.GetOutputFormat() == OutputFormatText {
+		fmt.Fprintf(os.Stderr, "✅ Tool found\n\n")
+	}
 
 	// Define styles for tool details
 	labelStyle := lipgloss.NewStyle().
@@ -287,16 +336,21 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	toolName := args[0]
 	toolArgs := make(map[string]interface{})
 
-	fmt.Fprintf(os.Stderr, "🛠️  Preparing to call tool '%s'...\n", toolName)
+	// Only show progress messages for text output
+	if tc.GetOutputFormat() == OutputFormatText {
+		fmt.Fprintf(os.Stderr, "🛠️  Preparing to call tool '%s'...\n", toolName)
+	}
 
 	// Parse arguments (key=value pairs)
-	if len(args) > 1 {
+	if len(args) > 1 && tc.GetOutputFormat() == OutputFormatText {
 		fmt.Fprintf(os.Stderr, "📝 Parsing arguments...\n")
 	}
 	for _, arg := range args[1:] {
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "❌ Invalid argument format\n")
+			if tc.GetOutputFormat() == OutputFormatText {
+				fmt.Fprintf(os.Stderr, "❌ Invalid argument format\n")
+			}
 			return fmt.Errorf("invalid argument format: %s (expected key=value)", arg)
 		}
 
@@ -305,7 +359,9 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 
 		// Validate argument for security
 		if err := validateToolArgument(key, value); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
+			if tc.GetOutputFormat() == OutputFormatText {
+				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
+			}
 			return fmt.Errorf("argument validation failed: %w", err)
 		}
 
@@ -321,7 +377,9 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
+	if tc.GetOutputFormat() == OutputFormatText {
+		fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
+	}
 
 	// Call the tool
 	result, err := tc.GetService().CallTool(ctx, mcp.CallToolRequest{
@@ -329,11 +387,33 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		Arguments: toolArgs,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Tool execution failed\n")
+		if tc.GetOutputFormat() == OutputFormatText {
+			fmt.Fprintf(os.Stderr, "❌ Tool execution failed\n")
+		}
 		return tc.HandleError(err, "call tool")
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ Tool executed successfully\n\n")
+	// Handle JSON output format
+	if tc.GetOutputFormat() == OutputFormatJSON {
+		outputData := map[string]interface{}{
+			"tool":      toolName,
+			"arguments": toolArgs,
+			"result":    result,
+		}
+
+		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal result to JSON: %w", err)
+		}
+
+		fmt.Println(string(jsonBytes))
+		return nil
+	}
+
+	// Text output format
+	if tc.GetOutputFormat() == OutputFormatText {
+		fmt.Fprintf(os.Stderr, "✅ Tool executed successfully\n\n")
+	}
 
 	// Display results
 	if result.IsError {

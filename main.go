@@ -138,6 +138,7 @@ Examples:
 	// Debug mode always enabled - this is a testing/debug tool
 	cfg.DebugMode = true
 	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringP("output", "o", "text", "Output format (text, json)")
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())
