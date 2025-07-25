@@ -21,12 +21,12 @@ func (f *factory) CreateTransport(config *TransportConfig) (officialMCP.Transpor
 	if err := f.ValidateConfig(config); err != nil {
 		return nil, nil, fmt.Errorf("invalid transport configuration: %w", err)
 	}
-	
+
 	strategy := NewContextStrategy(config.Type)
-	
+
 	switch config.Type {
 	case TransportSTDIO:
-		return f.createSTDIOTransport(config, strategy)
+		return createEnhancedSTDIOTransport(config, strategy)
 	case TransportSSE:
 		return f.createSSETransport(config, strategy)
 	case TransportHTTP:
@@ -44,52 +44,52 @@ func (f *factory) createSTDIOTransport(config *TransportConfig, strategy Context
 	if err := configPkg.ValidateCommand(config.Command, config.Args); err != nil {
 		return nil, nil, fmt.Errorf("command validation failed: %w", err)
 	}
-	
+
 	// Create command for STDIO transport
 	cmd := exec.Command(config.Command, config.Args...)
-	
+
 	// Create STDIO transport using official SDK
 	transport := officialMCP.NewCommandTransport(cmd)
-	
+
 	return transport, strategy, nil
 }
 
 // createSSETransport creates an SSE transport with proper HTTP client configuration
 func (f *factory) createSSETransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	httpClient := GetHTTPClientForTransport(TransportSSE, config.HTTPClient)
-	
+
 	options := &officialMCP.SSEClientTransportOptions{
 		HTTPClient: httpClient,
 	}
-	
+
 	transport := officialMCP.NewSSEClientTransport(config.URL, options)
-	
+
 	return transport, strategy, nil
 }
 
 // createHTTPTransport creates an HTTP transport
 func (f *factory) createHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	httpClient := GetHTTPClientForTransport(TransportHTTP, config.HTTPClient)
-	
+
 	options := &officialMCP.StreamableClientTransportOptions{
 		HTTPClient: httpClient,
 	}
-	
+
 	transport := officialMCP.NewStreamableClientTransport(config.URL, options)
-	
+
 	return transport, strategy, nil
 }
 
 // createStreamableHTTPTransport creates a streamable HTTP transport
 func (f *factory) createStreamableHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	httpClient := GetHTTPClientForTransport(TransportStreamableHTTP, config.HTTPClient)
-	
+
 	options := &officialMCP.StreamableClientTransportOptions{
 		HTTPClient: httpClient,
 	}
-	
+
 	transport := officialMCP.NewStreamableClientTransport(config.URL, options)
-	
+
 	return transport, strategy, nil
 }
 
@@ -98,23 +98,23 @@ func (f *factory) ValidateConfig(config *TransportConfig) error {
 	if config == nil {
 		return fmt.Errorf("transport configuration is required")
 	}
-	
+
 	switch config.Type {
 	case TransportSTDIO:
 		if config.Command == "" {
 			return fmt.Errorf("command is required for STDIO transport")
 		}
 		// Args can be empty, but command is required
-		
+
 	case TransportSSE, TransportHTTP, TransportStreamableHTTP:
 		if config.URL == "" {
 			return fmt.Errorf("URL is required for %s transport", config.Type)
 		}
-		
+
 	default:
 		return fmt.Errorf("unsupported transport type: %s", config.Type)
 	}
-	
+
 	return nil
 }
 

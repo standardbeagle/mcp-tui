@@ -3,6 +3,7 @@ package errors
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,14 +19,14 @@ type ErrorHandler struct {
 
 // ErrorStatistics tracks error patterns and frequencies
 type ErrorStatistics struct {
-	TotalErrors       int                        `json:"total_errors"`
-	ErrorsByCategory  map[ErrorCategory]int      `json:"errors_by_category"`
-	ErrorsBySeverity  map[ErrorSeverity]int      `json:"errors_by_severity"`
-	RecoverableErrors int                        `json:"recoverable_errors"`
-	RetryAttempts     int                        `json:"retry_attempts"`
-	LastError         *ClassifiedError           `json:"last_error,omitempty"`
-	ErrorHistory      []*ClassifiedError         `json:"error_history,omitempty"`
-	StartTime         time.Time                  `json:"start_time"`
+	TotalErrors       int                   `json:"total_errors"`
+	ErrorsByCategory  map[ErrorCategory]int `json:"errors_by_category"`
+	ErrorsBySeverity  map[ErrorSeverity]int `json:"errors_by_severity"`
+	RecoverableErrors int                   `json:"recoverable_errors"`
+	RetryAttempts     int                   `json:"retry_attempts"`
+	LastError         *ClassifiedError      `json:"last_error,omitempty"`
+	ErrorHistory      []*ClassifiedError    `json:"error_history,omitempty"`
+	StartTime         time.Time             `json:"start_time"`
 }
 
 // NewErrorHandler creates a new error handler with classification
@@ -45,23 +46,40 @@ func (eh *ErrorHandler) HandleError(ctx context.Context, err error, operation st
 	if err == nil {
 		return nil
 	}
-	
+
 	// Add operation context
 	if context == nil {
 		context = make(map[string]interface{})
 	}
 	context["operation"] = operation
 	context["timestamp"] = time.Now().Format(time.RFC3339)
-	
+
+	// Check if this is a server startup error that needs special handling
+	if operation == "session_connect" && strings.Contains(strings.ToLower(err.Error()), "server startup failed") {
+		// This is likely our enhanced server startup error
+		classified := &ClassifiedError{
+			Category:    CategoryServerStartup,
+			Severity:    SeverityError,
+			Message:     err.Error(),
+			Cause:       err,
+			Context:     context,
+			Recoverable: false,
+			RetryAfter:  nil,
+		}
+		eh.updateStatistics(classified)
+		eh.logClassifiedError(classified)
+		return classified
+	}
+
 	// Classify the error
 	classified := eh.classifier.Classify(err, context)
-	
+
 	// Update statistics
 	eh.updateStatistics(classified)
-	
+
 	// Log the classified error
 	eh.logClassifiedError(classified)
-	
+
 	return classified
 }
 
@@ -71,20 +89,20 @@ func (eh *ErrorHandler) HandleErrorWithRetry(ctx context.Context, err error, ope
 	if classified == nil {
 		return nil, false
 	}
-	
+
 	// Check if retry is appropriate
 	shouldRetry := eh.shouldRetry(classified, attempt)
 	if shouldRetry {
 		eh.mu.Lock()
 		eh.stats.RetryAttempts++
 		eh.mu.Unlock()
-		
-		debug.Info("Error handler: Retry recommended", 
+
+		debug.Info("Error handler: Retry recommended",
 			debug.F("category", classified.Category),
 			debug.F("attempt", attempt),
 			debug.F("retryAfter", classified.RetryAfter))
 	}
-	
+
 	return classified, shouldRetry
 }
 
@@ -95,12 +113,12 @@ func (eh *ErrorHandler) shouldRetry(classified *ClassifiedError, attempt int) bo
 	if attempt >= maxRetries {
 		return false
 	}
-	
+
 	// Only retry recoverable errors
 	if !classified.Recoverable {
 		return false
 	}
-	
+
 	// Category-specific retry logic
 	switch classified.Category {
 	case CategoryTimeout, CategoryConnection:
@@ -121,7 +139,7 @@ func (eh *ErrorHandler) GetRetryDelay(classified *ClassifiedError, attempt int) 
 		multiplier := int64(1 << uint(attempt))
 		return time.Duration(int64(*classified.RetryAfter) * multiplier)
 	}
-	
+
 	// Default exponential backoff
 	return time.Duration(1000*attempt*attempt) * time.Millisecond
 }
@@ -130,17 +148,17 @@ func (eh *ErrorHandler) GetRetryDelay(classified *ClassifiedError, attempt int) 
 func (eh *ErrorHandler) updateStatistics(classified *ClassifiedError) {
 	eh.mu.Lock()
 	defer eh.mu.Unlock()
-	
+
 	eh.stats.TotalErrors++
 	eh.stats.ErrorsByCategory[classified.Category]++
 	eh.stats.ErrorsBySeverity[classified.Severity]++
-	
+
 	if classified.Recoverable {
 		eh.stats.RecoverableErrors++
 	}
-	
+
 	eh.stats.LastError = classified
-	
+
 	// Keep limited error history (last 50 errors)
 	if len(eh.stats.ErrorHistory) >= 50 {
 		eh.stats.ErrorHistory = eh.stats.ErrorHistory[1:]
@@ -156,17 +174,17 @@ func (eh *ErrorHandler) logClassifiedError(classified *ClassifiedError) {
 		debug.F("recoverable", classified.Recoverable),
 		debug.F("message", classified.Message),
 	}
-	
+
 	if classified.Context != nil {
 		for key, value := range classified.Context {
 			fields = append(fields, debug.F(key, value))
 		}
 	}
-	
+
 	if classified.RetryAfter != nil {
 		fields = append(fields, debug.F("retryAfter", *classified.RetryAfter))
 	}
-	
+
 	// Log with appropriate level based on severity
 	switch classified.Severity {
 	case SeverityInfo:
@@ -182,7 +200,7 @@ func (eh *ErrorHandler) logClassifiedError(classified *ClassifiedError) {
 func (eh *ErrorHandler) GetStatistics() *ErrorStatistics {
 	eh.mu.RLock()
 	defer eh.mu.RUnlock()
-	
+
 	// Return a copy to avoid race conditions
 	stats := &ErrorStatistics{
 		TotalErrors:       eh.stats.TotalErrors,
@@ -193,14 +211,14 @@ func (eh *ErrorHandler) GetStatistics() *ErrorStatistics {
 		LastError:         eh.stats.LastError,
 		StartTime:         eh.stats.StartTime,
 	}
-	
+
 	for k, v := range eh.stats.ErrorsByCategory {
 		stats.ErrorsByCategory[k] = v
 	}
 	for k, v := range eh.stats.ErrorsBySeverity {
 		stats.ErrorsBySeverity[k] = v
 	}
-	
+
 	// Copy recent error history (last 10)
 	historyCount := len(eh.stats.ErrorHistory)
 	if historyCount > 10 {
@@ -210,25 +228,25 @@ func (eh *ErrorHandler) GetStatistics() *ErrorStatistics {
 		stats.ErrorHistory = make([]*ClassifiedError, historyCount)
 		copy(stats.ErrorHistory, eh.stats.ErrorHistory)
 	}
-	
+
 	return stats
 }
 
 // GetErrorReport generates a detailed error report
 func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 	stats := eh.GetStatistics()
-	
+
 	report := map[string]interface{}{
 		"summary": map[string]interface{}{
 			"total_errors":       stats.TotalErrors,
 			"recoverable_errors": stats.RecoverableErrors,
 			"retry_attempts":     stats.RetryAttempts,
-			"uptime":            time.Since(stats.StartTime).String(),
+			"uptime":             time.Since(stats.StartTime).String(),
 		},
 		"categories": make(map[string]int),
 		"severities": make(map[string]int),
 	}
-	
+
 	// Convert enum keys to strings
 	for category, count := range stats.ErrorsByCategory {
 		report["categories"].(map[string]int)[category.String()] = count
@@ -236,7 +254,7 @@ func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 	for severity, count := range stats.ErrorsBySeverity {
 		report["severities"].(map[string]int)[severity.String()] = count
 	}
-	
+
 	// Add last error details
 	if stats.LastError != nil {
 		report["last_error"] = map[string]interface{}{
@@ -245,12 +263,12 @@ func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 			"message":     stats.LastError.Message,
 			"recoverable": stats.LastError.Recoverable,
 		}
-		
+
 		if stats.LastError.Context != nil {
 			report["last_error"].(map[string]interface{})["context"] = stats.LastError.Context
 		}
 	}
-	
+
 	// Add recent error patterns
 	if len(stats.ErrorHistory) > 0 {
 		var recentErrors []map[string]interface{}
@@ -263,7 +281,7 @@ func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 		}
 		report["recent_errors"] = recentErrors
 	}
-	
+
 	return report
 }
 
@@ -271,7 +289,7 @@ func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 func (eh *ErrorHandler) ResetStatistics() {
 	eh.mu.Lock()
 	defer eh.mu.Unlock()
-	
+
 	eh.stats = &ErrorStatistics{
 		ErrorsByCategory: make(map[ErrorCategory]int),
 		ErrorsBySeverity: make(map[ErrorSeverity]int),
@@ -284,12 +302,12 @@ func (eh *ErrorHandler) CreateUserFriendlyError(classified *ClassifiedError) err
 	if classified == nil {
 		return nil
 	}
-	
+
 	var message string
-	
+
 	// Main error message
 	message = classified.Message
-	
+
 	// Add recovery suggestions
 	actions := eh.classifier.GetRecoveryActions(classified)
 	if len(actions) > 0 {
@@ -298,19 +316,19 @@ func (eh *ErrorHandler) CreateUserFriendlyError(classified *ClassifiedError) err
 			message += "\n  • " + action
 		}
 	}
-	
+
 	// Add retry information for recoverable errors
 	if classified.Recoverable && classified.RetryAfter != nil {
 		message += fmt.Sprintf("\n\nThis error may be temporary. Retry recommended after %v.", *classified.RetryAfter)
 	}
-	
+
 	// Add context information if available
 	if context := classified.Context; context != nil {
 		if operation, ok := context["operation"].(string); ok {
 			message = fmt.Sprintf("Operation '%s' failed: %s", operation, message)
 		}
 	}
-	
+
 	return fmt.Errorf(message)
 }
 
@@ -319,31 +337,31 @@ func (eh *ErrorHandler) FormatErrorForJSON(classified *ClassifiedError) map[stri
 	if classified == nil {
 		return nil
 	}
-	
+
 	result := map[string]interface{}{
 		"category":    classified.Category.String(),
 		"severity":    classified.Severity.String(),
 		"message":     classified.Message,
 		"recoverable": classified.Recoverable,
 	}
-	
+
 	if classified.RetryAfter != nil {
 		result["retry_after"] = classified.RetryAfter.String()
 	}
-	
+
 	if classified.Context != nil {
 		result["context"] = classified.Context
 	}
-	
+
 	if classified.Cause != nil {
 		result["cause"] = classified.Cause.Error()
 	}
-	
+
 	// Add recovery actions
 	actions := eh.classifier.GetRecoveryActions(classified)
 	if len(actions) > 0 {
 		result["recovery_actions"] = actions
 	}
-	
+
 	return result
 }
