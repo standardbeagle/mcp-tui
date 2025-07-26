@@ -30,12 +30,16 @@ type MainScreen struct {
 	navigationHandler *NavigationHandler
 
 	// UI state
-	activeTab int // 0=tools, 1=resources, 2=prompts, 3=events
-	tools     []mcp.Tool      // Store actual tool objects for two-panel display
-	toolStrings []string      // Keep for backward compatibility with other tabs
-	resources []string
-	prompts   []string
-	events    []debug.MCPLogEntry // Store actual event entries
+	activeTab   int        // 0=tools, 1=resources, 2=prompts, 3=events
+	tools       []mcp.Tool // Store actual tool objects for two-panel display
+	toolStrings []string   // Keep for backward compatibility with other tabs
+	resources   []string
+	prompts     []string
+	events      []debug.MCPLogEntry // Store actual event entries
+	
+	// Store actual objects for viewers
+	resourceObjects []mcp.Resource
+	promptObjects   []mcp.Prompt
 
 	// Actual counts (0 when empty, not 1 for empty message)
 	toolCount     int
@@ -55,11 +59,21 @@ type MainScreen struct {
 	// Event view state
 	showEventDetail bool
 	eventPaneFocus  int // 0=list, 1=detail
-	
+
 	// Tool split view state
 	toolPaneFocus    int // 0=list, 1=detail (for future use)
 	toolListScroll   int // Scroll position for tool list
 	toolDetailScroll int // Scroll position for tool description
+	
+	// Resource and prompt viewer state
+	resourceViewerOpen bool
+	promptViewerOpen   bool
+	selectedResource   *mcp.Resource
+	selectedPrompt     *mcp.Prompt
+	resourceContent    []mcp.ResourceContents
+	promptResult       *mcp.GetPromptResult
+	resourceLoading    bool
+	promptLoading      bool
 
 	// Connection status
 	connectionStatus string
@@ -95,13 +109,43 @@ type ItemsLoadedMsg struct {
 // ToolsLoadedMsg contains loaded tools with full data structure
 type ToolsLoadedMsg struct {
 	Tools       []mcp.Tool
-	Items       []string    // Backward compatible string format
+	Items       []string // Backward compatible string format
+	ActualCount int
+	Error       error
+}
+
+// ResourcesLoadedMsg contains loaded resources with full data structure
+type ResourcesLoadedMsg struct {
+	Resources   []mcp.Resource
+	Items       []string // Backward compatible string format
+	ActualCount int
+	Error       error
+}
+
+// PromptsLoadedMsg contains loaded prompts with full data structure
+type PromptsLoadedMsg struct {
+	Prompts     []mcp.Prompt
+	Items       []string // Backward compatible string format
 	ActualCount int
 	Error       error
 }
 
 // EventTickMsg is sent periodically to refresh events
 type EventTickMsg struct{}
+
+// ResourceContentLoadedMsg contains loaded resource content
+type ResourceContentLoadedMsg struct {
+	Resource *mcp.Resource
+	Content  []mcp.ResourceContents
+	Error    error
+}
+
+// PromptResultLoadedMsg contains prompt execution result
+type PromptResultLoadedMsg struct {
+	Prompt *mcp.Prompt
+	Result *mcp.GetPromptResult
+	Error  error
+}
 
 // spinnerTickMsg is sent to update the spinner animation
 type spinnerTickMsg struct{}
@@ -208,10 +252,10 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Show what we're actually connecting to
 		switch ms.connectionConfig.Type {
 		case config.TransportStdio:
-			ms.connectionStatus = fmt.Sprintf("Connecting to stdio: %s %s", 
+			ms.connectionStatus = fmt.Sprintf("Connecting to stdio: %s %s",
 				ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
 		case config.TransportHTTP, config.TransportSSE:
-			ms.connectionStatus = fmt.Sprintf("Connecting to %s: %s", 
+			ms.connectionStatus = fmt.Sprintf("Connecting to %s: %s",
 				ms.connectionConfig.Type, ms.connectionConfig.URL)
 		default:
 			ms.connectionStatus = fmt.Sprintf("Connecting via %s...", ms.connectionConfig.Type)
@@ -274,31 +318,67 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ms.ensureInitialFocus(0)
 		return ms, nil
 
+	case ResourcesLoadedMsg:
+		ms.resourcesLoading = false
+		if msg.Error != nil {
+			ms.resourceObjects = []mcp.Resource{}
+			ms.resources = []string{fmt.Sprintf("Error loading resources: %v", msg.Error)}
+			ms.resourceCount = 0
+		} else {
+			ms.resourceObjects = msg.Resources
+			ms.resources = msg.Items
+			ms.resourceCount = msg.ActualCount
+		}
+		ms.ensureInitialFocus(1)
+		return ms, nil
+
+	case PromptsLoadedMsg:
+		ms.promptsLoading = false
+		if msg.Error != nil {
+			ms.promptObjects = []mcp.Prompt{}
+			ms.prompts = []string{fmt.Sprintf("Error loading prompts: %v", msg.Error)}
+			ms.promptCount = 0
+		} else {
+			ms.promptObjects = msg.Prompts
+			ms.prompts = msg.Items
+			ms.promptCount = msg.ActualCount
+		}
+		ms.ensureInitialFocus(2)
+		return ms, nil
+
+	case ResourceContentLoadedMsg:
+		ms.resourceLoading = false
+		if msg.Error != nil {
+			ms.SetError(fmt.Errorf("failed to load resource content: %w", msg.Error))
+		} else {
+			ms.selectedResource = msg.Resource
+			ms.resourceContent = msg.Content
+			ms.resourceViewerOpen = true
+		}
+		return ms, nil
+
+	case PromptResultLoadedMsg:
+		ms.promptLoading = false
+		if msg.Error != nil {
+			ms.SetError(fmt.Errorf("failed to load prompt result: %w", msg.Error))
+		} else {
+			ms.selectedPrompt = msg.Prompt
+			ms.promptResult = msg.Result
+			ms.promptViewerOpen = true
+		}
+		return ms, nil
+
 	case ItemsLoadedMsg:
 		switch msg.Tab {
 		case 0: // Tools - handled by ToolsLoadedMsg now
 			// This case is now handled by ToolsLoadedMsg above
 			return ms, nil
-		case 1: // Resources
-			ms.resourcesLoading = false
-			if msg.Error != nil {
-				ms.resources = []string{fmt.Sprintf("Error loading resources: %v", msg.Error)}
-				ms.resourceCount = 0
-			} else {
-				ms.resources = msg.Items
-				ms.resourceCount = msg.ActualCount
-			}
-			ms.ensureInitialFocus(1)
-		case 2: // Prompts
-			ms.promptsLoading = false
-			if msg.Error != nil {
-				ms.prompts = []string{fmt.Sprintf("Error loading prompts: %v", msg.Error)}
-				ms.promptCount = 0
-			} else {
-				ms.prompts = msg.Items
-				ms.promptCount = msg.ActualCount
-			}
-			ms.ensureInitialFocus(2)
+		case 1: // Resources - handled by ResourcesLoadedMsg now
+			// This case is now handled by ResourcesLoadedMsg above
+			return ms, nil
+		case 2: // Prompts - handled by PromptsLoadedMsg now
+			// This case is now handled by PromptsLoadedMsg above
+			return ms, nil
 		case 3: // Events
 			ms.eventsLoading = false
 			// Re-fetch events from logger
@@ -402,7 +482,24 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "ctrl+c", "q", "esc":
+	case "ctrl+c":
+		return ms, tea.Quit
+		
+	case "q", "esc":
+		// If we're in a viewer, close it first
+		if ms.resourceViewerOpen {
+			ms.resourceViewerOpen = false
+			ms.selectedResource = nil
+			ms.resourceContent = nil
+			return ms, nil
+		}
+		if ms.promptViewerOpen {
+			ms.promptViewerOpen = false
+			ms.selectedPrompt = nil
+			ms.promptResult = nil
+			return ms, nil
+		}
+		// Otherwise quit
 		return ms, tea.Quit
 
 	case "tab":
@@ -481,13 +578,13 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		// Disconnect and return to connection screen
 		ms.logger.Info("User requested disconnect")
-		
+
 		// Disconnect from the MCP server
 		if err := ms.mcpService.Disconnect(); err != nil {
 			ms.logger.Error("Failed to disconnect cleanly", debug.F("error", err))
 			// Continue with transition even if disconnect fails
 		}
-		
+
 		// Transition to connection screen with previous config
 		connScreen := NewConnectionScreenWithConfig(ms.config, ms.connectionConfig)
 		return ms, func() tea.Msg {
@@ -562,8 +659,8 @@ func (ms *MainScreen) ensureInitialFocus(tabIndex int) {
 		// Set initial focus to first item if list is not empty and has actual content
 		if len(currentList) > 0 && ms.getActualItemCountForTab(tabIndex) > 0 {
 			ms.selectedIndex[tabIndex] = 0
-			ms.logger.Debug("Set initial focus for tab", 
-				debug.F("tab", tabIndex), 
+			ms.logger.Debug("Set initial focus for tab",
+				debug.F("tab", tabIndex),
 				debug.F("items", len(currentList)))
 		}
 	}
@@ -637,14 +734,56 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 		}
 
 	case 1: // Resources
-		// TODO: Implement resource viewer
-		tabName := []string{"tool", "resource", "prompt"}[ms.activeTab]
-		ms.SetStatus(fmt.Sprintf("Selected %s: %s (viewer not implemented)", tabName, selectedItem), StatusInfo)
+		// Extract resource URI from the display string (format: "uri - description")
+		parts := strings.SplitN(selectedItem, " - ", 2)
+		if len(parts) > 0 && selectedIdx < len(ms.resourceObjects) {
+			resourceURI := parts[0]
+			resource := ms.resourceObjects[selectedIdx]
+			
+			// Load resource content
+			ms.resourceLoading = true
+			ms.SetStatus(fmt.Sprintf("Loading resource content: %s", resourceURI), StatusInfo)
+			
+			return ms, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				
+				content, err := ms.mcpService.ReadResource(ctx, resourceURI)
+				return ResourceContentLoadedMsg{
+					Resource: &resource,
+					Content:  content,
+					Error:    err,
+				}
+			}
+		}
 
 	case 2: // Prompts
-		// TODO: Implement prompt viewer
-		tabName := []string{"tool", "resource", "prompt", "event"}[ms.activeTab]
-		ms.SetStatus(fmt.Sprintf("Selected %s: %s (viewer not implemented)", tabName, selectedItem), StatusInfo)
+		// Extract prompt name from the display string (format: "name - description")
+		parts := strings.SplitN(selectedItem, " - ", 2)
+		if len(parts) > 0 && selectedIdx < len(ms.promptObjects) {
+			promptName := parts[0]
+			prompt := ms.promptObjects[selectedIdx]
+			
+			// Load prompt details (execute with no arguments to get basic info)
+			ms.promptLoading = true
+			ms.SetStatus(fmt.Sprintf("Loading prompt details: %s", promptName), StatusInfo)
+			
+			return ms, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				
+				// Execute prompt with no arguments to get the details
+				result, err := ms.mcpService.GetPrompt(ctx, mcp.GetPromptRequest{
+					Name:      promptName,
+					Arguments: make(map[string]interface{}),
+				})
+				return PromptResultLoadedMsg{
+					Prompt: &prompt,
+					Result: result,
+					Error:  err,
+				}
+			}
+		}
 
 	case 3: // Events
 		// Toggle detail view for the selected event
@@ -751,11 +890,15 @@ func (ms *MainScreen) View() string {
 	builder.WriteString(separatorStyle.Render(strings.Repeat("─", width)))
 	builder.WriteString("\n")
 
-	// Current list or split-pane view for tools and events
+	// Current list or split-pane view for tools, resources, prompts, and events
 	if ms.activeTab == 3 && ms.showEventDetail {
 		builder.WriteString(ms.renderEventSplitView())
 	} else if ms.activeTab == 0 && len(ms.tools) > 0 {
 		builder.WriteString(ms.renderToolSplitView())
+	} else if ms.activeTab == 1 && ms.resourceViewerOpen {
+		builder.WriteString(ms.renderResourceViewer())
+	} else if ms.activeTab == 2 && ms.promptViewerOpen {
+		builder.WriteString(ms.renderPromptViewer())
 	} else {
 		builder.WriteString(ms.renderCurrentList())
 	}
@@ -1309,16 +1452,16 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 			// Check if this is a "not supported" error - treat as normal
 			if isUnsupportedCapabilityError(err) {
 				ms.logger.Info("Server doesn't support resources - this is normal", debug.F("error", err))
-				return ItemsLoadedMsg{
-					Tab:         1,
+				return ResourcesLoadedMsg{
+					Resources:   []mcp.Resource{},
 					Items:       []string{"This MCP server doesn't provide any resources"},
 					ActualCount: 0,
 					Error:       nil,
 				}
 			}
 			ms.logger.Error("Failed to load resources", debug.F("error", err))
-			return ItemsLoadedMsg{
-				Tab:         1,
+			return ResourcesLoadedMsg{
+				Resources:   []mcp.Resource{},
 				Items:       []string{fmt.Sprintf("Error loading resources: %v", err)},
 				ActualCount: 0,
 				Error:       err,
@@ -1339,8 +1482,8 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 			}
 		}
 
-		return ItemsLoadedMsg{
-			Tab:         1,
+		return ResourcesLoadedMsg{
+			Resources:   resources,
 			Items:       resourceList,
 			ActualCount: actualCount,
 			Error:       nil,
@@ -1368,16 +1511,16 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 			// Check if this is a "not supported" error - treat as normal
 			if isUnsupportedCapabilityError(err) {
 				ms.logger.Info("Server doesn't support prompts - this is normal", debug.F("error", err))
-				return ItemsLoadedMsg{
-					Tab:         2,
+				return PromptsLoadedMsg{
+					Prompts:     []mcp.Prompt{},
 					Items:       []string{"This MCP server doesn't provide any prompts"},
 					ActualCount: 0,
 					Error:       nil,
 				}
 			}
 			ms.logger.Error("Failed to load prompts", debug.F("error", err))
-			return ItemsLoadedMsg{
-				Tab:         2,
+			return PromptsLoadedMsg{
+				Prompts:     []mcp.Prompt{},
 				Items:       []string{fmt.Sprintf("Error loading prompts: %v", err)},
 				ActualCount: 0,
 				Error:       err,
@@ -1398,8 +1541,8 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 			}
 		}
 
-		return ItemsLoadedMsg{
-			Tab:         2,
+		return PromptsLoadedMsg{
+			Prompts:     prompts,
 			Items:       promptList,
 			ActualCount: actualCount,
 			Error:       nil,
@@ -1582,7 +1725,7 @@ func (ms *MainScreen) renderToolList() string {
 	if paneHeight < 10 {
 		paneHeight = 10
 	}
-	
+
 	// Account for border - subtract 2 for top/bottom borders
 	availableLines := paneHeight - 2
 	if availableLines < 1 {
@@ -1590,11 +1733,11 @@ func (ms *MainScreen) renderToolList() string {
 	}
 
 	selectedIdx := ms.selectedIndex[0] // Tools are tab 0
-	
+
 	// Calculate scroll window
 	startIdx := 0
 	endIdx := len(ms.tools)
-	
+
 	if len(ms.tools) > availableLines {
 		// Need scrolling - center the selected item
 		startIdx = selectedIdx - availableLines/2
@@ -1621,7 +1764,7 @@ func (ms *MainScreen) renderToolList() string {
 	for i := startIdx; i < endIdx; i++ {
 		tool := ms.tools[i]
 		line := fmt.Sprintf("%2d. %s", i+1, tool.Name)
-		
+
 		if i == selectedIdx {
 			listItems = append(listItems, ms.selectedStyle.Render("▶ "+line))
 		} else {
@@ -1646,7 +1789,7 @@ func (ms *MainScreen) renderToolDetail() string {
 	}
 
 	tool := ms.tools[selectedIdx]
-	
+
 	// Build full content first
 	var contentBuilder strings.Builder
 
@@ -1662,7 +1805,7 @@ func (ms *MainScreen) renderToolDetail() string {
 			paramCount = len(properties)
 		}
 	}
-	
+
 	paramStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 	contentBuilder.WriteString(paramStyle.Render(fmt.Sprintf("Parameters: %d", paramCount)))
 	contentBuilder.WriteString("\n\n")
@@ -1678,7 +1821,7 @@ func (ms *MainScreen) renderToolDetail() string {
 	}
 
 	fullContent := contentBuilder.String()
-	
+
 	// Calculate available height for scrolling
 	totalHeight := ms.Height()
 	if totalHeight == 0 {
@@ -1689,8 +1832,8 @@ func (ms *MainScreen) renderToolDetail() string {
 	if paneHeight < 10 {
 		paneHeight = 10
 	}
-	
-	// Account for border - subtract 2 for top/bottom borders  
+
+	// Account for border - subtract 2 for top/bottom borders
 	availableLines := paneHeight - 2
 	if availableLines < 1 {
 		availableLines = 1
@@ -1698,12 +1841,12 @@ func (ms *MainScreen) renderToolDetail() string {
 
 	// Split content into lines
 	lines := strings.Split(fullContent, "\n")
-	
+
 	// If content fits, return as-is
 	if len(lines) <= availableLines {
 		return fullContent
 	}
-	
+
 	// Apply scrolling using toolDetailScroll offset
 	startIdx := ms.toolDetailScroll
 	if startIdx >= len(lines) {
@@ -1713,26 +1856,26 @@ func (ms *MainScreen) renderToolDetail() string {
 		}
 		ms.toolDetailScroll = startIdx
 	}
-	
+
 	endIdx := startIdx + availableLines
 	if endIdx > len(lines) {
 		endIdx = len(lines)
 	}
-	
+
 	visibleLines := lines[startIdx:endIdx]
-	
+
 	// Add scroll indicators if there's more content
 	if len(lines) > availableLines {
 		// Add scroll position indicator
 		scrollInfo := fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, len(lines))
-		
+
 		if len(visibleLines) > 0 {
 			// Add top indicator if not at the beginning
 			if startIdx > 0 {
 				visibleLines[0] = "▲ " + visibleLines[0] + " ▲"
 			}
-			
-			// Add bottom indicator if not at the end  
+
+			// Add bottom indicator if not at the end
 			if endIdx < len(lines) {
 				visibleLines[len(visibleLines)-1] += " ▼ (Ctrl+Up/Down to scroll)" + scrollInfo
 			} else {
@@ -1740,7 +1883,7 @@ func (ms *MainScreen) renderToolDetail() string {
 			}
 		}
 	}
-	
+
 	return strings.Join(visibleLines, "\n")
 }
 
@@ -1882,4 +2025,179 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// renderResourceViewer renders the resource content viewer
+func (ms *MainScreen) renderResourceViewer() string {
+	var builder strings.Builder
+	
+	if ms.resourceLoading {
+		spinner := components.NewSpinner(components.SpinnerDots)
+		spinnerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
+		builder.WriteString(spinnerStyle.Render(spinner.Frame(time.Since(time.Now()))))
+		builder.WriteString(" Loading resource content...")
+		return builder.String()
+	}
+	
+	if ms.selectedResource == nil || ms.resourceContent == nil {
+		builder.WriteString("No resource selected")
+		return builder.String()
+	}
+
+	// Header
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
+	builder.WriteString(headerStyle.Render(fmt.Sprintf("Resource: %s", ms.selectedResource.URI)))
+	builder.WriteString("\n\n")
+	
+	// Metadata
+	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	if ms.selectedResource.Name != "" && ms.selectedResource.Name != ms.selectedResource.URI {
+		builder.WriteString(metaStyle.Render(fmt.Sprintf("Name: %s", ms.selectedResource.Name)))
+		builder.WriteString("\n")
+	}
+	if ms.selectedResource.Description != "" {
+		builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.selectedResource.Description)))
+		builder.WriteString("\n")
+	}
+	if ms.selectedResource.MimeType != "" {
+		builder.WriteString(metaStyle.Render(fmt.Sprintf("MIME Type: %s", ms.selectedResource.MimeType)))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("\n")
+	
+	// Content
+	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
+	
+	for i, content := range ms.resourceContent {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
+		
+		// Content header
+		if i == 0 && len(ms.resourceContent) == 1 {
+			builder.WriteString(sectionStyle.Render("Content:"))
+		} else {
+			builder.WriteString(sectionStyle.Render(fmt.Sprintf("Content %d:", i+1)))
+		}
+		builder.WriteString("\n")
+		
+		if content.Text != "" {
+			// Text content
+			lines := strings.Split(content.Text, "\n")
+			for _, line := range lines {
+				if len(line) > 100 {
+					line = line[:97] + "..."
+				}
+				builder.WriteString(contentStyle.Render(line))
+				builder.WriteString("\n")
+			}
+		} else if content.Blob != "" {
+			// Binary content - show summary
+			builder.WriteString(contentStyle.Render("Binary content (base64 encoded)"))
+			builder.WriteString("\n")
+			builder.WriteString(metaStyle.Render(fmt.Sprintf("Size: %d bytes", len(content.Blob))))
+			builder.WriteString("\n")
+		}
+	}
+	
+	// Instructions
+	builder.WriteString("\n")
+	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+	builder.WriteString(instructionStyle.Render("Press 'q' or Escape to go back to list"))
+	
+	return builder.String()
+}
+
+// renderPromptViewer renders the prompt result viewer
+func (ms *MainScreen) renderPromptViewer() string {
+	var builder strings.Builder
+	
+	if ms.promptLoading {
+		spinner := components.NewSpinner(components.SpinnerDots)
+		spinnerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
+		builder.WriteString(spinnerStyle.Render(spinner.Frame(time.Since(time.Now()))))
+		builder.WriteString(" Loading prompt details...")
+		return builder.String()
+	}
+	
+	if ms.selectedPrompt == nil {
+		builder.WriteString("No prompt selected")
+		return builder.String()
+	}
+
+	// Header
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13"))
+	builder.WriteString(headerStyle.Render(fmt.Sprintf("Prompt: %s", ms.selectedPrompt.Name)))
+	builder.WriteString("\n\n")
+	
+	// Metadata
+	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	if ms.selectedPrompt.Description != "" {
+		builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.selectedPrompt.Description)))
+		builder.WriteString("\n")
+	}
+	
+	// Arguments
+	if ms.selectedPrompt.Arguments != nil && len(ms.selectedPrompt.Arguments) > 0 {
+		builder.WriteString(metaStyle.Render("Arguments:"))
+		builder.WriteString("\n")
+		argStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).MarginLeft(2)
+		for key, value := range ms.selectedPrompt.Arguments {
+			builder.WriteString(argStyle.Render(fmt.Sprintf("• %s: %v", key, value)))
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("\n")
+	
+	// Result (if available)
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
+	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	
+	if ms.promptResult != nil {
+		builder.WriteString(sectionStyle.Render("Prompt Result:"))
+		builder.WriteString("\n")
+		
+		if ms.promptResult.Description != "" {
+			builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.promptResult.Description)))
+			builder.WriteString("\n")
+		}
+		
+		if len(ms.promptResult.Messages) > 0 {
+			builder.WriteString(sectionStyle.Render("Messages:"))
+			builder.WriteString("\n")
+			
+			for i, message := range ms.promptResult.Messages {
+				if i > 0 {
+					builder.WriteString("\n")
+				}
+				
+				roleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+				builder.WriteString(roleStyle.Render(fmt.Sprintf("Role: %s", message.Role)))
+				builder.WriteString("\n")
+				
+				if message.Content != nil {
+					for _, content := range message.Content {
+						if content.Text != "" {
+							lines := strings.Split(content.Text, "\n")
+							for _, line := range lines {
+								if len(line) > 100 {
+									line = line[:97] + "..."
+								}
+								builder.WriteString(contentStyle.Render(line))
+								builder.WriteString("\n")
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	// Instructions
+	builder.WriteString("\n")
+	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+	builder.WriteString(instructionStyle.Render("Press 'q' or Escape to go back to list"))
+	
+	return builder.String()
 }
