@@ -14,34 +14,34 @@ import (
 
 // ConnectionEntry represents a saved connection configuration
 type ConnectionEntry struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	Icon        string                 `json:"icon,omitempty"`
-	Transport   config.TransportType   `json:"transport"`
-	Command     string                 `json:"command,omitempty"`
-	Args        []string               `json:"args,omitempty"`
-	URL         string                 `json:"url,omitempty"`
-	Headers     map[string]string      `json:"headers,omitempty"`
-	Environment map[string]string      `json:"env,omitempty"`
-	LastUsed    *time.Time             `json:"lastUsed,omitempty"`
-	Success     bool                   `json:"success"`
-	Tags        []string               `json:"tags,omitempty"`
+	ID          string               `json:"id"`
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Icon        string               `json:"icon,omitempty"`
+	Transport   config.TransportType `json:"transport"`
+	Command     string               `json:"command,omitempty"`
+	Args        []string             `json:"args,omitempty"`
+	URL         string               `json:"url,omitempty"`
+	Headers     map[string]string    `json:"headers,omitempty"`
+	Environment map[string]string    `json:"env,omitempty"`
+	LastUsed    *time.Time           `json:"lastUsed,omitempty"`
+	Success     bool                 `json:"success"`
+	Tags        []string             `json:"tags,omitempty"`
 }
 
 // ConnectionsConfig represents the saved connections configuration file
 type ConnectionsConfig struct {
-	Version           string                    `json:"version"`
-	DefaultServer     string                    `json:"defaultServer,omitempty"`
+	Version           string                      `json:"version"`
+	DefaultServer     string                      `json:"defaultServer,omitempty"`
 	Servers           map[string]*ConnectionEntry `json:"servers"`
-	RecentConnections []*RecentConnection       `json:"recentConnections,omitempty"`
+	RecentConnections []*RecentConnection         `json:"recentConnections,omitempty"`
 }
 
 // RecentConnection tracks recently used connections
 type RecentConnection struct {
-	ServerID string     `json:"serverId"`
-	LastUsed time.Time  `json:"lastUsed"`
-	Success  bool       `json:"success"`
+	ServerID string    `json:"serverId"`
+	LastUsed time.Time `json:"lastUsed"`
+	Success  bool      `json:"success"`
 }
 
 // ConnectionsManager manages saved connections
@@ -79,11 +79,11 @@ func NewConnectionsManager() *ConnectionsManager {
 func (cm *ConnectionsManager) LoadConnections() error {
 	// Try to load from multiple sources in priority order
 	sources := []string{
-		cm.filePath,                                                      // MCP-TUI native config
-		cm.getClaudeDesktopConfigPath(),                                 // Claude Desktop config
-		".mcp.json",                                                     // Project-local config
-		".claude.json",                                                  // Claude Code config
-		filepath.Join(".vscode", "mcp.json"),                          // VS Code config
+		cm.filePath,                          // MCP-TUI native config
+		cm.getClaudeDesktopConfigPath(),      // Claude Desktop config
+		".mcp.json",                          // Project-local config
+		".claude.json",                       // Claude Code config
+		filepath.Join(".vscode", "mcp.json"), // VS Code config
 	}
 
 	for _, source := range sources {
@@ -435,13 +435,13 @@ func (cm *ConnectionsManager) GetRecentConnections() []*ConnectionEntry {
 
 // DiscoveredConfigFile represents a configuration file found in the filesystem
 type DiscoveredConfigFile struct {
-	Path        string        `json:"path"`
-	Name        string        `json:"name"`
-	Format      string        `json:"format"` // "claude-desktop", "vscode", "mcp-tui", "unknown"
-	ServerCount int           `json:"serverCount"`
-	Accessible  bool          `json:"accessible"`
-	Error       string        `json:"error,omitempty"`
-	Servers     []ServerInfo  `json:"servers,omitempty"`
+	Path        string       `json:"path"`
+	Name        string       `json:"name"`
+	Format      string       `json:"format"` // "claude-desktop", "vscode", "mcp-tui", "unknown"
+	ServerCount int          `json:"serverCount"`
+	Accessible  bool         `json:"accessible"`
+	Error       string       `json:"error,omitempty"`
+	Servers     []ServerInfo `json:"servers,omitempty"`
 }
 
 type ServerInfo struct {
@@ -459,7 +459,7 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 	// Current directory patterns
 	currentDirPatterns := []string{
 		".mcp.json",
-		".claude.json", 
+		".claude.json",
 		"mcp.json",
 		"mcp-config.json",
 		"connections.json",
@@ -514,9 +514,9 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 // analyzeConfigFile analyzes a configuration file to determine its type and contents
 func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConfigFile {
 	config := &DiscoveredConfigFile{
-		Path:        filePath,
-		Name:        filepath.Base(filePath),
-		Accessible:  true,
+		Path:       filePath,
+		Name:       filepath.Base(filePath),
+		Accessible: true,
 	}
 
 	// Try to read and parse the file
@@ -529,7 +529,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 
 	// Determine format by trying to parse
 	serverCount := 0
-	
+
 	// Try Claude Desktop format - must have mcpServers node
 	var claudeConfig struct {
 		MCPServers map[string]interface{} `json:"mcpServers"`
@@ -563,9 +563,9 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 							mcpScriptCount := 0
 							for name, script := range scripts {
 								if scriptStr, ok := script.(string); ok {
-									if strings.Contains(strings.ToLower(name), "mcp") || 
-									   strings.Contains(strings.ToLower(scriptStr), "mcp") ||
-									   strings.Contains(strings.ToLower(scriptStr), "model-context-protocol") {
+									if strings.Contains(strings.ToLower(name), "mcp") ||
+										strings.Contains(strings.ToLower(scriptStr), "mcp") ||
+										strings.Contains(strings.ToLower(scriptStr), "model-context-protocol") {
 										mcpScriptCount++
 									}
 								}
@@ -591,30 +591,30 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	}
 
 	config.ServerCount = serverCount
-	
+
 	// Only return files with valid MCP configuration (serverCount > 0)
 	if serverCount == 0 || config.Format == "unknown" {
 		return nil
 	}
-	
+
 	return config
 }
 
 // extractClaudeDesktopServers extracts server information from Claude Desktop format
 func (cm *ConnectionsManager) extractClaudeDesktopServers(mcpServers map[string]interface{}) []ServerInfo {
 	var servers []ServerInfo
-	
+
 	for name, serverData := range mcpServers {
 		if serverMap, ok := serverData.(map[string]interface{}); ok {
 			server := ServerInfo{
 				Name:      name,
 				Transport: "stdio", // Claude Desktop format is typically stdio
 			}
-			
+
 			if command, ok := serverMap["command"].(string); ok {
 				server.Command = command
 			}
-			
+
 			if args, ok := serverMap["args"].([]interface{}); ok {
 				for _, arg := range args {
 					if argStr, ok := arg.(string); ok {
@@ -622,34 +622,34 @@ func (cm *ConnectionsManager) extractClaudeDesktopServers(mcpServers map[string]
 					}
 				}
 			}
-			
+
 			// Try to generate a description
 			if server.Command != "" {
 				server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
 			}
-			
+
 			servers = append(servers, server)
 		}
 	}
-	
+
 	return servers
 }
 
 // extractVSCodeServers extracts server information from VS Code MCP format
 func (cm *ConnectionsManager) extractVSCodeServers(vscodeServers map[string]interface{}) []ServerInfo {
 	var servers []ServerInfo
-	
+
 	for name, serverData := range vscodeServers {
 		if serverMap, ok := serverData.(map[string]interface{}); ok {
 			server := ServerInfo{
 				Name:      name,
 				Transport: "stdio", // VS Code format is typically stdio
 			}
-			
+
 			if command, ok := serverMap["command"].(string); ok {
 				server.Command = command
 			}
-			
+
 			if args, ok := serverMap["args"].([]interface{}); ok {
 				for _, arg := range args {
 					if argStr, ok := arg.(string); ok {
@@ -657,38 +657,38 @@ func (cm *ConnectionsManager) extractVSCodeServers(vscodeServers map[string]inte
 					}
 				}
 			}
-			
+
 			// Try to generate a description
 			if server.Command != "" {
 				server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
 			}
-			
+
 			servers = append(servers, server)
 		}
 	}
-	
+
 	return servers
 }
 
 // extractNativeServers extracts server information from MCP-TUI native format
 func (cm *ConnectionsManager) extractNativeServers(nativeServers map[string]*ConnectionEntry) []ServerInfo {
 	var servers []ServerInfo
-	
+
 	for name, entry := range nativeServers {
 		server := ServerInfo{
 			Name:        name,
 			Description: entry.Description,
 			Transport:   string(entry.Transport),
 		}
-		
+
 		if entry.Transport == "stdio" {
 			server.Command = entry.Command
 			server.Args = entry.Args
 		}
-		
+
 		servers = append(servers, server)
 	}
-	
+
 	return servers
 }
 
@@ -722,7 +722,7 @@ func (cm *ConnectionsManager) isMoreRelevant(a, b *DiscoveredConfigFile) bool {
 	cwd, _ := os.Getwd()
 	aInCwd := strings.HasPrefix(a.Path, cwd)
 	bInCwd := strings.HasPrefix(b.Path, cwd)
-	
+
 	if aInCwd && !bInCwd {
 		return false // a is better
 	}
@@ -737,16 +737,16 @@ func (cm *ConnectionsManager) isMoreRelevant(a, b *DiscoveredConfigFile) bool {
 
 	// Format priority: mcp-tui > claude-desktop > vscode > package.json > unknown
 	formatPriority := map[string]int{
-		"mcp-tui":       1,
+		"mcp-tui":        1,
 		"claude-desktop": 2,
-		"vscode":        3,
-		"package.json":  4,
-		"unknown":       5,
+		"vscode":         3,
+		"package.json":   4,
+		"unknown":        5,
 	}
 
 	aPrio, aExists := formatPriority[a.Format]
 	bPrio, bExists := formatPriority[b.Format]
-	
+
 	if !aExists {
 		aPrio = 6
 	}
@@ -770,7 +770,7 @@ func (cm *ConnectionsManager) LoadFromDiscovered(discoveredConfig *DiscoveredCon
 	}
 
 	if cm.loadFromSource(discoveredConfig.Path) {
-		cm.logger.Info("Loaded connections from discovered file", 
+		cm.logger.Info("Loaded connections from discovered file",
 			debug.F("path", discoveredConfig.Path),
 			debug.F("format", discoveredConfig.Format),
 			debug.F("serverCount", discoveredConfig.ServerCount))

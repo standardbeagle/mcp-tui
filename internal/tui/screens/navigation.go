@@ -78,14 +78,14 @@ func (nh *NavigationHandler) moveSelection(offset int) tea.Model {
 
 	// Check if selection actually changed
 	selectionChanged := current != newPos
-	
+
 	nh.screen.selectedIndex[nh.screen.activeTab] = newPos
-	
+
 	// Reset description scroll when tool selection changes
 	if selectionChanged && nh.screen.activeTab == 0 {
 		nh.screen.toolDetailScroll = 0
 	}
-	
+
 	return nh.screen
 }
 

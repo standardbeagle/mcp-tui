@@ -25,38 +25,38 @@ type ConnectionScreen struct {
 	selectedConnection *models.ConnectionEntry
 
 	// File discovery
-	discoveredFiles    []*models.DiscoveredConfigFile
-	discoveryIndex     int
-	showDiscovery      bool
+	discoveredFiles []*models.DiscoveredConfigFile
+	discoveryIndex  int
+	showDiscovery   bool
 
 	// UI state
-	viewMode      string // "saved", "manual", or "discovery"
-	transportType config.TransportType
+	viewMode        string // "saved", "manual", or "discovery"
+	transportType   config.TransportType
 	connectionsList []string
 	connectionIndex int
-	
+
 	// Tab management
-	availableTabs []string
+	availableTabs  []string
 	activeTabIndex int
-	tabFocused    bool
+	tabFocused     bool
 
 	// Text input models
-	commandInput    textinput.Model
-	argsInput       textinput.Model
-	urlInput        textinput.Model
-	combinedInput   textinput.Model // Single line for full command
-	usesCombined    bool            // Whether to use combined input
+	commandInput  textinput.Model
+	argsInput     textinput.Model
+	urlInput      textinput.Model
+	combinedInput textinput.Model // Single line for full command
+	usesCombined  bool            // Whether to use combined input
 
 	// Form state
 	focusIndex int
 	maxFocus   int
 
 	// Styles
-	focusedStyle lipgloss.Style
-	blurredStyle lipgloss.Style
-	titleStyle   lipgloss.Style
-	helpStyle    lipgloss.Style
-	cardStyle    lipgloss.Style
+	focusedStyle      lipgloss.Style
+	blurredStyle      lipgloss.Style
+	titleStyle        lipgloss.Style
+	helpStyle         lipgloss.Style
+	cardStyle         lipgloss.Style
 	selectedCardStyle lipgloss.Style
 }
 
@@ -75,7 +75,7 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 		viewMode:           "saved",
 		transportType:      config.TransportStdio,
 		usesCombined:       true, // Default to combined command input
-		maxFocus:           4, // will be updated based on mode
+		maxFocus:           4,    // will be updated based on mode
 	}
 
 	// Load saved connections
@@ -216,7 +216,7 @@ func (cs *ConnectionScreen) Init() tea.Cmd {
 // buildAvailableTabs determines which tabs should be available
 func (cs *ConnectionScreen) buildAvailableTabs() {
 	cs.availableTabs = nil
-	
+
 	if len(cs.savedConnections) > 0 {
 		cs.availableTabs = append(cs.availableTabs, "saved")
 	}
@@ -315,9 +315,9 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.updateInputFocus()
 		}
 		return cs, nil
-		
+
 	case "tab":
-		// If tabs are focused, move to content focus  
+		// If tabs are focused, move to content focus
 		if cs.tabFocused && len(cs.availableTabs) > 0 {
 			cs.tabFocused = false
 			cs.focusIndex = 0
@@ -325,7 +325,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Otherwise delegate to mode-specific handler
 		break
-		
+
 	case "shift+tab":
 		// Return to tab focus if we have multiple tabs
 		if !cs.tabFocused && len(cs.availableTabs) > 1 {
@@ -676,10 +676,10 @@ func (cs *ConnectionScreen) blurAllInputs() {
 
 // isAnyInputFocused returns true if any text input field is currently focused
 func (cs *ConnectionScreen) isAnyInputFocused() bool {
-	return cs.commandInput.Focused() || 
-		   cs.argsInput.Focused() || 
-		   cs.urlInput.Focused() || 
-		   cs.combinedInput.Focused()
+	return cs.commandInput.Focused() ||
+		cs.argsInput.Focused() ||
+		cs.urlInput.Focused() ||
+		cs.combinedInput.Focused()
 }
 
 // updateInputFocus sets focus on the appropriate input based on current state
@@ -708,7 +708,7 @@ func (cs *ConnectionScreen) updateInputFocus() {
 func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 	// Get values from text inputs
 	var command, args string
-	
+
 	if cs.transportType == config.TransportStdio && cs.usesCombined {
 		// Parse combined command input
 		combinedCmd := cs.combinedInput.Value()
@@ -726,7 +726,7 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 		command = cs.commandInput.Value()
 		args = cs.argsInput.Value()
 	}
-	
+
 	url := cs.urlInput.Value()
 
 	cs.logger.Info("Attempting to connect",
@@ -752,12 +752,12 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 	// Log what we're actually connecting to
 	switch cs.transportType {
 	case config.TransportStdio:
-		cs.logger.Info("Connecting to MCP server", 
+		cs.logger.Info("Connecting to MCP server",
 			debug.F("transport", "stdio"),
 			debug.F("command", command),
 			debug.F("args", args))
 	case config.TransportHTTP, config.TransportSSE:
-		cs.logger.Info("Connecting to MCP server", 
+		cs.logger.Info("Connecting to MCP server",
 			debug.F("transport", cs.transportType),
 			debug.F("url", url))
 	}
@@ -842,7 +842,7 @@ func (cs *ConnectionScreen) renderModeSelector() string {
 	}
 
 	var tabs []string
-	
+
 	for i, tabMode := range cs.availableTabs {
 		var tabText string
 		switch tabMode {
@@ -880,7 +880,7 @@ func (cs *ConnectionScreen) renderModeSelector() string {
 
 	tabRow := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
 	helpText := cs.helpStyle.Render("←/→: Switch tabs • Tab: Enter content • Ctrl+D: Debug • Esc: Quit")
-	
+
 	return tabRow + "\n" + helpText
 }
 
@@ -916,7 +916,7 @@ func (cs *ConnectionScreen) renderSavedConnections() string {
 		var cardContent strings.Builder
 		cardContent.WriteString(fmt.Sprintf("%s %s\n", connection.Icon, connection.Name))
 		cardContent.WriteString(fmt.Sprintf("Transport: %s\n", connection.Transport))
-		
+
 		if connection.Command != "" {
 			cardContent.WriteString(fmt.Sprintf("Command: %s\n", connection.Command))
 		}
@@ -964,7 +964,7 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 
 		// Build file card content
 		var cardContent strings.Builder
-		
+
 		// Format icon
 		formatIcon := "📄"
 		switch file.Format {
@@ -981,10 +981,10 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 		// File header with path
 		cardContent.WriteString(fmt.Sprintf("%s %s\n", formatIcon, file.Name))
 		cardContent.WriteString(fmt.Sprintf("📂 %s\n", file.Path))
-		
+
 		if file.Accessible && len(file.Servers) > 0 {
 			cardContent.WriteString(fmt.Sprintf("\nServers (%d):\n", len(file.Servers)))
-			
+
 			// List servers with name and description
 			for j, server := range file.Servers {
 				serverLine := fmt.Sprintf("  • %s", server.Name)
@@ -1000,13 +1000,13 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 					}
 					serverLine += fmt.Sprintf(" - %s", cmdSummary)
 				}
-				
+
 				cardContent.WriteString(serverLine)
 				if j < len(file.Servers)-1 {
 					cardContent.WriteString("\n")
 				}
 			}
-			
+
 			cardContent.WriteString("\n\n✅ Ready to load")
 		} else if file.Accessible {
 			cardContent.WriteString("\n⚠️  No servers found")

@@ -43,6 +43,10 @@ type ToolScreen struct {
 	result         *mcp.CallToolResult
 	resultJSON     string // Pretty-printed JSON result
 
+	// CLI command state
+	cliCommand     string // Generated CLI command
+	showCLICommand bool   // Whether to show the CLI command
+
 	// Result viewing mode
 	viewingResult bool          // Whether we're in result viewing mode
 	resultFields  []resultField // Parsed JSON fields
@@ -135,6 +139,83 @@ func (ts *ToolScreen) sanitizeInput(input string) string {
 	return result.String()
 }
 
+// generateCLICommand generates the equivalent CLI command for the current tool call
+func (ts *ToolScreen) generateCLICommand() string {
+	var builder strings.Builder
+
+	// Start with the base command
+	builder.WriteString("./mcp-tui")
+
+	// Get connection configuration from service
+	config := ts.mcpService.GetConfiguration()
+
+	// Extract connection config from nested structure
+	var connectionConfig map[string]interface{}
+	if conn, ok := config["connection"].(map[string]interface{}); ok {
+		connectionConfig = conn
+	}
+
+	// Add transport type
+	if transportType, ok := connectionConfig["type"].(string); ok && transportType != "" {
+		builder.WriteString(fmt.Sprintf(" --transport %s", transportType))
+	} else {
+		builder.WriteString(" --transport stdio") // Default assumption
+	}
+
+	// Add connection-specific parameters based on transport type
+	if command, ok := connectionConfig["command"].(string); ok && command != "" {
+		builder.WriteString(fmt.Sprintf(" --cmd \"%s\"", command))
+	}
+
+	if argsInterface, ok := connectionConfig["args"]; ok {
+		// Handle args as interface{} which could be []interface{} or []string
+		if argsList, ok := argsInterface.([]interface{}); ok && len(argsList) > 0 {
+			var stringArgs []string
+			for _, arg := range argsList {
+				if argStr, ok := arg.(string); ok {
+					stringArgs = append(stringArgs, argStr)
+				}
+			}
+			if len(stringArgs) > 0 {
+				builder.WriteString(fmt.Sprintf(" --args \"%s\"", strings.Join(stringArgs, ",")))
+			}
+		} else if args, ok := argsInterface.([]string); ok && len(args) > 0 {
+			builder.WriteString(fmt.Sprintf(" --args \"%s\"", strings.Join(args, ",")))
+		}
+	}
+
+	if url, ok := connectionConfig["url"].(string); ok && url != "" {
+		builder.WriteString(fmt.Sprintf(" --url \"%s\"", url))
+	}
+
+	// Add the tool command
+	builder.WriteString(" tool call ")
+	builder.WriteString(ts.tool.Name)
+
+	// Add arguments from form fields
+	for _, field := range ts.fields {
+		value := field.input.Value()
+		if value != "" {
+			// Format the value based on field type
+			switch field.fieldType {
+			case "number", "integer", "boolean":
+				// Use value as-is for JSON types
+				builder.WriteString(fmt.Sprintf(" %s=%s", field.name, value))
+			case "array", "object":
+				// Quote JSON values and escape quotes
+				escaped := strings.ReplaceAll(value, "\"", "\\\"")
+				builder.WriteString(fmt.Sprintf(" %s=\"%s\"", field.name, escaped))
+			default:
+				// Quote string values and escape quotes
+				escaped := strings.ReplaceAll(value, "\"", "\\\"")
+				builder.WriteString(fmt.Sprintf(" %s=\"%s\"", field.name, escaped))
+			}
+		}
+	}
+
+	return builder.String()
+}
+
 // initStyles initializes the visual styles
 func (ts *ToolScreen) initStyles() {
 	ts.titleStyle = lipgloss.NewStyle().
@@ -207,45 +288,45 @@ func (ts *ToolScreen) parseSchema() {
 				}
 			}
 
-		// Create fields from properties
-		for name, propDef := range props {
-			// Create textinput model
-			input := textinput.New()
-			input.Placeholder = "Enter " + name
-			input.CharLimit = 0 // No limit
-			input.Width = 58    // Slightly smaller than the border width
+			// Create fields from properties
+			for name, propDef := range props {
+				// Create textinput model
+				input := textinput.New()
+				input.Placeholder = "Enter " + name
+				input.CharLimit = 0 // No limit
+				input.Width = 58    // Slightly smaller than the border width
 
-			field := toolField{
-				name:     name,
-				required: requiredMap[name],
-				input:    input,
-			}
+				field := toolField{
+					name:     name,
+					required: requiredMap[name],
+					input:    input,
+				}
 
-			// Extract field info from property definition
-			if propMap, ok := propDef.(map[string]interface{}); ok {
-				if propType, ok := propMap["type"].(string); ok {
-					field.fieldType = propType
-					// Update placeholder based on type
-					switch propType {
-					case "number":
-						input.Placeholder = "Enter a number"
-					case "integer":
-						input.Placeholder = "Enter an integer"
-					case "boolean":
-						input.Placeholder = "true or false"
-					case "array":
-						input.Placeholder = "JSON array or comma-separated"
-					case "object":
-						input.Placeholder = "JSON object"
+				// Extract field info from property definition
+				if propMap, ok := propDef.(map[string]interface{}); ok {
+					if propType, ok := propMap["type"].(string); ok {
+						field.fieldType = propType
+						// Update placeholder based on type
+						switch propType {
+						case "number":
+							input.Placeholder = "Enter a number"
+						case "integer":
+							input.Placeholder = "Enter an integer"
+						case "boolean":
+							input.Placeholder = "true or false"
+						case "array":
+							input.Placeholder = "JSON array or comma-separated"
+						case "object":
+							input.Placeholder = "JSON object"
+						}
+					}
+					if desc, ok := propMap["description"].(string); ok {
+						field.description = desc
 					}
 				}
-				if desc, ok := propMap["description"].(string); ok {
-					field.description = desc
-				}
-			}
 
-			ts.fields = append(ts.fields, field)
-		}
+				ts.fields = append(ts.fields, field)
+			}
 		}
 	}
 }
@@ -440,6 +521,22 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "c":
+		// Toggle CLI command display
+		if ts.showCLICommand {
+			ts.showCLICommand = false
+			ts.SetStatus("CLI command hidden", StatusInfo)
+		} else {
+			ts.cliCommand = ts.generateCLICommand()
+			ts.showCLICommand = true
+			if err := ts.copyToClipboard(ts.cliCommand); err == nil {
+				ts.SetStatus("CLI command copied to clipboard and displayed below!", StatusSuccess)
+			} else {
+				ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
+			}
+		}
+		return ts, nil
+
 	case "ctrl+c":
 		// Copy result to clipboard if available
 		if ts.result != nil && ts.resultJSON != "" {
@@ -447,6 +544,13 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ts.SetStatus("Result copied to clipboard!", StatusSuccess)
 			} else {
 				ts.SetStatus("Failed to copy to clipboard", StatusError)
+			}
+		} else if ts.showCLICommand && ts.cliCommand != "" {
+			// Copy CLI command to clipboard
+			if err := ts.copyToClipboard(ts.cliCommand); err == nil {
+				ts.SetStatus("CLI command copied to clipboard!", StatusSuccess)
+			} else {
+				ts.SetStatus("Failed to copy CLI command to clipboard", StatusError)
 			}
 		} else {
 			// No result, go back
@@ -487,7 +591,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ts.fields[ts.cursor].input.Blur()
 		}
 		// Move to next field/button
-		totalItems := len(ts.fields) + 2 // fields + execute button + back button
+		totalItems := len(ts.fields) + 3 // fields + execute button + cli button + back button
 		ts.cursor = (ts.cursor + 1) % totalItems
 		// Focus new field if it's an input
 		if ts.cursor < len(ts.fields) {
@@ -501,7 +605,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ts.fields[ts.cursor].input.Blur()
 		}
 		// Move to previous field/button
-		totalItems := len(ts.fields) + 2
+		totalItems := len(ts.fields) + 3
 		ts.cursor = (ts.cursor - 1 + totalItems) % totalItems
 		// Focus new field if it's an input
 		if ts.cursor < len(ts.fields) {
@@ -515,6 +619,18 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Execute button
 			return ts, ts.executeTool()
 		} else if ts.cursor == len(ts.fields)+1 {
+			// CLI button
+			ts.cliCommand = ts.generateCLICommand()
+			ts.showCLICommand = true
+
+			// Copy to clipboard
+			if err := ts.copyToClipboard(ts.cliCommand); err == nil {
+				ts.SetStatus("CLI command copied to clipboard and displayed below!", StatusSuccess)
+			} else {
+				ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
+			}
+			return ts, nil
+		} else if ts.cursor == len(ts.fields)+2 {
 			// Back button
 			return ts, func() tea.Msg { return BackMsg{} }
 		}
@@ -615,6 +731,7 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 
 	ts.executing = true
 	ts.executionStart = time.Now()
+	ts.showCLICommand = false // Hide CLI command during execution
 	ts.SetStatus("Executing tool...", StatusInfo)
 
 	// Start the execution and spinner ticker
@@ -786,6 +903,7 @@ func (ts *ToolScreen) View() string {
 
 	// Buttons
 	executeBtn := " Execute "
+	cliBtn := " CLI "
 	backBtn := " Back "
 
 	if ts.cursor == len(ts.fields) {
@@ -795,6 +913,12 @@ func (ts *ToolScreen) View() string {
 	}
 	builder.WriteString("  ")
 	if ts.cursor == len(ts.fields)+1 {
+		builder.WriteString(ts.selectedButtonStyle.Render(cliBtn))
+	} else {
+		builder.WriteString(ts.buttonStyle.Render(cliBtn))
+	}
+	builder.WriteString("  ")
+	if ts.cursor == len(ts.fields)+2 {
 		builder.WriteString(ts.selectedButtonStyle.Render(backBtn))
 	} else {
 		builder.WriteString(ts.buttonStyle.Render(backBtn))
@@ -911,6 +1035,36 @@ func (ts *ToolScreen) View() string {
 		builder.WriteString("\n")
 	}
 
+	// CLI command display
+	if ts.showCLICommand && ts.cliCommand != "" {
+		builder.WriteString("\n")
+
+		// CLI command header
+		cliHeaderStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("14")). // Cyan
+			Bold(true)
+		builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command:"))
+		builder.WriteString("\n")
+
+		// CLI command box
+		cliCommandStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("6")). // Cyan border
+			Padding(1).
+			Width(80).
+			Foreground(lipgloss.Color("15")) // White text
+
+		builder.WriteString(cliCommandStyle.Render(ts.cliCommand))
+		builder.WriteString("\n")
+
+		// CLI command help
+		cliHelpStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Italic(true)
+		builder.WriteString(cliHelpStyle.Render("Copy this command to run the same tool call from the command line"))
+		builder.WriteString("\n")
+	}
+
 	// Error message
 	if err := ts.LastError(); err != nil {
 		builder.WriteString("\n")
@@ -926,14 +1080,18 @@ func (ts *ToolScreen) View() string {
 		helpText = ""
 	} else if ts.result != nil {
 		if len(ts.resultFields) > 1 {
-			helpText = "v: View fields • Ctrl+C: Copy all • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+			helpText = "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		} else {
-			helpText = "Ctrl+C: Copy result • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+			helpText = "c: CLI command • Ctrl+C: Copy result • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		}
 	} else if ts.cursor < len(ts.fields) {
-		helpText = "Tab: Navigate • Enter: Submit • Ctrl+V: Paste • Ctrl+L: Debug Log • b: Back • Esc: Back"
+		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+L: Debug Log • b: Back • Esc: Back"
+	} else if ts.cursor == len(ts.fields) {
+		helpText = "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+L: Debug Log • b: Back • Esc: Back"
+	} else if ts.cursor == len(ts.fields)+1 {
+		helpText = "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b: Back • Esc: Back"
 	} else {
-		helpText = "Tab: Navigate • Enter: Submit • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+		helpText = "Tab: Navigate • Enter: Go back • c: CLI command • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 	}
 	if helpText != "" {
 		builder.WriteString(ts.helpStyle.Render(helpText))
