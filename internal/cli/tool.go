@@ -68,8 +68,9 @@ func (tc *ToolCommand) CreateCommand() *cobra.Command {
 		Long:  "List, describe, and call tools provided by the MCP server",
 	}
 
-	// Add output format flag to all subcommands
-	cmd.PersistentFlags().StringP("output", "o", "text", "Output format (text, json)")
+	// Add format flag to all subcommands
+	cmd.PersistentFlags().StringP("format", "f", "text", "Output format (text, json)")
+	cmd.PersistentFlags().Bool("porcelain", false, "Machine-readable output (disables progress messages)")
 
 	// Add subcommands
 	cmd.AddCommand(tc.createListCommand())
@@ -136,20 +137,23 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	// Only show progress messages for text output
-	if tc.GetOutputFormat() == OutputFormatText {
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
+	// Only show progress messages for text output and not porcelain mode
+	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "📋 Fetching available tools...\n")
 	}
 
 	tools, err := tc.GetService().ListTools(ctx)
 	if err != nil {
-		if tc.GetOutputFormat() == OutputFormatText {
+		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
 		}
 		return tc.HandleError(err, "list tools")
 	}
 
-	if tc.GetOutputFormat() == OutputFormatText {
+	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Tools retrieved successfully\n\n")
 	}
 
@@ -231,15 +235,18 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	// Only show progress messages for text output
-	if tc.GetOutputFormat() == OutputFormatText {
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
+	// Only show progress messages for text output and not porcelain mode
+	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🔍 Looking up tool '%s'...\n", toolName)
 	}
 
 	// Get list of tools to find the specific one
 	tools, err := tc.GetService().ListTools(ctx)
 	if err != nil {
-		if tc.GetOutputFormat() == OutputFormatText {
+		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
 		}
 		return tc.HandleError(err, "list tools")
@@ -255,7 +262,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	}
 
 	if foundTool == nil {
-		if tc.GetOutputFormat() == OutputFormatText {
+		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Tool not found\n")
 		}
 		return fmt.Errorf("tool '%s' not found", toolName)
@@ -273,7 +280,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Text output format
-	if tc.GetOutputFormat() == OutputFormatText {
+	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Tool found\n\n")
 	}
 
@@ -336,19 +343,22 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	toolName := args[0]
 	toolArgs := make(map[string]interface{})
 
-	// Only show progress messages for text output
-	if tc.GetOutputFormat() == OutputFormatText {
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
+	// Only show progress messages for text output and not porcelain mode
+	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🛠️  Preparing to call tool '%s'...\n", toolName)
 	}
 
 	// Parse arguments (key=value pairs)
-	if len(args) > 1 && tc.GetOutputFormat() == OutputFormatText {
+	if len(args) > 1 && tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "📝 Parsing arguments...\n")
 	}
 	for _, arg := range args[1:] {
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) != 2 {
-			if tc.GetOutputFormat() == OutputFormatText {
+			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 				fmt.Fprintf(os.Stderr, "❌ Invalid argument format\n")
 			}
 			return fmt.Errorf("invalid argument format: %s (expected key=value)", arg)
@@ -359,7 +369,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 
 		// Validate argument for security
 		if err := validateToolArgument(key, value); err != nil {
-			if tc.GetOutputFormat() == OutputFormatText {
+			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
 			}
 			return fmt.Errorf("argument validation failed: %w", err)
@@ -377,7 +387,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	if tc.GetOutputFormat() == OutputFormatText {
+	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
 	}
 
@@ -387,7 +397,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		Arguments: toolArgs,
 	})
 	if err != nil {
-		if tc.GetOutputFormat() == OutputFormatText {
+		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Tool execution failed\n")
 		}
 		return tc.HandleError(err, "call tool")
@@ -411,7 +421,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Text output format
-	if tc.GetOutputFormat() == OutputFormatText {
+	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Tool executed successfully\n\n")
 	}
 

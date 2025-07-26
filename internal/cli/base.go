@@ -58,7 +58,7 @@ func (c *BaseCommand) WithTimeout(timeout time.Duration) *BaseCommand {
 
 // SetOutputFormat sets the output format for the command
 func (c *BaseCommand) SetOutputFormat(cmd *cobra.Command) error {
-	format, _ := cmd.Flags().GetString("output")
+	format, _ := cmd.Flags().GetString("format")
 	switch format {
 	case "text", "":
 		c.outputFormat = OutputFormatText
@@ -113,8 +113,13 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 		return fmt.Errorf("no MCP server connection specified\n\nConnection options:\n- Use --cmd for stdio servers: --cmd 'npx @modelcontextprotocol/server-everything stdio'\n- Use --url for HTTP servers: --url 'http://localhost:8080'\n- Use --url for SSE servers: --url 'http://localhost:8080/events'\n\nExamples:\n  mcp-tui tool list --cmd npx --args '@modelcontextprotocol/server-everything,stdio'\n  mcp-tui tool list --url 'http://localhost:8080'")
 	}
 
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
 	// Create service and connect
-	fmt.Fprintf(os.Stderr, "🔄 Creating MCP service...\n")
+	if !porcelainMode {
+		fmt.Fprintf(os.Stderr, "🔄 Creating MCP service...\n")
+	}
 	c.service = mcp.NewService()
 
 	// Enable debug mode if flag is set
@@ -125,28 +130,34 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	defer cancel()
 
 	// Show connection details
-	switch connConfig.Type {
-	case config.TransportStdio:
-		fmt.Fprintf(os.Stderr, "🚀 Starting process: %s %s\n", connConfig.Command, strings.Join(connConfig.Args, " "))
-	case config.TransportHTTP, config.TransportSSE:
-		fmt.Fprintf(os.Stderr, "🌐 Connecting to URL: %s\n", connConfig.URL)
+	if !porcelainMode {
+		switch connConfig.Type {
+		case config.TransportStdio:
+			fmt.Fprintf(os.Stderr, "🚀 Starting process: %s %s\n", connConfig.Command, strings.Join(connConfig.Args, " "))
+		case config.TransportHTTP, config.TransportSSE:
+			fmt.Fprintf(os.Stderr, "🌐 Connecting to URL: %s\n", connConfig.URL)
+		}
+
+		fmt.Fprintf(os.Stderr, "⏳ Establishing connection (timeout: %s)...\n", c.timeout)
 	}
 
-	fmt.Fprintf(os.Stderr, "⏳ Establishing connection (timeout: %s)...\n", c.timeout)
-
 	if err := c.service.Connect(ctx, connConfig); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Connection failed\n")
-		// Add helpful message for timeout errors
-		if strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "timeout") {
-			fmt.Fprintf(os.Stderr, "\n💡 Tip: The connection timed out. Try:\n")
-			fmt.Fprintf(os.Stderr, "   - Checking if the server is running\n")
-			fmt.Fprintf(os.Stderr, "   - Increasing timeout with --timeout flag\n")
-			fmt.Fprintf(os.Stderr, "   - Verifying the command/URL is correct\n")
+		if !porcelainMode {
+			fmt.Fprintf(os.Stderr, "❌ Connection failed\n")
+			// Add helpful message for timeout errors
+			if strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "timeout") {
+				fmt.Fprintf(os.Stderr, "\n💡 Tip: The connection timed out. Try:\n")
+				fmt.Fprintf(os.Stderr, "   - Checking if the server is running\n")
+				fmt.Fprintf(os.Stderr, "   - Increasing timeout with --timeout flag\n")
+				fmt.Fprintf(os.Stderr, "   - Verifying the command/URL is correct\n")
+			}
 		}
 		return err // The service already provides detailed error messages
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ Connected successfully\n")
+	if !porcelainMode {
+		fmt.Fprintf(os.Stderr, "✅ Connected successfully\n")
+	}
 	return nil
 }
 

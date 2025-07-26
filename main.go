@@ -137,8 +137,9 @@ Examples:
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	// Debug mode always enabled - this is a testing/debug tool
 	cfg.DebugMode = true
-	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringP("output", "o", "text", "Output format (text, json)")
+	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "error", "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringP("format", "f", "text", "Output format (text, json)")
+	rootCmd.PersistentFlags().Bool("porcelain", false, "Machine-readable output (disables progress messages)")
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())

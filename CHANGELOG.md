@@ -5,6 +5,16 @@ All notable changes to MCP-TUI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **CLI Flags**: Renamed `--output` flag to `--format` with shorthand `-f` for consistency with common CLI tools
+- **Logging**: Changed default log level from `info` to `error` for cleaner output in automation scenarios
+
+### Added
+- **Porcelain Mode**: Added `--porcelain` flag to disable progress messages for machine-readable output
+- **Task Automation**: Clean JSON output support for CI/CD pipelines and scripting
+
 ## [0.2.0] - 2024-07-12
 
 ### 🚀 Major Features Added

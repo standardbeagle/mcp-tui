@@ -31,8 +31,9 @@ func (rc *ResourceCommand) CreateCommand() *cobra.Command {
 		Long:  "List and read resources provided by the MCP server",
 	}
 
-	// Add output format flag to all subcommands
-	cmd.PersistentFlags().StringP("output", "o", "text", "Output format (text, json)")
+	// Add format flag to all subcommands
+	cmd.PersistentFlags().StringP("format", "f", "text", "Output format (text, json)")
+	cmd.PersistentFlags().Bool("porcelain", false, "Machine-readable output (disables progress messages)")
 
 	// Add subcommands
 	cmd.AddCommand(rc.createListCommand())
@@ -80,21 +81,24 @@ func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) err
 	ctx, cancel := rc.WithContext()
 	defer cancel()
 
-	// Only show progress messages for text output
-	if rc.GetOutputFormat() == OutputFormatText {
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
+	// Only show progress messages for text output and not porcelain mode
+	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "📁 Fetching available resources...\n")
 	}
 
 	service := rc.GetService()
 	resources, err := service.ListResources(ctx)
 	if err != nil {
-		if rc.GetOutputFormat() == OutputFormatText {
+		if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve resources\n")
 		}
 		return rc.HandleError(err, "list resources")
 	}
 
-	if rc.GetOutputFormat() == OutputFormatText {
+	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Resources retrieved successfully\n\n")
 	}
 
@@ -183,8 +187,11 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 	ctx, cancel := rc.WithContext()
 	defer cancel()
 
-	// Only show progress messages for text output
-	if rc.GetOutputFormat() == OutputFormatText {
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
+	// Only show progress messages for text output and not porcelain mode
+	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "📄 Reading resource '%s'...\n", resourceURI)
 	}
 
@@ -193,13 +200,13 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 	// Get the resource content
 	contents, err := service.ReadResource(ctx, resourceURI)
 	if err != nil {
-		if rc.GetOutputFormat() == OutputFormatText {
+		if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to read resource\n")
 		}
 		return rc.HandleError(err, "read resource")
 	}
 
-	if rc.GetOutputFormat() == OutputFormatText {
+	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Resource read successfully\n\n")
 	}
 
