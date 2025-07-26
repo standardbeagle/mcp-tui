@@ -61,6 +61,20 @@ async function downloadBinary() {
     fs.mkdirSync(binariesDir, { recursive: true });
   }
   
+  // Check if binary is already included in the npm package
+  const includedBinaryPath = path.join(__dirname, '..', 'bin', binaryName);
+  if (fs.existsSync(includedBinaryPath)) {
+    console.log('Using pre-built binary from package...');
+    // Copy the binary to the expected location
+    fs.copyFileSync(includedBinaryPath, binaryPath);
+    // Make binary executable
+    if (process.platform !== 'win32') {
+      fs.chmodSync(binaryPath, 0o755);
+    }
+    console.log('Binary installed successfully!');
+    return;
+  }
+
   // For development, try to build from source if available
   if (fs.existsSync(path.join(__dirname, '..', '..', 'go.mod'))) {
     console.log('Development mode: Building from source...');
