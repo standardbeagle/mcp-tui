@@ -10,20 +10,20 @@ import (
 
 // DangerousCommandPatterns contains patterns that indicate potential command injection
 var DangerousCommandPatterns = []string{
-	";",     // Command separator
-	"&&",    // Command chaining (AND)
-	"||",    // Command chaining (OR)
-	"|",     // Pipe operator
-	">",     // Output redirection
-	"<",     // Input redirection
-	">>",    // Append redirection
-	"$(",    // Command substitution
-	"`",     // Command substitution (backtick)
-	"${",    // Variable expansion
-	"../",   // Directory traversal
-	"rm ",   // Remove command
-	"del ",  // Delete command (Windows)
-	"format ", // Format command (dangerous)
+	";",        // Command separator
+	"&&",       // Command chaining (AND)
+	"||",       // Command chaining (OR)
+	"|",        // Pipe operator
+	">",        // Output redirection
+	"<",        // Input redirection
+	">>",       // Append redirection
+	"$(",       // Command substitution
+	"`",        // Command substitution (backtick)
+	"${",       // Variable expansion
+	"../",      // Directory traversal
+	"rm ",      // Remove command
+	"del ",     // Delete command (Windows)
+	"format ",  // Format command (dangerous)
 	"shutdown", // System shutdown
 	"reboot",   // System reboot
 }
@@ -96,10 +96,10 @@ func SanitizeCommand(command string) string {
 		"`": "\\`",
 		";": "\\;",
 	}
-	
+
 	for old, new := range replacements {
 		sanitized = strings.ReplaceAll(sanitized, old, new)
 	}
-	
+
 	return sanitized
 }

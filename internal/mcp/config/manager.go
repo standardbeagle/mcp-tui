@@ -13,8 +13,8 @@ import (
 
 // ConfigManager handles loading, validation, and management of configurations
 type ConfigManager struct {
-	config *UnifiedConfig
-	sources []ConfigSource
+	config     *UnifiedConfig
+	sources    []ConfigSource
 	validators []ConfigValidator
 }
 
@@ -33,8 +33,8 @@ type ConfigValidator interface {
 // NewConfigManager creates a new configuration manager
 func NewConfigManager() *ConfigManager {
 	return &ConfigManager{
-		config: Default(),
-		sources: make([]ConfigSource, 0),
+		config:     Default(),
+		sources:    make([]ConfigSource, 0),
 		validators: make([]ConfigValidator, 0),
 	}
 }
@@ -53,7 +53,7 @@ func (cm *ConfigManager) AddValidator(validator ConfigValidator) {
 func (cm *ConfigManager) Load() error {
 	// Start with default configuration
 	merged := Default()
-	
+
 	// Sort sources by priority (highest first)
 	sources := make([]ConfigSource, len(cm.sources))
 	copy(sources, cm.sources)
@@ -64,33 +64,33 @@ func (cm *ConfigManager) Load() error {
 			}
 		}
 	}
-	
+
 	// Load and merge configurations from sources
 	for _, source := range sources {
 		config, err := source.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config from %s: %w", source.Name(), err)
 		}
-		
+
 		if config != nil {
 			if err := mergeConfigs(merged, config); err != nil {
 				return fmt.Errorf("failed to merge config from %s: %w", source.Name(), err)
 			}
 		}
 	}
-	
+
 	// Validate merged configuration
 	if err := merged.Validate(); err != nil {
 		return fmt.Errorf("configuration validation failed: %w", err)
 	}
-	
+
 	// Run additional validators
 	for _, validator := range cm.validators {
 		if err := validator.Validate(merged); err != nil {
 			return fmt.Errorf("configuration validation failed: %w", err)
 		}
 	}
-	
+
 	cm.config = merged
 	return nil
 }
@@ -104,41 +104,41 @@ func (cm *ConfigManager) GetConfig() *UnifiedConfig {
 func mergeConfigs(target, source *UnifiedConfig) error {
 	// Use JSON marshaling/unmarshaling for deep merge
 	// This approach preserves zero values and handles nested structures
-	
+
 	targetJSON, err := json.Marshal(target)
 	if err != nil {
 		return fmt.Errorf("failed to marshal target config: %w", err)
 	}
-	
+
 	sourceJSON, err := json.Marshal(source)
 	if err != nil {
 		return fmt.Errorf("failed to marshal source config: %w", err)
 	}
-	
+
 	// Parse into maps for merging
 	var targetMap, sourceMap map[string]interface{}
-	
+
 	if err := json.Unmarshal(targetJSON, &targetMap); err != nil {
 		return fmt.Errorf("failed to unmarshal target config: %w", err)
 	}
-	
+
 	if err := json.Unmarshal(sourceJSON, &sourceMap); err != nil {
 		return fmt.Errorf("failed to unmarshal source config: %w", err)
 	}
-	
+
 	// Deep merge maps
 	mergeMaps(targetMap, sourceMap)
-	
+
 	// Convert back to struct
 	mergedJSON, err := json.Marshal(targetMap)
 	if err != nil {
 		return fmt.Errorf("failed to marshal merged config: %w", err)
 	}
-	
+
 	if err := json.Unmarshal(mergedJSON, target); err != nil {
 		return fmt.Errorf("failed to unmarshal merged config: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -161,14 +161,14 @@ func mergeMaps(target, source map[string]interface{}) {
 
 // FileConfigSource loads configuration from a file
 type FileConfigSource struct {
-	path string
+	path     string
 	priority int
 }
 
 // NewFileConfigSource creates a new file configuration source
 func NewFileConfigSource(path string, priority int) *FileConfigSource {
 	return &FileConfigSource{
-		path: path,
+		path:     path,
 		priority: priority,
 	}
 }
@@ -186,15 +186,15 @@ func (f *FileConfigSource) Load() (*UnifiedConfig, error) {
 		// File doesn't exist, return nil (no config to load)
 		return nil, nil
 	}
-	
+
 	data, err := os.ReadFile(f.path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	
+
 	config := &UnifiedConfig{}
 	ext := strings.ToLower(filepath.Ext(f.path))
-	
+
 	switch ext {
 	case ".json":
 		if err := json.Unmarshal(data, config); err != nil {
@@ -207,20 +207,20 @@ func (f *FileConfigSource) Load() (*UnifiedConfig, error) {
 	default:
 		return nil, fmt.Errorf("unsupported config file format: %s", ext)
 	}
-	
+
 	return config, nil
 }
 
 // EnvironmentConfigSource loads configuration from environment variables
 type EnvironmentConfigSource struct {
-	prefix string
+	prefix   string
 	priority int
 }
 
 // NewEnvironmentConfigSource creates a new environment configuration source
 func NewEnvironmentConfigSource(prefix string, priority int) *EnvironmentConfigSource {
 	return &EnvironmentConfigSource{
-		prefix: prefix,
+		prefix:   prefix,
 		priority: priority,
 	}
 }
@@ -235,7 +235,7 @@ func (e *EnvironmentConfigSource) Priority() int {
 
 func (e *EnvironmentConfigSource) Load() (*UnifiedConfig, error) {
 	config := &UnifiedConfig{}
-	
+
 	// Map environment variables to config fields
 	envMappings := map[string]func(string) error{
 		e.prefix + "_CONNECTION_TYPE": func(value string) error {
@@ -260,7 +260,7 @@ func (e *EnvironmentConfigSource) Load() (*UnifiedConfig, error) {
 		},
 		// Add more mappings as needed
 	}
-	
+
 	// Process environment variables
 	for envVar, setter := range envMappings {
 		if value := os.Getenv(envVar); value != "" {
@@ -269,20 +269,20 @@ func (e *EnvironmentConfigSource) Load() (*UnifiedConfig, error) {
 			}
 		}
 	}
-	
+
 	return config, nil
 }
 
 // CLIConfigSource loads configuration from CLI flags/arguments
 type CLIConfigSource struct {
-	values map[string]interface{}
+	values   map[string]interface{}
 	priority int
 }
 
 // NewCLIConfigSource creates a new CLI configuration source
 func NewCLIConfigSource(priority int) *CLIConfigSource {
 	return &CLIConfigSource{
-		values: make(map[string]interface{}),
+		values:   make(map[string]interface{}),
 		priority: priority,
 	}
 }
@@ -304,16 +304,16 @@ func (c *CLIConfigSource) Load() (*UnifiedConfig, error) {
 	if len(c.values) == 0 {
 		return nil, nil
 	}
-	
+
 	config := &UnifiedConfig{}
-	
+
 	// Map CLI values to config fields
 	for path, value := range c.values {
 		if err := c.setConfigValue(config, path, value); err != nil {
 			return nil, fmt.Errorf("failed to set CLI value %s: %w", path, err)
 		}
 	}
-	
+
 	return config, nil
 }
 
@@ -323,7 +323,7 @@ func (c *CLIConfigSource) setConfigValue(config *UnifiedConfig, path string, val
 	if len(parts) == 0 {
 		return fmt.Errorf("empty config path")
 	}
-	
+
 	// Simple implementation for common cases
 	switch path {
 	case "debug.enabled":
@@ -351,7 +351,7 @@ func (c *CLIConfigSource) setConfigValue(config *UnifiedConfig, path string, val
 	default:
 		return fmt.Errorf("unsupported config path: %s", path)
 	}
-	
+
 	return nil
 }
 
@@ -367,13 +367,13 @@ func (sv *SecurityValidator) Validate(config *UnifiedConfig) error {
 			}
 		}
 	}
-	
+
 	// Validate HTTP security settings
 	if config.Transport.HTTP.TLSInsecureSkipVerify {
 		// Log warning but don't fail
 		fmt.Fprintf(os.Stderr, "WARNING: TLS verification is disabled\n")
 	}
-	
+
 	return nil
 }
 
@@ -384,13 +384,13 @@ func (sv *SecurityValidator) validateCommand(command string) error {
 		"sudo", "su", "chmod", "chown",
 		"curl", "wget", "nc", "netcat",
 	}
-	
+
 	for _, dangerous := range dangerousCommands {
 		if strings.Contains(command, dangerous) {
 			return fmt.Errorf("potentially dangerous command: %s", dangerous)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -402,16 +402,16 @@ func (pv *PerformanceValidator) Validate(config *UnifiedConfig) error {
 	if config.Connection.ConnectionTimeout > 5*time.Minute {
 		fmt.Fprintf(os.Stderr, "WARNING: Connection timeout is very high (%v)\n", config.Connection.ConnectionTimeout)
 	}
-	
+
 	// Check for reasonable buffer sizes
 	if config.Transport.SSE.BufferSize > 1024*1024 { // 1MB
 		fmt.Fprintf(os.Stderr, "WARNING: SSE buffer size is very high (%d bytes)\n", config.Transport.SSE.BufferSize)
 	}
-	
+
 	// Check for reasonable max processes
 	if config.Transport.STDIO.MaxProcesses > 50 {
 		fmt.Fprintf(os.Stderr, "WARNING: Max processes is very high (%d)\n", config.Transport.STDIO.MaxProcesses)
 	}
-	
+
 	return nil
 }

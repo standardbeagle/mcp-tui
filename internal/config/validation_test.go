@@ -1,8 +1,8 @@
 package config
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestValidateCommand(t *testing.T) {
@@ -40,7 +40,7 @@ func TestValidateCommand(t *testing.T) {
 			errorMsg:    "contains dangerous pattern ';'",
 		},
 		{
-			name:        "command with pipe injection", 
+			name:        "command with pipe injection",
 			command:     "npx | cat /etc/passwd",
 			args:        []string{},
 			expectError: true,
@@ -93,7 +93,7 @@ func TestValidateCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateCommand(tt.command, tt.args)
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				if tt.errorMsg != "" {
@@ -182,7 +182,7 @@ func TestCommandValidation_dangerous_command_rejected(t *testing.T) {
 	// This test specifically matches the success criteria from the todo
 	command := "npx"
 	args := []string{"server.js; rm -rf /"}
-	
+
 	err := ValidateCommand(command, args)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "dangerous pattern")

@@ -42,7 +42,7 @@ type TransportType string
 
 const (
 	TransportStdio          = TransportType("stdio")
-	TransportSSE            = TransportType("sse") 
+	TransportSSE            = TransportType("sse")
 	TransportHTTP           = TransportType("http")
 	TransportStreamableHTTP = TransportType("streamable-http")
 )
