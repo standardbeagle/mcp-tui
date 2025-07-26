@@ -12,10 +12,10 @@ import (
 type TransportType string
 
 const (
-	TransportSTDIO            TransportType = "stdio"
-	TransportSSE              TransportType = "sse"
-	TransportHTTP             TransportType = "http"
-	TransportStreamableHTTP   TransportType = "streamable-http"
+	TransportSTDIO          TransportType = "stdio"
+	TransportSSE            TransportType = "sse"
+	TransportHTTP           TransportType = "http"
+	TransportStreamableHTTP TransportType = "streamable-http"
 )
 
 // String returns the string representation of the transport type
@@ -26,28 +26,28 @@ func (t TransportType) String() string {
 // TransportConfig holds the configuration for creating transports
 type TransportConfig struct {
 	Type TransportType
-	
+
 	// STDIO specific
 	Command string
 	Args    []string
-	
+
 	// HTTP/SSE specific
 	URL        string
 	HTTPClient *http.Client
-	
+
 	// Common options
-	Timeout    time.Duration
-	DebugMode  bool
+	Timeout   time.Duration
+	DebugMode bool
 }
 
 // ContextStrategy defines how contexts should be handled for different transports
 type ContextStrategy interface {
 	// GetConnectionContext returns the appropriate context for establishing connections
 	GetConnectionContext(ctx context.Context) context.Context
-	
+
 	// GetOperationContext returns the appropriate context for operations
 	GetOperationContext(ctx context.Context) context.Context
-	
+
 	// RequiresLongLivedConnection indicates if this transport needs persistent connections
 	RequiresLongLivedConnection() bool
 }
@@ -56,10 +56,10 @@ type ContextStrategy interface {
 type TransportFactory interface {
 	// CreateTransport creates a configured transport for the given type
 	CreateTransport(config *TransportConfig) (officialMCP.Transport, ContextStrategy, error)
-	
+
 	// ValidateConfig validates transport configuration
 	ValidateConfig(config *TransportConfig) error
-	
+
 	// GetSupportedTypes returns all supported transport types
 	GetSupportedTypes() []TransportType
 }

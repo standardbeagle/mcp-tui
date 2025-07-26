@@ -11,7 +11,7 @@ func FromConnectionConfig(config *configPkg.ConnectionConfig, debugMode bool, ti
 	if config == nil {
 		return nil
 	}
-	
+
 	transportConfig := &TransportConfig{
 		Type:      TransportType(config.Type),
 		Command:   config.Command,
@@ -20,7 +20,7 @@ func FromConnectionConfig(config *configPkg.ConnectionConfig, debugMode bool, ti
 		Timeout:   timeout,
 		DebugMode: debugMode,
 	}
-	
+
 	return transportConfig
 }
 
@@ -29,7 +29,7 @@ func ToConnectionConfig(config *TransportConfig) *configPkg.ConnectionConfig {
 	if config == nil {
 		return nil
 	}
-	
+
 	return &configPkg.ConnectionConfig{
 		Type:    configPkg.TransportType(config.Type),
 		Command: config.Command,

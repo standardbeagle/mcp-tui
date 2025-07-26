@@ -32,23 +32,23 @@ func CreateHTTPClient(config *HTTPClientConfig) *http.Client {
 	if config == nil {
 		config = DefaultHTTPClientConfig()
 	}
-	
+
 	transport := &http.Transport{
-		MaxIdleConns:        config.MaxIdleConns,
-		IdleConnTimeout:     config.IdleConnTimeout,
-		DisableCompression:  !config.EnableCompression,
-		DisableKeepAlives:   false,
+		MaxIdleConns:       config.MaxIdleConns,
+		IdleConnTimeout:    config.IdleConnTimeout,
+		DisableCompression: !config.EnableCompression,
+		DisableKeepAlives:  false,
 	}
-	
+
 	client := &http.Client{
 		Transport: transport,
 	}
-	
+
 	// Only set timeout if allowed (SSE streams need no timeout)
 	if !config.AllowNoTimeout || config.Timeout > 0 {
 		client.Timeout = config.Timeout
 	}
-	
+
 	return client
 }
 
@@ -58,7 +58,7 @@ func GetHTTPClientForTransport(transportType TransportType, customClient *http.C
 	if customClient != nil {
 		return customClient
 	}
-	
+
 	// Create transport-specific HTTP client
 	switch transportType {
 	case TransportSSE:
