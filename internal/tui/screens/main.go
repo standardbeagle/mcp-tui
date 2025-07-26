@@ -52,6 +52,11 @@ type MainScreen struct {
 	resourcesLoading bool
 	promptsLoading   bool
 	eventsLoading    bool
+	
+	// Loading start times for progress display
+	toolsLoadStart     time.Time
+	resourcesLoadStart time.Time
+	promptsLoadStart   time.Time
 
 	// List navigation
 	selectedIndex map[int]int // selected index per tab
@@ -74,6 +79,8 @@ type MainScreen struct {
 	promptResult       *mcp.GetPromptResult
 	resourceLoading    bool
 	promptLoading      bool
+	resourceLoadStart  time.Time
+	promptLoadStart    time.Time
 
 	// Connection status
 	connectionStatus string
@@ -272,9 +279,13 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ms.connectionStatus = fmt.Sprintf("Connected to %s %s",
 				ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
 			// Set loading states for all tabs
+			now := time.Now()
 			ms.toolsLoading = true
+			ms.toolsLoadStart = now
 			ms.resourcesLoading = true
+			ms.resourcesLoadStart = now
 			ms.promptsLoading = true
+			ms.promptsLoadStart = now
 			ms.eventsLoading = true
 			// Load initial data
 			return ms, tea.Batch(
@@ -742,7 +753,8 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 			
 			// Load resource content
 			ms.resourceLoading = true
-			ms.SetStatus(fmt.Sprintf("Loading resource content: %s", resourceURI), StatusInfo)
+			ms.resourceLoadStart = time.Now()
+			ms.SetStatus(components.MCPOperationProgress("resource", resourceURI, time.Duration(0)), StatusInfo)
 			
 			return ms, func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -766,7 +778,8 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 			
 			// Load prompt details (execute with no arguments to get basic info)
 			ms.promptLoading = true
-			ms.SetStatus(fmt.Sprintf("Loading prompt details: %s", promptName), StatusInfo)
+			ms.promptLoadStart = time.Now()
+			ms.SetStatus(components.MCPOperationProgress("prompt", promptName, time.Duration(0)), StatusInfo)
 			
 			return ms, func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -799,12 +812,15 @@ func (ms *MainScreen) refreshCurrentTab() tea.Cmd {
 	switch ms.activeTab {
 	case 0:
 		ms.toolsLoading = true
+		ms.toolsLoadStart = time.Now()
 		return ms.loadTools()
 	case 1:
 		ms.resourcesLoading = true
+		ms.resourcesLoadStart = time.Now()
 		return ms.loadResources()
 	case 2:
 		ms.promptsLoading = true
+		ms.promptsLoadStart = time.Now()
 		return ms.loadPrompts()
 	case 3:
 		ms.eventsLoading = true
@@ -1024,7 +1040,30 @@ func (ms *MainScreen) renderCurrentList() string {
 			availableHeight = 5 // Minimum visible lines
 		}
 
-		loadingMsg := "Loading..."
+		// Generate context-aware loading message with progress
+		var loadingMsg string
+		var operationType string
+		var startTime time.Time
+		
+		switch ms.activeTab {
+		case 0:
+			operationType = "list_tools"
+			startTime = ms.toolsLoadStart
+		case 1:
+			operationType = "list_resources"
+			startTime = ms.resourcesLoadStart
+		case 2:
+			operationType = "list_prompts"
+			startTime = ms.promptsLoadStart
+		case 3:
+			loadingMsg = components.OperationProgressMessage("Loading events", time.Duration(0), "")
+		}
+		
+		if operationType != "" {
+			elapsed := time.Since(startTime)
+			loadingMsg = components.MCPOperationProgress(operationType, "", elapsed)
+		}
+		
 		loadingStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("12")).
 			Align(lipgloss.Center).
@@ -1927,28 +1966,18 @@ func (ms *MainScreen) renderEventList() string {
 
 	for i := startIdx; i < endIdx; i++ {
 		event := ms.events[i]
-		timestamp := event.Timestamp.Format("15:04:05")
-
-		// Format event type and method
-		var eventInfo string
-		switch event.MessageType {
-		case debug.MCPMessageNotification:
-			eventInfo = fmt.Sprintf("NOT %s", event.Method)
-		case debug.MCPMessageError:
-			eventInfo = "ERROR"
-		default:
-			eventInfo = string(event.MessageType)
+		
+		// Use enhanced detailed formatting
+		eventDisplay := event.DetailedString()
+		
+		// Apply selection styling
+		if i == selectedIdx {
+			eventDisplay = ms.selectedStyle.Render(eventDisplay)
 		}
-
-		line := fmt.Sprintf("[%s] %s %s", timestamp, event.Direction, eventInfo)
-
-		if i == selectedIdx && ms.eventPaneFocus == 0 {
-			listItems = append(listItems, ms.selectedStyle.Render(fmt.Sprintf("▶ %s", line)))
-		} else {
-			listItems = append(listItems, fmt.Sprintf("  %s", line))
-		}
+		
+		listItems = append(listItems, eventDisplay)
 	}
-
+	
 	return strings.Join(listItems, "\n")
 }
 
@@ -2032,10 +2061,8 @@ func (ms *MainScreen) renderResourceViewer() string {
 	var builder strings.Builder
 	
 	if ms.resourceLoading {
-		spinner := components.NewSpinner(components.SpinnerDots)
-		spinnerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
-		builder.WriteString(spinnerStyle.Render(spinner.Frame(time.Since(time.Now()))))
-		builder.WriteString(" Loading resource content...")
+		elapsed := time.Since(ms.resourceLoadStart)
+		builder.WriteString(components.MCPOperationProgress("resource", "content", elapsed))
 		return builder.String()
 	}
 	
@@ -2114,10 +2141,8 @@ func (ms *MainScreen) renderPromptViewer() string {
 	var builder strings.Builder
 	
 	if ms.promptLoading {
-		spinner := components.NewSpinner(components.SpinnerDots)
-		spinnerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
-		builder.WriteString(spinnerStyle.Render(spinner.Frame(time.Since(time.Now()))))
-		builder.WriteString(" Loading prompt details...")
+		elapsed := time.Since(ms.promptLoadStart)
+		builder.WriteString(components.MCPOperationProgress("prompt", "details", elapsed))
 		return builder.String()
 	}
 	

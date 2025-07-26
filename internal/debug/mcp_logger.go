@@ -34,27 +34,27 @@ type MCPLogEntry struct {
 func (e MCPLogEntry) String() string {
 	timestamp := e.Timestamp.Format("15:04:05.000")
 
-	// Format the main message info
+	// Format the main message info with enhanced visibility
 	var mainInfo string
 	switch e.MessageType {
 	case MCPMessageRequest:
-		mainInfo = fmt.Sprintf("REQ %s", e.Method)
+		mainInfo = fmt.Sprintf("🔄 REQ %s", e.Method)
 		if e.ID != nil {
 			mainInfo += fmt.Sprintf(" (id:%v)", e.ID)
 		}
 	case MCPMessageResponse:
 		if e.Error != nil {
-			mainInfo = fmt.Sprintf("ERR")
+			mainInfo = fmt.Sprintf("❌ ERR")
 		} else {
-			mainInfo = fmt.Sprintf("RES")
+			mainInfo = fmt.Sprintf("✅ RES")
 		}
 		if e.ID != nil {
 			mainInfo += fmt.Sprintf(" (id:%v)", e.ID)
 		}
 	case MCPMessageNotification:
-		mainInfo = fmt.Sprintf("NOT %s", e.Method)
+		mainInfo = fmt.Sprintf("📢 NOT %s", e.Method)
 	case MCPMessageError:
-		mainInfo = fmt.Sprintf("ERR %s", e.Method)
+		mainInfo = fmt.Sprintf("⚠️ ERR %s", e.Method)
 	}
 
 	// Add truncated raw message for debugging
@@ -64,6 +64,51 @@ func (e MCPLogEntry) String() string {
 	}
 
 	return fmt.Sprintf("[%s] %s %s | %s", timestamp, e.Direction, mainInfo, rawPreview)
+}
+
+// DetailedString provides enhanced formatting for TUI display
+func (e MCPLogEntry) DetailedString() string {
+	timestamp := e.Timestamp.Format("15:04:05.000")
+	
+	// Enhanced formatting with more context
+	var typeIcon, typeText string
+	switch e.MessageType {
+	case MCPMessageRequest:
+		typeIcon = "🔄"
+		typeText = "REQUEST"
+	case MCPMessageResponse:
+		if e.Error != nil {
+			typeIcon = "❌"
+			typeText = "ERROR"
+		} else {
+			typeIcon = "✅"
+			typeText = "RESPONSE"
+		}
+	case MCPMessageNotification:
+		typeIcon = "📢"
+		typeText = "NOTIFICATION"
+	case MCPMessageError:
+		typeIcon = "⚠️"
+		typeText = "ERROR"
+	}
+	
+	// Build enhanced display with method and context
+	var contextInfo string
+	if e.Method != "" {
+		contextInfo = fmt.Sprintf(" %s", e.Method)
+	}
+	if e.ID != nil {
+		contextInfo += fmt.Sprintf(" (id:%v)", e.ID)
+	}
+	
+	directionIcon := e.Direction
+	if e.Direction == "→" {
+		directionIcon = "🔵 →" // Outgoing
+	} else if e.Direction == "←" {
+		directionIcon = "🟢 ←" // Incoming
+	}
+	
+	return fmt.Sprintf("[%s] %s %s %s%s", timestamp, directionIcon, typeIcon, typeText, contextInfo)
 }
 
 // GetFormattedJSON returns the raw message formatted as pretty JSON

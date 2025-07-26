@@ -109,6 +109,42 @@ func ProgressMessage(message string, elapsed time.Duration, showSpinner bool) st
 	return fmt.Sprintf("%s (%s)", message, timeStr)
 }
 
+// OperationProgressMessage shows operation-specific progress with context
+func OperationProgressMessage(operation string, elapsed time.Duration, phase string) string {
+	timeStr := formatDuration(elapsed)
+	spinner := NewSpinner(SpinnerDots)
+	spinnerFrame := spinner.Frame(elapsed)
+	
+	if phase != "" {
+		return fmt.Sprintf("%s %s - %s (%s)", spinnerFrame, operation, phase, timeStr)
+	}
+	
+	return fmt.Sprintf("%s %s (%s)", spinnerFrame, operation, timeStr)
+}
+
+// MCPOperationProgress shows MCP-specific operation progress
+func MCPOperationProgress(operationType, itemName string, elapsed time.Duration) string {
+	var message string
+	switch operationType {
+	case "tool":
+		message = fmt.Sprintf("Executing tool '%s'", itemName)
+	case "resource":
+		message = fmt.Sprintf("Loading resource '%s'", itemName)
+	case "prompt":
+		message = fmt.Sprintf("Executing prompt '%s'", itemName)
+	case "list_tools":
+		message = "Fetching available tools"
+	case "list_resources":
+		message = "Fetching available resources"
+	case "list_prompts":
+		message = "Fetching available prompts"
+	default:
+		message = fmt.Sprintf("MCP %s operation", operationType)
+	}
+	
+	return OperationProgressMessage(message, elapsed, "")
+}
+
 // formatDuration formats a duration in a human-readable way
 func formatDuration(d time.Duration) string {
 	if d < time.Minute {
