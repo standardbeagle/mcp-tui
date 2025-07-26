@@ -1,0 +1,54 @@
+# Source code and build files
+*.go
+go.mod
+go.sum
+main.go
+build.sh
+build-releases.sh
+Makefile
+
+# Test files
+*_test.go
+test-*.sh
+manual_test.sh
+tests/
+keytest/
+test-servers/
+
+# Development files
+.git/
+.github/
+worktrees/
+dist/
+archive/
+requests/
+tasks/
+
+# Documentation that's not needed in npm
+ARCHITECTURE.md
+ARRAY_FIELD_BEHAVIOR.md
+CONTRIBUTING.md
+DEBUG_MODE.md
+FIXED_ISSUES.md
+PHASE2_FINAL_REVIEW.md
+REFACTORING_SUMMARY.md
+RELEASE_CHECKLIST.md
+SSE_PARSING_INVESTIGATION_REPORT.md
+VISUAL_TEST_RESULTS.md
+demo-simple-usage.md
+test-*.md
+*.test
+mcp-tui-race
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log
+node_modules/
+package-lock.json
+
+# Config files that should not be in npm package
+claude-desktop-config.json
