@@ -166,14 +166,8 @@ func createResourceCommand() *cobra.Command {
 }
 
 func createPromptCommand() *cobra.Command {
-	// Similar to tool command - implementation would be here
-	return &cobra.Command{
-		Use:   "prompt",
-		Short: "Interact with MCP server prompts",
-		Run: func(cmd *cobra.Command, args []string) {
-			debug.Info("Prompt command not fully implemented yet")
-		},
-	}
+	promptCmd := cli.NewPromptCommand()
+	return promptCmd.CreateCommand()
 }
 
 func createServerCommand() *cobra.Command {
