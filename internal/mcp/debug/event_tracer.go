@@ -80,7 +80,7 @@ func NewEventTracer(maxEvents int) *EventTracer {
 	if maxEvents <= 0 {
 		maxEvents = 1000 // Default buffer size
 	}
-	
+
 	return &EventTracer{
 		enabled:        true,
 		maxEvents:      maxEvents,
@@ -92,7 +92,7 @@ func NewEventTracer(maxEvents int) *EventTracer {
 func (et *EventTracer) SetEnabled(enabled bool) {
 	et.mu.Lock()
 	defer et.mu.Unlock()
-	
+
 	et.enabled = enabled
 	debug.Info("Event tracer state changed", debug.F("enabled", enabled))
 }
@@ -101,7 +101,7 @@ func (et *EventTracer) SetEnabled(enabled bool) {
 func (et *EventTracer) SetSessionID(sessionID string) {
 	et.mu.Lock()
 	defer et.mu.Unlock()
-	
+
 	et.sessionID = sessionID
 	debug.Info("Event tracer session ID updated", debug.F("sessionID", sessionID))
 }
@@ -110,7 +110,7 @@ func (et *EventTracer) SetSessionID(sessionID string) {
 func (et *EventTracer) TraceConnectionStart(transportType string, target string) *Event {
 	return et.addEvent(EventConnectionStart, "", nil, map[string]interface{}{
 		"transport_type": transportType,
-		"target":        target,
+		"target":         target,
 	})
 }
 
@@ -122,13 +122,13 @@ func (et *EventTracer) TraceConnectionEnd(startEvent *Event, success bool, error
 	if error != "" {
 		data["error"] = error
 	}
-	
+
 	var duration *time.Duration
 	if startEvent != nil {
 		d := time.Since(startEvent.Timestamp)
 		duration = &d
 	}
-	
+
 	event := et.addEvent(EventConnectionEnd, "", nil, data)
 	event.Duration = duration
 	return event
@@ -139,7 +139,7 @@ func (et *EventTracer) TraceRequestSent(method string, requestID interface{}, pa
 	data := map[string]interface{}{
 		"direction": "outgoing",
 	}
-	
+
 	if params != nil {
 		// Safely serialize params
 		if paramsJSON, err := json.Marshal(params); err == nil {
@@ -149,16 +149,16 @@ func (et *EventTracer) TraceRequestSent(method string, requestID interface{}, pa
 			}
 		}
 	}
-	
+
 	event := et.addEvent(EventRequestSent, method, requestID, data)
-	
+
 	// Track request for response correlation
 	if requestID != nil {
 		et.mu.Lock()
 		et.requestTracker[requestID] = event
 		et.mu.Unlock()
 	}
-	
+
 	return event
 }
 
@@ -167,7 +167,7 @@ func (et *EventTracer) TraceResponseReceived(requestID interface{}, result inter
 	data := map[string]interface{}{
 		"direction": "incoming",
 	}
-	
+
 	if result != nil {
 		data["has_result"] = true
 		// Safely serialize result
@@ -178,14 +178,14 @@ func (et *EventTracer) TraceResponseReceived(requestID interface{}, result inter
 			}
 		}
 	}
-	
+
 	if error != nil {
 		data["has_error"] = true
 		data["error"] = fmt.Sprintf("%v", error)
 	}
-	
+
 	event := et.addEvent(EventResponseReceived, "", requestID, data)
-	
+
 	// Calculate request duration if we tracked the original request
 	if requestID != nil {
 		et.mu.Lock()
@@ -196,7 +196,7 @@ func (et *EventTracer) TraceResponseReceived(requestID interface{}, result inter
 		}
 		et.mu.Unlock()
 	}
-	
+
 	return event
 }
 
@@ -205,7 +205,7 @@ func (et *EventTracer) TraceNotificationReceived(method string, params interface
 	data := map[string]interface{}{
 		"direction": "incoming",
 	}
-	
+
 	if params != nil {
 		// Safely serialize params
 		if paramsJSON, err := json.Marshal(params); err == nil {
@@ -215,7 +215,7 @@ func (et *EventTracer) TraceNotificationReceived(method string, params interface
 			}
 		}
 	}
-	
+
 	return et.addEvent(EventNotificationReceived, method, nil, data)
 }
 
@@ -225,13 +225,13 @@ func (et *EventTracer) TraceError(operation string, error error, context map[str
 		"operation": operation,
 		"error":     error.Error(),
 	}
-	
+
 	if context != nil {
 		for k, v := range context {
 			data[k] = v
 		}
 	}
-	
+
 	return et.addEvent(EventError, operation, nil, data)
 }
 
@@ -240,13 +240,13 @@ func (et *EventTracer) TraceTransportState(state string, details map[string]inte
 	data := map[string]interface{}{
 		"state": state,
 	}
-	
+
 	if details != nil {
 		for k, v := range details {
 			data[k] = v
 		}
 	}
-	
+
 	return et.addEvent(EventTransportState, "", nil, data)
 }
 
@@ -255,13 +255,13 @@ func (et *EventTracer) TraceSessionState(state string, details map[string]interf
 	data := map[string]interface{}{
 		"state": state,
 	}
-	
+
 	if details != nil {
 		for k, v := range details {
 			data[k] = v
 		}
 	}
-	
+
 	return et.addEvent(EventSessionState, "", nil, data)
 }
 
@@ -272,7 +272,7 @@ func (et *EventTracer) TraceProgress(progressToken interface{}, progress float64
 		"progress":       progress,
 		"operation":      operation,
 	}
-	
+
 	return et.addEvent(EventProgress, "", nil, data)
 }
 
@@ -280,15 +280,15 @@ func (et *EventTracer) TraceProgress(progressToken interface{}, progress float64
 func (et *EventTracer) addEvent(eventType EventType, method string, requestID interface{}, data map[string]interface{}) *Event {
 	et.mu.Lock()
 	defer et.mu.Unlock()
-	
+
 	if !et.enabled {
 		return nil
 	}
-	
+
 	// Generate event ID
 	et.eventCounter++
 	eventID := fmt.Sprintf("evt_%d", et.eventCounter)
-	
+
 	event := &Event{
 		ID:        eventID,
 		Type:      eventType,
@@ -298,18 +298,18 @@ func (et *EventTracer) addEvent(eventType EventType, method string, requestID in
 		RequestID: requestID,
 		Data:      data,
 	}
-	
+
 	// Add to events buffer
 	et.events = append(et.events, event)
-	
+
 	// Maintain buffer size
 	if len(et.events) > et.maxEvents {
 		et.events = et.events[1:] // Remove oldest event
 	}
-	
+
 	// Log the event for real-time debugging
 	et.logEvent(event)
-	
+
 	return event
 }
 
@@ -320,29 +320,29 @@ func (et *EventTracer) logEvent(event *Event) {
 		debug.F("event_type", event.Type.String()),
 		debug.F("timestamp", event.Timestamp.Format(time.RFC3339Nano)),
 	}
-	
+
 	if event.SessionID != "" {
 		fields = append(fields, debug.F("session_id", event.SessionID))
 	}
-	
+
 	if event.Method != "" {
 		fields = append(fields, debug.F("method", event.Method))
 	}
-	
+
 	if event.RequestID != nil {
 		fields = append(fields, debug.F("request_id", event.RequestID))
 	}
-	
+
 	if event.Duration != nil {
 		fields = append(fields, debug.F("duration", event.Duration.String()))
 	}
-	
+
 	if event.Data != nil {
 		for key, value := range event.Data {
 			fields = append(fields, debug.F(key, value))
 		}
 	}
-	
+
 	debug.Info("MCP Event Traced", fields...)
 }
 
@@ -350,7 +350,7 @@ func (et *EventTracer) logEvent(event *Event) {
 func (et *EventTracer) GetEvents() []*Event {
 	et.mu.RLock()
 	defer et.mu.RUnlock()
-	
+
 	events := make([]*Event, len(et.events))
 	copy(events, et.events)
 	return events
@@ -360,16 +360,16 @@ func (et *EventTracer) GetEvents() []*Event {
 func (et *EventTracer) GetRecentEvents(count int) []*Event {
 	et.mu.RLock()
 	defer et.mu.RUnlock()
-	
+
 	if count <= 0 || len(et.events) == 0 {
 		return nil
 	}
-	
+
 	start := len(et.events) - count
 	if start < 0 {
 		start = 0
 	}
-	
+
 	events := make([]*Event, len(et.events)-start)
 	copy(events, et.events[start:])
 	return events
@@ -379,14 +379,14 @@ func (et *EventTracer) GetRecentEvents(count int) []*Event {
 func (et *EventTracer) GetEventsByType(eventType EventType) []*Event {
 	et.mu.RLock()
 	defer et.mu.RUnlock()
-	
+
 	var filtered []*Event
 	for _, event := range et.events {
 		if event.Type == eventType {
 			filtered = append(filtered, event)
 		}
 	}
-	
+
 	return filtered
 }
 
@@ -394,14 +394,14 @@ func (et *EventTracer) GetEventsByType(eventType EventType) []*Event {
 func (et *EventTracer) GetEventsByMethod(method string) []*Event {
 	et.mu.RLock()
 	defer et.mu.RUnlock()
-	
+
 	var filtered []*Event
 	for _, event := range et.events {
 		if event.Method == method {
 			filtered = append(filtered, event)
 		}
 	}
-	
+
 	return filtered
 }
 
@@ -409,44 +409,44 @@ func (et *EventTracer) GetEventsByMethod(method string) []*Event {
 func (et *EventTracer) GetStatistics() map[string]interface{} {
 	et.mu.RLock()
 	defer et.mu.RUnlock()
-	
+
 	stats := map[string]interface{}{
 		"enabled":      et.enabled,
 		"total_events": len(et.events),
 		"max_events":   et.maxEvents,
 		"session_id":   et.sessionID,
 	}
-	
+
 	// Count events by type
 	eventTypeCounts := make(map[string]int)
 	methodCounts := make(map[string]int)
 	var totalDuration time.Duration
 	durationCount := 0
-	
+
 	for _, event := range et.events {
 		eventTypeCounts[event.Type.String()]++
-		
+
 		if event.Method != "" {
 			methodCounts[event.Method]++
 		}
-		
+
 		if event.Duration != nil {
 			totalDuration += *event.Duration
 			durationCount++
 		}
 	}
-	
+
 	stats["events_by_type"] = eventTypeCounts
 	stats["methods"] = methodCounts
-	
+
 	if durationCount > 0 {
 		avgDuration := totalDuration / time.Duration(durationCount)
 		stats["average_request_duration"] = avgDuration.String()
 	}
-	
+
 	// Pending requests
 	stats["pending_requests"] = len(et.requestTracker)
-	
+
 	return stats
 }
 
@@ -454,11 +454,11 @@ func (et *EventTracer) GetStatistics() map[string]interface{} {
 func (et *EventTracer) Clear() {
 	et.mu.Lock()
 	defer et.mu.Unlock()
-	
+
 	et.events = nil
 	et.requestTracker = make(map[interface{}]*Event)
 	et.eventCounter = 0
-	
+
 	debug.Info("Event tracer cleared")
 }
 

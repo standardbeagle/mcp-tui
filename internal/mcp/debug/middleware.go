@@ -26,16 +26,16 @@ func (tm *TracingMiddleware) CreateSendingMiddleware() officialMCP.Middleware[*o
 		return func(ctx context.Context, session *officialMCP.ClientSession, method string, params officialMCP.Params) (officialMCP.Result, error) {
 			// Generate request ID for correlation
 			requestID := fmt.Sprintf("req_%d", tm.getNextRequestID())
-			
+
 			// Trace request sent
 			tm.tracer.TraceRequestSent(method, requestID, params)
-			
+
 			// Call the next handler
 			result, err := next(ctx, session, method, params)
-			
+
 			// Trace response received
 			tm.tracer.TraceResponseReceived(requestID, result, err)
-			
+
 			// Trace errors if any
 			if err != nil {
 				tm.tracer.TraceError(method, err, map[string]interface{}{
@@ -43,7 +43,7 @@ func (tm *TracingMiddleware) CreateSendingMiddleware() officialMCP.Middleware[*o
 					"context":    "sending_middleware",
 				})
 			}
-			
+
 			return result, err
 		}
 	}
@@ -53,8 +53,8 @@ func (tm *TracingMiddleware) CreateSendingMiddleware() officialMCP.Middleware[*o
 func (tm *TracingMiddleware) TraceNotificationReceived(method string, params interface{}) {
 	// Trace notification received
 	tm.tracer.TraceNotificationReceived(method, params)
-	
-	debug.Info("MCP Notification received via tracing middleware", 
+
+	debug.Info("MCP Notification received via tracing middleware",
 		debug.F("method", method))
 }
 
@@ -63,8 +63,8 @@ func (tm *TracingMiddleware) CreateProgressHandler() func(ctx context.Context, s
 	return func(ctx context.Context, session *officialMCP.ClientSession, params *officialMCP.ProgressNotificationParams) {
 		// Trace progress notification
 		tm.tracer.TraceProgress(params.ProgressToken, params.Progress, "progress_notification")
-		
-		debug.Info("Progress notification traced", 
+
+		debug.Info("Progress notification traced",
 			debug.F("progress_token", params.ProgressToken),
 			debug.F("progress", params.Progress),
 			debug.F("session_id", session.ID()))
@@ -88,7 +88,7 @@ type DebugClientOptions struct {
 // NewDebugClientOptions creates client options with integrated event tracing
 func NewDebugClientOptions(tracer *EventTracer) *DebugClientOptions {
 	middleware := NewTracingMiddleware(tracer)
-	
+
 	return &DebugClientOptions{
 		ClientOptions: &officialMCP.ClientOptions{
 			// Progress notification handler with tracing
@@ -102,15 +102,15 @@ func NewDebugClientOptions(tracer *EventTracer) *DebugClientOptions {
 func CreateDebugClient(impl *officialMCP.Implementation, tracer *EventTracer) *officialMCP.Client {
 	options := NewDebugClientOptions(tracer)
 	client := officialMCP.NewClient(impl, options.ClientOptions)
-	
+
 	// Add tracing middleware
 	middleware := NewTracingMiddleware(tracer)
 	client.AddSendingMiddleware(middleware.CreateSendingMiddleware())
-	
-	debug.Info("Debug client created with event tracing", 
+
+	debug.Info("Debug client created with event tracing",
 		debug.F("implementation", impl.Name),
 		debug.F("version", impl.Version))
-	
+
 	return client
 }
 
@@ -125,7 +125,7 @@ type DebugSession struct {
 func NewDebugSession(session *officialMCP.ClientSession, tracer *EventTracer) *DebugSession {
 	sessionID := session.ID()
 	tracer.SetSessionID(sessionID)
-	
+
 	return &DebugSession{
 		ClientSession: session,
 		tracer:        tracer,
@@ -185,7 +185,7 @@ func (td *TransportDebugger) TraceTransportState(state string, details map[strin
 		details = make(map[string]interface{})
 	}
 	details["transport_type"] = td.transportType
-	
+
 	return td.tracer.TraceTransportState(state, details)
 }
 
@@ -195,6 +195,6 @@ func (td *TransportDebugger) TraceTransportError(operation string, err error, co
 		context = make(map[string]interface{})
 	}
 	context["transport_type"] = td.transportType
-	
+
 	return td.tracer.TraceError(operation, err, context)
 }

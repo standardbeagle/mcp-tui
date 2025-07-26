@@ -490,15 +490,15 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 	builder.WriteString(detailedInfo)
 
 	// Add analysis for connection issues
-	isSSERequest := strings.Contains(httpInfo.URL, "sse") || 
+	isSSERequest := strings.Contains(httpInfo.URL, "sse") ||
 		strings.Contains(httpInfo.Headers["Accept"], "text/event-stream")
 	hasConnectionError := strings.Contains(httpInfo.ResponseBody, "connection") ||
 		strings.Contains(httpInfo.ResponseBody, "context") ||
 		httpInfo.StatusCode == 0
-		
+
 	if isSSERequest || hasConnectionError {
 		builder.WriteString("\n🔍 Connection Analysis:\n")
-		
+
 		if httpInfo.ConnectionDetails != nil {
 			conn := httpInfo.ConnectionDetails
 			if !conn.ConnectionReused {
@@ -506,14 +506,14 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 			} else {
 				builder.WriteString(fmt.Sprintf("• Connection reused (idle: %v)\n", conn.IdleTime))
 			}
-			
+
 			totalTime := conn.DNSLookupTime + conn.ConnectTime + conn.TLSTime + conn.FirstByteTime
 			builder.WriteString(fmt.Sprintf("• Total connection time: %v\n", totalTime))
-			
+
 			if conn.FirstByteTime > 5*time.Second {
 				builder.WriteString("⚠️  Slow first byte time - server may be overloaded\n")
 			}
-			
+
 			// Analyze specific timing issues
 			if conn.DNSLookupTime > 1*time.Second {
 				builder.WriteString("⚠️  Slow DNS lookup - check DNS configuration\n")
@@ -522,16 +522,16 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 				builder.WriteString("⚠️  Slow TCP connection - network or server issues\n")
 			}
 		}
-		
+
 		if httpInfo.SSEInfo != nil {
 			sse := httpInfo.SSEInfo
 			builder.WriteString(fmt.Sprintf("• Stream duration: %v\n", sse.StreamDuration))
-			
+
 			if sse.StreamDuration < 100*time.Millisecond {
 				builder.WriteString("⚠️  Very short stream duration - connection dropped quickly\n")
 			}
 		}
-		
+
 		// Error-specific analysis
 		if httpInfo.StatusCode == 0 {
 			builder.WriteString("\n🚨 Connection Failed Before Response:\n")
@@ -545,7 +545,7 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 				builder.WriteString("• DNS resolution failed - check hostname\n")
 			}
 		}
-		
+
 		builder.WriteString("\n💡 Troubleshooting steps:\n")
 		if isSSERequest {
 			builder.WriteString("• For SSE: Check server sends proper headers (Content-Type: text/event-stream)\n")

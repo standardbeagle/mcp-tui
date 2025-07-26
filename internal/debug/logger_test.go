@@ -62,18 +62,18 @@ func (s *safeBuffer) Reset() {
 // setupGlobalLoggerTest sets up the global logger for testing
 func setupGlobalLoggerTest(t *testing.T) *safeBuffer {
 	testMutex.Lock()
-	
+
 	// Shutdown any existing global logger
 	Shutdown()
-	
+
 	// Wait for shutdown to complete
 	time.Sleep(10 * time.Millisecond)
-	
+
 	// Create a new buffer and logger
 	buf := &safeBuffer{}
 	globalLogger = NewLogger()
 	SetGlobalOutput(buf)
-	
+
 	// Register cleanup
 	t.Cleanup(func() {
 		// Wait a bit to ensure all messages are processed
@@ -81,7 +81,7 @@ func setupGlobalLoggerTest(t *testing.T) *safeBuffer {
 		Shutdown()
 		testMutex.Unlock()
 	})
-	
+
 	return buf
 }
 
@@ -142,10 +142,10 @@ func TestLogger(t *testing.T) {
 
 	// Test basic logging
 	logger.Info("test message")
-	
+
 	// Wait for processing
 	time.Sleep(20 * time.Millisecond)
-	
+
 	output := buf.String()
 	if output == "" {
 		t.Logf("Buffer is empty after logging")
@@ -161,10 +161,10 @@ func TestLogger(t *testing.T) {
 
 	// Test with fields
 	logger.Error("error occurred", F("error", "test error"), F("code", 123))
-	
+
 	// Wait for processing
 	time.Sleep(20 * time.Millisecond)
-	
+
 	output = buf.String()
 	assert.Contains(t, output, "ERROR")
 	assert.Contains(t, output, "error occurred")
@@ -182,7 +182,7 @@ func TestLoggerWithFields(t *testing.T) {
 	require.NotNil(t, enrichedLogger)
 
 	enrichedLogger.Info("user action")
-	
+
 	output := syncWait(buf)
 	assert.Contains(t, output, "user action")
 	assert.Contains(t, output, "user=test-user")
@@ -215,7 +215,7 @@ func TestLogLevels(t *testing.T) {
 			// Also set level on the logger instance
 			logger.SetLevel(tt.setLevel)
 			tt.logFunc("test message")
-			
+
 			output := syncWait(buf)
 			assert.Contains(t, output, tt.level)
 			assert.Contains(t, output, "test message")
@@ -277,9 +277,9 @@ func TestFieldIntegration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := setupGlobalLoggerTest(t)
 			logger := Component("test")
-			
+
 			logger.Info("test message", tt.field)
-			
+
 			output := syncWait(buf)
 			assert.Contains(t, output, tt.expected)
 		})

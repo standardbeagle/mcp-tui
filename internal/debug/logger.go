@@ -82,7 +82,7 @@ type logger struct {
 	component string
 	fields    []Field
 	mu        sync.RWMutex
-	
+
 	// Channel-based logging
 	logChan chan logEntry
 	done    chan struct{}
@@ -184,7 +184,7 @@ func (l *logger) start() {
 		defer l.wg.Done()
 		// Signal that we're ready
 		close(l.ready)
-		
+
 		for {
 			select {
 			case entry := <-l.logChan:
@@ -217,7 +217,7 @@ func (l *logger) stop() {
 		close(l.done)
 	}
 	l.mu.Unlock()
-	
+
 	l.wg.Wait()
 }
 
@@ -262,7 +262,7 @@ func (l *logger) writeLog(entry logEntry) {
 	l.mu.RLock()
 	output := l.output
 	l.mu.RUnlock()
-	
+
 	fmt.Fprint(output, builder.String())
 
 	// Also add to log buffer for TUI debug console

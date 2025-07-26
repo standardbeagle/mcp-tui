@@ -29,33 +29,33 @@ type HTTPErrorInfo struct {
 	RequestBody  string
 	ResponseBody string
 	Headers      map[string]string
-	
+
 	// Connection details for deep debugging
 	ConnectionDetails *ConnectionInfo
-	
+
 	// SSE-specific information
 	SSEInfo *SSEConnectionInfo
 }
 
 // ConnectionInfo stores low-level connection details
 type ConnectionInfo struct {
-	LocalAddr       string
-	RemoteAddr      string
-	DNSLookupTime   time.Duration
-	ConnectTime     time.Duration
-	TLSTime         time.Duration
-	FirstByteTime   time.Duration
+	LocalAddr        string
+	RemoteAddr       string
+	DNSLookupTime    time.Duration
+	ConnectTime      time.Duration
+	TLSTime          time.Duration
+	FirstByteTime    time.Duration
 	ConnectionReused bool
-	IdleTime        time.Duration
+	IdleTime         time.Duration
 }
 
 // SSEConnectionInfo stores SSE-specific connection state
 type SSEConnectionInfo struct {
-	EventsReceived   int
-	LastEventTime    time.Time
-	ConnectionDrops  int
-	StreamDuration   time.Duration
-	LastEventData    string
+	EventsReceived  int
+	LastEventTime   time.Time
+	ConnectionDrops int
+	StreamDuration  time.Duration
+	LastEventData   string
 }
 
 // GetLastHTTPError returns the last HTTP error info
@@ -99,7 +99,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	// Capture connection details with httptrace
 	connInfo := &ConnectionInfo{}
 	var dnsStart, connectStart, tlsStart, firstByteStart time.Time
-	
+
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
 			dnsStart = time.Now()
@@ -113,7 +113,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 				connInfo.DNSLookupTime = time.Since(dnsStart)
 			}
 			if t.debugMode {
-				debug.Info("DNS lookup completed", 
+				debug.Info("DNS lookup completed",
 					debug.F("duration", connInfo.DNSLookupTime),
 					debug.F("addresses", info.Addrs))
 			}
@@ -131,7 +131,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			}
 			connInfo.RemoteAddr = addr
 			if t.debugMode {
-				debug.Info("TCP connection completed", 
+				debug.Info("TCP connection completed",
 					debug.F("duration", connInfo.ConnectTime),
 					debug.F("error", err))
 			}
@@ -148,7 +148,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 				connInfo.TLSTime = time.Since(tlsStart)
 			}
 			if t.debugMode {
-				debug.Info("TLS handshake completed", 
+				debug.Info("TLS handshake completed",
 					debug.F("duration", connInfo.TLSTime),
 					debug.F("error", err))
 			}
@@ -162,7 +162,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 				connInfo.IdleTime = info.IdleTime
 			}
 			if t.debugMode {
-				debug.Info("Got connection", 
+				debug.Info("Got connection",
 					debug.F("reused", info.Reused),
 					debug.F("idleTime", info.IdleTime),
 					debug.F("localAddr", connInfo.LocalAddr))
@@ -177,7 +177,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			}
 		},
 	}
-	
+
 	// Add trace to request context
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	firstByteStart = time.Now()
@@ -195,13 +195,13 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 
 	SetConnectionState(StageRequestSent, "MCP initialize request sent", req.URL.String(), nil)
 	if t.debugMode {
-		debug.Info("Starting HTTP request", 
+		debug.Info("Starting HTTP request",
 			debug.F("method", req.Method),
 			debug.F("url", req.URL.String()),
 			debug.F("headers", req.Header))
 	}
 
-	// Execute the request  
+	// Execute the request
 	SetConnectionState(StageWaitingResponse, "Waiting for server response", req.URL.String(), nil)
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
@@ -210,19 +210,19 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		headers := make(map[string]string)
 		errorInfo := &HTTPErrorInfo{
 			Timestamp:         time.Now(),
-			Method:           req.Method,
-			URL:              req.URL.String(),
-			StatusCode:       0, // No response received
-			RequestBody:      string(requestBody),
-			ResponseBody:     fmt.Sprintf("HTTP Request Failed: %v", err),
-			Headers:          headers,
+			Method:            req.Method,
+			URL:               req.URL.String(),
+			StatusCode:        0, // No response received
+			RequestBody:       string(requestBody),
+			ResponseBody:      fmt.Sprintf("HTTP Request Failed: %v", err),
+			Headers:           headers,
 			ConnectionDetails: connInfo,
 		}
-		
+
 		setLastHTTPError(errorInfo)
-		
+
 		if t.debugMode {
-			debug.Error("HTTP request failed", 
+			debug.Error("HTTP request failed",
 				debug.F("url", req.URL.String()),
 				debug.F("error", err),
 				debug.F("errorType", fmt.Sprintf("%T", err)),
@@ -252,7 +252,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		// Always log detailed info for SSE connections or when debug is enabled
 		isSSE := strings.Contains(req.Header.Get("Accept"), "text/event-stream") ||
 			strings.Contains(req.URL.Path, "sse")
-			
+
 		if isError || isSSE || t.debugMode {
 			// Capture comprehensive information
 			headers := make(map[string]string)
@@ -273,14 +273,14 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 
 			errorInfo := &HTTPErrorInfo{
 				Timestamp:         time.Now(),
-				Method:           req.Method,
-				URL:              req.URL.String(),
-				StatusCode:       resp.StatusCode,
-				RequestBody:      string(requestBody),
-				ResponseBody:     string(bodyBytes),
-				Headers:          headers,
+				Method:            req.Method,
+				URL:               req.URL.String(),
+				StatusCode:        resp.StatusCode,
+				RequestBody:       string(requestBody),
+				ResponseBody:      string(bodyBytes),
+				Headers:           headers,
 				ConnectionDetails: connInfo,
-				SSEInfo:          sseInfo,
+				SSEInfo:           sseInfo,
 			}
 
 			setLastHTTPError(errorInfo)
@@ -298,7 +298,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 					debug.F("firstByteTime", connInfo.FirstByteTime),
 					debug.F("responseLength", len(bodyBytes)),
 					debug.F("responseHeaders", headers))
-					
+
 				if isError {
 					debug.Error("HTTP Error Details",
 						debug.F("response", tryPrettyPrintJSON(string(bodyBytes))))
