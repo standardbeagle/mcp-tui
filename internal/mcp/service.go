@@ -10,11 +10,11 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	. "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
-	. "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 )
 
 // Helper functions for MCP logging
@@ -67,16 +67,15 @@ func logMCPNotification(method string, params interface{}) {
 
 // service implements the Service interface using the official MCP Go SDK
 type service struct {
-	info            *ServerInfo
-	requestID       int
-	mu              sync.Mutex
-	debugMode       bool
+	info             *ServerInfo
+	requestID        int
+	mu               sync.Mutex
+	debugMode        bool
 	transportFactory transports.TransportFactory
-	sessionManager  *session.Manager
-	errorHandler    *errors.ErrorHandler
-	config          *UnifiedConfig // Add unified configuration
+	sessionManager   *session.Manager
+	errorHandler     *errors.ErrorHandler
+	config           *UnifiedConfig // Add unified configuration
 }
-
 
 // getNextRequestID returns the next request ID
 func (s *service) getNextRequestID() int {
@@ -91,7 +90,7 @@ func (s *service) SetDebugMode(debug bool) {
 	s.debugMode = debug
 	// Enable HTTP debugging if in debug mode
 	EnableHTTPDebugging(debug)
-	
+
 	// Enable session manager debug tracing
 	if s.sessionManager != nil {
 		s.sessionManager.SetDebugEnabled(debug)
@@ -105,17 +104,17 @@ func (s *service) createLoggingMiddleware() officialMCP.Middleware[*officialMCP.
 			// Log outgoing request
 			reqID := s.getNextRequestID()
 			logMCPRequest(method, params, reqID)
-			
+
 			// Call the next handler
 			result, err := next(ctx, session, method, params)
-			
+
 			// Log response or error
 			if err != nil {
 				logMCPError(-32603, err.Error(), reqID)
 			} else {
 				logMCPResponse(result, reqID)
 			}
-			
+
 			return result, err
 		}
 	}
@@ -126,10 +125,10 @@ func NewServiceWithConfig(config *UnifiedConfig) Service {
 	if config == nil {
 		config = Default()
 	}
-	
+
 	return &service{
 		info: &ServerInfo{
-			Connected: false,
+			Connected:    false,
 			Capabilities: make(map[string]interface{}),
 		},
 		debugMode: config.Debug.Enabled,
@@ -141,11 +140,11 @@ func NewServiceWithConfig(config *UnifiedConfig) Service {
 func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Initialize session manager if not already done
 	if s.sessionManager == nil {
 		s.sessionManager = session.NewManager()
-		
+
 		// Configure session manager based on unified config
 		if s.config != nil {
 			s.sessionManager.SetDebugEnabled(s.config.Debug.Enabled)
@@ -156,12 +155,12 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 			s.sessionManager.SetHealthCheckInterval(s.config.Session.HealthCheckInterval)
 		}
 	}
-	
+
 	// Initialize error handler if not already done
 	if s.errorHandler == nil {
 		s.errorHandler = errors.NewErrorHandler()
 	}
-	
+
 	// Check if already connected
 	if s.sessionManager.IsConnected() {
 		return fmt.Errorf("already connected to MCP server - disconnect first before connecting to a new server")
@@ -189,14 +188,14 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		clientOptions := &officialMCP.ClientOptions{
 			// Add progress notification handler for long-running operations
 			ProgressNotificationHandler: func(ctx context.Context, session *officialMCP.ClientSession, params *officialMCP.ProgressNotificationParams) {
-				debug.Info("Progress notification", 
+				debug.Info("Progress notification",
 					debug.F("progressToken", params.ProgressToken),
 					debug.F("progress", params.Progress))
 			},
 		}
 		client = officialMCP.NewClient(impl, clientOptions)
 	}
-	
+
 	// Add logging middleware for automatic request/response logging (if not using debug client)
 	if s.debugMode && s.sessionManager.GetEventTracer() == nil {
 		client.AddSendingMiddleware(s.createLoggingMiddleware())
@@ -209,36 +208,36 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 	// Convert to new transport config format
 	transportConfig := transports.FromConnectionConfig(config, s.debugMode, 30*time.Second)
-	
+
 	// Log the actual connection details
 	switch config.Type {
 	case configPkg.TransportStdio:
-		debug.Info("Connecting to MCP server", 
+		debug.Info("Connecting to MCP server",
 			debug.F("transport", "stdio"),
 			debug.F("command", config.Command),
 			debug.F("args", config.Args))
 	case configPkg.TransportHTTP, configPkg.TransportSSE:
-		debug.Info("Connecting to MCP server", 
+		debug.Info("Connecting to MCP server",
 			debug.F("transport", config.Type),
 			debug.F("url", config.URL))
 	default:
-		debug.Info("Connecting to MCP server", 
+		debug.Info("Connecting to MCP server",
 			debug.F("transport", config.Type),
 			debug.F("config", config))
 	}
-	
+
 	// Create transport using factory
 	transport, contextStrategy, err := s.transportFactory.CreateTransport(transportConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create transport: %w", err)
 	}
-	
+
 	// Use session manager to establish connection
 	err = s.sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type)
 	if err != nil {
 		return fmt.Errorf("failed to connect to MCP server: %w", err)
 	}
-	
+
 	// Get session from manager for server info
 	session := s.sessionManager.GetSession()
 	if session == nil {
@@ -248,20 +247,20 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// Get server information from the session's initialize result
 	// The official SDK automatically handles initialization
 	serverInfo := "Connected Server"
-	serverVersion := "Unknown" 
+	serverVersion := "Unknown"
 	protocolVersion := "2024-11-05"
-	
+
 	// Try to get more details if available through reflection or other means
 	// For now, we'll use the session ID and other available info
 	sessionID := session.ID()
-	
+
 	// Update server info
 	s.info.Connected = true
 	s.info.Name = serverInfo
 	s.info.Version = serverVersion
 	s.info.ProtocolVersion = protocolVersion
 
-	debug.Info("Successfully connected using official MCP Go SDK", 
+	debug.Info("Successfully connected using official MCP Go SDK",
 		debug.F("transport", config.Type),
 		debug.F("url", config.URL),
 		debug.F("sessionID", sessionID),
@@ -275,7 +274,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 func (s *service) Disconnect() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager == nil {
 		return nil // Already disconnected
 	}
@@ -295,11 +294,11 @@ func (s *service) Disconnect() error {
 func (s *service) IsConnected() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager == nil {
 		return false
 	}
-	
+
 	return s.sessionManager.IsConnected() && s.info.Connected
 }
 
@@ -312,7 +311,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 	s.mu.Lock()
 	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
-	
+
 	if session == nil {
 		return nil, fmt.Errorf("no active session available")
 	}
@@ -325,19 +324,19 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 			classified := s.errorHandler.HandleError(ctx, err, "list_tools", map[string]interface{}{
 				"session_id": session.ID(),
 			})
-			
+
 			// Return user-friendly error
 			userError := s.errorHandler.CreateUserFriendlyError(classified)
 			return nil, fmt.Errorf("failed to iterate tools from MCP server: %w", userError)
 		}
-		
+
 		if tool != nil {
 			// Convert InputSchema to map[string]interface{}
 			var inputSchemaMap map[string]interface{}
 			if tool.InputSchema != nil {
 				schemaJSON, err := json.Marshal(tool.InputSchema)
 				if err != nil {
-					debug.Error("Failed to marshal tool InputSchema", 
+					debug.Error("Failed to marshal tool InputSchema",
 						debug.F("tool", tool.Name),
 						debug.F("error", err))
 					// Continue with nil schema rather than failing entirely
@@ -345,7 +344,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 				} else {
 					err = json.Unmarshal(schemaJSON, &inputSchemaMap)
 					if err != nil {
-						debug.Error("Failed to unmarshal tool InputSchema", 
+						debug.Error("Failed to unmarshal tool InputSchema",
 							debug.F("tool", tool.Name),
 							debug.F("schemaJSON", string(schemaJSON)),
 							debug.F("error", err))
@@ -354,7 +353,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 					}
 				}
 			}
-			
+
 			tools = append(tools, Tool{
 				Name:        tool.Name,
 				Description: tool.Description,
@@ -363,7 +362,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		}
 	}
 
-	debug.Info("Listed tools successfully using iterator pattern", 
+	debug.Info("Listed tools successfully using iterator pattern",
 		debug.F("count", len(tools)))
 
 	return tools, nil
@@ -378,7 +377,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 	s.mu.Lock()
 	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
-	
+
 	if session == nil {
 		return nil, fmt.Errorf("no active session available")
 	}
@@ -406,8 +405,8 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 			})
 		case *officialMCP.ImageContent:
 			content = append(content, Content{
-				Type: "image",
-				Data: string(v.Data), // Convert []byte to string
+				Type:     "image",
+				Data:     string(v.Data), // Convert []byte to string
 				MimeType: v.MIMEType,
 			})
 		case *officialMCP.EmbeddedResource:
@@ -428,7 +427,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		}
 	}
 
-	debug.Info("Called tool successfully", 
+	debug.Info("Called tool successfully",
 		debug.F("tool", req.Name),
 		debug.F("isError", result.IsError),
 		debug.F("contentCount", len(content)))
@@ -448,7 +447,7 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 	s.mu.Lock()
 	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
-	
+
 	if session == nil {
 		return nil, fmt.Errorf("no active session available")
 	}
@@ -459,7 +458,7 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to iterate resources from MCP server: %w", err)
 		}
-		
+
 		if resource != nil {
 			resources = append(resources, Resource{
 				URI:         resource.URI,
@@ -470,7 +469,7 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 		}
 	}
 
-	debug.Info("Listed resources successfully using iterator pattern", 
+	debug.Info("Listed resources successfully using iterator pattern",
 		debug.F("count", len(resources)))
 
 	return resources, nil
@@ -485,7 +484,7 @@ func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceConte
 	s.mu.Lock()
 	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
-	
+
 	if session == nil {
 		return nil, fmt.Errorf("no active session available")
 	}
@@ -512,7 +511,7 @@ func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceConte
 		}
 	}
 
-	debug.Info("Read resource successfully", 
+	debug.Info("Read resource successfully",
 		debug.F("uri", uri),
 		debug.F("contentsCount", len(contents)))
 
@@ -528,7 +527,7 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 	s.mu.Lock()
 	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
-	
+
 	if session == nil {
 		return nil, fmt.Errorf("no active session available")
 	}
@@ -539,7 +538,7 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to iterate prompts from MCP server: %w", err)
 		}
-		
+
 		if prompt != nil {
 			// Convert PromptArgument slice to map[string]interface{}
 			argumentsMap := make(map[string]interface{})
@@ -547,7 +546,7 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 				if arg != nil {
 					// Validate argument name is not empty
 					if arg.Name == "" {
-						debug.Error("Prompt argument has empty name", 
+						debug.Error("Prompt argument has empty name",
 							debug.F("prompt", prompt.Name))
 						continue
 					}
@@ -557,7 +556,7 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 					}
 				}
 			}
-			
+
 			prompts = append(prompts, Prompt{
 				Name:        prompt.Name,
 				Description: prompt.Description,
@@ -566,7 +565,7 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 		}
 	}
 
-	debug.Info("Listed prompts successfully using iterator pattern", 
+	debug.Info("Listed prompts successfully using iterator pattern",
 		debug.F("count", len(prompts)))
 
 	return prompts, nil
@@ -581,7 +580,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 	s.mu.Lock()
 	session := s.sessionManager.GetSession()
 	s.mu.Unlock()
-	
+
 	if session == nil {
 		return nil, fmt.Errorf("no active session available")
 	}
@@ -596,7 +595,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 			arguments[k] = fmt.Sprintf("%v", v)
 		}
 	}
-	
+
 	params := &officialMCP.GetPromptParams{
 		Name:      req.Name,
 		Arguments: arguments,
@@ -627,7 +626,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 		}
 	}
 
-	debug.Info("Got prompt successfully", 
+	debug.Info("Got prompt successfully",
 		debug.F("prompt", req.Name),
 		debug.F("messagesCount", len(messages)))
 
@@ -642,19 +641,19 @@ func isJSONError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	// Check for JSON unmarshal type errors
 	_, isUnmarshalTypeError := err.(*json.UnmarshalTypeError)
 	if isUnmarshalTypeError {
 		return true
 	}
-	
+
 	// Check for other JSON syntax errors
 	_, isSyntaxError := err.(*json.SyntaxError)
 	if isSyntaxError {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -667,14 +666,14 @@ func (s *service) GetServerInfo() *ServerInfo {
 func (s *service) GetConnectionHealth() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager == nil {
 		return map[string]interface{}{
-			"state": "no_session_manager",
+			"state":     "no_session_manager",
 			"connected": false,
 		}
 	}
-	
+
 	return s.sessionManager.GetConnectionHealth()
 }
 
@@ -682,7 +681,7 @@ func (s *service) GetConnectionHealth() map[string]interface{} {
 func (s *service) ConfigureReconnection(maxAttempts int, delay time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager != nil {
 		s.sessionManager.SetReconnectionPolicy(maxAttempts, delay)
 	}
@@ -692,7 +691,7 @@ func (s *service) ConfigureReconnection(maxAttempts int, delay time.Duration) {
 func (s *service) ConfigureHealthCheck(interval time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager != nil {
 		s.sessionManager.SetHealthCheckInterval(interval)
 	}
@@ -702,29 +701,29 @@ func (s *service) ConfigureHealthCheck(interval time.Duration) {
 func (s *service) GetErrorStatistics() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager == nil {
 		return map[string]interface{}{
 			"error": "no session manager available",
 		}
 	}
-	
+
 	stats := s.sessionManager.GetErrorStatistics()
 	if stats == nil {
 		return map[string]interface{}{
 			"error": "no error statistics available",
 		}
 	}
-	
+
 	// Convert to map for JSON serialization
 	result := map[string]interface{}{
 		"total_errors":       stats.TotalErrors,
 		"recoverable_errors": stats.RecoverableErrors,
 		"retry_attempts":     stats.RetryAttempts,
 		"start_time":         stats.StartTime.Format(time.RFC3339),
-		"uptime":            time.Since(stats.StartTime).String(),
+		"uptime":             time.Since(stats.StartTime).String(),
 	}
-	
+
 	// Convert enum keys to strings
 	if len(stats.ErrorsByCategory) > 0 {
 		categories := make(map[string]int)
@@ -733,7 +732,7 @@ func (s *service) GetErrorStatistics() map[string]interface{} {
 		}
 		result["errors_by_category"] = categories
 	}
-	
+
 	if len(stats.ErrorsBySeverity) > 0 {
 		severities := make(map[string]int)
 		for severity, count := range stats.ErrorsBySeverity {
@@ -741,7 +740,7 @@ func (s *service) GetErrorStatistics() map[string]interface{} {
 		}
 		result["errors_by_severity"] = severities
 	}
-	
+
 	if stats.LastError != nil {
 		result["last_error"] = map[string]interface{}{
 			"category":    stats.LastError.Category.String(),
@@ -750,7 +749,7 @@ func (s *service) GetErrorStatistics() map[string]interface{} {
 			"recoverable": stats.LastError.Recoverable,
 		}
 	}
-	
+
 	return result
 }
 
@@ -758,13 +757,13 @@ func (s *service) GetErrorStatistics() map[string]interface{} {
 func (s *service) GetErrorReport() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager == nil {
 		return map[string]interface{}{
 			"error": "no session manager available",
 		}
 	}
-	
+
 	return s.sessionManager.GetErrorReport()
 }
 
@@ -772,7 +771,7 @@ func (s *service) GetErrorReport() map[string]interface{} {
 func (s *service) ResetErrorStatistics() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager != nil {
 		s.sessionManager.ResetErrorStatistics()
 	}
@@ -782,13 +781,13 @@ func (s *service) ResetErrorStatistics() {
 func (s *service) GetTracingStatistics() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager == nil {
 		return map[string]interface{}{
 			"error": "no session manager available",
 		}
 	}
-	
+
 	return s.sessionManager.GetTracingStatistics()
 }
 
@@ -796,20 +795,20 @@ func (s *service) GetTracingStatistics() map[string]interface{} {
 func (s *service) GetRecentEvents(count int) interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager == nil {
 		return map[string]interface{}{
 			"error": "no session manager available",
 		}
 	}
-	
+
 	events := s.sessionManager.GetRecentEvents(count)
 	if events == nil {
 		return map[string]interface{}{
 			"error": "no events available",
 		}
 	}
-	
+
 	return events
 }
 
@@ -817,11 +816,11 @@ func (s *service) GetRecentEvents(count int) interface{} {
 func (s *service) ExportEvents() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager == nil {
 		return nil, fmt.Errorf("no session manager available")
 	}
-	
+
 	return s.sessionManager.ExportEvents()
 }
 
@@ -829,7 +828,7 @@ func (s *service) ExportEvents() ([]byte, error) {
 func (s *service) ClearEvents() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.sessionManager != nil {
 		s.sessionManager.ClearEvents()
 	}
@@ -839,13 +838,13 @@ func (s *service) ClearEvents() {
 func (s *service) GetConfiguration() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.config == nil {
 		return map[string]interface{}{
 			"error": "no configuration available",
 		}
 	}
-	
+
 	// Convert config to map for JSON serialization
 	configJSON, err := json.Marshal(s.config)
 	if err != nil {
@@ -853,14 +852,14 @@ func (s *service) GetConfiguration() map[string]interface{} {
 			"error": fmt.Sprintf("failed to serialize configuration: %v", err),
 		}
 	}
-	
+
 	var configMap map[string]interface{}
 	if err := json.Unmarshal(configJSON, &configMap); err != nil {
 		return map[string]interface{}{
 			"error": fmt.Sprintf("failed to deserialize configuration: %v", err),
 		}
 	}
-	
+
 	return configMap
 }
 
@@ -868,38 +867,38 @@ func (s *service) GetConfiguration() map[string]interface{} {
 func (s *service) UpdateConfiguration(configMap map[string]interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Convert map to JSON and then to UnifiedConfig
 	configJSON, err := json.Marshal(configMap)
 	if err != nil {
 		return fmt.Errorf("failed to serialize configuration: %w", err)
 	}
-	
+
 	newConfig := &UnifiedConfig{}
 	if err := json.Unmarshal(configJSON, newConfig); err != nil {
 		return fmt.Errorf("failed to deserialize configuration: %w", err)
 	}
-	
+
 	// Validate the new configuration
 	if err := newConfig.Validate(); err != nil {
 		return fmt.Errorf("configuration validation failed: %w", err)
 	}
-	
+
 	// Apply configuration changes
 	oldDebugMode := s.debugMode
 	s.config = newConfig
 	s.debugMode = newConfig.Debug.Enabled
-	
+
 	// Update session manager if debug mode changed
 	if oldDebugMode != s.debugMode && s.sessionManager != nil {
 		s.sessionManager.SetDebugEnabled(s.debugMode)
 	}
-	
+
 	// Update HTTP debugging if mode changed
 	if oldDebugMode != s.debugMode {
 		EnableHTTPDebugging(s.debugMode)
 	}
-	
+
 	return nil
 }
 

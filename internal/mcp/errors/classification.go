@@ -264,7 +264,6 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryValidation, SeverityError
 	}
 
-
 	// Command not found errors
 	if strings.Contains(errStr, "command not found") || strings.Contains(errStr, "executable file not found") {
 		return CategoryClientConfig, SeverityError

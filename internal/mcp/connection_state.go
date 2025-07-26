@@ -10,25 +10,25 @@ import (
 type ConnectionStage string
 
 const (
-	StageConnecting     ConnectionStage = "connecting"
-	StageDNSLookup      ConnectionStage = "dns_lookup"
-	StageTCPConnect     ConnectionStage = "tcp_connect"
-	StageTLSHandshake   ConnectionStage = "tls_handshake"
-	StageRequestSent    ConnectionStage = "request_sent"
-	StageWaitingResponse ConnectionStage = "waiting_response"
+	StageConnecting       ConnectionStage = "connecting"
+	StageDNSLookup        ConnectionStage = "dns_lookup"
+	StageTCPConnect       ConnectionStage = "tcp_connect"
+	StageTLSHandshake     ConnectionStage = "tls_handshake"
+	StageRequestSent      ConnectionStage = "request_sent"
+	StageWaitingResponse  ConnectionStage = "waiting_response"
 	StageResponseReceived ConnectionStage = "response_received"
-	StageFailed         ConnectionStage = "failed"
-	StageCompleted      ConnectionStage = "completed"
+	StageFailed           ConnectionStage = "failed"
+	StageCompleted        ConnectionStage = "completed"
 )
 
 // ConnectionStateInfo contains current connection state and details
 type ConnectionStateInfo struct {
-	Stage        ConnectionStage `json:"stage"`
-	Message      string         `json:"message"`
-	URL          string         `json:"url,omitempty"`
-	Duration     time.Duration  `json:"duration"`
-	Error        string         `json:"error,omitempty"`
-	Timestamp    time.Time      `json:"timestamp"`
+	Stage     ConnectionStage `json:"stage"`
+	Message   string          `json:"message"`
+	URL       string          `json:"url,omitempty"`
+	Duration  time.Duration   `json:"duration"`
+	Error     string          `json:"error,omitempty"`
+	Timestamp time.Time       `json:"timestamp"`
 }
 
 var (
@@ -47,11 +47,11 @@ func SetConnectionState(stage ConnectionStage, message string, url string, err e
 		URL:       url,
 		Timestamp: time.Now(),
 	}
-	
+
 	if err != nil {
 		currentConnectionState.Error = err.Error()
 	}
-	
+
 	if currentConnectionState != nil {
 		currentConnectionState.Duration = time.Since(currentConnectionState.Timestamp)
 	}
@@ -61,11 +61,11 @@ func SetConnectionState(stage ConnectionStage, message string, url string, err e
 func GetConnectionState() *ConnectionStateInfo {
 	connectionStateMux.RLock()
 	defer connectionStateMux.RUnlock()
-	
+
 	if currentConnectionState == nil {
 		return nil
 	}
-	
+
 	// Return a copy to avoid race conditions
 	state := *currentConnectionState
 	state.Duration = time.Since(currentConnectionState.Timestamp)
@@ -78,7 +78,7 @@ func GetConnectionDisplayMessage() string {
 	if state == nil {
 		return "Initializing connection..."
 	}
-	
+
 	switch state.Stage {
 	case StageDNSLookup:
 		return fmt.Sprintf("Resolving DNS for %s...", state.URL)
@@ -107,7 +107,7 @@ func GetServerDiagnosticMessage() string {
 	if state == nil {
 		return ""
 	}
-	
+
 	switch state.Stage {
 	case StageDNSLookup:
 		return "Check if the hostname is correct and DNS is reachable"

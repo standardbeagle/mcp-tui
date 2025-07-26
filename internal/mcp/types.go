@@ -2,8 +2,8 @@ package mcp
 
 import (
 	"context"
-	"time"
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"time"
 )
 
 // Service provides high-level MCP operations
@@ -28,27 +28,27 @@ type Service interface {
 
 	// Server info
 	GetServerInfo() *ServerInfo
-	
+
 	// Connection health and monitoring
 	GetConnectionHealth() map[string]interface{}
 	ConfigureReconnection(maxAttempts int, delay time.Duration)
 	ConfigureHealthCheck(interval time.Duration)
-	
+
 	// Error handling and diagnostics
 	GetErrorStatistics() map[string]interface{}
 	GetErrorReport() map[string]interface{}
 	ResetErrorStatistics()
-	
+
 	// Event tracing and debugging
 	GetTracingStatistics() map[string]interface{}
 	GetRecentEvents(count int) interface{}
 	ExportEvents() ([]byte, error)
 	ClearEvents()
-	
+
 	// Configuration management
 	GetConfiguration() map[string]interface{}
 	UpdateConfiguration(config map[string]interface{}) error
-	
+
 	// Connection state and diagnostics
 	GetConnectionDisplayMessage() string
 	GetServerDiagnosticMessage() string
