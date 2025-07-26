@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +31,6 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 				Type:    config.TransportStdio,
 				Command: "python3",
 				Args:    []string{"-c", "import os; print('Error: REQUIRED_VAR environment variable is required'); exit(1)"},
-				Timeout: 5 * time.Second,
 			},
 			expectedErrorContains: []string{
 				"server startup failed",
@@ -47,7 +45,6 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 				Type:    config.TransportStdio,
 				Command: "python3",
 				Args:    []string{"-c", "print('Usage: command <directory> [options]'); exit(1)"},
-				Timeout: 5 * time.Second,
 			},
 			expectedErrorContains: []string{
 				"server startup failed",
@@ -62,7 +59,6 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 				Type:    config.TransportStdio,
 				Command: "nonexistent-command-xyz-123",
 				Args:    []string{},
-				Timeout: 5 * time.Second,
 			},
 			expectedErrorContains: []string{
 				"failed to start server command",
@@ -79,7 +75,6 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 				Type:    config.TransportStdio,
 				Command: "echo",
 				Args:    []string{"test output"},
-				Timeout: 5 * time.Second,
 			},
 			// This will fail at MCP level but should pass pre-flight validation
 			expectedErrorContains: []string{
@@ -101,7 +96,7 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 			service.SetDebugMode(true)
 
 			// Attempt connection
-			ctx, cancel := context.WithTimeout(context.Background(), tt.connectionConfig.Timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
 			err := service.Connect(ctx, tt.connectionConfig)
@@ -213,10 +208,9 @@ func TestErrorHandlingRegressionPrevention(t *testing.T) {
 				Type:    config.TransportStdio,
 				Command: scenario.command,
 				Args:    scenario.args,
-				Timeout: 10 * time.Second,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), connectionConfig.Timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
 			err := service.Connect(ctx, connectionConfig)
@@ -266,10 +260,9 @@ func TestWorkingServerCompatibility(t *testing.T) {
 		Type:    config.TransportStdio,
 		Command: "python3",
 		Args:    []string{"-c", "print('MCP server running on stdio'); import time; time.sleep(10)"},
-		Timeout: 5 * time.Second,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), connectionConfig.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	err := service.Connect(ctx, connectionConfig)
@@ -324,10 +317,9 @@ func TestCommandValidationSecurity(t *testing.T) {
 				Type:    config.TransportStdio,
 				Command: dangerous.command,
 				Args:    dangerous.args,
-				Timeout: 5 * time.Second,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), connectionConfig.Timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
 			err := service.Connect(ctx, connectionConfig)
@@ -352,12 +344,11 @@ func BenchmarkEnhancedErrorHandling(b *testing.B) {
 		Type:    config.TransportStdio,
 		Command: "nonexistent-command",
 		Args:    []string{},
-		Timeout: 1 * time.Second,
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), connectionConfig.Timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		service.Connect(ctx, connectionConfig)
 		cancel()
 	}
