@@ -9,10 +9,10 @@ func TestServerStartupErrorClassification(t *testing.T) {
 	classifier := NewErrorClassifier()
 
 	tests := []struct {
-		name             string
-		errorMessage     string
-		expectedCategory ErrorCategory
-		expectedSeverity ErrorSeverity
+		name                string
+		errorMessage        string
+		expectedCategory    ErrorCategory
+		expectedSeverity    ErrorSeverity
 		expectedRecoverable bool
 	}{
 		{
@@ -81,12 +81,12 @@ func TestServerStartupErrorClassification(t *testing.T) {
 
 func TestServerStartupErrorRecoveryActions(t *testing.T) {
 	classifier := NewErrorClassifier()
-	
+
 	err := fmt.Errorf("Error: BRAVE_API_KEY environment variable is required")
 	classified := classifier.Classify(err, nil)
 
 	actions := classifier.GetRecoveryActions(classified)
-	
+
 	expectedActions := []string{
 		"Check server startup output for specific error details",
 		"Verify required environment variables are set",
@@ -107,12 +107,12 @@ func TestServerStartupErrorRecoveryActions(t *testing.T) {
 
 func TestServerStartupErrorUserFriendlyMessage(t *testing.T) {
 	classifier := NewErrorClassifier()
-	
+
 	err := fmt.Errorf("Error: BRAVE_API_KEY environment variable is required")
 	classified := classifier.Classify(err, nil)
 
 	message := classifier.generateUserFriendlyMessage(err, classified.Category)
-	
+
 	expected := "Server startup failed - check server configuration and dependencies"
 	if message != expected {
 		t.Errorf("Expected message: %s, got: %s", expected, message)
@@ -141,7 +141,7 @@ func TestErrorCategoryString(t *testing.T) {
 
 func TestServerStartupErrorRetryBehavior(t *testing.T) {
 	classifier := NewErrorClassifier()
-	
+
 	// Server startup errors should not be retryable
 	err := fmt.Errorf("Error: BRAVE_API_KEY environment variable is required")
 	classified := classifier.Classify(err, nil)

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	
+
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 )
 
@@ -18,16 +18,16 @@ func TestServerStartupError(t *testing.T) {
 	}
 
 	errorStr := err.Error()
-	
+
 	// Check that all components are included in the error message
 	if !strings.Contains(errorStr, "server startup failed") {
 		t.Error("Error message should contain 'server startup failed'")
 	}
-	
+
 	if !strings.Contains(errorStr, "BRAVE_API_KEY environment variable is required") {
 		t.Error("Error message should contain server output")
 	}
-	
+
 	if !strings.Contains(errorStr, "Set the BRAVE_API_KEY environment variable") {
 		t.Error("Error message should contain suggestion")
 	}
@@ -43,12 +43,12 @@ func TestServerStartupErrorWithoutSuggestion(t *testing.T) {
 	}
 
 	errorStr := err.Error()
-	
+
 	// Should not contain "Suggestion:" when no suggestion is provided
 	if strings.Contains(errorStr, "Suggestion:") {
 		t.Error("Error message should not contain 'Suggestion:' when suggestion is empty")
 	}
-	
+
 	if !strings.Contains(errorStr, "Some generic error") {
 		t.Error("Error message should still contain server output")
 	}
@@ -288,7 +288,7 @@ func TestGenerateSuggestionEnvironmentVariableExtraction(t *testing.T) {
 	output := "Error: The API_SECRET_KEY environment variable is required for authentication"
 	result := generateSuggestion(output)
 	expected := "Set the API_SECRET_KEY environment variable before starting the server"
-	
+
 	if result != expected {
 		t.Errorf("Expected: %s, got: %s", expected, result)
 	}
@@ -296,7 +296,7 @@ func TestGenerateSuggestionEnvironmentVariableExtraction(t *testing.T) {
 
 func TestServerStartupErrorClassifier(t *testing.T) {
 	classifier := NewServerStartupErrorClassifier()
-	
+
 	// Test with ServerStartupError
 	startupErr := &ServerStartupError{
 		Command:    "npx",
@@ -305,26 +305,26 @@ func TestServerStartupErrorClassifier(t *testing.T) {
 		ExitCode:   1,
 		Suggestion: "Set the BRAVE_API_KEY environment variable",
 	}
-	
+
 	classified := classifier.ClassifyServerStartupError(startupErr)
-	
+
 	if classified.Category != errors.CategoryServerStartup {
 		t.Errorf("Expected CategoryServerStartup, got %v", classified.Category)
 	}
-	
+
 	if classified.Recoverable {
 		t.Error("Server startup errors should not be recoverable")
 	}
-	
+
 	if classified.Context == nil {
 		t.Error("Context should be set for server startup errors")
 	}
-	
+
 	// Check context contains expected fields
 	if classified.Context["command"] != "npx" {
 		t.Error("Context should contain command")
 	}
-	
+
 	if classified.Context["exit_code"] != 1 {
 		t.Error("Context should contain exit code")
 	}
@@ -332,11 +332,11 @@ func TestServerStartupErrorClassifier(t *testing.T) {
 
 func TestServerStartupErrorClassifierFallback(t *testing.T) {
 	classifier := NewServerStartupErrorClassifier()
-	
+
 	// Test with regular error (should fall back to standard classification)
 	regularErr := fmt.Errorf("connection timeout")
 	classified := classifier.ClassifyServerStartupError(regularErr)
-	
+
 	// Should be classified as timeout, not server startup
 	if classified.Category == errors.CategoryServerStartup {
 		t.Error("Regular errors should not be classified as server startup errors")

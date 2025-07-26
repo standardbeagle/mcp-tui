@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	mcpConfig "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 )
 
@@ -20,11 +20,11 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                    string
-		connectionConfig        *config.ConnectionConfig
-		expectedErrorContains   []string
+		name                     string
+		connectionConfig         *config.ConnectionConfig
+		expectedErrorContains    []string
 		expectedErrorNotContains []string
-		expectConnection        bool
+		expectConnection         bool
 	}{
 		{
 			name: "missing environment variable error",
@@ -96,7 +96,7 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create service with enhanced error handling
 			service := mcp.NewServiceWithConfig(mcpConfig.Default())
-			
+
 			// Set debug mode to get detailed logging
 			service.SetDebugMode(true)
 
@@ -110,10 +110,10 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Expected successful connection but got error: %v", err)
 				}
-				
+
 				// Clean up successful connection
 				defer service.Disconnect()
-				
+
 				if !service.IsConnected() {
 					t.Error("Service should be connected")
 				}
@@ -194,7 +194,7 @@ func TestErrorHandlingRegressionPrevention(t *testing.T) {
 		},
 		{
 			name:    "filesystem missing arguments",
-			command: "python3", 
+			command: "python3",
 			args:    []string{"-c", "import sys; print('Usage: mcp-server-filesystem <allowed-directory> [additional-directories...]', file=sys.stderr); sys.exit(1)"},
 		},
 		{
@@ -278,7 +278,7 @@ func TestWorkingServerCompatibility(t *testing.T) {
 	// but it should NOT fail at the pre-flight validation level
 	if err != nil {
 		errorStr := err.Error()
-		
+
 		// Should NOT be a server startup error
 		if strings.Contains(errorStr, "server startup failed") {
 			t.Errorf("Working server simulation should not be classified as startup failure: %s", errorStr)
@@ -336,8 +336,8 @@ func TestCommandValidationSecurity(t *testing.T) {
 				t.Fatal("Expected security validation to block dangerous command")
 			}
 
-			if !strings.Contains(err.Error(), "command validation failed") && 
-			   !strings.Contains(err.Error(), "dangerous") {
+			if !strings.Contains(err.Error(), "command validation failed") &&
+				!strings.Contains(err.Error(), "dangerous") {
 				t.Errorf("Expected security validation error, got: %v", err)
 			}
 		})

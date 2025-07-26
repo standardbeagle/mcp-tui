@@ -13,13 +13,13 @@ func TestEnhancedSTDIOTransportIntegration(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                 string
-		command              string
-		args                 []string
-		expectError          bool
-		expectedErrorType    string
-		expectedInOutput     []string
-		expectedNotInOutput  []string
+		name                string
+		command             string
+		args                []string
+		expectError         bool
+		expectedErrorType   string
+		expectedInOutput    []string
+		expectedNotInOutput []string
 	}{
 		{
 			name:              "command not found",
@@ -38,18 +38,18 @@ func TestEnhancedSTDIOTransportIntegration(t *testing.T) {
 			expectedInOutput:  []string{"dangerous character"},
 		},
 		{
-			name:              "python help command (should work)",
-			command:           "python3",
-			args:              []string{"--help"},
-			expectError:       false,
-			expectedInOutput:  []string{}, // We expect this to work
+			name:             "python help command (should work)",
+			command:          "python3",
+			args:             []string{"--help"},
+			expectError:      false,
+			expectedInOutput: []string{}, // We expect this to work
 		},
 		{
-			name:              "echo command (should work quickly)",
-			command:           "echo",
-			args:              []string{"test"},
-			expectError:       false,
-			expectedInOutput:  []string{}, // We expect this to work
+			name:             "echo command (should work quickly)",
+			command:          "echo",
+			args:             []string{"test"},
+			expectError:      false,
+			expectedInOutput: []string{}, // We expect this to work
 		},
 	}
 
@@ -108,17 +108,17 @@ func TestValidateServerStartupIntegration(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		command        string
-		args           []string
-		expectError    bool
-		expectedInErr  []string
+		name          string
+		command       string
+		args          []string
+		expectError   bool
+		expectedInErr []string
 	}{
 		{
-			name:        "nonexistent command",
-			command:     "nonexistent-command-xyz-123",
-			args:        []string{},
-			expectError: true,
+			name:          "nonexistent command",
+			command:       "nonexistent-command-xyz-123",
+			args:          []string{},
+			expectError:   true,
 			expectedInErr: []string{"failed to start server command"},
 		},
 		{
@@ -250,12 +250,12 @@ func TestCommandValidationInTransport(t *testing.T) {
 // Mock test helper to simulate server startup scenarios without external dependencies
 func TestServerStartupErrorDetection(t *testing.T) {
 	scenarios := []struct {
-		name        string
-		output      string
-		exitCode    int
-		shouldFail  bool
-		errorType   string
-		suggestion  string
+		name       string
+		output     string
+		exitCode   int
+		shouldFail bool
+		errorType  string
+		suggestion string
 	}{
 		{
 			name:       "brave search missing api key",

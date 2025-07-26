@@ -64,7 +64,7 @@ func TestHTTPTransportCreation(t *testing.T) {
 				// For valid transport types, we expect the error to be context cancellation
 				// not transport creation failure
 				if err != nil {
-					assert.Contains(t, err.Error(), "context canceled", 
+					assert.Contains(t, err.Error(), "context canceled",
 						"Expected context cancellation, got: %v", err)
 				}
 			}
