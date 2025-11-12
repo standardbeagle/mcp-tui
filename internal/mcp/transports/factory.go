@@ -48,8 +48,10 @@ func (f *factory) createSTDIOTransport(config *TransportConfig, strategy Context
 	// Create command for STDIO transport
 	cmd := exec.Command(config.Command, config.Args...)
 
-	// Create STDIO transport using official SDK
-	transport := officialMCP.NewCommandTransport(cmd)
+	// Create STDIO transport using official SDK (direct struct initialization)
+	transport := &officialMCP.CommandTransport{
+		Command: cmd,
+	}
 
 	return transport, strategy, nil
 }
@@ -58,11 +60,11 @@ func (f *factory) createSTDIOTransport(config *TransportConfig, strategy Context
 func (f *factory) createSSETransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	httpClient := GetHTTPClientForTransport(TransportSSE, config.HTTPClient)
 
-	options := &officialMCP.SSEClientTransportOptions{
+	// Create SSE transport using official SDK (direct struct initialization)
+	transport := &officialMCP.SSEClientTransport{
+		Endpoint:   config.URL,
 		HTTPClient: httpClient,
 	}
-
-	transport := officialMCP.NewSSEClientTransport(config.URL, options)
 
 	return transport, strategy, nil
 }
@@ -71,11 +73,11 @@ func (f *factory) createSSETransport(config *TransportConfig, strategy ContextSt
 func (f *factory) createHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	httpClient := GetHTTPClientForTransport(TransportHTTP, config.HTTPClient)
 
-	options := &officialMCP.StreamableClientTransportOptions{
+	// Create HTTP transport using official SDK (direct struct initialization)
+	transport := &officialMCP.StreamableClientTransport{
+		Endpoint:   config.URL,
 		HTTPClient: httpClient,
 	}
-
-	transport := officialMCP.NewStreamableClientTransport(config.URL, options)
 
 	return transport, strategy, nil
 }
@@ -84,11 +86,11 @@ func (f *factory) createHTTPTransport(config *TransportConfig, strategy ContextS
 func (f *factory) createStreamableHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	httpClient := GetHTTPClientForTransport(TransportStreamableHTTP, config.HTTPClient)
 
-	options := &officialMCP.StreamableClientTransportOptions{
+	// Create streamable HTTP transport using official SDK (direct struct initialization)
+	transport := &officialMCP.StreamableClientTransport{
+		Endpoint:   config.URL,
 		HTTPClient: httpClient,
 	}
-
-	transport := officialMCP.NewStreamableClientTransport(config.URL, options)
 
 	return transport, strategy, nil
 }

@@ -19,19 +19,26 @@ import (
 
 // Helper functions for MCP logging
 
-func logMCPRequest(method string, params interface{}, id interface{}) {
-	msg := map[string]interface{}{
+// createBaseMessage creates a base JSON-RPC message
+func createBaseMessage(method string, id interface{}) map[string]interface{} {
+	return map[string]interface{}{
 		"jsonrpc": "2.0",
+		"id":      id,
 		"method":  method,
-		"params":  params,
 	}
-	if id != nil {
-		msg["id"] = id
+}
+
+// logMCPRequest logs an MCP request
+func logMCPRequest(method string, params interface{}, id interface{}) {
+	msg := createBaseMessage(method, id)
+	if params != nil {
+		msg["params"] = params
 	}
 	msgJSON, _ := json.Marshal(msg)
 	debug.LogMCPOutgoing(string(msgJSON), nil)
 }
 
+// logMCPResponse logs an MCP response
 func logMCPResponse(result interface{}, id interface{}) {
 	msg := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -42,6 +49,7 @@ func logMCPResponse(result interface{}, id interface{}) {
 	debug.LogMCPIncoming(string(msgJSON), nil)
 }
 
+// logMCPError logs an MCP error
 func logMCPError(code int, message string, id interface{}) {
 	msg := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -55,6 +63,7 @@ func logMCPError(code int, message string, id interface{}) {
 	debug.LogMCPIncoming(string(msgJSON), nil)
 }
 
+// logMCPNotification logs an MCP notification
 func logMCPNotification(method string, params interface{}) {
 	msg := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -98,15 +107,15 @@ func (s *service) SetDebugMode(debug bool) {
 }
 
 // createLoggingMiddleware creates middleware for automatic MCP request/response logging
-func (s *service) createLoggingMiddleware() officialMCP.Middleware[*officialMCP.ClientSession] {
-	return func(next officialMCP.MethodHandler[*officialMCP.ClientSession]) officialMCP.MethodHandler[*officialMCP.ClientSession] {
-		return func(ctx context.Context, session *officialMCP.ClientSession, method string, params officialMCP.Params) (officialMCP.Result, error) {
+func (s *service) createLoggingMiddleware() officialMCP.Middleware {
+	return func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
+		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
 			// Log outgoing request
 			reqID := s.getNextRequestID()
-			logMCPRequest(method, params, reqID)
+			logMCPRequest(method, req, reqID)
 
 			// Call the next handler
-			result, err := next(ctx, session, method, params)
+			result, err := next(ctx, method, req)
 
 			// Log response or error
 			if err != nil {
@@ -141,6 +150,38 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.initializeConnection(); err != nil {
+		return err
+	}
+
+	if err := s.validateConnectionState(); err != nil {
+		return err
+	}
+
+	client, err := s.createClient()
+	if err != nil {
+		return err
+	}
+
+	transportConfig := transports.FromConnectionConfig(config, s.debugMode, 30*time.Second)
+
+	s.logConnectionDetails(config)
+
+	transport, contextStrategy, err := s.transportFactory.CreateTransport(transportConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create transport: %w", err)
+	}
+
+	err = s.sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type)
+	if err != nil {
+		return fmt.Errorf("failed to connect to MCP server: %w", err)
+	}
+
+	return s.updateServerInfo()
+}
+
+// initializeConnection initializes connection components
+func (s *service) initializeConnection() error {
 	// Initialize session manager if not already done
 	if s.sessionManager == nil {
 		s.sessionManager = session.NewManager()
@@ -161,11 +202,24 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		s.errorHandler = errors.NewErrorHandler()
 	}
 
-	// Check if already connected
+	// Initialize transport factory if not already done
+	if s.transportFactory == nil {
+		s.transportFactory = transports.NewFactory()
+	}
+
+	return nil
+}
+
+// validateConnectionState checks if already connected
+func (s *service) validateConnectionState() error {
 	if s.sessionManager.IsConnected() {
 		return fmt.Errorf("already connected to MCP server - disconnect first before connecting to a new server")
 	}
+	return nil
+}
 
+// createClient creates and configures the MCP client
+func (s *service) createClient() (*officialMCP.Client, error) {
 	// Create implementation info
 	impl := &officialMCP.Implementation{
 		Name:    "mcp-tui",
@@ -187,10 +241,10 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		// Create regular client
 		clientOptions := &officialMCP.ClientOptions{
 			// Add progress notification handler for long-running operations
-			ProgressNotificationHandler: func(ctx context.Context, session *officialMCP.ClientSession, params *officialMCP.ProgressNotificationParams) {
+			ProgressNotificationHandler: func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
 				debug.Info("Progress notification",
-					debug.F("progressToken", params.ProgressToken),
-					debug.F("progress", params.Progress))
+					debug.F("progressToken", req.Params.ProgressToken),
+					debug.F("progress", req.Params.Progress))
 			},
 		}
 		client = officialMCP.NewClient(impl, clientOptions)
@@ -201,15 +255,11 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		client.AddSendingMiddleware(s.createLoggingMiddleware())
 	}
 
-	// Initialize transport factory if not already done
-	if s.transportFactory == nil {
-		s.transportFactory = transports.NewFactory()
-	}
+	return client, nil
+}
 
-	// Convert to new transport config format
-	transportConfig := transports.FromConnectionConfig(config, s.debugMode, 30*time.Second)
-
-	// Log the actual connection details
+// logConnectionDetails logs the connection configuration
+func (s *service) logConnectionDetails(config *configPkg.ConnectionConfig) {
 	switch config.Type {
 	case configPkg.TransportStdio:
 		debug.Info("Connecting to MCP server",
@@ -225,20 +275,10 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 			debug.F("transport", config.Type),
 			debug.F("config", config))
 	}
+}
 
-	// Create transport using factory
-	transport, contextStrategy, err := s.transportFactory.CreateTransport(transportConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create transport: %w", err)
-	}
-
-	// Use session manager to establish connection
-	err = s.sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type)
-	if err != nil {
-		return fmt.Errorf("failed to connect to MCP server: %w", err)
-	}
-
-	// Get session from manager for server info
+// updateServerInfo updates server information after successful connection
+func (s *service) updateServerInfo() error {
 	session := s.sessionManager.GetSession()
 	if session == nil {
 		return fmt.Errorf("session manager connected but no session available")
@@ -261,8 +301,6 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	s.info.ProtocolVersion = protocolVersion
 
 	debug.Info("Successfully connected using official MCP Go SDK",
-		debug.F("transport", config.Type),
-		debug.F("url", config.URL),
 		debug.F("sessionID", sessionID),
 		debug.F("serverInfo", serverInfo),
 		debug.F("protocolVersion", protocolVersion))
@@ -331,34 +369,12 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		}
 
 		if tool != nil {
-			// Convert InputSchema to map[string]interface{}
-			var inputSchemaMap map[string]interface{}
-			if tool.InputSchema != nil {
-				schemaJSON, err := json.Marshal(tool.InputSchema)
-				if err != nil {
-					debug.Error("Failed to marshal tool InputSchema",
-						debug.F("tool", tool.Name),
-						debug.F("error", err))
-					// Continue with nil schema rather than failing entirely
-					inputSchemaMap = nil
-				} else {
-					err = json.Unmarshal(schemaJSON, &inputSchemaMap)
-					if err != nil {
-						debug.Error("Failed to unmarshal tool InputSchema",
-							debug.F("tool", tool.Name),
-							debug.F("schemaJSON", string(schemaJSON)),
-							debug.F("error", err))
-						// Continue with nil schema rather than failing entirely
-						inputSchemaMap = nil
-					}
-				}
+			convertedTool, err := s.convertTool(tool)
+			if err != nil {
+				debug.Error("Failed to convert tool", debug.F("tool", tool.Name), debug.F("error", err))
+				continue
 			}
-
-			tools = append(tools, Tool{
-				Name:        tool.Name,
-				Description: tool.Description,
-				InputSchema: inputSchemaMap,
-			})
+			tools = append(tools, convertedTool)
 		}
 	}
 
@@ -366,6 +382,48 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		debug.F("count", len(tools)))
 
 	return tools, nil
+}
+
+// convertTool converts an SDK tool to internal tool format
+func (s *service) convertTool(tool *officialMCP.Tool) (Tool, error) {
+	// Convert InputSchema to map[string]interface{}
+	inputSchemaMap, err := s.convertInputSchema(tool.InputSchema, tool.Name)
+	if err != nil {
+		return Tool{}, err
+	}
+
+	return Tool{
+		Name:        tool.Name,
+		Description: tool.Description,
+		InputSchema: inputSchemaMap,
+	}, nil
+}
+
+// convertInputSchema converts the tool's InputSchema
+func (s *service) convertInputSchema(schema interface{}, toolName string) (map[string]interface{}, error) {
+	if schema == nil {
+		return nil, nil
+	}
+
+	schemaJSON, err := json.Marshal(schema)
+	if err != nil {
+		debug.Error("Failed to marshal tool InputSchema",
+			debug.F("tool", toolName),
+			debug.F("error", err))
+		return nil, nil
+	}
+
+	var inputSchemaMap map[string]interface{}
+	err = json.Unmarshal(schemaJSON, &inputSchemaMap)
+	if err != nil {
+		debug.Error("Failed to unmarshal tool InputSchema",
+			debug.F("tool", toolName),
+			debug.F("schemaJSON", string(schemaJSON)),
+			debug.F("error", err))
+		return nil, nil
+	}
+
+	return inputSchemaMap, nil
 }
 
 // CallTool executes a tool

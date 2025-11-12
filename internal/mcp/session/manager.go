@@ -147,7 +147,7 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 	}
 
 	// Attempt connection
-	session, err := client.Connect(connectCtx, transport)
+	session, err := client.Connect(connectCtx, transport, &officialMCP.ClientSessionOptions{})
 	if err != nil {
 		// Trace connection failure
 		if m.transportDebugger != nil {
@@ -553,7 +553,7 @@ func (m *Manager) attemptReconnection() {
 	connectCtx, cancel := context.WithCancel(connectCtx)
 
 	// Try to reconnect
-	session, err := client.Connect(connectCtx, transport)
+	session, err := client.Connect(connectCtx, transport, &officialMCP.ClientSessionOptions{})
 	if err != nil {
 		// Classify reconnection error
 		classified := m.errorHandler.HandleError(connectCtx, err, "session_reconnect", map[string]interface{}{

@@ -69,7 +69,7 @@ func (e MCPLogEntry) String() string {
 // DetailedString provides enhanced formatting for TUI display
 func (e MCPLogEntry) DetailedString() string {
 	timestamp := e.Timestamp.Format("15:04:05.000")
-	
+
 	// Enhanced formatting with more context
 	var typeIcon, typeText string
 	switch e.MessageType {
@@ -91,7 +91,7 @@ func (e MCPLogEntry) DetailedString() string {
 		typeIcon = "⚠️"
 		typeText = "ERROR"
 	}
-	
+
 	// Build enhanced display with method and context
 	var contextInfo string
 	if e.Method != "" {
@@ -100,14 +100,14 @@ func (e MCPLogEntry) DetailedString() string {
 	if e.ID != nil {
 		contextInfo += fmt.Sprintf(" (id:%v)", e.ID)
 	}
-	
+
 	directionIcon := e.Direction
 	if e.Direction == "→" {
 		directionIcon = "🔵 →" // Outgoing
 	} else if e.Direction == "←" {
 		directionIcon = "🟢 ←" // Incoming
 	}
-	
+
 	return fmt.Sprintf("[%s] %s %s %s%s", timestamp, directionIcon, typeIcon, typeText, contextInfo)
 }
 

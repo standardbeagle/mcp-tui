@@ -235,7 +235,7 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 // runGetCommand executes the prompt get command
 func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error {
 	promptName := args[0]
-	
+
 	if err := pc.ValidateConnection(); err != nil {
 		return pc.HandleError(err, "validate connection")
 	}
@@ -249,7 +249,7 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 	}
 
 	service := pc.GetService()
-	
+
 	// First get the prompt details from the list
 	prompts, err := service.ListPrompts(ctx)
 	if err != nil {
@@ -343,7 +343,7 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 // runExecuteCommand executes the prompt execute command
 func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) error {
 	promptName := args[0]
-	
+
 	// Get arguments from flags
 	promptArgs, err := cmd.Flags().GetStringToString("arg")
 	if err != nil {
@@ -370,13 +370,13 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 	}
 
 	service := pc.GetService()
-	
+
 	// Convert string arguments to interface{} map
 	convertedArgs := make(map[string]interface{})
 	for key, value := range promptArgs {
 		convertedArgs[key] = value
 	}
-	
+
 	// Execute the prompt
 	result, err := service.GetPrompt(ctx, mcp.GetPromptRequest{
 		Name:      promptName,
@@ -437,7 +437,7 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 
 		// Message role
 		fmt.Println(messageRoleStyle.Render(fmt.Sprintf("Role: %s", message.Role)))
-		
+
 		// Message content
 		if message.Content != nil {
 			fmt.Println(messageContentStyle.Render(fmt.Sprintf("Content: %v", message.Content)))

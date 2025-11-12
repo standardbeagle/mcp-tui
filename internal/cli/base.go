@@ -20,6 +20,22 @@ const (
 	OutputFormatJSON OutputFormat = "json"
 )
 
+// Output format constants
+const (
+	FormatText = "text"
+	FormatJSON = "json"
+)
+
+// Connection message constants
+const (
+	ConnectionCreating   = "🔄 Creating MCP service...\n"
+	ConnectionStarting   = "🚀 Starting process: %s %s\n"
+	ConnectionConnecting = "🌐 Connecting to URL: %s\n"
+	ConnectionTimeout    = "⏳ Establishing connection (timeout: %s)...\n"
+	ConnectionSuccess    = "✅ Connected successfully\n"
+	ConnectionFailed     = "❌ Connection failed\n"
+)
+
 // BaseCommand provides common functionality for all CLI commands
 type BaseCommand struct {
 	service      mcp.Service
@@ -59,15 +75,24 @@ func (c *BaseCommand) WithTimeout(timeout time.Duration) *BaseCommand {
 // SetOutputFormat sets the output format for the command
 func (c *BaseCommand) SetOutputFormat(cmd *cobra.Command) error {
 	format, _ := cmd.Flags().GetString("format")
-	switch format {
-	case "text", "":
-		c.outputFormat = OutputFormatText
-	case "json":
-		c.outputFormat = OutputFormatJSON
-	default:
-		return fmt.Errorf("unsupported output format: %s (supported: text, json)", format)
+	c.outputFormat = c.parseOutputFormat(format)
+	if c.outputFormat == "" {
+		return fmt.Errorf("unsupported output format: %s (supported: %s, %s)",
+			format, FormatText, FormatJSON)
 	}
 	return nil
+}
+
+// parseOutputFormat parses the output format from string
+func (c *BaseCommand) parseOutputFormat(format string) OutputFormat {
+	switch format {
+	case FormatText, "":
+		return OutputFormatText
+	case FormatJSON:
+		return OutputFormatJSON
+	default:
+		return ""
+	}
 }
 
 // GetOutputFormat returns the current output format
@@ -77,88 +102,120 @@ func (c *BaseCommand) GetOutputFormat() OutputFormat {
 
 // CreateClient creates and initializes an MCP client
 func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
-	var connConfig *config.ConnectionConfig
+	connConfig, err := c.parseConnectionConfig(cmd)
+	if err != nil {
+		return err
+	}
 
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	c.setupService(cmd, porcelainMode)
+
+	ctx, cancel := c.WithContext()
+	defer cancel()
+
+	if err := c.connectToServer(ctx, connConfig, porcelainMode); err != nil {
+		return err
+	}
+
+	if !porcelainMode {
+		fmt.Fprint(os.Stderr, ConnectionSuccess)
+	}
+
+	return nil
+}
+
+// parseConnectionConfig parses the connection configuration from various sources
+func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.ConnectionConfig, error) {
 	// Check if we have a global connection config (from natural CLI usage)
-	// This is set when using: mcp-tui "server command" tool list
 	if globalConnConfig := c.getGlobalConnection(); globalConnConfig != nil {
-		connConfig = globalConnConfig
-	} else {
-		// Parse from flags
-		cmdFlag, _ := cmd.Flags().GetString("cmd")
-		urlFlag, _ := cmd.Flags().GetString("url")
-		transportFlag, _ := cmd.Flags().GetString("transport")
+		return globalConnConfig, nil
+	}
 
-		// Get args as string slice (multiple --args flags)
-		argsFlag, _ := cmd.Flags().GetStringSlice("args")
+	// Parse from flags
+	cmdFlag, _ := cmd.Flags().GetString("cmd")
+	urlFlag, _ := cmd.Flags().GetString("url")
+	transportFlag, _ := cmd.Flags().GetString("transport")
 
-		// Use the unified parser
-		parsedArgs := config.ParseArgs(cmd.Flags().Args(), cmdFlag, urlFlag, argsFlag)
-		connConfig = parsedArgs.Connection
+	// Get args as string slice (multiple --args flags)
+	argsFlag, _ := cmd.Flags().GetStringSlice("args")
 
-		// Apply explicit transport type if specified (and not the default)
-		if transportFlag != "" && transportFlag != "stdio" && connConfig != nil {
-			connConfig.Type = config.TransportType(transportFlag)
-		} else if urlFlag != "" && connConfig != nil {
-			// Auto-detect transport from URL if not explicitly specified
-			if strings.Contains(urlFlag, "/events") || strings.Contains(urlFlag, "sse") {
-				connConfig.Type = config.TransportSSE
-			} else {
-				connConfig.Type = config.TransportHTTP
-			}
+	// Use the unified parser
+	parsedArgs := config.ParseArgs(cmd.Flags().Args(), cmdFlag, urlFlag, argsFlag)
+	connConfig := parsedArgs.Connection
+
+	// Apply explicit transport type if specified (and not the default)
+	if transportFlag != "" && transportFlag != "stdio" && connConfig != nil {
+		connConfig.Type = config.TransportType(transportFlag)
+	} else if urlFlag != "" && connConfig != nil {
+		// Auto-detect transport from URL if not explicitly specified
+		if strings.Contains(urlFlag, "/events") || strings.Contains(urlFlag, "sse") {
+			connConfig.Type = config.TransportSSE
+		} else {
+			connConfig.Type = config.TransportHTTP
 		}
 	}
 
 	if connConfig == nil {
-		return fmt.Errorf("no MCP server connection specified\n\nConnection options:\n- Use --cmd for stdio servers: --cmd 'npx @modelcontextprotocol/server-everything stdio'\n- Use --url for HTTP servers: --url 'http://localhost:8080'\n- Use --url for SSE servers: --url 'http://localhost:8080/events'\n\nExamples:\n  mcp-tui tool list --cmd npx --args '@modelcontextprotocol/server-everything,stdio'\n  mcp-tui tool list --url 'http://localhost:8080'")
+		return nil, c.connectionConfigError()
 	}
 
-	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	return connConfig, nil
+}
 
-	// Create service and connect
+// connectionConfigError returns an error for missing connection configuration
+func (c *BaseCommand) connectionConfigError() error {
+	return fmt.Errorf("no MCP server connection specified\n\nConnection options:\n- Use --cmd for stdio servers: --cmd 'npx @modelcontextprotocol/server-everything stdio'\n- Use --url for HTTP servers: --url 'http://localhost:8080'\n- Use --url for SSE servers: --url 'http://localhost:8080/events'\n\nExamples:\n  mcp-tui tool list --cmd npx --args '@modelcontextprotocol/server-everything,stdio'\n  mcp-tui tool list --url 'http://localhost:8080'")
+}
+
+// setupService creates and configures the MCP service
+func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) {
 	if !porcelainMode {
-		fmt.Fprintf(os.Stderr, "🔄 Creating MCP service...\n")
+		fmt.Fprint(os.Stderr, ConnectionCreating)
 	}
+
 	c.service = mcp.NewService()
 
 	// Enable debug mode if flag is set
 	debugMode, _ := cmd.Flags().GetBool("debug")
 	c.service.SetDebugMode(debugMode)
+}
 
-	ctx, cancel := c.WithContext()
-	defer cancel()
-
-	// Show connection details
+// connectToServer establishes connection to the MCP server
+func (c *BaseCommand) connectToServer(ctx context.Context, connConfig *config.ConnectionConfig, porcelainMode bool) error {
 	if !porcelainMode {
-		switch connConfig.Type {
-		case config.TransportStdio:
-			fmt.Fprintf(os.Stderr, "🚀 Starting process: %s %s\n", connConfig.Command, strings.Join(connConfig.Args, " "))
-		case config.TransportHTTP, config.TransportSSE:
-			fmt.Fprintf(os.Stderr, "🌐 Connecting to URL: %s\n", connConfig.URL)
-		}
-
-		fmt.Fprintf(os.Stderr, "⏳ Establishing connection (timeout: %s)...\n", c.timeout)
+		c.showConnectionMessage(connConfig)
+		fmt.Fprintf(os.Stderr, ConnectionTimeout, c.timeout)
 	}
 
 	if err := c.service.Connect(ctx, connConfig); err != nil {
 		if !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Connection failed\n")
-			// Add helpful message for timeout errors
-			if strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "timeout") {
-				fmt.Fprintf(os.Stderr, "\n💡 Tip: The connection timed out. Try:\n")
-				fmt.Fprintf(os.Stderr, "   - Checking if the server is running\n")
-				fmt.Fprintf(os.Stderr, "   - Increasing timeout with --timeout flag\n")
-				fmt.Fprintf(os.Stderr, "   - Verifying the command/URL is correct\n")
-			}
+			fmt.Fprint(os.Stderr, ConnectionFailed)
+			c.showConnectionErrorHelp(err)
 		}
-		return err // The service already provides detailed error messages
+		return err
 	}
 
-	if !porcelainMode {
-		fmt.Fprintf(os.Stderr, "✅ Connected successfully\n")
-	}
 	return nil
+}
+
+// showConnectionMessage displays the appropriate connection message
+func (c *BaseCommand) showConnectionMessage(connConfig *config.ConnectionConfig) {
+	switch connConfig.Type {
+	case config.TransportStdio:
+		fmt.Fprintf(os.Stderr, ConnectionStarting, connConfig.Command, strings.Join(connConfig.Args, " "))
+	case config.TransportHTTP, config.TransportSSE:
+		fmt.Fprintf(os.Stderr, ConnectionConnecting, connConfig.URL)
+	}
+}
+
+// showConnectionErrorHelp displays helpful error messages for connection failures
+func (c *BaseCommand) showConnectionErrorHelp(err error) {
+	if strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "timeout") {
+		fmt.Fprint(os.Stderr, "\n💡 Tip: The connection timed out. Try:\n")
+		fmt.Fprint(os.Stderr, "   - Checking if the server is running\n")
+		fmt.Fprint(os.Stderr, "   - Increasing timeout with --timeout flag\n")
+		fmt.Fprint(os.Stderr, "   - Verifying the command/URL is correct\n")
+	}
 }
 
 // CloseClient properly closes the MCP client

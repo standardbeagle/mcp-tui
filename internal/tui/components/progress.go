@@ -114,11 +114,11 @@ func OperationProgressMessage(operation string, elapsed time.Duration, phase str
 	timeStr := formatDuration(elapsed)
 	spinner := NewSpinner(SpinnerDots)
 	spinnerFrame := spinner.Frame(elapsed)
-	
+
 	if phase != "" {
 		return fmt.Sprintf("%s %s - %s (%s)", spinnerFrame, operation, phase, timeStr)
 	}
-	
+
 	return fmt.Sprintf("%s %s (%s)", spinnerFrame, operation, timeStr)
 }
 
@@ -141,7 +141,7 @@ func MCPOperationProgress(operationType, itemName string, elapsed time.Duration)
 	default:
 		message = fmt.Sprintf("MCP %s operation", operationType)
 	}
-	
+
 	return OperationProgressMessage(message, elapsed, "")
 }
 

@@ -22,7 +22,7 @@ func TestToolArrayFieldFix(t *testing.T) {
 						"description": "List of tags",
 					},
 				},
-				"required": []string{"tags"}, // Required array field
+				"required": []interface{}{"tags"}, // Required array field
 			},
 		}
 

@@ -9,6 +9,22 @@ import (
 	"sync"
 )
 
+// List of dangerous shell metacharacters that could be used for command injection
+var dangerousChars = []string{
+	";", "&", "|", "`", "$", "(", ")",
+	"{", "}", "<", ">", "\"", "'", "\\",
+	"\n", "\r",
+}
+
+// ArgumentsAllowedChars are characters allowed in arguments even though they're
+// in the dangerous list (e.g., quotes for JSON)
+var argumentsAllowedChars = map[string]bool{
+	"\"": true,
+	"'":  true,
+	"{":  true,
+	"}":  true,
+}
+
 // Manager handles process lifecycle management
 type Manager interface {
 	// Start starts a process with the given command and arguments
@@ -157,37 +173,73 @@ type manager struct {
 // to prevent command injection and other security issues
 func validateCommand(command string, args []string) error {
 	// Check for empty command
+	if err := validateCommandNotEmpty(command); err != nil {
+		return err
+	}
+
+	// Check for dangerous characters in command
+	if err := validateCommandCharacters(command); err != nil {
+		return err
+	}
+
+	// Validate each argument
+	if err := validateArguments(args); err != nil {
+		return err
+	}
+
+	// Ensure command is not an absolute path
+	return validateCommandPath(command)
+}
+
+// validateCommandNotEmpty checks that the command is not empty
+func validateCommandNotEmpty(command string) error {
 	if strings.TrimSpace(command) == "" {
 		return fmt.Errorf("command cannot be empty")
 	}
+	return nil
+}
 
-	// Check for shell metacharacters that could be used for injection
-	dangerousChars := []string{";", "&", "|", "`", "$", "(", ")", "{", "}", "<", ">", "\"", "'", "\\", "\n", "\r"}
+// validateCommandCharacters checks for dangerous characters in command
+func validateCommandCharacters(command string) error {
 	for _, char := range dangerousChars {
 		if strings.Contains(command, char) {
 			return fmt.Errorf("command contains potentially dangerous character: %s", char)
 		}
 	}
+	return nil
+}
 
-	// Validate each argument
+// validateArguments checks that arguments don't contain dangerous characters
+func validateArguments(args []string) error {
 	for i, arg := range args {
-		for _, char := range dangerousChars {
-			// Allow some characters in arguments that are commonly needed (like quotes for JSON)
-			if char == "\"" || char == "'" || char == "{" || char == "}" {
-				continue
-			}
-			if strings.Contains(arg, char) {
-				return fmt.Errorf("argument %d contains potentially dangerous character: %s", i, char)
-			}
+		if err := validateArgument(i, arg); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+// validateArgument validates a single argument
+func validateArgument(index int, arg string) error {
+	for _, char := range dangerousChars {
+		// Skip characters that are allowed in arguments
+		if argumentsAllowedChars[char] {
+			continue
+		}
+		if strings.Contains(arg, char) {
+			return fmt.Errorf("argument %d contains potentially dangerous character: %s", index, char)
+		}
+	}
+	return nil
+}
+
+// validateCommandPath checks that the command path is safe
+func validateCommandPath(command string) error {
 	// Ensure command is not an absolute path to prevent execution of arbitrary binaries
 	// Allow relative paths and commands in PATH
 	if filepath.IsAbs(command) {
 		return fmt.Errorf("absolute paths are not allowed for security reasons")
 	}
-
 	return nil
 }
 

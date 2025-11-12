@@ -130,7 +130,9 @@ func (et *EventTracer) TraceConnectionEnd(startEvent *Event, success bool, error
 	}
 
 	event := et.addEvent(EventConnectionEnd, "", nil, data)
-	event.Duration = duration
+	if event != nil {
+		event.Duration = duration
+	}
 	return event
 }
 
@@ -152,8 +154,8 @@ func (et *EventTracer) TraceRequestSent(method string, requestID interface{}, pa
 
 	event := et.addEvent(EventRequestSent, method, requestID, data)
 
-	// Track request for response correlation
-	if requestID != nil {
+	// Track request for response correlation (only if event was created)
+	if requestID != nil && event != nil {
 		et.mu.Lock()
 		et.requestTracker[requestID] = event
 		et.mu.Unlock()

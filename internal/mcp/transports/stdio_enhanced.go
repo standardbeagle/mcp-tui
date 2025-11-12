@@ -60,8 +60,10 @@ func createEnhancedSTDIOTransport(config *TransportConfig, strategy ContextStrat
 	// Create command for STDIO transport
 	cmd := exec.Command(config.Command, config.Args...)
 
-	// Create STDIO transport using official SDK
-	transport := officialMCP.NewCommandTransport(cmd)
+	// Create STDIO transport using official SDK (direct struct initialization)
+	transport := &officialMCP.CommandTransport{
+		Command: cmd,
+	}
 
 	// Wrap in enhanced transport for additional monitoring
 	enhanced := &EnhancedSTDIOTransport{

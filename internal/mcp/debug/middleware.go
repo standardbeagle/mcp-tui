@@ -21,17 +21,17 @@ func NewTracingMiddleware(tracer *EventTracer) *TracingMiddleware {
 }
 
 // CreateSendingMiddleware creates middleware for outgoing MCP requests
-func (tm *TracingMiddleware) CreateSendingMiddleware() officialMCP.Middleware[*officialMCP.ClientSession] {
-	return func(next officialMCP.MethodHandler[*officialMCP.ClientSession]) officialMCP.MethodHandler[*officialMCP.ClientSession] {
-		return func(ctx context.Context, session *officialMCP.ClientSession, method string, params officialMCP.Params) (officialMCP.Result, error) {
+func (tm *TracingMiddleware) CreateSendingMiddleware() officialMCP.Middleware {
+	return func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
+		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
 			// Generate request ID for correlation
 			requestID := fmt.Sprintf("req_%d", tm.getNextRequestID())
 
 			// Trace request sent
-			tm.tracer.TraceRequestSent(method, requestID, params)
+			tm.tracer.TraceRequestSent(method, requestID, req)
 
 			// Call the next handler
-			result, err := next(ctx, session, method, params)
+			result, err := next(ctx, method, req)
 
 			// Trace response received
 			tm.tracer.TraceResponseReceived(requestID, result, err)
@@ -59,15 +59,14 @@ func (tm *TracingMiddleware) TraceNotificationReceived(method string, params int
 }
 
 // CreateProgressHandler creates a progress notification handler with tracing
-func (tm *TracingMiddleware) CreateProgressHandler() func(ctx context.Context, session *officialMCP.ClientSession, params *officialMCP.ProgressNotificationParams) {
-	return func(ctx context.Context, session *officialMCP.ClientSession, params *officialMCP.ProgressNotificationParams) {
+func (tm *TracingMiddleware) CreateProgressHandler() func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
+	return func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
 		// Trace progress notification
-		tm.tracer.TraceProgress(params.ProgressToken, params.Progress, "progress_notification")
+		tm.tracer.TraceProgress(req.Params.ProgressToken, req.Params.Progress, "progress_notification")
 
 		debug.Info("Progress notification traced",
-			debug.F("progress_token", params.ProgressToken),
-			debug.F("progress", params.Progress),
-			debug.F("session_id", session.ID()))
+			debug.F("progress_token", req.Params.ProgressToken),
+			debug.F("progress", req.Params.Progress))
 	}
 }
 

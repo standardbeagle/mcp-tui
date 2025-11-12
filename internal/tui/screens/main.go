@@ -36,7 +36,7 @@ type MainScreen struct {
 	resources   []string
 	prompts     []string
 	events      []debug.MCPLogEntry // Store actual event entries
-	
+
 	// Store actual objects for viewers
 	resourceObjects []mcp.Resource
 	promptObjects   []mcp.Prompt
@@ -52,7 +52,7 @@ type MainScreen struct {
 	resourcesLoading bool
 	promptsLoading   bool
 	eventsLoading    bool
-	
+
 	// Loading start times for progress display
 	toolsLoadStart     time.Time
 	resourcesLoadStart time.Time
@@ -69,7 +69,7 @@ type MainScreen struct {
 	toolPaneFocus    int // 0=list, 1=detail (for future use)
 	toolListScroll   int // Scroll position for tool list
 	toolDetailScroll int // Scroll position for tool description
-	
+
 	// Resource and prompt viewer state
 	resourceViewerOpen bool
 	promptViewerOpen   bool
@@ -181,6 +181,14 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 		connecting:       true,
 	}
 
+	// Initialize components
+	ms.initializeComponents(connConfig)
+
+	return ms
+}
+
+// initializeComponents initializes screen components
+func (ms *MainScreen) initializeComponents(connConfig *config.ConnectionConfig) {
 	// Initialize styles
 	ms.initStyles()
 
@@ -193,8 +201,6 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 		debug.F("command", connConfig.Command),
 		debug.F("args", connConfig.Args),
 		debug.F("url", connConfig.URL))
-
-	return ms
 }
 
 // initStyles initializes the visual styles
@@ -254,194 +260,264 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ms.handleKeyMsg(msg)
 
 	case ConnectionStartedMsg:
-		ms.connecting = true
-		ms.connectingStart = time.Now()
-		// Show what we're actually connecting to
-		switch ms.connectionConfig.Type {
-		case config.TransportStdio:
-			ms.connectionStatus = fmt.Sprintf("Connecting to stdio: %s %s",
-				ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
-		case config.TransportHTTP, config.TransportSSE:
-			ms.connectionStatus = fmt.Sprintf("Connecting to %s: %s",
-				ms.connectionConfig.Type, ms.connectionConfig.URL)
-		default:
-			ms.connectionStatus = fmt.Sprintf("Connecting via %s...", ms.connectionConfig.Type)
-		}
-		// Start ticker for spinner animation
-		return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-			return spinnerTickMsg{}
-		})
+		return ms.handleConnectionStarted(msg)
 
 	case ConnectionCompleteMsg:
-		ms.connecting = false
-		if msg.Success {
-			ms.connected = true
-			ms.connectionStatus = fmt.Sprintf("Connected to %s %s",
-				ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
-			// Set loading states for all tabs
-			now := time.Now()
-			ms.toolsLoading = true
-			ms.toolsLoadStart = now
-			ms.resourcesLoading = true
-			ms.resourcesLoadStart = now
-			ms.promptsLoading = true
-			ms.promptsLoadStart = now
-			ms.eventsLoading = true
-			// Load initial data
-			return ms, tea.Batch(
-				ms.loadTools(),
-				ms.loadResources(),
-				ms.loadPrompts(),
-				ms.loadEvents(),
-			)
-		} else {
-			ms.connected = false
-			// Format error message based on type
-			errorMsg := "Connection failed"
-			if msg.Error != nil {
-				switch {
-				case strings.Contains(msg.Error.Error(), "no such file"):
-					errorMsg = fmt.Sprintf("Command not found: %s", ms.connectionConfig.Command)
-				case strings.Contains(msg.Error.Error(), "connection refused"):
-					errorMsg = "Connection refused - server not running"
-				case strings.Contains(msg.Error.Error(), "timeout"):
-					errorMsg = "Connection timeout - server not responding"
-				default:
-					errorMsg = fmt.Sprintf("Connection failed: %v", msg.Error)
-				}
-			}
-			ms.connectionStatus = errorMsg
-			ms.SetError(msg.Error)
-		}
-		return ms, nil
+		return ms.handleConnectionComplete(msg)
 
 	case ToolsLoadedMsg:
-		ms.toolsLoading = false
-		if msg.Error != nil {
-			ms.tools = []mcp.Tool{}
-			ms.toolStrings = []string{fmt.Sprintf("Error loading tools: %v", msg.Error)}
-			ms.toolCount = 0
-		} else {
-			ms.tools = msg.Tools
-			ms.toolStrings = msg.Items
-			ms.toolCount = msg.ActualCount
-		}
-		ms.ensureInitialFocus(0)
-		return ms, nil
+		return ms.handleToolsLoaded(msg)
 
 	case ResourcesLoadedMsg:
-		ms.resourcesLoading = false
-		if msg.Error != nil {
-			ms.resourceObjects = []mcp.Resource{}
-			ms.resources = []string{fmt.Sprintf("Error loading resources: %v", msg.Error)}
-			ms.resourceCount = 0
-		} else {
-			ms.resourceObjects = msg.Resources
-			ms.resources = msg.Items
-			ms.resourceCount = msg.ActualCount
-		}
-		ms.ensureInitialFocus(1)
-		return ms, nil
+		return ms.handleResourcesLoaded(msg)
 
 	case PromptsLoadedMsg:
-		ms.promptsLoading = false
-		if msg.Error != nil {
-			ms.promptObjects = []mcp.Prompt{}
-			ms.prompts = []string{fmt.Sprintf("Error loading prompts: %v", msg.Error)}
-			ms.promptCount = 0
-		} else {
-			ms.promptObjects = msg.Prompts
-			ms.prompts = msg.Items
-			ms.promptCount = msg.ActualCount
-		}
-		ms.ensureInitialFocus(2)
-		return ms, nil
+		return ms.handlePromptsLoaded(msg)
 
 	case ResourceContentLoadedMsg:
-		ms.resourceLoading = false
-		if msg.Error != nil {
-			ms.SetError(fmt.Errorf("failed to load resource content: %w", msg.Error))
-		} else {
-			ms.selectedResource = msg.Resource
-			ms.resourceContent = msg.Content
-			ms.resourceViewerOpen = true
-		}
-		return ms, nil
+		return ms.handleResourceContentLoaded(msg)
 
 	case PromptResultLoadedMsg:
-		ms.promptLoading = false
-		if msg.Error != nil {
-			ms.SetError(fmt.Errorf("failed to load prompt result: %w", msg.Error))
-		} else {
-			ms.selectedPrompt = msg.Prompt
-			ms.promptResult = msg.Result
-			ms.promptViewerOpen = true
-		}
-		return ms, nil
+		return ms.handlePromptResultLoaded(msg)
 
 	case ItemsLoadedMsg:
-		switch msg.Tab {
-		case 0: // Tools - handled by ToolsLoadedMsg now
-			// This case is now handled by ToolsLoadedMsg above
-			return ms, nil
-		case 1: // Resources - handled by ResourcesLoadedMsg now
-			// This case is now handled by ResourcesLoadedMsg above
-			return ms, nil
-		case 2: // Prompts - handled by PromptsLoadedMsg now
-			// This case is now handled by PromptsLoadedMsg above
-			return ms, nil
-		case 3: // Events
-			ms.eventsLoading = false
-			// Re-fetch events from logger
-			if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
-				allEntries := mcpLogger.GetEntries()
-				var events []debug.MCPLogEntry
-				for _, entry := range allEntries {
-					if entry.MessageType == debug.MCPMessageNotification || entry.ID == nil {
-						events = append(events, entry)
-					}
-				}
-				ms.events = events
-				ms.eventCount = len(events)
-			}
-			ms.ensureInitialFocus(3)
-		}
-		return ms, nil
+		return ms.handleItemsLoaded(msg)
 
 	case ErrorMsg:
 		ms.SetError(msg.Error)
 		return ms, nil
 
 	case EventTickMsg:
-		// Only refresh events if we're on the events tab and connected
-		if ms.connected && ms.activeTab == 3 {
-			return ms, tea.Batch(
-				ms.loadEvents(),
-				ms.tickEvents(), // Continue ticking
-			)
-		}
-		return ms, ms.tickEvents() // Continue ticking even if not on events tab
+		return ms.handleEventTick(msg)
 
 	case spinnerTickMsg:
-		// Continue spinner animation while connecting
-		if ms.connecting {
-			// Update connection status with detailed HTTP progress for HTTP/SSE transports
-			if ms.connectionConfig.Type == config.TransportHTTP || ms.connectionConfig.Type == config.TransportSSE {
-				if detailedStatus := ms.mcpService.GetConnectionDisplayMessage(); detailedStatus != "" {
-					ms.connectionStatus = detailedStatus
-					// Add diagnostic message if helpful
-					if diagnostic := ms.mcpService.GetServerDiagnosticMessage(); diagnostic != "" {
-						ms.connectionStatus += fmt.Sprintf("\n💡 %s", diagnostic)
-					}
-				}
-			}
-			return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-				return spinnerTickMsg{}
-			})
-		}
-		return ms, nil
+		return ms.handleSpinnerTick(msg)
 	}
 
+	return ms, nil
+}
+
+// handleConnectionStarted handles connection started messages
+func (ms *MainScreen) handleConnectionStarted(msg ConnectionStartedMsg) (tea.Model, tea.Cmd) {
+	ms.connecting = true
+	ms.connectingStart = time.Now()
+
+	// Show what we're actually connecting to
+	switch ms.connectionConfig.Type {
+	case config.TransportStdio:
+		ms.connectionStatus = fmt.Sprintf("Connecting to stdio: %s %s",
+			ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
+	case config.TransportHTTP, config.TransportSSE:
+		ms.connectionStatus = fmt.Sprintf("Connecting to %s: %s",
+			ms.connectionConfig.Type, ms.connectionConfig.URL)
+	default:
+		ms.connectionStatus = fmt.Sprintf("Connecting via %s...", ms.connectionConfig.Type)
+	}
+
+	// Start ticker for spinner animation
+	return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return spinnerTickMsg{}
+	})
+}
+
+// handleConnectionComplete handles connection completion messages
+func (ms *MainScreen) handleConnectionComplete(msg ConnectionCompleteMsg) (tea.Model, tea.Cmd) {
+	ms.connecting = false
+	if msg.Success {
+		return ms.handleConnectionSuccess()
+	} else {
+		return ms.handleConnectionFailure(msg.Error)
+	}
+}
+
+// handleConnectionSuccess handles successful connection
+func (ms *MainScreen) handleConnectionSuccess() (tea.Model, tea.Cmd) {
+	ms.connected = true
+	ms.connectionStatus = fmt.Sprintf("Connected to %s %s",
+		ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
+
+	// Set loading states for all tabs
+	now := time.Now()
+	ms.toolsLoading = true
+	ms.toolsLoadStart = now
+	ms.resourcesLoading = true
+	ms.resourcesLoadStart = now
+	ms.promptsLoading = true
+	ms.promptsLoadStart = now
+	ms.eventsLoading = true
+
+	// Load initial data
+	return ms, tea.Batch(
+		ms.loadTools(),
+		ms.loadResources(),
+		ms.loadPrompts(),
+		ms.loadEvents(),
+	)
+}
+
+// handleConnectionFailure handles connection failure
+func (ms *MainScreen) handleConnectionFailure(err error) (tea.Model, tea.Cmd) {
+	ms.connected = false
+	// Format error message based on type
+	errorMsg := "Connection failed"
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "no such file"):
+			errorMsg = fmt.Sprintf("Command not found: %s", ms.connectionConfig.Command)
+		case strings.Contains(err.Error(), "connection refused"):
+			errorMsg = "Connection refused - server not running"
+		case strings.Contains(err.Error(), "timeout"):
+			errorMsg = "Connection timeout - server not responding"
+		default:
+			errorMsg = fmt.Sprintf("Connection failed: %v", err)
+		}
+	}
+	ms.connectionStatus = errorMsg
+	ms.SetError(err)
+	return ms, nil
+}
+
+// handleToolsLoaded handles tools loaded messages
+func (ms *MainScreen) handleToolsLoaded(msg ToolsLoadedMsg) (tea.Model, tea.Cmd) {
+	ms.toolsLoading = false
+	if msg.Error != nil {
+		ms.tools = []mcp.Tool{}
+		ms.toolStrings = []string{fmt.Sprintf("Error loading tools: %v", msg.Error)}
+		ms.toolCount = 0
+	} else {
+		ms.tools = msg.Tools
+		ms.toolStrings = msg.Items
+		ms.toolCount = msg.ActualCount
+	}
+	ms.ensureInitialFocus(0)
+	return ms, nil
+}
+
+// handleResourcesLoaded handles resources loaded messages
+func (ms *MainScreen) handleResourcesLoaded(msg ResourcesLoadedMsg) (tea.Model, tea.Cmd) {
+	ms.resourcesLoading = false
+	if msg.Error != nil {
+		ms.resourceObjects = []mcp.Resource{}
+		ms.resources = []string{fmt.Sprintf("Error loading resources: %v", msg.Error)}
+		ms.resourceCount = 0
+	} else {
+		ms.resourceObjects = msg.Resources
+		ms.resources = msg.Items
+		ms.resourceCount = msg.ActualCount
+	}
+	ms.ensureInitialFocus(1)
+	return ms, nil
+}
+
+// handlePromptsLoaded handles prompts loaded messages
+func (ms *MainScreen) handlePromptsLoaded(msg PromptsLoadedMsg) (tea.Model, tea.Cmd) {
+	ms.promptsLoading = false
+	if msg.Error != nil {
+		ms.promptObjects = []mcp.Prompt{}
+		ms.prompts = []string{fmt.Sprintf("Error loading prompts: %v", msg.Error)}
+		ms.promptCount = 0
+	} else {
+		ms.promptObjects = msg.Prompts
+		ms.prompts = msg.Items
+		ms.promptCount = msg.ActualCount
+	}
+	ms.ensureInitialFocus(2)
+	return ms, nil
+}
+
+// handleResourceContentLoaded handles resource content loaded messages
+func (ms *MainScreen) handleResourceContentLoaded(msg ResourceContentLoadedMsg) (tea.Model, tea.Cmd) {
+	ms.resourceLoading = false
+	if msg.Error != nil {
+		ms.SetError(fmt.Errorf("failed to load resource content: %w", msg.Error))
+	} else {
+		ms.selectedResource = msg.Resource
+		ms.resourceContent = msg.Content
+		ms.resourceViewerOpen = true
+	}
+	return ms, nil
+}
+
+// handlePromptResultLoaded handles prompt result loaded messages
+func (ms *MainScreen) handlePromptResultLoaded(msg PromptResultLoadedMsg) (tea.Model, tea.Cmd) {
+	ms.promptLoading = false
+	if msg.Error != nil {
+		ms.SetError(fmt.Errorf("failed to load prompt result: %w", msg.Error))
+	} else {
+		ms.selectedPrompt = msg.Prompt
+		ms.promptResult = msg.Result
+		ms.promptViewerOpen = true
+	}
+	return ms, nil
+}
+
+// handleItemsLoaded handles general items loaded messages
+func (ms *MainScreen) handleItemsLoaded(msg ItemsLoadedMsg) (tea.Model, tea.Cmd) {
+	switch msg.Tab {
+	case 0: // Tools - handled by ToolsLoadedMsg now
+		// This case is now handled by ToolsLoadedMsg
+		return ms, nil
+	case 1: // Resources - handled by ResourcesLoadedMsg now
+		// This case is now handled by ResourcesLoadedMsg
+		return ms, nil
+	case 2: // Prompts - handled by PromptsLoadedMsg now
+		// This case is now handled by PromptsLoadedMsg
+		return ms, nil
+	case 3: // Events
+		return ms.handleEventsLoaded()
+	}
+	return ms, nil
+}
+
+// handleEventsLoaded handles events loaded messages
+func (ms *MainScreen) handleEventsLoaded() (tea.Model, tea.Cmd) {
+	ms.eventsLoading = false
+	// Re-fetch events from logger
+	if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
+		allEntries := mcpLogger.GetEntries()
+		var events []debug.MCPLogEntry
+		for _, entry := range allEntries {
+			if entry.MessageType == debug.MCPMessageNotification || entry.ID == nil {
+				events = append(events, entry)
+			}
+		}
+		ms.events = events
+		ms.eventCount = len(events)
+	}
+	ms.ensureInitialFocus(3)
+	return ms, nil
+}
+
+// handleEventTick handles periodic event refresh messages
+func (ms *MainScreen) handleEventTick(msg EventTickMsg) (tea.Model, tea.Cmd) {
+	// Only refresh events if we're on the events tab and connected
+	if ms.connected && ms.activeTab == 3 {
+		return ms, tea.Batch(
+			ms.loadEvents(),
+			ms.tickEvents(), // Continue ticking
+		)
+	}
+	return ms, ms.tickEvents() // Continue ticking even if not on events tab
+}
+
+// handleSpinnerTick handles spinner animation updates
+func (ms *MainScreen) handleSpinnerTick(msg spinnerTickMsg) (tea.Model, tea.Cmd) {
+	// Continue spinner animation while connecting
+	if ms.connecting {
+		// Update connection status with detailed HTTP progress for HTTP/SSE transports
+		if ms.connectionConfig.Type == config.TransportHTTP || ms.connectionConfig.Type == config.TransportSSE {
+			if detailedStatus := ms.mcpService.GetConnectionDisplayMessage(); detailedStatus != "" {
+				ms.connectionStatus = detailedStatus
+				// Add diagnostic message if helpful
+				if diagnostic := ms.mcpService.GetServerDiagnosticMessage(); diagnostic != "" {
+					ms.connectionStatus += fmt.Sprintf("\n💡 %s", diagnostic)
+				}
+			}
+		}
+		return ms, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+			return spinnerTickMsg{}
+		})
+	}
 	return ms, nil
 }
 
@@ -495,7 +571,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return ms, tea.Quit
-		
+
 	case "q", "esc":
 		// If we're in a viewer, close it first
 		if ms.resourceViewerOpen {
@@ -750,16 +826,16 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 		if len(parts) > 0 && selectedIdx < len(ms.resourceObjects) {
 			resourceURI := parts[0]
 			resource := ms.resourceObjects[selectedIdx]
-			
+
 			// Load resource content
 			ms.resourceLoading = true
 			ms.resourceLoadStart = time.Now()
 			ms.SetStatus(components.MCPOperationProgress("resource", resourceURI, time.Duration(0)), StatusInfo)
-			
+
 			return ms, func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
-				
+
 				content, err := ms.mcpService.ReadResource(ctx, resourceURI)
 				return ResourceContentLoadedMsg{
 					Resource: &resource,
@@ -775,16 +851,16 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 		if len(parts) > 0 && selectedIdx < len(ms.promptObjects) {
 			promptName := parts[0]
 			prompt := ms.promptObjects[selectedIdx]
-			
+
 			// Load prompt details (execute with no arguments to get basic info)
 			ms.promptLoading = true
 			ms.promptLoadStart = time.Now()
 			ms.SetStatus(components.MCPOperationProgress("prompt", promptName, time.Duration(0)), StatusInfo)
-			
+
 			return ms, func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
-				
+
 				// Execute prompt with no arguments to get the details
 				result, err := ms.mcpService.GetPrompt(ctx, mcp.GetPromptRequest{
 					Name:      promptName,
@@ -1044,7 +1120,7 @@ func (ms *MainScreen) renderCurrentList() string {
 		var loadingMsg string
 		var operationType string
 		var startTime time.Time
-		
+
 		switch ms.activeTab {
 		case 0:
 			operationType = "list_tools"
@@ -1058,12 +1134,12 @@ func (ms *MainScreen) renderCurrentList() string {
 		case 3:
 			loadingMsg = components.OperationProgressMessage("Loading events", time.Duration(0), "")
 		}
-		
+
 		if operationType != "" {
 			elapsed := time.Since(startTime)
 			loadingMsg = components.MCPOperationProgress(operationType, "", elapsed)
 		}
-		
+
 		loadingStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("12")).
 			Align(lipgloss.Center).
@@ -1966,18 +2042,18 @@ func (ms *MainScreen) renderEventList() string {
 
 	for i := startIdx; i < endIdx; i++ {
 		event := ms.events[i]
-		
+
 		// Use enhanced detailed formatting
 		eventDisplay := event.DetailedString()
-		
+
 		// Apply selection styling
 		if i == selectedIdx {
 			eventDisplay = ms.selectedStyle.Render(eventDisplay)
 		}
-		
+
 		listItems = append(listItems, eventDisplay)
 	}
-	
+
 	return strings.Join(listItems, "\n")
 }
 
@@ -2059,13 +2135,13 @@ func max(a, b int) int {
 // renderResourceViewer renders the resource content viewer
 func (ms *MainScreen) renderResourceViewer() string {
 	var builder strings.Builder
-	
+
 	if ms.resourceLoading {
 		elapsed := time.Since(ms.resourceLoadStart)
 		builder.WriteString(components.MCPOperationProgress("resource", "content", elapsed))
 		return builder.String()
 	}
-	
+
 	if ms.selectedResource == nil || ms.resourceContent == nil {
 		builder.WriteString("No resource selected")
 		return builder.String()
@@ -2075,7 +2151,7 @@ func (ms *MainScreen) renderResourceViewer() string {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
 	builder.WriteString(headerStyle.Render(fmt.Sprintf("Resource: %s", ms.selectedResource.URI)))
 	builder.WriteString("\n\n")
-	
+
 	// Metadata
 	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	if ms.selectedResource.Name != "" && ms.selectedResource.Name != ms.selectedResource.URI {
@@ -2091,16 +2167,16 @@ func (ms *MainScreen) renderResourceViewer() string {
 		builder.WriteString("\n")
 	}
 	builder.WriteString("\n")
-	
+
 	// Content
 	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
-	
+
 	for i, content := range ms.resourceContent {
 		if i > 0 {
 			builder.WriteString("\n")
 		}
-		
+
 		// Content header
 		if i == 0 && len(ms.resourceContent) == 1 {
 			builder.WriteString(sectionStyle.Render("Content:"))
@@ -2108,7 +2184,7 @@ func (ms *MainScreen) renderResourceViewer() string {
 			builder.WriteString(sectionStyle.Render(fmt.Sprintf("Content %d:", i+1)))
 		}
 		builder.WriteString("\n")
-		
+
 		if content.Text != "" {
 			// Text content
 			lines := strings.Split(content.Text, "\n")
@@ -2127,25 +2203,25 @@ func (ms *MainScreen) renderResourceViewer() string {
 			builder.WriteString("\n")
 		}
 	}
-	
+
 	// Instructions
 	builder.WriteString("\n")
 	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 	builder.WriteString(instructionStyle.Render("Press 'q' or Escape to go back to list"))
-	
+
 	return builder.String()
 }
 
 // renderPromptViewer renders the prompt result viewer
 func (ms *MainScreen) renderPromptViewer() string {
 	var builder strings.Builder
-	
+
 	if ms.promptLoading {
 		elapsed := time.Since(ms.promptLoadStart)
 		builder.WriteString(components.MCPOperationProgress("prompt", "details", elapsed))
 		return builder.String()
 	}
-	
+
 	if ms.selectedPrompt == nil {
 		builder.WriteString("No prompt selected")
 		return builder.String()
@@ -2155,14 +2231,14 @@ func (ms *MainScreen) renderPromptViewer() string {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13"))
 	builder.WriteString(headerStyle.Render(fmt.Sprintf("Prompt: %s", ms.selectedPrompt.Name)))
 	builder.WriteString("\n\n")
-	
+
 	// Metadata
 	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	if ms.selectedPrompt.Description != "" {
 		builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.selectedPrompt.Description)))
 		builder.WriteString("\n")
 	}
-	
+
 	// Arguments
 	if ms.selectedPrompt.Arguments != nil && len(ms.selectedPrompt.Arguments) > 0 {
 		builder.WriteString(metaStyle.Render("Arguments:"))
@@ -2174,33 +2250,33 @@ func (ms *MainScreen) renderPromptViewer() string {
 		}
 	}
 	builder.WriteString("\n")
-	
+
 	// Result (if available)
 	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
 	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
-	
+
 	if ms.promptResult != nil {
 		builder.WriteString(sectionStyle.Render("Prompt Result:"))
 		builder.WriteString("\n")
-		
+
 		if ms.promptResult.Description != "" {
 			builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.promptResult.Description)))
 			builder.WriteString("\n")
 		}
-		
+
 		if len(ms.promptResult.Messages) > 0 {
 			builder.WriteString(sectionStyle.Render("Messages:"))
 			builder.WriteString("\n")
-			
+
 			for i, message := range ms.promptResult.Messages {
 				if i > 0 {
 					builder.WriteString("\n")
 				}
-				
+
 				roleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 				builder.WriteString(roleStyle.Render(fmt.Sprintf("Role: %s", message.Role)))
 				builder.WriteString("\n")
-				
+
 				if message.Content != nil {
 					for _, content := range message.Content {
 						if content.Text != "" {
@@ -2218,11 +2294,11 @@ func (ms *MainScreen) renderPromptViewer() string {
 			}
 		}
 	}
-	
+
 	// Instructions
 	builder.WriteString("\n")
 	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 	builder.WriteString(instructionStyle.Render("Press 'q' or Escape to go back to list"))
-	
+
 	return builder.String()
 }

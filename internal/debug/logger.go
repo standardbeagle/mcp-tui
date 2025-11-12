@@ -24,7 +24,12 @@ const (
 
 // String returns the string representation of the log level
 func (l LogLevel) String() string {
-	switch l {
+	return logLevelToString(l)
+}
+
+// logLevelToString converts log level to string
+func logLevelToString(level LogLevel) string {
+	switch level {
 	case LogLevelDebug:
 		return "DEBUG"
 	case LogLevelInfo:
@@ -223,49 +228,92 @@ func (l *logger) stop() {
 
 // writeLog writes a log entry to the output
 func (l *logger) writeLog(entry logEntry) {
-	// Build log entry
-	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("[%s] %s", entry.timestamp.Format("2006-01-02T15:04:05.000Z07:00"), entry.level.String()))
-
-	if entry.component != "" {
-		builder.WriteString(fmt.Sprintf(" [%s]", entry.component))
-	}
-
-	builder.WriteString(fmt.Sprintf(" %s", entry.msg))
-
-	// Add fields
-	for _, field := range entry.fields {
-		builder.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Value))
-	}
-
-	// Add caller info for errors and above
-	if entry.level >= LogLevelError {
-		// We need to skip through our call stack to find the actual caller
-		// Skip: writeLog -> goroutine -> channel send -> log -> Error/Fatal -> user code
-		for i := 3; i < 10; i++ {
-			if _, file, line, ok := runtime.Caller(i); ok {
-				// Skip internal logger files
-				if !strings.Contains(file, "debug/logger.go") {
-					// Get just the filename, not the full path
-					parts := strings.Split(file, "/")
-					filename := parts[len(parts)-1]
-					builder.WriteString(fmt.Sprintf(" caller=%s:%d", filename, line))
-					break
-				}
-			}
-		}
-	}
-
-	builder.WriteString("\n")
+	logLine := l.buildLogLine(entry)
 
 	// Write to output - this is now safe as only one goroutine writes
 	l.mu.RLock()
 	output := l.output
 	l.mu.RUnlock()
 
-	fmt.Fprint(output, builder.String())
+	fmt.Fprint(output, logLine)
 
 	// Also add to log buffer for TUI debug console
+	l.addToLogBuffer(entry)
+}
+
+// buildLogLine builds the formatted log line
+func (l *logger) buildLogLine(entry logEntry) string {
+	var builder strings.Builder
+
+	l.writeTimestamp(&builder, entry.timestamp)
+	l.writeLevel(&builder, entry.level)
+	l.writeComponent(&builder, entry.component)
+	l.writeMessage(&builder, entry.msg)
+	l.writeFields(&builder, entry.fields)
+	l.writeCallerInfo(&builder, entry.level)
+
+	builder.WriteString("\n")
+	return builder.String()
+}
+
+// writeTimestamp writes the timestamp to the builder
+func (l *logger) writeTimestamp(builder *strings.Builder, timestamp time.Time) {
+	builder.WriteString(fmt.Sprintf("[%s] ", timestamp.Format("2006-01-02T15:04:05.000Z07:00")))
+}
+
+// writeLevel writes the log level to the builder
+func (l *logger) writeLevel(builder *strings.Builder, level LogLevel) {
+	builder.WriteString(fmt.Sprintf("%s", logLevelToString(level)))
+}
+
+// writeComponent writes the component name to the builder
+func (l *logger) writeComponent(builder *strings.Builder, component string) {
+	if component != "" {
+		builder.WriteString(fmt.Sprintf(" [%s]", component))
+	}
+}
+
+// writeMessage writes the message to the builder
+func (l *logger) writeMessage(builder *strings.Builder, msg string) {
+	builder.WriteString(fmt.Sprintf(" %s", msg))
+}
+
+// writeFields writes the fields to the builder
+func (l *logger) writeFields(builder *strings.Builder, fields []Field) {
+	for _, field := range fields {
+		builder.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Value))
+	}
+}
+
+// writeCallerInfo writes caller information for error level and above
+func (l *logger) writeCallerInfo(builder *strings.Builder, level LogLevel) {
+	if level < LogLevelError {
+		return
+	}
+
+	// We need to skip through our call stack to find the actual caller
+	// Skip: writeLog -> goroutine -> channel send -> log -> Error/Fatal -> user code
+	for i := 3; i < 10; i++ {
+		if _, file, line, ok := runtime.Caller(i); ok {
+			// Skip internal logger files
+			if !strings.Contains(file, "debug/logger.go") {
+				// Get just the filename, not the full path
+				filename := extractFilename(file)
+				builder.WriteString(fmt.Sprintf(" caller=%s:%d", filename, line))
+				break
+			}
+		}
+	}
+}
+
+// extractFilename extracts the filename from a full path
+func extractFilename(filePath string) string {
+	parts := strings.Split(filePath, "/")
+	return parts[len(parts)-1]
+}
+
+// addToLogBuffer adds the log entry to the TUI log buffer
+func (l *logger) addToLogBuffer(entry logEntry) {
 	if logBuffer := GetLogBuffer(); logBuffer != nil {
 		logBuffer.Add(entry.level, entry.component, entry.msg, entry.fields)
 	}
@@ -360,19 +408,30 @@ func Component(name string) Logger {
 
 // LogLevelFromString converts a string to a log level
 func LogLevelFromString(s string) LogLevel {
-	switch strings.ToLower(s) {
+	level := parseLogLevel(strings.ToLower(s))
+	if level == -1 {
+		return LogLevelInfo
+	}
+	return level
+}
+
+// parseLogLevel parses a lowercase string to a log level
+func parseLogLevel(s string) LogLevel {
+	switch s {
 	case "debug":
 		return LogLevelDebug
 	case "info":
 		return LogLevelInfo
-	case "warn", "warning":
+	case "warn":
+		return LogLevelWarn
+	case "warning":
 		return LogLevelWarn
 	case "error":
 		return LogLevelError
 	case "fatal":
 		return LogLevelFatal
 	default:
-		return LogLevelInfo
+		return -1
 	}
 }
 
