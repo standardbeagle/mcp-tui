@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2025-01-12
+
+### Fixed
+- **Tool Screen**: Fixed `parseSchema()` type assertion bug - now handles both `[]interface{}` and `[]string` for required fields
+- **Navigation Tests**: Fixed test rot in navigation tests by properly populating `toolStrings` alongside `tools`
+- **CtrlL Tests**: Updated tests to expect `ToggleOverlayMsg` instead of deprecated `TransitionMsg`
+- **Debug Access**: Debug logs are now accessible even when disconnected (intentional behavior)
+
+### Added
+- **Result Scrolling**: Enhanced tool screen with result scrolling (Ctrl+Up/Down, PgUp/PgDn, Home/End)
+- **Context-Aware Indicators**: Scroll indicators now show position and available scroll directions
+- **GitHub Actions**: Added automated npm publish workflow on version tags
+
 ### Changed
 - **CLI Flags**: Renamed `--output` flag to `--format` with shorthand `-f` for consistency with common CLI tools
 - **Logging**: Changed default log level from `info` to `error` for cleaner output in automation scenarios
+- **Tool Screen Layout**: Added constants for layout calculations, improved code maintainability
 
 ### Added
 - **Porcelain Mode**: Added `--porcelain` flag to disable progress messages for machine-readable output
@@ -145,6 +159,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History Summary
 
+- **v0.6.1**: Bug fixes, result scrolling, and GitHub Actions for npm publishing
 - **v0.2.0**: Revolutionary UI improvements with file discovery and enhanced navigation
 - **v0.1.0**: Initial release with core MCP testing functionality
 
