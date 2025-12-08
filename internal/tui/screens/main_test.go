@@ -12,6 +12,20 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
+// setTestTools populates both tools and toolStrings for testing navigation
+func setTestTools(ms *MainScreen, tools []mcp.Tool) {
+	ms.tools = tools
+	ms.toolCount = len(tools)
+	ms.toolStrings = make([]string, len(tools))
+	for i, tool := range tools {
+		description := tool.Description
+		if description == "" {
+			description = "No description"
+		}
+		ms.toolStrings[i] = fmt.Sprintf("%s - %s", tool.Name, description)
+	}
+}
+
 func TestMainScreenNavigation(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -24,12 +38,11 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "vim_navigation_j_down",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []mcp.Tool{
+				setTestTools(ms, []mcp.Tool{
 					{Name: "tool1", Description: "Tool 1 description"},
 					{Name: "tool2", Description: "Tool 2 description"},
 					{Name: "tool3", Description: "Tool 3 description"},
-				}
-				ms.toolCount = 3
+				})
 				ms.selectedIndex[0] = 0
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}},
@@ -40,12 +53,11 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "vim_navigation_k_up",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []mcp.Tool{
+				setTestTools(ms, []mcp.Tool{
 					{Name: "tool1", Description: "Tool 1 description"},
 					{Name: "tool2", Description: "Tool 2 description"},
 					{Name: "tool3", Description: "Tool 3 description"},
-				}
-				ms.toolCount = 3
+				})
 				ms.selectedIndex[0] = 2
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}},
@@ -56,14 +68,13 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "number_key_selection",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []mcp.Tool{
+				setTestTools(ms, []mcp.Tool{
 					{Name: "tool1", Description: "Tool 1 description"},
 					{Name: "tool2", Description: "Tool 2 description"},
 					{Name: "tool3", Description: "Tool 3 description"},
 					{Name: "tool4", Description: "Tool 4 description"},
 					{Name: "tool5", Description: "Tool 5 description"},
-				}
-				ms.toolCount = 5
+				})
 				ms.selectedIndex[0] = 0
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}},
@@ -74,11 +85,10 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "number_key_out_of_bounds",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []mcp.Tool{
+				setTestTools(ms, []mcp.Tool{
 					{Name: "tool1", Description: "Tool 1 description"},
 					{Name: "tool2", Description: "Tool 2 description"},
-				}
-				ms.toolCount = 2
+				})
 				ms.selectedIndex[0] = 0
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}},
@@ -97,8 +107,7 @@ func TestMainScreenNavigation(t *testing.T) {
 						Description: fmt.Sprintf("Description for tool %d", i+1),
 					}
 				}
-				ms.tools = tools
-				ms.toolCount = 20
+				setTestTools(ms, tools)
 				ms.selectedIndex[0] = 0
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyPgDown},
@@ -117,8 +126,7 @@ func TestMainScreenNavigation(t *testing.T) {
 						Description: fmt.Sprintf("Description for tool %d", i+1),
 					}
 				}
-				ms.tools = tools
-				ms.toolCount = 20
+				setTestTools(ms, tools)
 				ms.selectedIndex[0] = 15
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyPgUp},
@@ -129,14 +137,13 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "home_key",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []mcp.Tool{
+				setTestTools(ms, []mcp.Tool{
 					{Name: "tool1", Description: "Tool 1 description"},
 					{Name: "tool2", Description: "Tool 2 description"},
 					{Name: "tool3", Description: "Tool 3 description"},
 					{Name: "tool4", Description: "Tool 4 description"},
 					{Name: "tool5", Description: "Tool 5 description"},
-				}
-				ms.toolCount = 5
+				})
 				ms.selectedIndex[0] = 3
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyHome},
@@ -147,14 +154,13 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "end_key",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []mcp.Tool{
+				setTestTools(ms, []mcp.Tool{
 					{Name: "tool1", Description: "Tool 1 description"},
 					{Name: "tool2", Description: "Tool 2 description"},
 					{Name: "tool3", Description: "Tool 3 description"},
 					{Name: "tool4", Description: "Tool 4 description"},
 					{Name: "tool5", Description: "Tool 5 description"},
-				}
-				ms.toolCount = 5
+				})
 				ms.selectedIndex[0] = 1
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyEnd},
@@ -165,8 +171,7 @@ func TestMainScreenNavigation(t *testing.T) {
 		{
 			name: "navigation_with_no_items",
 			setupFunc: func(ms *MainScreen) {
-				ms.tools = []mcp.Tool{}
-				ms.toolCount = 0
+				setTestTools(ms, []mcp.Tool{})
 			},
 			keyMsg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}},
 			expectedIndex: 0,
@@ -245,12 +250,11 @@ func TestMainScreenBoundaryConditions(t *testing.T) {
 	}
 	ms := NewMainScreen(cfg, connConfig)
 	ms.connected = true
-	ms.tools = []mcp.Tool{
+	setTestTools(ms, []mcp.Tool{
 		{Name: "tool1", Description: "Tool 1 description"},
 		{Name: "tool2", Description: "Tool 2 description"},
 		{Name: "tool3", Description: "Tool 3 description"},
-	}
-	ms.toolCount = 3
+	})
 
 	t.Run("navigation_at_top_boundary", func(t *testing.T) {
 		ms.selectedIndex[0] = 0
@@ -283,8 +287,7 @@ func TestMainScreenBoundaryConditions(t *testing.T) {
 				Description: fmt.Sprintf("Description for tool %d", i+1),
 			}
 		}
-		ms.tools = tools
-		ms.toolCount = 15
+		setTestTools(ms, tools)
 		ms.selectedIndex[0] = 10
 
 		// Page down should go to last item (14)

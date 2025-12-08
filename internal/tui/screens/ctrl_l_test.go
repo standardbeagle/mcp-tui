@@ -30,13 +30,13 @@ func TestCtrlLFunctionality(t *testing.T) {
 		assert.IsType(t, &MainScreen{}, model)
 		assert.NotNil(t, cmd, "Should return a command")
 
-		// Execute the command to get the transition message
+		// Execute the command to get the overlay message
 		msg := cmd()
-		transitionMsg, ok := msg.(TransitionMsg)
-		require.True(t, ok, "Should return a TransitionMsg")
+		overlayMsg, ok := msg.(ToggleOverlayMsg)
+		require.True(t, ok, "Should return a ToggleOverlayMsg")
 
 		// Check that it transitions to DebugScreen
-		assert.IsType(t, &DebugScreen{}, transitionMsg.Transition.Screen)
+		assert.IsType(t, &DebugScreen{}, overlayMsg.Screen)
 	})
 
 	t.Run("ToolScreen_CtrlL_TransitionsToDebugScreen", func(t *testing.T) {
@@ -51,13 +51,13 @@ func TestCtrlLFunctionality(t *testing.T) {
 		assert.IsType(t, &ToolScreen{}, model)
 		assert.NotNil(t, cmd, "Should return a command")
 
-		// Execute the command to get the transition message
+		// Execute the command to get the overlay message
 		msg := cmd()
-		transitionMsg, ok := msg.(TransitionMsg)
-		require.True(t, ok, "Should return a TransitionMsg")
+		overlayMsg, ok := msg.(ToggleOverlayMsg)
+		require.True(t, ok, "Should return a ToggleOverlayMsg")
 
 		// Check that it transitions to DebugScreen
-		assert.IsType(t, &DebugScreen{}, transitionMsg.Transition.Screen)
+		assert.IsType(t, &DebugScreen{}, overlayMsg.Screen)
 	})
 
 	t.Run("ConnectionScreen_CtrlL_TransitionsToDebugScreen", func(t *testing.T) {
@@ -72,13 +72,13 @@ func TestCtrlLFunctionality(t *testing.T) {
 		assert.IsType(t, &ConnectionScreen{}, model)
 		assert.NotNil(t, cmd, "Should return a command")
 
-		// Execute the command to get the transition message
+		// Execute the command to get the overlay message
 		msg := cmd()
-		transitionMsg, ok := msg.(TransitionMsg)
-		require.True(t, ok, "Should return a TransitionMsg")
+		overlayMsg, ok := msg.(ToggleOverlayMsg)
+		require.True(t, ok, "Should return a ToggleOverlayMsg")
 
 		// Check that it transitions to DebugScreen
-		assert.IsType(t, &DebugScreen{}, transitionMsg.Transition.Screen)
+		assert.IsType(t, &DebugScreen{}, overlayMsg.Screen)
 	})
 
 	t.Run("DebugScreen_BackButton_ReturnsToOriginalScreen", func(t *testing.T) {
@@ -102,7 +102,7 @@ func TestCtrlLFunctionality(t *testing.T) {
 		}
 	})
 
-	t.Run("MainScreen_NotConnected_CtrlL_NoTransition", func(t *testing.T) {
+	t.Run("MainScreen_NotConnected_CtrlL_StillShowsDebug", func(t *testing.T) {
 		// Create main screen in disconnected state
 		cfg := &config.Config{}
 		connConfig := &config.ConnectionConfig{
@@ -113,12 +113,20 @@ func TestCtrlLFunctionality(t *testing.T) {
 		ms := NewMainScreen(cfg, connConfig)
 		ms.connected = false // Not connected
 
-		// Press Ctrl+L
+		// Press Ctrl+L - should still show debug logs even when disconnected
 		model, cmd := ms.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
 
-		// Should still be main screen with no command
+		// Should still be main screen but with a command to show debug
 		assert.IsType(t, &MainScreen{}, model)
-		assert.Nil(t, cmd, "Should not return a command when not connected")
+		assert.NotNil(t, cmd, "Should return a command even when not connected")
+
+		// Execute the command to get the overlay message
+		msg := cmd()
+		overlayMsg, ok := msg.(ToggleOverlayMsg)
+		require.True(t, ok, "Should return a ToggleOverlayMsg")
+
+		// Check that it shows DebugScreen
+		assert.IsType(t, &DebugScreen{}, overlayMsg.Screen)
 	})
 
 	t.Run("ToolScreen_WhileExecuting_CtrlL_NoTransition", func(t *testing.T) {

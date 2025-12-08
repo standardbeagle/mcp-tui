@@ -22,6 +22,28 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
+// Layout constants for result scrolling
+const (
+	// resultReservedHeightBase is the base height reserved for UI elements
+	// (title, description, buttons, execution header, help, status)
+	resultReservedHeightBase = 15
+
+	// resultHeightPerField is the height consumed by each form field
+	resultHeightPerField = 3
+
+	// resultMinHeight is the minimum height for the result display area
+	resultMinHeight = 5
+
+	// defaultTermWidth is the fallback terminal width if not detected
+	defaultTermWidth = 80
+
+	// defaultTermHeight is the fallback terminal height if not detected
+	defaultTermHeight = 30
+
+	// resultWidthMargin is the margin subtracted from terminal width for result display
+	resultWidthMargin = 6
+)
+
 // ToolScreen allows interactive tool execution
 type ToolScreen struct {
 	*BaseScreen
@@ -51,6 +73,11 @@ type ToolScreen struct {
 	viewingResult bool          // Whether we're in result viewing mode
 	resultFields  []resultField // Parsed JSON fields
 	resultCursor  int           // Current field in result view
+
+	// Result scrolling
+	resultScroll    int      // Scroll offset for result display
+	resultLineCount int      // Total lines in result
+	resultLines     []string // Cached lines from result JSON
 
 	// Styles
 	titleStyle          lipgloss.Style
@@ -97,6 +124,21 @@ func NewToolScreen(tool mcp.Tool, service mcp.Service) *ToolScreen {
 	ts.parseSchema()
 
 	return ts
+}
+
+// getResultDisplayHeight calculates the available height for result display
+func (ts *ToolScreen) getResultDisplayHeight() int {
+	termHeight := ts.Height()
+	if termHeight == 0 {
+		termHeight = defaultTermHeight
+	}
+
+	reservedHeight := resultReservedHeightBase + len(ts.fields)*resultHeightPerField
+	availableHeight := termHeight - reservedHeight
+	if availableHeight < resultMinHeight {
+		availableHeight = resultMinHeight
+	}
+	return availableHeight
 }
 
 // copyToClipboard copies text to clipboard using multiple methods
@@ -253,8 +295,7 @@ func (ts *ToolScreen) initStyles() {
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("8")).
 		Padding(1).
-		Width(80).
-		Height(15)
+		Width(80)
 
 	ts.errorStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("9")).
@@ -279,11 +320,17 @@ func (ts *ToolScreen) parseSchema() {
 			// Check required fields
 			requiredMap := make(map[string]bool)
 			if requiredInterface, ok := ts.tool.InputSchema["required"]; ok {
-				if required, ok := requiredInterface.([]interface{}); ok {
+				// Handle both []interface{} (from JSON unmarshal) and []string (from tests/direct creation)
+				switch required := requiredInterface.(type) {
+				case []interface{}:
 					for _, req := range required {
 						if reqStr, ok := req.(string); ok {
 							requiredMap[reqStr] = true
 						}
+					}
+				case []string:
+					for _, reqStr := range required {
+						requiredMap[reqStr] = true
 					}
 				}
 			}
@@ -362,6 +409,11 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ts.SetError(msg.Error)
 		} else {
 			ts.result = msg.Result
+			// Reset scroll state when new result arrives
+			ts.resultScroll = 0
+			ts.resultLines = nil
+			ts.resultLineCount = 0
+
 			// Pretty print JSON result
 			if len(msg.Result.Content) > 0 {
 				// For now, just handle text content
@@ -392,6 +444,10 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				ts.resultJSON = resultText.String()
+
+				// Cache lines for scrolling (compute once, use in View)
+				ts.resultLines = strings.Split(ts.resultJSON, "\n")
+				ts.resultLineCount = len(ts.resultLines)
 
 				// Parse result fields for viewing
 				ts.parseResultFields()
@@ -464,6 +520,57 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ts.validateField(ts.cursor)
 
 			return ts, cmd
+		}
+	}
+
+	// Special handling for result scrolling (when not in viewing mode)
+	if ts.result != nil && !ts.viewingResult {
+		availableHeight := ts.getResultDisplayHeight()
+
+		switch msg.String() {
+		case "ctrl+up":
+			// Scroll result up
+			if ts.resultScroll > 0 {
+				ts.resultScroll--
+			}
+			return ts, nil
+
+		case "ctrl+down":
+			// Scroll result down
+			maxScroll := max(0, ts.resultLineCount-availableHeight)
+			if ts.resultScroll < maxScroll {
+				ts.resultScroll++
+			}
+			return ts, nil
+
+		case "pgup":
+			// Page up in result
+			pageSize := max(1, availableHeight-2)
+			ts.resultScroll -= pageSize
+			if ts.resultScroll < 0 {
+				ts.resultScroll = 0
+			}
+			return ts, nil
+
+		case "pgdown":
+			// Page down in result
+			pageSize := max(1, availableHeight-2)
+			maxScroll := max(0, ts.resultLineCount-availableHeight)
+			ts.resultScroll += pageSize
+			if ts.resultScroll > maxScroll {
+				ts.resultScroll = maxScroll
+			}
+			return ts, nil
+
+		case "home":
+			// Jump to top of result
+			ts.resultScroll = 0
+			return ts, nil
+
+		case "end":
+			// Jump to bottom of result
+			ts.resultScroll = max(0, ts.resultLineCount-availableHeight)
+			return ts, nil
 		}
 	}
 
@@ -1020,16 +1127,79 @@ func (ts *ToolScreen) View() string {
 			builder.WriteString("\n")
 			builder.WriteString(viewHelpStyle.Render("↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
 		} else {
-			// Normal result display
-			builder.WriteString(ts.resultStyle.Render(ts.resultJSON))
+			// Normal result display with scrolling
+			// Get terminal dimensions with defaults
+			termWidth := ts.Width()
+			if termWidth == 0 {
+				termWidth = defaultTermWidth
+			}
 
-			// Show hint about viewing mode if we have parseable fields
+			// Use cached lines (computed in Update when result arrives)
+			lines := ts.resultLines
+			if lines == nil {
+				lines = []string{}
+			}
+
+			// Get available height for display
+			availableHeight := ts.getResultDisplayHeight()
+
+			// Calculate visible range based on scroll position
+			startIdx := ts.resultScroll
+			endIdx := startIdx + availableHeight
+
+			// Ensure we don't exceed bounds
+			if startIdx >= len(lines) {
+				startIdx = max(0, len(lines)-1)
+			}
+			if endIdx > len(lines) {
+				endIdx = len(lines)
+			}
+
+			// Extract visible lines
+			visibleLines := lines[startIdx:endIdx]
+
+			// Create dynamic result style with calculated dimensions
+			resultStyle := ts.resultStyle.
+				Width(termWidth - resultWidthMargin).
+				Height(availableHeight)
+
+			// Render the visible portion
+			resultContent := strings.Join(visibleLines, "\n")
+			builder.WriteString(resultStyle.Render(resultContent))
+
+			// Add scroll indicators if needed (with context-aware arrows)
+			if len(lines) > availableHeight {
+				builder.WriteString("\n")
+
+				scrollStyle := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("243")).
+					Italic(true)
+
+				canScrollUp := startIdx > 0
+				canScrollDown := endIdx < len(lines)
+
+				var indicator string
+				switch {
+				case canScrollUp && canScrollDown:
+					indicator = fmt.Sprintf("↑ Ctrl+Up/Down: Scroll (line %d-%d/%d) ↓", startIdx+1, endIdx, len(lines))
+				case canScrollUp:
+					indicator = fmt.Sprintf("↑ Ctrl+Up: Scroll up (line %d-%d/%d)", startIdx+1, endIdx, len(lines))
+				case canScrollDown:
+					indicator = fmt.Sprintf("Ctrl+Down: Scroll down (line %d-%d/%d) ↓", startIdx+1, endIdx, len(lines))
+				default:
+					indicator = fmt.Sprintf("Line %d-%d/%d", startIdx+1, endIdx, len(lines))
+				}
+
+				builder.WriteString(scrollStyle.Render(indicator))
+			}
+
+			// Show hint about viewing mode and scrolling if we have parseable fields
 			if len(ts.resultFields) > 1 {
+				builder.WriteString("\n")
 				hintStyle := lipgloss.NewStyle().
 					Foreground(lipgloss.Color("243")).
 					Italic(true)
-				builder.WriteString("\n")
-				builder.WriteString(hintStyle.Render("Press 'v' to view individual fields"))
+				builder.WriteString(hintStyle.Render("Press 'v' to view fields • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll"))
 			}
 		}
 		builder.WriteString("\n")
@@ -1080,9 +1250,9 @@ func (ts *ToolScreen) View() string {
 		helpText = ""
 	} else if ts.result != nil {
 		if len(ts.resultFields) > 1 {
-			helpText = "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+			helpText = "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		} else {
-			helpText = "c: CLI command • Ctrl+C: Copy result • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+			helpText = "c: CLI command • Ctrl+C: Copy result • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		}
 	} else if ts.cursor < len(ts.fields) {
 		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+L: Debug Log • b: Back • Esc: Back"
