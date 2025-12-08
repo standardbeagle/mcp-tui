@@ -1,0 +1,34 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.standardbeagle/mcp-tui",
+  "description": "Terminal UI and CLI test client for Model Context Protocol (MCP) servers. Provides interactive testing, debugging, and automation for MCP tools, resources, and prompts.",
+  "version": "0.6.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/standardbeagle/mcp-tui.git"
+  },
+  "homepage": "https://github.com/standardbeagle/mcp-tui",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "standardbeagle"
+    }
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tui",
+    "terminal",
+    "cli",
+    "testing",
+    "debugging",
+    "development"
+  ],
+  "packages": [
+    {
+      "registry_type": "npm",
+      "identifier": "@standardbeagle/mcp-tui",
+      "version": "0.6.1"
+    }
+  ]
+}
