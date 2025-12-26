@@ -111,7 +111,7 @@ mcp-tui  # Connects automatically!
 
 **🤖 Building Automation? Use CLI Mode:**
 ```bash
-# List all available tools via STDIO (combined command input) 
+# List all available tools via STDIO (combined command input)
 mcp-tui "npx -y @modelcontextprotocol/server-everything stdio" tool list
 
 # Or via SSE
@@ -121,9 +121,20 @@ mcp-tui --url http://localhost:8000/sse tool list
 mcp-tui --url http://localhost:8000/sse tool call echo message="Hello World"
 
 # Get JSON output for your scripts
-mcp-tui --json --url http://localhost:8000/sse tool list
+mcp-tui --url http://localhost:8000/sse tool list -f json
 ```
 *Why this works: Combined command input, perfect for CI/CD, scripts, and automated testing workflows*
+
+**🧪 Writing Tests? Use Porcelain Mode:**
+```bash
+# Porcelain mode gives clean output for test assertions
+mcp-tui --porcelain "npx -y @modelcontextprotocol/server-everything stdio" tool call echo message="test"
+
+# Combine with JSON for predictable parsing
+result=$(mcp-tui --porcelain -f json tool call weather location="NYC")
+temp=$(echo "$result" | jq -r '.temp')
+```
+*Why this works: No progress messages, only result data on stdout, detailed errors on stderr*
 
 **🌐 Have a Web Service? Connect via HTTP:**
 ```bash
@@ -312,6 +323,47 @@ make test-servers
 ./mcp-tui --cmd node --args "test-servers/crash-server.js" tool list
 ```
 
+### Testing with Porcelain Mode
+
+For automated testing and CI/CD pipelines, use `--porcelain` mode to get clean, parseable output:
+
+```bash
+# Test that a tool returns expected result
+result=$(mcp-tui --porcelain "npx -y @modelcontextprotocol/server-everything stdio" tool call echo message="test")
+if [[ "$result" == *"test"* ]]; then
+    echo "PASS: echo tool returned expected message"
+else
+    echo "FAIL: unexpected result: $result"
+    exit 1
+fi
+
+# Parse JSON output for assertions
+result=$(mcp-tui --porcelain -f json "npx -y @modelcontextprotocol/server-everything stdio" tool call weather location="NYC")
+temp=$(echo "$result" | jq -r '.temp')
+if [[ "$temp" =~ ^[0-9]+ ]]; then
+    echo "PASS: temperature is numeric: $temp"
+else
+    echo "FAIL: invalid temperature: $temp"
+    exit 1
+fi
+
+# Count tools in CI/CD
+tool_count=$(mcp-tui --porcelain -f json tool list | jq '.count')
+if [ "$tool_count" -gt 0 ]; then
+    echo "PASS: server exposes $tool_count tools"
+else
+    echo "FAIL: no tools available"
+    exit 1
+fi
+```
+
+**Porcelain Mode Benefits:**
+- ✅ No progress messages or timestamps
+- ✅ Predictable output for assertions
+- ✅ Clean stdout with only result data
+- ✅ Detailed errors on stderr for debugging
+- ✅ Perfect for CI/CD pipelines and automated tests
+
 ## 📋 Commands Reference
 
 ### Command Line Arguments
@@ -352,16 +404,15 @@ mcp-tui prompt get <name> [args...]    # Get a prompt with arguments
 
 ### Global Options
 ```bash
---url string         # URL for SSE servers (primary method)
---type string        # Transport type (currently: sse)
---timeout duration   # Connection timeout (default 30s)
+--url string         # URL for SSE/HTTP servers
+--cmd string         # Command to run MCP server (STDIO mode)
+--args strings       # Arguments for server command
+--transport string   # Transport type (stdio, sse, http, streamable-http)
+--timeout duration   # Connection timeout (default 10s)
+--format string      # Output format: text or json (short: -f) (default "text")
+--porcelain          # Machine-readable output (no progress messages)
 --debug             # Enable debug mode with detailed logging
 --log-level string  # Log level (debug, info, warn, error)
---json              # Output results in JSON format
-
-# Legacy options (STDIO support coming back soon):
---cmd string         # Command to run MCP server (not yet implemented)
---args strings       # Arguments for server command (not yet implemented)
 ```
 
 ## 🔍 Error Handling & Debugging
