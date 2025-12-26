@@ -186,48 +186,39 @@ func (ts *ToolScreen) generateCLICommand() string {
 	var builder strings.Builder
 
 	// Start with the base command
-	builder.WriteString("./mcp-tui")
+	builder.WriteString("mcp-tui")
+
+	// Add porcelain flag for clean output (suitable for scripting)
+	builder.WriteString(" --porcelain")
 
 	// Get connection configuration from service
-	config := ts.mcpService.GetConfiguration()
-
-	// Extract connection config from nested structure
-	var connectionConfig map[string]interface{}
-	if conn, ok := config["connection"].(map[string]interface{}); ok {
-		connectionConfig = conn
+	connConfig := ts.mcpService.GetConnectionConfig()
+	if connConfig == nil {
+		// Fallback if no connection config available
+		return "# Connection config not available - cannot generate CLI command"
 	}
 
 	// Add transport type
-	if transportType, ok := connectionConfig["type"].(string); ok && transportType != "" {
-		builder.WriteString(fmt.Sprintf(" --transport %s", transportType))
-	} else {
-		builder.WriteString(" --transport stdio") // Default assumption
-	}
+	builder.WriteString(fmt.Sprintf(" --transport %s", connConfig.Type))
 
 	// Add connection-specific parameters based on transport type
-	if command, ok := connectionConfig["command"].(string); ok && command != "" {
-		builder.WriteString(fmt.Sprintf(" --cmd \"%s\"", command))
+	if connConfig.Command != "" {
+		builder.WriteString(fmt.Sprintf(" --cmd \"%s\"", connConfig.Command))
 	}
 
-	if argsInterface, ok := connectionConfig["args"]; ok {
-		// Handle args as interface{} which could be []interface{} or []string
-		if argsList, ok := argsInterface.([]interface{}); ok && len(argsList) > 0 {
-			var stringArgs []string
-			for _, arg := range argsList {
-				if argStr, ok := arg.(string); ok {
-					stringArgs = append(stringArgs, argStr)
-				}
-			}
-			if len(stringArgs) > 0 {
-				builder.WriteString(fmt.Sprintf(" --args \"%s\"", strings.Join(stringArgs, ",")))
-			}
-		} else if args, ok := argsInterface.([]string); ok && len(args) > 0 {
-			builder.WriteString(fmt.Sprintf(" --args \"%s\"", strings.Join(args, ",")))
+	if len(connConfig.Args) > 0 {
+		// Join args with commas as expected by CLI
+		escapedArgs := make([]string, 0, len(connConfig.Args))
+		for _, arg := range connConfig.Args {
+			// Escape any quotes in arguments
+			escaped := strings.ReplaceAll(arg, "\"", "\\\"")
+			escapedArgs = append(escapedArgs, escaped)
 		}
+		builder.WriteString(fmt.Sprintf(" --args \"%s\"", strings.Join(escapedArgs, ",")))
 	}
 
-	if url, ok := connectionConfig["url"].(string); ok && url != "" {
-		builder.WriteString(fmt.Sprintf(" --url \"%s\"", url))
+	if connConfig.URL != "" {
+		builder.WriteString(fmt.Sprintf(" --url \"%s\"", connConfig.URL))
 	}
 
 	// Add the tool command

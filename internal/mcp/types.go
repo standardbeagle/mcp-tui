@@ -52,6 +52,7 @@ type Service interface {
 	// Connection state and diagnostics
 	GetConnectionDisplayMessage() string
 	GetServerDiagnosticMessage() string
+	GetConnectionConfig() *config.ConnectionConfig
 }
 
 // Tool represents an MCP tool

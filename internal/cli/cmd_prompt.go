@@ -68,8 +68,9 @@ func (pc *PromptCommand) CreateCommand() *cobra.Command {
 		Long:  "List, describe, and execute prompts provided by the MCP server",
 	}
 
-	// Add output format flag to all subcommands
-	cmd.PersistentFlags().StringP("output", "o", "text", "Output format (text, json)")
+	// Add format flag to all subcommands (consistent with tool/resource commands)
+	cmd.PersistentFlags().StringP("format", "f", "text", "Output format (text, json)")
+	cmd.PersistentFlags().Bool("porcelain", false, "Machine-readable output (disables progress messages)")
 
 	// Add subcommands
 	cmd.AddCommand(pc.createListCommand())
@@ -138,21 +139,24 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 	ctx, cancel := pc.WithContext()
 	defer cancel()
 
-	// Only show progress messages for text output
-	if pc.GetOutputFormat() == OutputFormatText {
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
+	// Only show progress messages for text output and not porcelain mode
+	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "📋 Fetching available prompts...\n")
 	}
 
 	service := pc.GetService()
 	prompts, err := service.ListPrompts(ctx)
 	if err != nil {
-		if pc.GetOutputFormat() == OutputFormatText {
+		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve prompts\n")
 		}
 		return pc.HandleError(err, "list prompts")
 	}
 
-	if pc.GetOutputFormat() == OutputFormatText {
+	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Prompts retrieved successfully\n\n")
 	}
 
@@ -243,8 +247,11 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 	ctx, cancel := pc.WithContext()
 	defer cancel()
 
-	// Only show progress messages for text output
-	if pc.GetOutputFormat() == OutputFormatText {
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
+	// Only show progress messages for text output and not porcelain mode
+	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "📋 Getting prompt '%s'...\n", promptName)
 	}
 
@@ -253,7 +260,7 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 	// First get the prompt details from the list
 	prompts, err := service.ListPrompts(ctx)
 	if err != nil {
-		if pc.GetOutputFormat() == OutputFormatText {
+		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve prompts\n")
 		}
 		return pc.HandleError(err, "list prompts")
@@ -268,13 +275,13 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 	}
 
 	if prompt == nil {
-		if pc.GetOutputFormat() == OutputFormatText {
+		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Prompt '%s' not found\n", promptName)
 		}
 		return fmt.Errorf("prompt '%s' not found", promptName)
 	}
 
-	if pc.GetOutputFormat() == OutputFormatText {
+	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Prompt retrieved successfully\n\n")
 	}
 
@@ -364,8 +371,11 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 	ctx, cancel := pc.WithContext()
 	defer cancel()
 
-	// Only show progress messages for text output
-	if pc.GetOutputFormat() == OutputFormatText {
+	// Check if porcelain mode is enabled
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+
+	// Only show progress messages for text output and not porcelain mode
+	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🚀 Executing prompt '%s'...\n", promptName)
 	}
 
@@ -383,13 +393,13 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 		Arguments: convertedArgs,
 	})
 	if err != nil {
-		if pc.GetOutputFormat() == OutputFormatText {
+		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to execute prompt\n")
 		}
 		return pc.HandleError(err, "execute prompt")
 	}
 
-	if pc.GetOutputFormat() == OutputFormatText {
+	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Prompt executed successfully\n\n")
 	}
 

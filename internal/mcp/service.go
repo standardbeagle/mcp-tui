@@ -83,7 +83,8 @@ type service struct {
 	transportFactory transports.TransportFactory
 	sessionManager   *session.Manager
 	errorHandler     *errors.ErrorHandler
-	config           *UnifiedConfig // Add unified configuration
+	config           *UnifiedConfig              // Add unified configuration
+	connectionConfig *configPkg.ConnectionConfig // Store connection config for CLI generation
 }
 
 // getNextRequestID returns the next request ID
@@ -149,6 +150,9 @@ func NewServiceWithConfig(config *UnifiedConfig) Service {
 func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Store connection config for CLI command generation
+	s.connectionConfig = config
 
 	if err := s.initializeConnection(); err != nil {
 		return err
@@ -968,4 +972,11 @@ func (s *service) GetConnectionDisplayMessage() string {
 // GetServerDiagnosticMessage returns diagnostic guidance for server-side issues
 func (s *service) GetServerDiagnosticMessage() string {
 	return GetServerDiagnosticMessage()
+}
+
+// GetConnectionConfig returns the connection configuration used to connect
+func (s *service) GetConnectionConfig() *configPkg.ConnectionConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.connectionConfig
 }
