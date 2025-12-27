@@ -1,6 +1,6 @@
 {
   "name": "@standardbeagle/mcp-tui",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "A comprehensive Terminal User Interface (TUI) and Command Line Interface (CLI) for Model Context Protocol (MCP) servers with full tool, prompt, and resource management",
   "main": "index.js",
   "bin": {
