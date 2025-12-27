@@ -203,15 +203,23 @@ func (ts *ToolScreen) generateCLICommand() string {
 
 	// Add connection-specific parameters based on transport type
 	if connConfig.Command != "" {
-		builder.WriteString(fmt.Sprintf(" --cmd \"%s\"", connConfig.Command))
+		// Sanitize: remove newlines and trim whitespace
+		cmd := strings.ReplaceAll(connConfig.Command, "\n", "")
+		cmd = strings.ReplaceAll(cmd, "\r", "")
+		cmd = strings.TrimSpace(cmd)
+		builder.WriteString(fmt.Sprintf(" --cmd \"%s\"", cmd))
 	}
 
 	if len(connConfig.Args) > 0 {
 		// Join args with commas as expected by CLI
 		escapedArgs := make([]string, 0, len(connConfig.Args))
 		for _, arg := range connConfig.Args {
+			// Sanitize: remove newlines and trim whitespace
+			cleanArg := strings.ReplaceAll(arg, "\n", "")
+			cleanArg = strings.ReplaceAll(cleanArg, "\r", "")
+			cleanArg = strings.TrimSpace(cleanArg)
 			// Escape any quotes in arguments
-			escaped := strings.ReplaceAll(arg, "\"", "\\\"")
+			escaped := strings.ReplaceAll(cleanArg, "\"", "\\\"")
 			escapedArgs = append(escapedArgs, escaped)
 		}
 		builder.WriteString(fmt.Sprintf(" --args \"%s\"", strings.Join(escapedArgs, ",")))
@@ -229,6 +237,11 @@ func (ts *ToolScreen) generateCLICommand() string {
 	for _, field := range ts.fields {
 		value := field.input.Value()
 		if value != "" {
+			// Sanitize: remove newlines from parameter values
+			value = strings.ReplaceAll(value, "\n", " ")
+			value = strings.ReplaceAll(value, "\r", "")
+			value = strings.TrimSpace(value)
+
 			// Format the value based on field type
 			switch field.fieldType {
 			case "number", "integer", "boolean":
@@ -1207,12 +1220,13 @@ func (ts *ToolScreen) View() string {
 		builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command:"))
 		builder.WriteString("\n")
 
-		// CLI command box
+		// CLI command box - no fixed width to prevent wrapping
+		// Let the content determine the natural width
 		cliCommandStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("6")). // Cyan border
 			Padding(1).
-			Width(80).
+			Width(0). // No wrapping - let content define width naturally
 			Foreground(lipgloss.Color("15")) // White text
 
 		builder.WriteString(cliCommandStyle.Render(ts.cliCommand))
