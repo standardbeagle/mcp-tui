@@ -78,12 +78,14 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 				Command: "echo",
 				Args:    []string{"test output"},
 			},
-			// This will fail at MCP level but should pass pre-flight validation
+			// This will fail at MCP protocol initialization level (not a real MCP server)
+			// but should pass pre-flight validation (command executes successfully)
 			expectedErrorContains: []string{
-				"Validation error",
+				"MCP initialization failed",
 			},
 			expectedErrorNotContains: []string{
 				"server startup failed",
+				"Validation error", // Should NOT be misclassified as validation error
 			},
 			expectConnection: false,
 		},

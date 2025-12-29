@@ -239,8 +239,43 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryServerStartup, SeverityError
 	}
 
-	// Protocol-specific errors
-	if strings.Contains(errStr, "protocol") || strings.Contains(errStr, "handshake") {
+	// Protocol-specific errors - check for initialization/registration failures FIRST
+	// These must be checked before generic "invalid" check to avoid misclassification
+
+	// SDK initialization errors (pattern: `calling "initialize": ...`)
+	if strings.Contains(errStr, `calling "initialize"`) ||
+		strings.Contains(errStr, `calling "initialized"`) ||
+		strings.Contains(errStr, "initialize") ||
+		strings.Contains(errStr, "initialized") ||
+		strings.Contains(errStr, "registration") ||
+		strings.Contains(errStr, "handshake") {
+		return CategoryProtocol, SeverityError
+	}
+
+	// EOF during protocol initialization indicates server exited unexpectedly
+	if strings.Contains(errStr, "eof") && strings.Contains(errStr, "protocol") {
+		return CategoryProtocol, SeverityError
+	}
+
+	// Client is closing during initialization
+	if strings.Contains(errStr, "client is closing") {
+		return CategoryProtocol, SeverityError
+	}
+
+	// Connection closed during MCP operations
+	if strings.Contains(errStr, "connection closed") &&
+		(strings.Contains(errStr, "calling") || strings.Contains(errStr, "mcp")) {
+		return CategoryProtocol, SeverityError
+	}
+
+	// Unsupported protocol version
+	if strings.Contains(errStr, "protocol version") ||
+		strings.Contains(errStr, "unsupported") && strings.Contains(errStr, "version") {
+		return CategoryProtocol, SeverityError
+	}
+
+	// Generic protocol errors
+	if strings.Contains(errStr, "protocol") {
 		return CategoryProtocol, SeverityError
 	}
 
@@ -259,8 +294,15 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryServerCapability, SeverityWarning
 	}
 
-	// Validation errors
+	// Validation errors (client-side parameter validation)
+	// This check comes AFTER protocol errors to avoid catching server response validation issues
 	if strings.Contains(errStr, "invalid") || strings.Contains(errStr, "validation") {
+		// Double-check this isn't a protocol/server response issue
+		if strings.Contains(errStr, "response") ||
+			strings.Contains(errStr, "server") ||
+			strings.Contains(errStr, "message") {
+			return CategoryProtocol, SeverityError
+		}
 		return CategoryValidation, SeverityError
 	}
 
@@ -360,13 +402,27 @@ func (ec *ErrorClassifier) generateUserFriendlyMessage(err error, category Error
 		return "Authentication failed - check credentials and permissions"
 
 	case CategoryProtocol:
+		// Provide specific guidance based on the error type
+		if strings.Contains(errStr, "initialize") || strings.Contains(errStr, "initialized") {
+			return "MCP initialization failed - server may not implement MCP protocol correctly or exited during handshake"
+		}
+		if strings.Contains(errStr, "registration") {
+			return "MCP registration failed - server rejected client registration"
+		}
+		if strings.Contains(errStr, "protocol version") || strings.Contains(errStr, "unsupported") {
+			return "Protocol version mismatch - client and server use incompatible MCP versions"
+		}
+		if strings.Contains(errStr, "eof") {
+			return "Protocol error - server closed connection unexpectedly during initialization"
+		}
 		return "Protocol error - incompatible MCP versions or invalid handshake"
 
 	case CategorySerialization:
 		return "Data format error - invalid JSON or message structure"
 
 	case CategoryValidation:
-		return "Validation error - invalid parameters or configuration"
+		// More specific message for client-side validation issues
+		return "Client validation error - invalid parameters or configuration in request"
 
 	case CategoryServerStartup:
 		return "Server startup failed - check server configuration and dependencies"
