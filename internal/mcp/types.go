@@ -55,11 +55,24 @@ type Service interface {
 	GetConnectionConfig() *config.ConnectionConfig
 }
 
+// SchemaError captures schema parsing/validation issues
+type SchemaError struct {
+	Message   string                 `json:"message"`
+	RawSchema string                 `json:"rawSchema,omitempty"`
+	Details   map[string]interface{} `json:"details,omitempty"`
+}
+
 // Tool represents an MCP tool
 type Tool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description,omitempty"`
 	InputSchema map[string]interface{} `json:"inputSchema,omitempty"`
+	SchemaError *SchemaError           `json:"schemaError,omitempty"`
+}
+
+// HasSchemaError returns true if the tool has a schema parsing error
+func (t Tool) HasSchemaError() bool {
+	return t.SchemaError != nil
 }
 
 // Resource represents an MCP resource

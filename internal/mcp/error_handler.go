@@ -53,8 +53,8 @@ func tryPrettyPrintJSON(data string) string {
 	return data
 }
 
-// analyzeJSONError attempts to provide more specific error information
-func analyzeJSONError(err error, rawData string) map[string]interface{} {
+// AnalyzeJSONError attempts to provide more specific error information
+func AnalyzeJSONError(err error, rawData string) map[string]interface{} {
 	details := make(map[string]interface{})
 
 	errStr := err.Error()

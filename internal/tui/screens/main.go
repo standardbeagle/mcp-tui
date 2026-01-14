@@ -42,10 +42,11 @@ type MainScreen struct {
 	promptObjects   []mcp.Prompt
 
 	// Actual counts (0 when empty, not 1 for empty message)
-	toolCount     int
-	resourceCount int
-	promptCount   int
-	eventCount    int
+	toolCount        int
+	schemaErrorCount int // Count of tools with schema errors
+	resourceCount    int
+	promptCount      int
+	eventCount       int
 
 	// Loading states
 	toolsLoading     bool
@@ -384,10 +385,19 @@ func (ms *MainScreen) handleToolsLoaded(msg ToolsLoadedMsg) (tea.Model, tea.Cmd)
 		ms.tools = []mcp.Tool{}
 		ms.toolStrings = []string{fmt.Sprintf("Error loading tools: %v", msg.Error)}
 		ms.toolCount = 0
+		ms.schemaErrorCount = 0
 	} else {
 		ms.tools = msg.Tools
 		ms.toolStrings = msg.Items
 		ms.toolCount = msg.ActualCount
+
+		// Count tools with schema errors
+		ms.schemaErrorCount = 0
+		for _, tool := range msg.Tools {
+			if tool.HasSchemaError() {
+				ms.schemaErrorCount++
+			}
+		}
 	}
 	ms.ensureInitialFocus(0)
 	return ms, nil
@@ -681,6 +691,27 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				},
 			}
 		}
+
+	case "e":
+		// View schema error details for current tool (only in Tools tab)
+		if ms.activeTab == 0 && len(ms.tools) > 0 {
+			selectedIdx := ms.selectedIndex[0]
+			if selectedIdx < len(ms.tools) {
+				tool := ms.tools[selectedIdx]
+				if tool.HasSchemaError() {
+					// Show schema error overlay
+					schemaErrorScreen := NewSchemaErrorScreen(tool)
+					return ms, func() tea.Msg {
+						return ToggleOverlayMsg{
+							Screen: schemaErrorScreen,
+						}
+					}
+				} else {
+					ms.SetStatus("No schema error for this tool", StatusInfo)
+				}
+			}
+		}
+		return ms, nil
 	}
 
 	return ms, nil
@@ -1062,9 +1093,16 @@ func (ms *MainScreen) renderTabs() string {
 	counts := []int{ms.toolCount, ms.resourceCount, ms.promptCount, ms.eventCount}
 
 	var renderedTabs []string
+	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // Yellow warning
 
 	for i, tab := range tabs {
-		tabText := fmt.Sprintf(" %s (%d) ", tab, counts[i])
+		var tabText string
+		if i == 0 && ms.schemaErrorCount > 0 {
+			// Tools tab with schema errors - show warning indicator
+			tabText = fmt.Sprintf(" %s (%d) %s%d ", tab, counts[i], warningStyle.Render("⚠"), ms.schemaErrorCount)
+		} else {
+			tabText = fmt.Sprintf(" %s (%d) ", tab, counts[i])
+		}
 
 		if i == ms.activeTab {
 			renderedTabs = append(renderedTabs, ms.activeTabStyle.Render(tabText))
@@ -1332,15 +1370,22 @@ func (ms *MainScreen) renderCurrentList() string {
 		switch ms.activeTab {
 		case 0: // Tools
 			if actualCount > 0 {
+				// Check for schema error indicator
+				warningIndicator := ""
+				if i < len(ms.tools) && ms.tools[i].HasSchemaError() {
+					warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+					warningIndicator = " " + warningStyle.Render("⚠")
+				}
+
 				parts := strings.SplitN(item, " - ", 2)
 				if len(parts) == 2 {
 					number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
 					name := nameStyle.Render(parts[0])
 					desc := descriptionStyle.Render(parts[1])
-					displayItem = fmt.Sprintf("%s%s - %s", number, name, desc)
+					displayItem = fmt.Sprintf("%s%s%s - %s", number, name, warningIndicator, desc)
 				} else {
 					number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
-					displayItem = number + nameStyle.Render(item)
+					displayItem = number + nameStyle.Render(item) + warningIndicator
 				}
 			} else {
 				displayItem = item
@@ -1876,16 +1921,23 @@ func (ms *MainScreen) renderToolList() string {
 	numberStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("243")) // Dim gray
 
+	warningStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("11")) // Yellow warning
+
 	for i := startIdx; i < endIdx; i++ {
 		tool := ms.tools[i]
-		line := fmt.Sprintf("%2d. %s", i+1, tool.Name)
+		warningIndicator := ""
+		if tool.HasSchemaError() {
+			warningIndicator = " " + warningStyle.Render("⚠")
+		}
 
 		if i == selectedIdx {
+			line := fmt.Sprintf("%2d. %s%s", i+1, tool.Name, warningIndicator)
 			listItems = append(listItems, ms.selectedStyle.Render("▶ "+line))
 		} else {
 			number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
 			name := nameStyle.Render(tool.Name)
-			listItems = append(listItems, "  "+number+name)
+			listItems = append(listItems, "  "+number+name+warningIndicator)
 		}
 	}
 
@@ -1913,6 +1965,28 @@ func (ms *MainScreen) renderToolDetail() string {
 	contentBuilder.WriteString(headerStyle.Render("Tool: " + tool.Name))
 	contentBuilder.WriteString("\n\n")
 
+	// Schema error section (if any)
+	if tool.HasSchemaError() {
+		warningStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11"))
+		errorMsgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+
+		contentBuilder.WriteString(warningStyle.Render("⚠ Schema Error"))
+		contentBuilder.WriteString("\n")
+		contentBuilder.WriteString(errorMsgStyle.Render(tool.SchemaError.Message))
+		contentBuilder.WriteString("\n")
+
+		// Show hint if available
+		if hint, ok := tool.SchemaError.Details["hint"].(string); ok {
+			contentBuilder.WriteString(hintStyle.Render(hint))
+			contentBuilder.WriteString("\n")
+		}
+
+		contentBuilder.WriteString("\n")
+		contentBuilder.WriteString(hintStyle.Render("Press 'e' to view raw schema"))
+		contentBuilder.WriteString("\n\n")
+	}
+
 	// Parameter count
 	paramCount := 0
 	if tool.InputSchema != nil {
@@ -1922,7 +1996,11 @@ func (ms *MainScreen) renderToolDetail() string {
 	}
 
 	paramStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-	contentBuilder.WriteString(paramStyle.Render(fmt.Sprintf("Parameters: %d", paramCount)))
+	if tool.HasSchemaError() {
+		contentBuilder.WriteString(paramStyle.Render("Parameters: unknown (schema error)"))
+	} else {
+		contentBuilder.WriteString(paramStyle.Render(fmt.Sprintf("Parameters: %d", paramCount)))
+	}
 	contentBuilder.WriteString("\n\n")
 
 	// Raw description (no formatting for debugging)

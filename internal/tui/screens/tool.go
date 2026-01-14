@@ -57,6 +57,10 @@ type ToolScreen struct {
 	fields []toolField
 	cursor int // current field index
 
+	// Raw JSON mode (when schema parsing fails)
+	rawJSONMode  bool              // Whether we're in raw JSON input mode
+	rawJSONInput textinput.Model   // Input for raw JSON arguments
+
 	// Execution state
 	executing      bool
 	executionStart time.Time
@@ -312,6 +316,17 @@ func (ts *ToolScreen) initStyles() {
 // parseSchema converts the tool's input schema into form fields
 func (ts *ToolScreen) parseSchema() {
 	ts.fields = []toolField{}
+	ts.rawJSONMode = false
+
+	// Check if tool has a schema error - use raw JSON mode
+	if ts.tool.HasSchemaError() {
+		ts.rawJSONMode = true
+		ts.rawJSONInput = textinput.New()
+		ts.rawJSONInput.Placeholder = `{"key": "value"}`
+		ts.rawJSONInput.CharLimit = 0
+		ts.rawJSONInput.Width = 60
+		return
+	}
 
 	// If no schema, tool takes no parameters
 	if ts.tool.InputSchema == nil || len(ts.tool.InputSchema) == 0 {
@@ -386,8 +401,10 @@ func (ts *ToolScreen) parseSchema() {
 func (ts *ToolScreen) Init() tea.Cmd {
 	ts.logger.Info("Initializing tool screen", debug.F("tool", ts.tool.Name))
 
-	// Focus the first field if available
-	if len(ts.fields) > 0 {
+	// Focus the appropriate input
+	if ts.rawJSONMode {
+		ts.rawJSONInput.Focus()
+	} else if len(ts.fields) > 0 {
 		ts.fields[0].input.Focus()
 	}
 
@@ -503,8 +520,33 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ts, nil
 	}
 
+	// Handle raw JSON mode input
+	if ts.rawJSONMode && ts.cursor == 0 {
+		switch msg.String() {
+		case "tab", "down":
+			// Move to execute button
+			ts.rawJSONInput.Blur()
+			ts.cursor = 1
+			return ts, nil
+		case "enter":
+			// If on input, move to button; if on button, execute
+			if ts.cursor == 0 {
+				ts.rawJSONInput.Blur()
+				ts.cursor = 1
+				return ts, nil
+			}
+		case "esc":
+			return ts, func() tea.Msg { return BackMsg{} }
+		default:
+			// Pass to raw JSON input
+			var cmd tea.Cmd
+			ts.rawJSONInput, cmd = ts.rawJSONInput.Update(msg)
+			return ts, cmd
+		}
+	}
+
 	// If we're in an input field, let the textinput handle most keys first
-	if ts.cursor < len(ts.fields) {
+	if !ts.rawJSONMode && ts.cursor < len(ts.fields) {
 		field := &ts.fields[ts.cursor]
 
 		// Handle navigation keys before passing to textinput
@@ -696,40 +738,84 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "tab", "down":
-		// Validate current field before moving
-		if ts.cursor < len(ts.fields) {
+		// Calculate total items based on mode
+		var totalItems int
+		var inputCount int
+		if ts.rawJSONMode {
+			inputCount = 1 // Just the raw JSON input
+			totalItems = 4 // raw JSON input + 3 buttons
+		} else {
+			inputCount = len(ts.fields)
+			totalItems = len(ts.fields) + 3 // fields + execute button + cli button + back button
+		}
+
+		// Validate and blur current field before moving
+		if !ts.rawJSONMode && ts.cursor < inputCount {
 			ts.validateField(ts.cursor)
 			ts.fields[ts.cursor].input.Blur()
+		} else if ts.rawJSONMode && ts.cursor == 0 {
+			ts.rawJSONInput.Blur()
 		}
+
 		// Move to next field/button
-		totalItems := len(ts.fields) + 3 // fields + execute button + cli button + back button
 		ts.cursor = (ts.cursor + 1) % totalItems
+
 		// Focus new field if it's an input
-		if ts.cursor < len(ts.fields) {
+		if ts.rawJSONMode && ts.cursor == 0 {
+			ts.rawJSONInput.Focus()
+		} else if !ts.rawJSONMode && ts.cursor < inputCount {
 			ts.fields[ts.cursor].input.Focus()
 		}
 		return ts, nil
 
 	case "shift+tab", "up":
-		// Blur current field
-		if ts.cursor < len(ts.fields) {
-			ts.fields[ts.cursor].input.Blur()
+		// Calculate total items based on mode
+		var totalItems int
+		var inputCount int
+		if ts.rawJSONMode {
+			inputCount = 1
+			totalItems = 4
+		} else {
+			inputCount = len(ts.fields)
+			totalItems = len(ts.fields) + 3
 		}
+
+		// Blur current field
+		if !ts.rawJSONMode && ts.cursor < inputCount {
+			ts.fields[ts.cursor].input.Blur()
+		} else if ts.rawJSONMode && ts.cursor == 0 {
+			ts.rawJSONInput.Blur()
+		}
+
 		// Move to previous field/button
-		totalItems := len(ts.fields) + 3
 		ts.cursor = (ts.cursor - 1 + totalItems) % totalItems
+
 		// Focus new field if it's an input
-		if ts.cursor < len(ts.fields) {
+		if ts.rawJSONMode && ts.cursor == 0 {
+			ts.rawJSONInput.Focus()
+		} else if !ts.rawJSONMode && ts.cursor < inputCount {
 			ts.fields[ts.cursor].input.Focus()
 		}
 		return ts, nil
 
 	case "enter":
+		// Calculate button positions based on mode
+		var executePos, cliPos, backPos int
+		if ts.rawJSONMode {
+			executePos = 1 // After raw JSON input
+			cliPos = 2
+			backPos = 3
+		} else {
+			executePos = len(ts.fields)
+			cliPos = len(ts.fields) + 1
+			backPos = len(ts.fields) + 2
+		}
+
 		// Handle enter based on current position
-		if ts.cursor == len(ts.fields) {
+		if ts.cursor == executePos {
 			// Execute button
 			return ts, ts.executeTool()
-		} else if ts.cursor == len(ts.fields)+1 {
+		} else if ts.cursor == cliPos {
 			// CLI button
 			ts.cliCommand = ts.generateCLICommand()
 			ts.showCLICommand = true
@@ -741,7 +827,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
 			}
 			return ts, nil
-		} else if ts.cursor == len(ts.fields)+2 {
+		} else if ts.cursor == backPos {
 			// Back button
 			return ts, func() tea.Msg { return BackMsg{} }
 		}
@@ -756,86 +842,103 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // executeTool executes the tool with current parameters
 func (ts *ToolScreen) executeTool() tea.Cmd {
-	// Validate required fields
-	for _, field := range ts.fields {
-		value := field.input.Value()
-		if field.required && value == "" {
-			// Array fields are allowed to be empty (will be sent as [])
-			if field.fieldType != "array" {
-				ts.SetError(fmt.Errorf("required field '%s' is empty", field.name))
+	var args map[string]interface{}
+
+	// Handle raw JSON mode
+	if ts.rawJSONMode {
+		rawValue := strings.TrimSpace(ts.rawJSONInput.Value())
+		if rawValue == "" {
+			// Empty input means empty args
+			args = make(map[string]interface{})
+		} else {
+			// Parse the raw JSON
+			if err := json.Unmarshal([]byte(rawValue), &args); err != nil {
+				ts.SetError(fmt.Errorf("invalid JSON: %v", err))
 				return nil
 			}
 		}
-	}
-
-	// Build arguments map
-	args := make(map[string]interface{})
-	for _, field := range ts.fields {
-		value := field.input.Value()
-
-		// Special handling for array fields - include even if empty
-		if field.fieldType == "array" && value == "" {
-			// Only include empty array if field is required or user explicitly entered []
-			if field.required {
-				args[field.name] = []interface{}{}
+	} else {
+		// Validate required fields
+		for _, field := range ts.fields {
+			value := field.input.Value()
+			if field.required && value == "" {
+				// Array fields are allowed to be empty (will be sent as [])
+				if field.fieldType != "array" {
+					ts.SetError(fmt.Errorf("required field '%s' is empty", field.name))
+					return nil
+				}
 			}
-			continue
 		}
 
-		if value != "" {
-			// Try to parse the value based on field type
-			switch field.fieldType {
-			case "number":
-				var num float64
-				if err := json.Unmarshal([]byte(value), &num); err == nil {
-					args[field.name] = num
-				} else {
-					ts.SetError(fmt.Errorf("invalid number for field '%s'", field.name))
-					return nil
+		// Build arguments map
+		args = make(map[string]interface{})
+		for _, field := range ts.fields {
+			value := field.input.Value()
+
+			// Special handling for array fields - include even if empty
+			if field.fieldType == "array" && value == "" {
+				// Only include empty array if field is required or user explicitly entered []
+				if field.required {
+					args[field.name] = []interface{}{}
 				}
-			case "integer":
-				var num int
-				if err := json.Unmarshal([]byte(value), &num); err == nil {
-					args[field.name] = num
-				} else {
-					ts.SetError(fmt.Errorf("invalid integer for field '%s'", field.name))
-					return nil
-				}
-			case "boolean":
-				var b bool
-				if err := json.Unmarshal([]byte(value), &b); err == nil {
-					args[field.name] = b
-				} else {
-					ts.SetError(fmt.Errorf("invalid boolean for field '%s' (use true/false)", field.name))
-					return nil
-				}
-			case "array":
-				var arr []interface{}
-				if err := json.Unmarshal([]byte(value), &arr); err == nil {
-					args[field.name] = arr
-				} else {
-					// Try parsing as comma-separated
-					parts := strings.Split(value, ",")
-					arr := make([]interface{}, 0, len(parts))
-					for _, p := range parts {
-						trimmed := strings.TrimSpace(p)
-						if trimmed != "" {
-							arr = append(arr, trimmed)
-						}
+				continue
+			}
+
+			if value != "" {
+				// Try to parse the value based on field type
+				switch field.fieldType {
+				case "number":
+					var num float64
+					if err := json.Unmarshal([]byte(value), &num); err == nil {
+						args[field.name] = num
+					} else {
+						ts.SetError(fmt.Errorf("invalid number for field '%s'", field.name))
+						return nil
 					}
-					args[field.name] = arr
+				case "integer":
+					var num int
+					if err := json.Unmarshal([]byte(value), &num); err == nil {
+						args[field.name] = num
+					} else {
+						ts.SetError(fmt.Errorf("invalid integer for field '%s'", field.name))
+						return nil
+					}
+				case "boolean":
+					var b bool
+					if err := json.Unmarshal([]byte(value), &b); err == nil {
+						args[field.name] = b
+					} else {
+						ts.SetError(fmt.Errorf("invalid boolean for field '%s' (use true/false)", field.name))
+						return nil
+					}
+				case "array":
+					var arr []interface{}
+					if err := json.Unmarshal([]byte(value), &arr); err == nil {
+						args[field.name] = arr
+					} else {
+						// Try parsing as comma-separated
+						parts := strings.Split(value, ",")
+						arr := make([]interface{}, 0, len(parts))
+						for _, p := range parts {
+							trimmed := strings.TrimSpace(p)
+							if trimmed != "" {
+								arr = append(arr, trimmed)
+							}
+						}
+						args[field.name] = arr
+					}
+				case "object":
+					var obj map[string]interface{}
+					if err := json.Unmarshal([]byte(value), &obj); err == nil {
+						args[field.name] = obj
+					} else {
+						ts.SetError(fmt.Errorf("invalid JSON object for field '%s'", field.name))
+						return nil
+					}
+				default:
+					// Default to string
+					args[field.name] = value
 				}
-			case "object":
-				var obj map[string]interface{}
-				if err := json.Unmarshal([]byte(value), &obj); err == nil {
-					args[field.name] = obj
-				} else {
-					ts.SetError(fmt.Errorf("invalid JSON object for field '%s'", field.name))
-					return nil
-				}
-			default:
-				// Default to string
-				args[field.name] = value
 			}
 		}
 	}
@@ -954,8 +1057,36 @@ func (ts *ToolScreen) View() string {
 	}
 	builder.WriteString("\n")
 
-	// Form fields or message if no fields
-	if len(ts.fields) == 0 {
+	// Show schema error warning banner if applicable
+	if ts.tool.HasSchemaError() {
+		warningStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("11")).
+			Padding(0, 1)
+		errorMsgStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("9")).
+			Italic(true)
+
+		builder.WriteString(warningStyle.Render("⚠ Schema Error - Raw JSON Mode"))
+		builder.WriteString("\n")
+		builder.WriteString(errorMsgStyle.Render(ts.tool.SchemaError.Message))
+		builder.WriteString("\n\n")
+	}
+
+	// Raw JSON mode - show single input for JSON arguments
+	if ts.rawJSONMode {
+		builder.WriteString(ts.labelStyle.Render("Arguments (JSON):"))
+		builder.WriteString("\n")
+		inputView := ts.rawJSONInput.View()
+		if ts.cursor == 0 {
+			builder.WriteString(ts.selectedStyle.Render(inputView))
+		} else {
+			builder.WriteString(ts.inputStyle.Render(inputView))
+		}
+		builder.WriteString("\n\n")
+	} else if len(ts.fields) == 0 {
+		// Form fields or message if no fields
 		builder.WriteString(ts.labelStyle.Render("This tool requires no parameters."))
 		builder.WriteString("\n\n")
 	} else {
@@ -1012,24 +1143,35 @@ func (ts *ToolScreen) View() string {
 		}
 	}
 
-	// Buttons
+	// Buttons - calculate positions based on mode
+	var executePos, cliPos, backPos int
+	if ts.rawJSONMode {
+		executePos = 1
+		cliPos = 2
+		backPos = 3
+	} else {
+		executePos = len(ts.fields)
+		cliPos = len(ts.fields) + 1
+		backPos = len(ts.fields) + 2
+	}
+
 	executeBtn := " Execute "
 	cliBtn := " CLI "
 	backBtn := " Back "
 
-	if ts.cursor == len(ts.fields) {
+	if ts.cursor == executePos {
 		builder.WriteString(ts.selectedButtonStyle.Render(executeBtn))
 	} else {
 		builder.WriteString(ts.buttonStyle.Render(executeBtn))
 	}
 	builder.WriteString("  ")
-	if ts.cursor == len(ts.fields)+1 {
+	if ts.cursor == cliPos {
 		builder.WriteString(ts.selectedButtonStyle.Render(cliBtn))
 	} else {
 		builder.WriteString(ts.buttonStyle.Render(cliBtn))
 	}
 	builder.WriteString("  ")
-	if ts.cursor == len(ts.fields)+2 {
+	if ts.cursor == backPos {
 		builder.WriteString(ts.selectedButtonStyle.Render(backBtn))
 	} else {
 		builder.WriteString(ts.buttonStyle.Render(backBtn))

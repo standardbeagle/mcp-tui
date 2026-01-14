@@ -373,10 +373,11 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		}
 
 		if tool != nil {
-			convertedTool, err := s.convertTool(tool)
-			if err != nil {
-				debug.Error("Failed to convert tool", debug.F("tool", tool.Name), debug.F("error", err))
-				continue
+			convertedTool := s.convertTool(tool)
+			if convertedTool.SchemaError != nil {
+				debug.Warn("Tool has schema error",
+					debug.F("tool", tool.Name),
+					debug.F("error", convertedTool.SchemaError.Message))
 			}
 			tools = append(tools, convertedTool)
 		}
@@ -389,22 +390,21 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 }
 
 // convertTool converts an SDK tool to internal tool format
-func (s *service) convertTool(tool *officialMCP.Tool) (Tool, error) {
+// Schema errors are captured and attached to the Tool rather than failing
+func (s *service) convertTool(tool *officialMCP.Tool) Tool {
 	// Convert InputSchema to map[string]interface{}
-	inputSchemaMap, err := s.convertInputSchema(tool.InputSchema, tool.Name)
-	if err != nil {
-		return Tool{}, err
-	}
+	inputSchemaMap, schemaErr := s.convertInputSchema(tool.InputSchema, tool.Name)
 
 	return Tool{
 		Name:        tool.Name,
 		Description: tool.Description,
 		InputSchema: inputSchemaMap,
-	}, nil
+		SchemaError: schemaErr,
+	}
 }
 
-// convertInputSchema converts the tool's InputSchema
-func (s *service) convertInputSchema(schema interface{}, toolName string) (map[string]interface{}, error) {
+// convertInputSchema converts the tool's InputSchema and captures any parsing errors
+func (s *service) convertInputSchema(schema interface{}, toolName string) (map[string]interface{}, *SchemaError) {
 	if schema == nil {
 		return nil, nil
 	}
@@ -414,7 +414,11 @@ func (s *service) convertInputSchema(schema interface{}, toolName string) (map[s
 		debug.Error("Failed to marshal tool InputSchema",
 			debug.F("tool", toolName),
 			debug.F("error", err))
-		return nil, nil
+		return nil, &SchemaError{
+			Message:   fmt.Sprintf("Failed to marshal schema: %v", err),
+			RawSchema: fmt.Sprintf("%v", schema),
+			Details:   map[string]interface{}{"error_type": "marshal"},
+		}
 	}
 
 	var inputSchemaMap map[string]interface{}
@@ -424,7 +428,16 @@ func (s *service) convertInputSchema(schema interface{}, toolName string) (map[s
 			debug.F("tool", toolName),
 			debug.F("schemaJSON", string(schemaJSON)),
 			debug.F("error", err))
-		return nil, nil
+
+		// Use AnalyzeJSONError to get detailed error information
+		details := AnalyzeJSONError(err, string(schemaJSON))
+		details["error_type"] = "unmarshal"
+
+		return nil, &SchemaError{
+			Message:   fmt.Sprintf("Failed to parse schema: %v", err),
+			RawSchema: string(schemaJSON),
+			Details:   details,
+		}
 	}
 
 	return inputSchemaMap, nil
