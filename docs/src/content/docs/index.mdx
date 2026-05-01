@@ -1,0 +1,61 @@
+---
+title: MCP-TUI
+description: Fast terminal UI and CLI for testing, debugging, and automating Model Context Protocol servers. STDIO, SSE, and HTTP transports with JSON-friendly output for CI.
+template: splash
+hero:
+  tagline: The fastest way to test, debug, and automate Model Context Protocol servers.
+  actions:
+    - text: Get Started
+      link: /mcp-tui/install/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/standardbeagle/mcp-tui
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import cliList from '../../assets/recordings/cli-tool-list.webp';
+import tuiConnect from '../../assets/recordings/tui-connect.webp';
+import tuiBrowse from '../../assets/recordings/tui-browse.webp';
+
+<div class="demo-frame">
+  <img src={tuiConnect.src} alt="MCP-TUI connect screen with discovered configurations and quick connect" loading="eager" />
+</div>
+
+## Why MCP-TUI
+
+<CardGrid>
+  <Card title="Zero-config testing" icon="rocket">
+    One command connects to any MCP server. No JSON files, no protocol boilerplate.
+  </Card>
+  <Card title="Visual + scriptable" icon="laptop">
+    Interactive TUI for exploration, deterministic CLI for CI pipelines.
+  </Card>
+  <Card title="All transports" icon="setting">
+    STDIO, SSE, HTTP, and Streamable HTTP — built on the official MCP Go SDK.
+  </Card>
+  <Card title="Real debug data" icon="information">
+    HTTP timing, MCP message trace, error classification with actionable hints.
+  </Card>
+</CardGrid>
+
+## See it run
+
+### CLI mode for automation
+
+<div class="demo-frame">
+  <img src={cliList.src} alt="mcp-tui CLI listing tools from a stdio MCP server" loading="lazy" />
+</div>
+
+### TUI mode for exploration
+
+<div class="demo-frame">
+  <img src={tuiBrowse.src} alt="MCP-TUI browsing tools, resources, and prompts" loading="lazy" />
+</div>
+
+## Next
+
+<LinkCard title="Install in 30 seconds" href="/mcp-tui/install/" />
+<LinkCard title="Quick Start" href="/mcp-tui/quick-start/" />
+<LinkCard title="CLI reference" href="/mcp-tui/reference/cli/" />

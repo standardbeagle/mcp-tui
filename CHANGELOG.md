@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-05-01
+
+### Changed
+- **MCP SDK**: Upgraded `github.com/modelcontextprotocol/go-sdk` from v1.1.0 to v1.6.0. Brings protocol version `2025-11-25`, sampling-with-tools, stable client OAuth, capability extensions, DNS rebinding and cross-origin protections, parameterized Content-Type tolerance, and many bug fixes. Requires Go 1.25.
+- **CI**: Bumped `go-version` in publish workflow to 1.25 for SDK compatibility.
+
+### Added
+- **Documentation site**: New Astro Starlight site under `docs/` deployed to GitHub Pages at https://standardbeagle.github.io/mcp-tui/. Includes Get Started, TUI/CLI/Transports/Configuration/Automation/Debugging guides, and CLI/Keyboard/Architecture reference.
+- **Animated demos**: Generated WebP recordings of CLI and TUI flows via `vhs` (`docs/recordings/*.tape`).
+- **GitHub Pages workflow**: `.github/workflows/docs.yml` builds and deploys docs on `docs/**` changes.
+
+### Removed
+- Stale historical documents and ad-hoc reports from repo root: `ARRAY_FIELD_BEHAVIOR.md`, `FIXED_ISSUES.md`, `PHASE2_FINAL_REVIEW.md`, `REFACTORING_SUMMARY.md`, `SSE_PARSING_INVESTIGATION_REPORT.md`, `VISUAL_TEST_RESULTS.md`, `test-phase{1,2,3}.md`.
+- Tracked working dirs no longer in use: `requests/`, `archive/`, `tasks/`, `keytest/`.
+
+### Fixed
+- **README**: Replaced 642-line README with a focused entry point linking to the docs site, with embedded animated demos.
+
 ## [0.6.1] - 2025-01-12
 
 ### Fixed

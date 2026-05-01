@@ -1,0 +1,74 @@
+---
+title: CLI Mode
+description: Use mcp-tui as a scriptable command-line client. Perfect for CI, smoke tests, and shell pipelines.
+---
+
+import cliList from '../../../assets/recordings/cli-tool-list.webp';
+import cliCall from '../../../assets/recordings/cli-tool-call.webp';
+
+CLI mode is activated by passing a subcommand (`tool`, `resource`, or `prompt`) after the connection flags.
+
+```bash
+mcp-tui [connection-flags] <subcommand> [args]
+```
+
+## Tools
+
+```bash
+# list available tools
+mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool list
+
+# describe one tool
+mcp-tui ... tool describe echo
+
+# call a tool with key=value args
+mcp-tui ... tool call echo message='hello'
+```
+
+<div class="demo-frame">
+  <img src={cliList.src} alt="tool list output" loading="lazy" />
+</div>
+
+<div class="demo-frame">
+  <img src={cliCall.src} alt="tool call output" loading="lazy" />
+</div>
+
+## Resources
+
+```bash
+mcp-tui ... resource list
+mcp-tui ... resource read 'file:///example.txt'
+```
+
+## Prompts
+
+```bash
+mcp-tui ... prompt list
+mcp-tui ... prompt get my-prompt arg=value
+```
+
+## Argument coercion
+
+Strings are passed verbatim. Numeric, boolean, and JSON-shaped values are coerced based on the tool's input schema:
+
+```bash
+# auto-coerced
+mcp-tui ... tool call sum a=1 b=2
+mcp-tui ... tool call enabled flag=true
+mcp-tui ... tool call query filter='{"limit":10}'
+```
+
+If schema coercion is wrong, force a string with `key:str=value` (planned).
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Connection failure |
+| 2 | Invalid arguments / usage |
+| 3 | Tool / resource not found |
+| 4 | Tool execution error |
+| 5 | Protocol error |
+
+See [Automation & CI](/mcp-tui/guides/automation/) for pipeline patterns.

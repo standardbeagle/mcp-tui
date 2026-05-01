@@ -1,0 +1,59 @@
+---
+title: Quick Start
+description: Connect to your first MCP server, list its tools, and call one — in under a minute.
+---
+
+import cliList from '../../assets/recordings/cli-tool-list.webp';
+import cliCall from '../../assets/recordings/cli-tool-call.webp';
+
+## Connect to a sample server
+
+The official `server-everything` is the easiest target.
+
+```bash
+mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio"
+```
+
+This launches the TUI, auto-discovers tools, resources, and prompts, and lets you exercise them.
+
+## List tools from the CLI
+
+<div class="demo-frame">
+  <img src={cliList.src} alt="CLI listing tools" loading="lazy" />
+</div>
+
+```bash
+mcp-tui --cmd npx \
+  --args "@modelcontextprotocol/server-everything,stdio" \
+  tool list
+```
+
+## Call a tool
+
+<div class="demo-frame">
+  <img src={cliCall.src} alt="CLI calling a tool with arguments" loading="lazy" />
+</div>
+
+```bash
+mcp-tui --cmd npx \
+  --args "@modelcontextprotocol/server-everything,stdio" \
+  tool call echo message='hello mcp'
+```
+
+Arguments use `key=value`. Strings, numbers, booleans, and JSON values are coerced from the tool's input schema.
+
+## Connect to an HTTP or SSE server
+
+```bash
+# HTTP / Streamable HTTP
+mcp-tui --transport http --url https://your-server.example/mcp tool list
+
+# SSE
+mcp-tui --transport sse --url http://localhost:5001/sse tool list
+```
+
+## Next steps
+
+- [TUI guide](/mcp-tui/guides/tui/) — keyboard navigation and discovery
+- [CLI reference](/mcp-tui/reference/cli/) — every subcommand and flag
+- [Automation & CI](/mcp-tui/guides/automation/) — exit codes, JSON output
