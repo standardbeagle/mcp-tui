@@ -130,7 +130,9 @@ func NewToolScreen(tool mcp.Tool, service mcp.Service) *ToolScreen {
 	return ts
 }
 
-// getResultDisplayHeight calculates the available height for result display
+// getResultDisplayHeight calculates the available height for result display.
+// Used by scroll handlers; View() recomputes the same value dynamically with
+// actual header/footer measurements when the result is present.
 func (ts *ToolScreen) getResultDisplayHeight() int {
 	termHeight := ts.Height()
 	if termHeight == 0 {
@@ -143,6 +145,24 @@ func (ts *ToolScreen) getResultDisplayHeight() int {
 		availableHeight = resultMinHeight
 	}
 	return availableHeight
+}
+
+// resultChromeHeight is overhead inside the result block: leading blank,
+// execution info line, "Result:" label, border (2), trailing blank/scroll/hint.
+const resultChromeHeight = 7
+
+// computeResultDisplayHeight derives result body height from actual rendered
+// header/footer heights so the panel fills available screen space.
+func (ts *ToolScreen) computeResultDisplayHeight(headerH, footerH int) int {
+	termHeight := ts.Height()
+	if termHeight == 0 {
+		termHeight = defaultTermHeight
+	}
+	avail := termHeight - headerH - footerH - resultChromeHeight
+	if avail < resultMinHeight {
+		avail = resultMinHeight
+	}
+	return avail
 }
 
 // copyToClipboard copies text to clipboard using multiple methods
@@ -1041,6 +1061,14 @@ func (ts *ToolScreen) validateField(index int) {
 
 // View renders the tool screen
 func (ts *ToolScreen) View() string {
+	header := ts.renderHeader()
+	footer := ts.renderFooter()
+	result := ts.renderResultBlock(header, footer)
+	return header + result + footer
+}
+
+// renderHeader builds everything above the result block.
+func (ts *ToolScreen) renderHeader() string {
 	var builder strings.Builder
 
 	// Title with execution count
@@ -1204,152 +1232,149 @@ func (ts *ToolScreen) View() string {
 		}
 	}
 
-	// Result with execution info
-	if ts.result != nil {
-		builder.WriteString("\n")
+	return builder.String()
+}
 
-		// Show execution header with count and timestamp
-		execInfoStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("99")).
+// renderResultBlock builds the result section, sized to fill remaining
+// vertical space between the header and footer.
+func (ts *ToolScreen) renderResultBlock(header, footer string) string {
+	if ts.result == nil {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.WriteString("\n")
+
+	// Show execution header with count and timestamp
+	execInfoStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("99")).
+		Bold(true)
+
+	execInfo := fmt.Sprintf("Execution #%d", ts.executionCount)
+	if ts.executionCount > 1 {
+		execInfo = fmt.Sprintf("✨ Execution #%d", ts.executionCount)
+	}
+	execInfo += fmt.Sprintf(" • %s", ts.lastExecution.Format("15:04:05"))
+
+	builder.WriteString(execInfoStyle.Render(execInfo))
+	builder.WriteString("\n")
+
+	if ts.result.IsError {
+		builder.WriteString(ts.errorStyle.Render("Error Result:"))
+	} else {
+		builder.WriteString(ts.labelStyle.Render("Result:"))
+	}
+	builder.WriteString("\n")
+
+	headerH := lipgloss.Height(header)
+	footerH := lipgloss.Height(footer)
+	availableHeight := ts.computeResultDisplayHeight(headerH, footerH)
+
+	termWidth := ts.Width()
+	if termWidth == 0 {
+		termWidth = defaultTermWidth
+	}
+
+	if ts.viewingResult && len(ts.resultFields) > 0 {
+		fieldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+		selectedFieldStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("240")).
+			Foreground(lipgloss.Color("15")).
 			Bold(true)
+		pathStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("14")).
+			Bold(true)
+		valueStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("10"))
 
-		execInfo := fmt.Sprintf("Execution #%d", ts.executionCount)
-		if ts.executionCount > 1 {
-			// Add sparkle for re-executions
-			execInfo = fmt.Sprintf("✨ Execution #%d", ts.executionCount)
-		}
+		builder.WriteString(fieldStyle.Render("Select a field to copy its value:"))
+		builder.WriteString("\n\n")
 
-		// Add timestamp
-		execInfo += fmt.Sprintf(" • %s", ts.lastExecution.Format("15:04:05"))
-
-		builder.WriteString(execInfoStyle.Render(execInfo))
-		builder.WriteString("\n")
-
-		if ts.result.IsError {
-			builder.WriteString(ts.errorStyle.Render("Error Result:"))
-		} else {
-			builder.WriteString(ts.labelStyle.Render("Result:"))
-		}
-		builder.WriteString("\n")
-
-		// Show result viewing mode or normal result
-		if ts.viewingResult && len(ts.resultFields) > 0 {
-			// Field selection view
-			fieldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-			selectedFieldStyle := lipgloss.NewStyle().
-				Background(lipgloss.Color("240")).
-				Foreground(lipgloss.Color("15")).
-				Bold(true)
-			pathStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("14")). // Cyan
-				Bold(true)
-			valueStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("10")) // Green
-
-			builder.WriteString(fieldStyle.Render("Select a field to copy its value:"))
-			builder.WriteString("\n\n")
-
-			// Show fields
-			for i, field := range ts.resultFields {
-				var line string
-				if i == ts.resultCursor {
-					line = fmt.Sprintf("▶ %s = %s",
-						pathStyle.Render(field.path),
-						valueStyle.Render(field.value))
-					builder.WriteString(selectedFieldStyle.Render(line))
-				} else {
-					line = fmt.Sprintf("  %s = %s",
-						pathStyle.Render(field.path),
-						valueStyle.Render(field.value))
-					builder.WriteString(line)
-				}
-				builder.WriteString("\n")
+		for i, field := range ts.resultFields {
+			var line string
+			if i == ts.resultCursor {
+				line = fmt.Sprintf("▶ %s = %s",
+					pathStyle.Render(field.path),
+					valueStyle.Render(field.value))
+				builder.WriteString(selectedFieldStyle.Render(line))
+			} else {
+				line = fmt.Sprintf("  %s = %s",
+					pathStyle.Render(field.path),
+					valueStyle.Render(field.value))
+				builder.WriteString(line)
 			}
+			builder.WriteString("\n")
+		}
 
-			// Help text for viewing mode
-			viewHelpStyle := lipgloss.NewStyle().
+		viewHelpStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Italic(true)
+		builder.WriteString("\n")
+		builder.WriteString(viewHelpStyle.Render("↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
+	} else {
+		lines := ts.resultLines
+		if lines == nil {
+			lines = []string{}
+		}
+
+		startIdx := ts.resultScroll
+		endIdx := startIdx + availableHeight
+		if startIdx >= len(lines) {
+			startIdx = max(0, len(lines)-1)
+		}
+		if endIdx > len(lines) {
+			endIdx = len(lines)
+		}
+		visibleLines := lines[startIdx:endIdx]
+
+		resultStyle := ts.resultStyle.
+			Width(termWidth - resultWidthMargin).
+			Height(availableHeight)
+
+		resultContent := strings.Join(visibleLines, "\n")
+		builder.WriteString(resultStyle.Render(resultContent))
+
+		if len(lines) > availableHeight {
+			builder.WriteString("\n")
+
+			scrollStyle := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("243")).
 				Italic(true)
-			builder.WriteString("\n")
-			builder.WriteString(viewHelpStyle.Render("↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
-		} else {
-			// Normal result display with scrolling
-			// Get terminal dimensions with defaults
-			termWidth := ts.Width()
-			if termWidth == 0 {
-				termWidth = defaultTermWidth
+
+			canScrollUp := startIdx > 0
+			canScrollDown := endIdx < len(lines)
+
+			var indicator string
+			switch {
+			case canScrollUp && canScrollDown:
+				indicator = fmt.Sprintf("↑ Ctrl+Up/Down: Scroll (line %d-%d/%d) ↓", startIdx+1, endIdx, len(lines))
+			case canScrollUp:
+				indicator = fmt.Sprintf("↑ Ctrl+Up: Scroll up (line %d-%d/%d)", startIdx+1, endIdx, len(lines))
+			case canScrollDown:
+				indicator = fmt.Sprintf("Ctrl+Down: Scroll down (line %d-%d/%d) ↓", startIdx+1, endIdx, len(lines))
+			default:
+				indicator = fmt.Sprintf("Line %d-%d/%d", startIdx+1, endIdx, len(lines))
 			}
 
-			// Use cached lines (computed in Update when result arrives)
-			lines := ts.resultLines
-			if lines == nil {
-				lines = []string{}
-			}
-
-			// Get available height for display
-			availableHeight := ts.getResultDisplayHeight()
-
-			// Calculate visible range based on scroll position
-			startIdx := ts.resultScroll
-			endIdx := startIdx + availableHeight
-
-			// Ensure we don't exceed bounds
-			if startIdx >= len(lines) {
-				startIdx = max(0, len(lines)-1)
-			}
-			if endIdx > len(lines) {
-				endIdx = len(lines)
-			}
-
-			// Extract visible lines
-			visibleLines := lines[startIdx:endIdx]
-
-			// Create dynamic result style with calculated dimensions
-			resultStyle := ts.resultStyle.
-				Width(termWidth - resultWidthMargin).
-				Height(availableHeight)
-
-			// Render the visible portion
-			resultContent := strings.Join(visibleLines, "\n")
-			builder.WriteString(resultStyle.Render(resultContent))
-
-			// Add scroll indicators if needed (with context-aware arrows)
-			if len(lines) > availableHeight {
-				builder.WriteString("\n")
-
-				scrollStyle := lipgloss.NewStyle().
-					Foreground(lipgloss.Color("243")).
-					Italic(true)
-
-				canScrollUp := startIdx > 0
-				canScrollDown := endIdx < len(lines)
-
-				var indicator string
-				switch {
-				case canScrollUp && canScrollDown:
-					indicator = fmt.Sprintf("↑ Ctrl+Up/Down: Scroll (line %d-%d/%d) ↓", startIdx+1, endIdx, len(lines))
-				case canScrollUp:
-					indicator = fmt.Sprintf("↑ Ctrl+Up: Scroll up (line %d-%d/%d)", startIdx+1, endIdx, len(lines))
-				case canScrollDown:
-					indicator = fmt.Sprintf("Ctrl+Down: Scroll down (line %d-%d/%d) ↓", startIdx+1, endIdx, len(lines))
-				default:
-					indicator = fmt.Sprintf("Line %d-%d/%d", startIdx+1, endIdx, len(lines))
-				}
-
-				builder.WriteString(scrollStyle.Render(indicator))
-			}
-
-			// Show hint about viewing mode and scrolling if we have parseable fields
-			if len(ts.resultFields) > 1 {
-				builder.WriteString("\n")
-				hintStyle := lipgloss.NewStyle().
-					Foreground(lipgloss.Color("243")).
-					Italic(true)
-				builder.WriteString(hintStyle.Render("Press 'v' to view fields • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll"))
-			}
+			builder.WriteString(scrollStyle.Render(indicator))
 		}
-		builder.WriteString("\n")
+
+		if len(ts.resultFields) > 1 {
+			builder.WriteString("\n")
+			hintStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("243")).
+				Italic(true)
+			builder.WriteString(hintStyle.Render("Press 'v' to view fields • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll"))
+		}
 	}
+	builder.WriteString("\n")
+
+	return builder.String()
+}
+
+// renderFooter builds everything below the result block.
+func (ts *ToolScreen) renderFooter() string {
+	var builder strings.Builder
 
 	// CLI command display
 	if ts.showCLICommand && ts.cliCommand != "" {
