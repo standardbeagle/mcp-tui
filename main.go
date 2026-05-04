@@ -124,6 +124,20 @@ Examples:
 				connectionConfig = parsedArgs.Connection
 			}
 
+			// Attach OAuth config when --oauth-* flags were supplied. The
+			// CLI commands do this in parseConnectionConfig; we replicate
+			// it here so TUI mode honors the same flags. Errors here are
+			// fatal — running the TUI with a misconfigured handler would
+			// silently fail every connection attempt.
+			if connectionConfig != nil {
+				if oauthCfg, err := cli.BuildOAuthConfig(cmd, connectionConfig); err != nil {
+					debug.Error("OAuth flag parsing failed", debug.F("error", err))
+					os.Exit(1)
+				} else if oauthCfg != nil {
+					connectionConfig.OAuth = oauthCfg
+				}
+			}
+
 			// Run TUI mode with connection config
 			runTUIMode(ctx, connectionConfig)
 		},
@@ -170,6 +184,30 @@ Examples:
 	// loaded first, then --root flags are appended.
 	rootCmd.PersistentFlags().StringSlice("root", nil, "Declare a root the server may access; format 'name=path' (repeatable)")
 	rootCmd.PersistentFlags().String("roots-file", "", "JSON file with a 'roots' array of {name, uri} entries")
+
+	// OAuth flags. When the MCP server returns 401 + WWW-Authenticate the
+	// SDK transport delegates to an auth.OAuthHandler. mcp-tui supports two
+	// grants:
+	//   * client-credentials (RFC 6749 §4.4) for service-to-service auth.
+	//     Triggered when both --oauth-client-id AND --oauth-client-secret
+	//     are set.
+	//   * authorization-code + PKCE (RFC 6749 §4.1, RFC 7636) for
+	//     interactive auth. Triggered when --oauth-client-id is set
+	//     without a secret, or when --oauth-dynamic-registration is used.
+	// --oauth-token-url overrides automatic discovery via Protected
+	// Resource Metadata + Authorization Server Metadata; useful when the
+	// server cannot publish .well-known endpoints.
+	// Tokens are cached under $XDG_CACHE_HOME/mcp-tui/oauth (Linux),
+	// ~/Library/Caches/mcp-tui/oauth (macOS), or %LOCALAPPDATA%\mcp-tui\
+	// oauth (Windows). Pass --oauth-cache=- to disable persistence.
+	rootCmd.PersistentFlags().String("oauth-client-id", "", "OAuth client ID (enables OAuth on HTTP transports)")
+	rootCmd.PersistentFlags().String("oauth-client-secret", "", "OAuth client secret (with --oauth-client-id, switches to client-credentials grant)")
+	rootCmd.PersistentFlags().String("oauth-token-url", "", "OAuth token endpoint override (skips auto-discovery)")
+	rootCmd.PersistentFlags().String("oauth-scopes", "", "Comma- or space-separated OAuth scopes to request")
+	rootCmd.PersistentFlags().String("oauth-redirect-host", "127.0.0.1", "Host for the auth-code redirect URI (loopback only)")
+	rootCmd.PersistentFlags().Int("oauth-redirect-port", 0, "Port for the auth-code redirect URI (0 = ephemeral)")
+	rootCmd.PersistentFlags().Bool("oauth-dynamic-registration", false, "Enable RFC 7591 dynamic client registration when ClientID is empty")
+	rootCmd.PersistentFlags().String("oauth-cache", "", "Token cache directory ('-' to disable; default: platform cache dir)")
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())

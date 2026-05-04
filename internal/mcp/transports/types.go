@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -34,6 +35,11 @@ type TransportConfig struct {
 	// HTTP/SSE specific
 	URL        string
 	HTTPClient *http.Client
+
+	// OAuthHandler is plumbed through to the SDK's
+	// StreamableClientTransport when set. SSE and STDIO transports do
+	// not support OAuth in the SDK and ignore this field.
+	OAuthHandler auth.OAuthHandler
 
 	// Common options
 	Timeout   time.Duration

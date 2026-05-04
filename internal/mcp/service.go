@@ -14,6 +14,7 @@ import (
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
@@ -98,6 +99,12 @@ type service struct {
 	// notifications.
 	roots  []*officialMCP.Root
 	client *officialMCP.Client // captured at createClient so post-connect AddRoots/RemoveRoots can reach it
+
+	// oauthHandler is non-nil when the connection config carried an
+	// *oauth.Config and Connect successfully built a handler. Exposed via
+	// GetOAuthHandler() so the TUI status indicator can read state and
+	// the Re-authenticate keybinding can clear cached tokens.
+	oauthHandler *oauth.Handler
 }
 
 // getNextRequestID returns the next request ID
@@ -211,6 +218,14 @@ func (s *service) ListRoots() []*officialMCP.Root {
 	return out
 }
 
+// GetOAuthHandler returns the OAuth handler installed at Connect time, or
+// nil if the connection did not use OAuth.
+func (s *service) GetOAuthHandler() *oauth.Handler {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.oauthHandler
+}
+
 // SetDebugMode enables or disables debug mode
 func (s *service) SetDebugMode(debug bool) {
 	s.debugMode = debug
@@ -284,6 +299,24 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	}
 
 	transportConfig := transports.FromConnectionConfig(config, s.debugMode, 30*time.Second)
+
+	// Build an OAuth handler when the connection config carried one. Type
+	// asserting via interface{} keeps the config package free of an
+	// oauth-package dependency. SDK-side, only StreamableClientTransport
+	// honours OAuthHandler — for SSE/STDIO this field is silently
+	// ignored, which matches the current SDK contract.
+	if oauthCfg, ok := config.OAuth.(*oauth.Config); ok && oauthCfg != nil && oauthCfg.Mode() != oauth.ModeNone {
+		cache, err := oauth.NewFileTokenCache(oauthCfg.CachePath)
+		if err != nil {
+			return fmt.Errorf("failed to init oauth token cache: %w", err)
+		}
+		handler, err := oauth.NewHandler(oauthCfg, nil, cache)
+		if err != nil {
+			return fmt.Errorf("failed to init oauth handler: %w", err)
+		}
+		s.oauthHandler = handler
+		transportConfig.OAuthHandler = handler
+	}
 
 	s.logConnectionDetails(config)
 
@@ -497,6 +530,11 @@ func (s *service) Disconnect() error {
 	// Future SetInitialRoots / AddRoots calls will accumulate locally and
 	// be re-seeded on the next Connect.
 	s.client = nil
+
+	// Drop the OAuth handler. A subsequent Connect rebuilds it from
+	// the new connection config; tokens are still persisted on disk so
+	// the rebuilt handler can hot-load them.
+	s.oauthHandler = nil
 
 	// Update server info
 	s.info.Connected = false

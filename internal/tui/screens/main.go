@@ -12,6 +12,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
@@ -728,6 +729,19 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "A":
+		// Re-authenticate: clear cached OAuth state so the next outgoing
+		// request triggers a fresh Authorize() call. Only meaningful when
+		// an OAuth handler is wired into the transport.
+		if h := ms.mcpService.GetOAuthHandler(); h != nil {
+			if err := h.Reauthenticate(); err != nil {
+				ms.logger.Error("OAuth re-authenticate failed", debug.F("error", err))
+			} else {
+				ms.logger.Info("OAuth state cleared; next request will re-authorize")
+			}
+		}
+		return ms, nil
+
 	case "d":
 		// Disconnect and return to connection screen
 		ms.logger.Info("User requested disconnect")
@@ -1012,6 +1026,13 @@ func (ms *MainScreen) View() string {
 
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
 	titleAndStatus += statusStyle.Render(ms.connectionStatus) + "\n"
+
+	// OAuth status indicator: surface mode + state when an OAuth handler
+	// is wired into the transport. Hidden when no OAuth is in use to
+	// avoid cluttering the dominant STDIO path.
+	if oauthStatus := ms.renderOAuthStatus(); oauthStatus != "" {
+		titleAndStatus += oauthStatus + "\n"
+	}
 
 	builder.WriteString(titleAndStatus)
 
@@ -2435,4 +2456,53 @@ func (ms *MainScreen) renderPromptViewer() string {
 	builder.WriteString(instructionStyle.Render("Press 'q' or Escape to go back to list"))
 
 	return builder.String()
+}
+
+// renderOAuthStatus produces the per-screen OAuth status indicator. Returns
+// an empty string when no OAuth handler is wired (the dominant case for
+// STDIO and non-OAuth HTTP connections), so the caller can concatenate
+// unconditionally without conditional layout logic.
+//
+// State color mapping mirrors the connection-status palette: green for
+// authorized, yellow for in-flight, red for error, and a dim gray for
+// idle (waiting for the first 401 to arrive). The "[A] Re-authenticate"
+// hint only appears once authorization has been performed at least once,
+// since pressing 'A' before then is a no-op.
+func (ms *MainScreen) renderOAuthStatus() string {
+	if ms.mcpService == nil {
+		return ""
+	}
+	h := ms.mcpService.GetOAuthHandler()
+	if h == nil {
+		return ""
+	}
+	st := h.Status()
+	if st.Mode == oauth.ModeNone {
+		return ""
+	}
+
+	color := "8" // gray (idle)
+	switch st.State {
+	case oauth.StateAuthorized:
+		color = "10" // green
+	case oauth.StateAuthorizing:
+		color = "11" // yellow
+	case oauth.StateError:
+		color = "9" // red
+	}
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+
+	label := fmt.Sprintf("OAuth: %s [%s]", st.Mode, st.State)
+	if st.LastError != nil {
+		// Trim long error messages so they don't push the layout around.
+		errMsg := st.LastError.Error()
+		if len(errMsg) > 80 {
+			errMsg = errMsg[:77] + "..."
+		}
+		label += " — " + errMsg
+	}
+	if st.State == oauth.StateAuthorized || st.State == oauth.StateError {
+		label += "  (A: Re-authenticate)"
+	}
+	return style.Render(label)
 }

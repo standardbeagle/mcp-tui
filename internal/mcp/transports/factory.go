@@ -73,10 +73,13 @@ func (f *factory) createSSETransport(config *TransportConfig, strategy ContextSt
 func (f *factory) createHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	httpClient := GetHTTPClientForTransport(TransportHTTP, config.HTTPClient)
 
-	// Create HTTP transport using official SDK (direct struct initialization)
+	// Create HTTP transport using official SDK (direct struct initialization).
+	// OAuthHandler is wired through when the user supplied OAuth flags;
+	// the SDK transport calls Authorize() on the first 401/403 response.
 	transport := &officialMCP.StreamableClientTransport{
-		Endpoint:   config.URL,
-		HTTPClient: httpClient,
+		Endpoint:     config.URL,
+		HTTPClient:   httpClient,
+		OAuthHandler: config.OAuthHandler,
 	}
 
 	return transport, strategy, nil
@@ -86,10 +89,11 @@ func (f *factory) createHTTPTransport(config *TransportConfig, strategy ContextS
 func (f *factory) createStreamableHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	httpClient := GetHTTPClientForTransport(TransportStreamableHTTP, config.HTTPClient)
 
-	// Create streamable HTTP transport using official SDK (direct struct initialization)
+	// Create streamable HTTP transport using official SDK (direct struct initialization).
 	transport := &officialMCP.StreamableClientTransport{
-		Endpoint:   config.URL,
-		HTTPClient: httpClient,
+		Endpoint:     config.URL,
+		HTTPClient:   httpClient,
+		OAuthHandler: config.OAuthHandler,
 	}
 
 	return transport, strategy, nil

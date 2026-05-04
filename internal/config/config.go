@@ -54,6 +54,15 @@ type ConnectionConfig struct {
 	Args    []string
 	URL     string
 	Headers map[string]string
+
+	// OAuth carries optional OAuth 2.0 client configuration. When non-nil
+	// and the transport is HTTP/streamable-HTTP, the service plugs an
+	// auth.OAuthHandler into the SDK transport so 401/403 responses
+	// trigger the configured grant (client-credentials or
+	// authorization-code + PKCE). Defined as interface{} to keep the
+	// config package free of an oauth-package import; the mcp service
+	// layer type-asserts it back to *oauth.Config.
+	OAuth interface{}
 }
 
 // Validate checks if the configuration is valid

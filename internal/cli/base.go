@@ -12,6 +12,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/roots"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
@@ -165,7 +166,65 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		return nil, c.connectionConfigError()
 	}
 
+	// Attach OAuth config when the user supplied any OAuth flag. We only
+	// build the *oauth.Config here — handler construction and cache init
+	// happen inside the mcp service at Connect time so the same code path
+	// covers both CLI and TUI invocations.
+	if oauthCfg, err := BuildOAuthConfig(cmd, connConfig); err != nil {
+		return nil, err
+	} else if oauthCfg != nil {
+		connConfig.OAuth = oauthCfg
+	}
+
 	return connConfig, nil
+}
+
+// BuildOAuthConfig translates --oauth-* flags into an *oauth.Config. Returns
+// (nil, nil) when no OAuth flag was supplied. The function is shared by the
+// CLI parseConnectionConfig path and the TUI launcher in main.go which
+// processes the same persistent flags before handing the connection config
+// to the screen manager.
+func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (*oauth.Config, error) {
+	clientID, _ := cmd.Flags().GetString("oauth-client-id")
+	clientSecret, _ := cmd.Flags().GetString("oauth-client-secret")
+	tokenURL, _ := cmd.Flags().GetString("oauth-token-url")
+	scopes, _ := cmd.Flags().GetString("oauth-scopes")
+	redirectHost, _ := cmd.Flags().GetString("oauth-redirect-host")
+	redirectPort, _ := cmd.Flags().GetInt("oauth-redirect-port")
+	dynReg, _ := cmd.Flags().GetBool("oauth-dynamic-registration")
+	cachePath, _ := cmd.Flags().GetString("oauth-cache")
+
+	// No OAuth flags? Bail early so we don't pollute connections that
+	// don't need auth.
+	if clientID == "" && clientSecret == "" && tokenURL == "" && scopes == "" &&
+		redirectPort == 0 && !dynReg && cachePath == "" {
+		return nil, nil
+	}
+
+	// OAuth requires an HTTP-style transport since the SDK only honors
+	// OAuthHandler on StreamableClientTransport.
+	if connConfig.Type == config.TransportStdio {
+		return nil, fmt.Errorf("oauth flags are only supported on HTTP transports (got %s)", connConfig.Type)
+	}
+	if connConfig.URL == "" {
+		return nil, fmt.Errorf("oauth flags require --url")
+	}
+
+	cfg := &oauth.Config{
+		ServerURL:                 connConfig.URL,
+		ClientID:                  clientID,
+		ClientSecret:              clientSecret,
+		TokenURL:                  tokenURL,
+		Scopes:                    oauth.ParseScopes(scopes),
+		RedirectHost:              redirectHost,
+		RedirectPort:              redirectPort,
+		EnableDynamicRegistration: dynReg,
+		CachePath:                 cachePath,
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // connectionConfigError returns an error for missing connection configuration

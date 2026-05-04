@@ -7,6 +7,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
 
@@ -49,6 +50,12 @@ type Service interface {
 	// ListRoots returns a snapshot of the current roots. The slice is a
 	// copy and may be mutated by the caller without affecting the service.
 	ListRoots() []*officialMCP.Root
+
+	// GetOAuthHandler returns the OAuth handler that was wired into the
+	// transport at Connect time, or nil if the connection did not use
+	// OAuth. The TUI status indicator reads Status() from this handler;
+	// the Re-authenticate keybinding calls Reauthenticate() on it.
+	GetOAuthHandler() *oauth.Handler
 
 	// Tool operations
 	ListTools(ctx context.Context) ([]Tool, error)
