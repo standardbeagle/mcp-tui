@@ -12,6 +12,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	. "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
@@ -86,7 +87,8 @@ type service struct {
 	errorHandler     *errors.ErrorHandler
 	config           *UnifiedConfig              // Add unified configuration
 	connectionConfig *configPkg.ConnectionConfig // Store connection config for CLI generation
-	samplingHandler  sampling.Handler            // Optional handler for sampling/createMessage requests
+	samplingHandler    sampling.Handler     // Optional handler for sampling/createMessage requests
+	elicitationHandler elicitation.Handler // Optional handler for elicitation/create requests
 }
 
 // getNextRequestID returns the next request ID
@@ -105,6 +107,16 @@ func (s *service) SetSamplingHandler(handler sampling.Handler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.samplingHandler = handler
+}
+
+// SetElicitationHandler installs a handler for server-initiated
+// elicitation/create requests. Must be called before Connect — the SDK
+// reads the handler at client construction time, so installing it later has
+// no effect on already-running sessions.
+func (s *service) SetElicitationHandler(handler elicitation.Handler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.elicitationHandler = handler
 }
 
 // SetDebugMode enables or disables debug mode
@@ -274,6 +286,16 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 			}
 			debug.Info("Sampling handler registered with MCP client")
 		}
+	}
+	if s.elicitationHandler != nil {
+		// Capture the handler so the closure does not race with later
+		// SetElicitationHandler calls. Setting ElicitationHandler also
+		// causes the SDK to advertise the elicitation capability automatically.
+		ehandler := s.elicitationHandler
+		clientOptions.ElicitationHandler = func(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
+			return ehandler.HandleElicit(ctx, req)
+		}
+		debug.Info("Elicitation handler registered with MCP client")
 	}
 
 	// Create client with enhanced debugging capabilities

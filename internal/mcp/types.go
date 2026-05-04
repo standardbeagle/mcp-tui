@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
 
@@ -20,6 +21,11 @@ type Service interface {
 	// sampling/createMessage requests. It must be called before Connect; the
 	// SDK reads the handler at client construction time. Pass nil to clear.
 	SetSamplingHandler(handler sampling.Handler)
+
+	// SetElicitationHandler installs a handler for server-initiated
+	// elicitation/create requests. It must be called before Connect; the
+	// SDK reads the handler at client construction time. Pass nil to clear.
+	SetElicitationHandler(handler elicitation.Handler)
 
 	// Tool operations
 	ListTools(ctx context.Context) ([]Tool, error)

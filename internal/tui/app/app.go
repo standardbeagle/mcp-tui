@@ -8,6 +8,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/tui/screens"
 )
@@ -57,6 +58,15 @@ func (a *App) Run(ctx context.Context) error {
 				program.Send(screens.SamplingRequestMsg{Pending: pending})
 			})
 			svc.SetSamplingHandler(handler)
+
+			// Same wiring for elicitation: the SDK calls into the handler on
+			// its own goroutine when a server sends elicitation/create, and
+			// we forward the PendingRequest to the bubbletea Update loop so
+			// the form overlay can render.
+			elicitHandler := elicitation.NewTUIHandler(func(pending *elicitation.PendingRequest) {
+				program.Send(screens.ElicitationRequestMsg{Pending: pending})
+			})
+			svc.SetElicitationHandler(elicitHandler)
 		}
 	}
 

@@ -152,6 +152,16 @@ Examples:
 	rootCmd.PersistentFlags().String("sampling-stub-file", "", "JSON file with reply template for sampling/createMessage requests")
 	rootCmd.PersistentFlags().String("sampling-tool-use", "", "Auto-reply with a tool_use block of the form '<tool_name>:<json args>' (CLI mode)")
 
+	// Elicitation stub flags. When the connected server issues an
+	// elicitation/create request, the CLI replies with this stub instead of
+	// rendering a form (CLI is non-interactive). --elicit-stub takes inline
+	// JSON whose object keys are the form Content map; --elicit-stub-file
+	// reads the same JSON shape from disk. Use the reserved keys "_action"
+	// and "_content" to test decline/cancel paths or to disambiguate stubs
+	// whose form keys would otherwise collide with reserved names.
+	rootCmd.PersistentFlags().String("elicit-stub", "", "Auto-reply JSON for elicitation/create requests (CLI mode)")
+	rootCmd.PersistentFlags().String("elicit-stub-file", "", "JSON file with reply for elicitation/create requests")
+
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())
 	rootCmd.AddCommand(createResourceCommand())

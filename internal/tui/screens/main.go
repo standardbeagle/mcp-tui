@@ -303,6 +303,9 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SamplingRequestMsg:
 		return ms.handleSamplingRequest(msg)
+
+	case ElicitationRequestMsg:
+		return ms.handleElicitationRequest(msg)
 	}
 
 	return ms, nil
@@ -319,6 +322,22 @@ func (ms *MainScreen) handleSamplingRequest(msg SamplingRequestMsg) (tea.Model, 
 		return ms, nil
 	}
 	overlay := NewSamplingScreen(msg.Pending)
+	return ms, func() tea.Msg {
+		return TransitionMsg{Transition: ScreenTransition{Screen: overlay}}
+	}
+}
+
+// handleElicitationRequest opens the elicitation overlay in response to a
+// server-initiated elicitation/create request. Mirrors handleSamplingRequest:
+// the overlay owns the PendingRequest's lifecycle (Resolve must be called on
+// it before the overlay is dismissed); the SDK goroutine that produced the
+// request is blocked until the overlay reports back.
+func (ms *MainScreen) handleElicitationRequest(msg ElicitationRequestMsg) (tea.Model, tea.Cmd) {
+	if msg.Pending == nil {
+		ms.logger.Warn("Received ElicitationRequestMsg with nil pending request")
+		return ms, nil
+	}
+	overlay := NewElicitationScreen(msg.Pending)
 	return ms, func() tea.Msg {
 		return TransitionMsg{Transition: ScreenTransition{Screen: overlay}}
 	}

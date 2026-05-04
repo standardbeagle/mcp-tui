@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
 
@@ -190,6 +191,12 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error
 	if err := c.configureSamplingHandler(cmd); err != nil {
 		return err
 	}
+	// Wire up elicitation stub handler when configured. Same non-interactive
+	// reasoning as sampling — without a stub, an elicitation request returns
+	// a JSON-RPC error to the server.
+	if err := c.configureElicitationHandler(cmd); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -231,6 +238,34 @@ func (c *BaseCommand) configureSamplingHandler(cmd *cobra.Command) error {
 			return err
 		}
 		c.service.SetSamplingHandler(handler)
+	}
+	return nil
+}
+
+// configureElicitationHandler reads --elicit-stub / --elicit-stub-file from
+// the command and registers the corresponding handler on the service. The
+// two flags are mutually exclusive; setting both is a usage error.
+func (c *BaseCommand) configureElicitationHandler(cmd *cobra.Command) error {
+	stubJSON, _ := cmd.Flags().GetString("elicit-stub")
+	stubFile, _ := cmd.Flags().GetString("elicit-stub-file")
+
+	if stubJSON != "" && stubFile != "" {
+		return fmt.Errorf("--elicit-stub and --elicit-stub-file are mutually exclusive")
+	}
+
+	switch {
+	case stubJSON != "":
+		handler, err := elicitation.NewJSONStubHandler(stubJSON)
+		if err != nil {
+			return err
+		}
+		c.service.SetElicitationHandler(handler)
+	case stubFile != "":
+		handler, err := elicitation.NewFileStubHandler(stubFile)
+		if err != nil {
+			return err
+		}
+		c.service.SetElicitationHandler(handler)
 	}
 	return nil
 }
