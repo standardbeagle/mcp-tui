@@ -89,6 +89,13 @@ type MainScreen struct {
 	connecting       bool
 	connectingStart  time.Time
 
+	// connectionSuccessHook, when non-nil, is invoked with the negotiated
+	// MCP protocol version after a successful connect. The connection
+	// screen wires this to ConnectionsManager.UpdateLastUsedWithVersion so
+	// the version persists into the saved-connections file without
+	// MainScreen having to import the models package directly.
+	connectionSuccessHook func(version string)
+
 	// Styles
 	tabStyle       lipgloss.Style
 	activeTabStyle lipgloss.Style
@@ -194,6 +201,42 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 // that bridges to tea.Program.Send) before the connection is initiated.
 func (ms *MainScreen) Service() mcp.Service {
 	return ms.mcpService
+}
+
+// SetConnectionSuccessHook installs a callback fired with the negotiated
+// MCP protocol version once the initial connect succeeds. The connection
+// screen uses this to persist the version into the saved-connections list;
+// other launchers may leave the hook unset.
+func (ms *MainScreen) SetConnectionSuccessHook(fn func(version string)) {
+	ms.connectionSuccessHook = fn
+}
+
+// formatConnectedStatus renders the connected status line for the TUI
+// status bar. The format is `Connected to <transport-target> [MCP <version>]`
+// — the bracketed suffix is omitted when the version is empty (which can
+// happen briefly during the synthetic test path, or against a server that
+// did not return a ProtocolVersion in its InitializeResult).
+func formatConnectedStatus(connConfig *config.ConnectionConfig, version string) string {
+	if connConfig == nil {
+		if version != "" {
+			return fmt.Sprintf("Connected [MCP %s]", version)
+		}
+		return "Connected"
+	}
+
+	var target string
+	switch connConfig.Type {
+	case config.TransportHTTP, config.TransportSSE:
+		target = connConfig.URL
+	default:
+		// STDIO and any future transport that uses command/args.
+		target = strings.TrimSpace(fmt.Sprintf("%s %s", connConfig.Command, strings.Join(connConfig.Args, " ")))
+	}
+
+	if version != "" {
+		return fmt.Sprintf("Connected to %s [MCP %s]", target, version)
+	}
+	return fmt.Sprintf("Connected to %s", target)
 }
 
 // initializeComponents initializes screen components
@@ -380,8 +423,24 @@ func (ms *MainScreen) handleConnectionComplete(msg ConnectionCompleteMsg) (tea.M
 // handleConnectionSuccess handles successful connection
 func (ms *MainScreen) handleConnectionSuccess() (tea.Model, tea.Cmd) {
 	ms.connected = true
-	ms.connectionStatus = fmt.Sprintf("Connected to %s %s",
-		ms.connectionConfig.Command, strings.Join(ms.connectionConfig.Args, " "))
+
+	// Surface the negotiated MCP protocol version next to the transport
+	// label. The version is fetched from the service rather than the
+	// snapshot because GetServerInfo is the spec-confirmed value used by
+	// the same service for legacy reporting and is the cheapest call site.
+	var version string
+	if info := ms.mcpService.GetServerInfo(); info != nil {
+		version = info.ProtocolVersion
+	}
+	ms.connectionStatus = formatConnectedStatus(ms.connectionConfig, version)
+
+	// Notify any caller (e.g. the connection screen) that wanted to know
+	// the negotiated version — used to persist it onto saved-connection
+	// entries via ConnectionsManager.UpdateLastUsedWithVersion. Nil hook
+	// is the typical case (CLI / manual entry) and is safe.
+	if ms.connectionSuccessHook != nil {
+		ms.connectionSuccessHook(version)
+	}
 
 	// Set loading states for all tabs
 	now := time.Now()

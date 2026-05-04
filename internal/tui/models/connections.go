@@ -27,6 +27,13 @@ type ConnectionEntry struct {
 	LastUsed    *time.Time           `json:"lastUsed,omitempty"`
 	Success     bool                 `json:"success"`
 	Tags        []string             `json:"tags,omitempty"`
+
+	// LastSeenVersion is the negotiated MCP protocol version from the most
+	// recent successful connection to this server. Persisted so users can
+	// see at a glance which spec a saved server agreed to last time without
+	// having to re-connect. Omitted from JSON when empty so newly-imported
+	// entries (e.g. from Claude Desktop config) do not carry an empty key.
+	LastSeenVersion string `json:"lastSeenVersion,omitempty"`
 }
 
 // ConnectionsConfig represents the saved connections configuration file
@@ -377,6 +384,29 @@ func (cm *ConnectionsManager) UpdateLastUsed(serverID string, success bool) {
 		// Save changes
 		cm.SaveConnections()
 	}
+}
+
+// UpdateLastUsedWithVersion is the version-aware sibling of UpdateLastUsed.
+// Callers invoke it after a successful Connect with the server-confirmed
+// MCP protocol version so the saved-connections list can surface "MCP <ver>"
+// in the UI without re-negotiating. An empty version (e.g. from a failed
+// reconnect where Success is false) is treated as "no new information" and
+// leaves any previously-recorded value intact — we never want a transient
+// failure to wipe the last good observation.
+func (cm *ConnectionsManager) UpdateLastUsedWithVersion(serverID string, success bool, version string) {
+	entry, exists := cm.config.Servers[serverID]
+	if !exists {
+		return
+	}
+	now := time.Now()
+	entry.LastUsed = &now
+	entry.Success = success
+	if version != "" {
+		entry.LastSeenVersion = version
+	}
+
+	cm.updateRecentConnections(serverID, success)
+	cm.SaveConnections()
 }
 
 // updateRecentConnections updates the recent connections list

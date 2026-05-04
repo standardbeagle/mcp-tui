@@ -120,7 +120,8 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	ctx, cancel := c.WithContext()
 	defer cancel()
 
-	if err := c.connectToServer(ctx, connConfig, porcelainMode); err != nil {
+	debugMode, _ := cmd.Flags().GetBool("debug")
+	if err := c.connectToServer(ctx, connConfig, porcelainMode, debugMode); err != nil {
 		return err
 	}
 
@@ -371,8 +372,11 @@ func (c *BaseCommand) configureElicitationHandler(cmd *cobra.Command) error {
 	return nil
 }
 
-// connectToServer establishes connection to the MCP server
-func (c *BaseCommand) connectToServer(ctx context.Context, connConfig *config.ConnectionConfig, porcelainMode bool) error {
+// connectToServer establishes connection to the MCP server. The debugMode
+// argument is read at the call site (CreateClient) rather than here because
+// this method doesn't carry a *cobra.Command — keeping cobra dependence
+// localized to the entry-points.
+func (c *BaseCommand) connectToServer(ctx context.Context, connConfig *config.ConnectionConfig, porcelainMode, debugMode bool) error {
 	if !porcelainMode {
 		c.showConnectionMessage(connConfig)
 		fmt.Fprintf(os.Stderr, ConnectionTimeout, c.timeout)
@@ -386,7 +390,30 @@ func (c *BaseCommand) connectToServer(ctx context.Context, connConfig *config.Co
 		return err
 	}
 
+	// When --debug is set, surface the negotiated MCP protocol version on
+	// stderr so users can confirm which spec the server agreed to without
+	// having to inspect the wire log. Porcelain mode suppresses this for
+	// the same reason it suppresses the rest of the human progress output.
+	if !porcelainMode {
+		printNegotiatedVersion(c.service, debugMode)
+	}
+
 	return nil
+}
+
+// printNegotiatedVersion writes the negotiated MCP protocol version to
+// stderr when debugMode is true. Safe to call with nil service (no-op) and
+// with an empty version (no-op) — both can occur during early failure
+// paths and must not produce a half-formed "MCP " line.
+func printNegotiatedVersion(svc mcp.Service, debugMode bool) {
+	if !debugMode || svc == nil {
+		return
+	}
+	info := svc.GetServerInfo()
+	if info == nil || info.ProtocolVersion == "" {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "🔖 Negotiated MCP %s\n", info.ProtocolVersion)
 }
 
 // showConnectionMessage displays the appropriate connection message

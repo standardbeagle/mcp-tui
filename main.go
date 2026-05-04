@@ -151,6 +151,12 @@ Examples:
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	// Debug mode always enabled - this is a testing/debug tool
 	cfg.DebugMode = true
+	// Register an explicit --debug bool flag so callers can opt into the
+	// extra stderr diagnostics (e.g. negotiated MCP protocol version on
+	// connect). The flag's value is read by base.go and was previously
+	// referenced without ever being registered, which silently disabled
+	// the diagnostic output.
+	rootCmd.PersistentFlags().Bool("debug", false, "Print extra diagnostics to stderr (e.g. negotiated MCP protocol version on connect)")
 	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "error", "Log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringP("format", "f", "text", "Output format (text, json)")
 	rootCmd.PersistentFlags().Bool("porcelain", false, "Machine-readable output (disables progress messages)")

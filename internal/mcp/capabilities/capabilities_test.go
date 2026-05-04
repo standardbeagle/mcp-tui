@@ -8,6 +8,38 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// TestFromInitializeResult_ProtocolVersionExtraction is the focused unit
+// test for the Tier-2 status-bar feature: verify that the negotiated MCP
+// protocol version extracted from the SDK's *InitializeResult.ProtocolVersion
+// flows verbatim into Snapshot.ProtocolVersion across the spec versions
+// mcp-tui actually encounters. The TUI status bar renderer reads the same
+// field via service.GetServerInfo(), so a regression here would silently
+// blank out the "MCP <version>" label.
+func TestFromInitializeResult_ProtocolVersionExtraction(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"current_default_2025_11_25", "2025-11-25"},
+		{"prior_release_2025_06_18", "2025-06-18"},
+		{"legacy_2024_11_05", "2024-11-05"},
+		{"server_returned_empty", ""},
+		{"hypothetical_future_version", "2026-12-01"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			snap := FromInitializeResult(
+				&officialMCP.InitializeResult{ProtocolVersion: tc.in},
+				nil,
+				nil,
+			)
+			if snap.ProtocolVersion != tc.in {
+				t.Errorf("ProtocolVersion = %q; want %q", snap.ProtocolVersion, tc.in)
+			}
+		})
+	}
+}
+
 // TestFromInitializeResult_NilInput validates that the constructor handles
 // nil-everywhere gracefully: this is the state right after service creation,
 // before Connect. The TUI debug screen reads the snapshot every render tick

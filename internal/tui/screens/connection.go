@@ -713,6 +713,16 @@ func (cs *ConnectionScreen) handleSavedConnectionConnect() (tea.Model, tea.Cmd) 
 			svc.SetInitialRoots(cs.pendingRoots)
 		}
 	}
+
+	// Persist the negotiated MCP protocol version onto this saved entry
+	// once the connection actually completes. The hook closes over the
+	// connection ID so the manager call site stays out of MainScreen.
+	connectionID := currentConnection.ID
+	manager := cs.connectionsManager
+	mainScreen.SetConnectionSuccessHook(func(version string) {
+		manager.UpdateLastUsedWithVersion(connectionID, true, version)
+	})
+
 	return mainScreen, mainScreen.Init()
 }
 
