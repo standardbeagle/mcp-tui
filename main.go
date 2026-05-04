@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	version = "0.8.1"
+	version = "0.8.2"
 	cfg     *config.Config
 
 	// Global connection config that can be passed to subcommands

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-05-04
+
+### Fixed
+- **Logger**: `WithComponent`/`WithFields` child loggers now share parent `logChan`, fixing silent log message drops
+- **Process**: `Kill()` returns `nil` on success instead of propagating `signal: terminated` from `cmd.Wait()`
+- **Errors**: Non-constant `fmt.Errorf` format strings corrected (go vet compliance)
+- **Tests**: Updated test suite to match current error messages, JSON-RPC 2.0 mock format, and rendered UI output
+
 ## [0.8.1] - 2026-05-01
 
 ### Changed
