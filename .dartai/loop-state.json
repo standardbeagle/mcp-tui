@@ -1,0 +1,15 @@
+{
+  "status": "running",
+  "iterations": 0,
+  "spawns": 0,
+  "started_at": "2026-05-04T20:20:29Z",
+  "last_iteration_at": null,
+  "last_subagent": null,
+  "loop_task_id": "aaaw3MX9Vp50",
+  "dartboard": "Personal/mcp-tui",
+  "runner_instance_id": "DESKTOP-NPIOPS6-526739",
+  "runner_email": "andybrummer@standardbeagle.com",
+  "runner_dart_id": null,
+  "agent_id": "DESKTOP-NPIOPS6-526739",
+  "tasks": []
+}
