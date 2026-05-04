@@ -1,1 +1,17 @@
-{"claims":{}}
+{
+  "claims": {
+    "AfV1opJXNCrQ": {
+      "runner_instance_id": "DESKTOP-NPIOPS6-526739",
+      "runner_email": "andybrummer@standardbeagle.com",
+      "claimed_at": "2026-05-04T21:05:00Z",
+      "agent_id": "DESKTOP-NPIOPS6-526739",
+      "parent_loop_id": "aaaw3MX9Vp50",
+      "purpose": "Ralph Wiggum loop — Personal/mcp-tui Tier 1 iteration 2",
+      "source_event": {
+        "loop_id": "aaaw3MX9Vp50",
+        "task_id": "AfV1opJXNCrQ",
+        "conversation_id": null
+      }
+    }
+  }
+}
