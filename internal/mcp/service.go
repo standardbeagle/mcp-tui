@@ -15,6 +15,7 @@ import (
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
@@ -118,6 +119,18 @@ type service struct {
 	// it so the snapshot can include client identity without re-deriving the
 	// values inside createClient.
 	clientImpl *officialMCP.Implementation
+
+	// notificationStream is the ring buffer of server-to-client notifications
+	// captured by the receiving middleware. Lazy-initialized inside
+	// createClient so unit tests that bypass the connect path get a non-nil
+	// stream once they call NotificationStream(). nil is preserved as a
+	// signal that the service has never been wired through createClient.
+	notificationStream *notifications.Stream
+
+	// notificationObservers receive a copy of every captured Entry. Used by
+	// the CLI --watch-notifications flag and tests; never reads from the
+	// underlying ring buffer so observers cannot affect what TUI sees.
+	notificationObservers []func(notifications.Entry)
 }
 
 // getNextRequestID returns the next request ID
@@ -239,6 +252,38 @@ func (s *service) GetOAuthHandler() *oauth.Handler {
 	return s.oauthHandler
 }
 
+// NotificationStream returns the per-service ring buffer of captured
+// server-to-client notifications. Lazy-initialized so tests that exercise the
+// service before Connect still receive a non-nil stream. Safe for concurrent
+// reads from the UI goroutine while the receiving middleware appends.
+func (s *service) NotificationStream() *notifications.Stream {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.notificationStream == nil {
+		s.notificationStream = notifications.NewStream()
+	}
+	return s.notificationStream
+}
+
+// AddNotificationObserver registers a callback that receives a copy of every
+// captured notification Entry, in addition to the entry being appended to
+// the ring buffer. Observers fire on the receiving goroutine so they must
+// return quickly — the CLI flag implementation writes a single line to
+// stderr, which is fast enough; observers that do heavier work should
+// dispatch to their own goroutine.
+//
+// Calling with nil is a no-op. Observers cannot be removed individually —
+// the stream's lifetime is the service's lifetime, and we don't have a use
+// case for transient observers.
+func (s *service) AddNotificationObserver(fn func(notifications.Entry)) {
+	if fn == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.notificationObservers = append(s.notificationObservers, fn)
+}
+
 // SetDebugMode enables or disables debug mode
 func (s *service) SetDebugMode(debug bool) {
 	s.debugMode = debug
@@ -270,6 +315,50 @@ func (s *service) createLoggingMiddleware() officialMCP.Middleware {
 			}
 
 			return result, err
+		}
+	}
+}
+
+// captureNotificationsMiddleware returns a receiving middleware that records
+// every server-to-client notification into s.notificationStream. The
+// middleware delegates to the next handler unconditionally — capture is
+// strictly observational, never altering the SDK's normal dispatch behavior.
+//
+// We invoke observer callbacks before delegating so a CLI consumer that
+// writes to stderr sees the entry in arrival order even when the typed
+// handler also runs (e.g. ProgressNotificationHandler).
+func (s *service) captureNotificationsMiddleware() officialMCP.Middleware {
+	return func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
+		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
+			if entry, ok := notifications.FromRequest(method, req, time.Now()); ok {
+				// Capture under the service mutex so AddNotificationObserver
+				// races (rare, but possible during init) cannot drop entries.
+				s.mu.Lock()
+				stream := s.notificationStream
+				observers := make([]func(notifications.Entry), len(s.notificationObservers))
+				copy(observers, s.notificationObservers)
+				s.mu.Unlock()
+				if stream != nil {
+					stream.Append(entry)
+				}
+				for _, obs := range observers {
+					// Recover so a panicking observer does not break the SDK
+					// dispatch path. The cost of one defer per notification is
+					// acceptable — these fire at human-perceptible rates, not
+					// in tight loops.
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								debug.Warn("notification observer panicked",
+									debug.F("method", method),
+									debug.F("panic", fmt.Sprintf("%v", r)))
+							}
+						}()
+						obs(entry)
+					}()
+				}
+			}
+			return next(ctx, method, req)
 		}
 	}
 }
@@ -458,6 +547,17 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 	if s.debugMode && s.sessionManager.GetEventTracer() == nil {
 		client.AddSendingMiddleware(s.createLoggingMiddleware())
 	}
+
+	// Install the notification capture middleware on the receiving side.
+	// This sees every server→client message — including notifications/cancelled
+	// for which the SDK does not expose a typed handler — so we get a single
+	// chokepoint for all seven notification types in one place. Lazy-init the
+	// stream here under the service mutex so concurrent NotificationStream()
+	// readers see the same buffer the middleware writes to.
+	if s.notificationStream == nil {
+		s.notificationStream = notifications.NewStream()
+	}
+	client.AddReceivingMiddleware(s.captureNotificationsMiddleware())
 
 	// Seed the client with any roots configured before connect. AddRoots is
 	// safe to call before Connect — the SDK accumulates them into its

@@ -12,6 +12,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
@@ -55,17 +56,21 @@ func (v *versionStubService) GetPrompt(context.Context, mcp.GetPromptRequest) (*
 	return nil, nil
 }
 func (v *versionStubService) GetCapabilitiesSnapshot() *capabilities.Snapshot { return nil }
-func (v *versionStubService) GetConnectionHealth() map[string]interface{}     { return nil }
-func (v *versionStubService) ConfigureReconnection(int, time.Duration)        {}
-func (v *versionStubService) ConfigureHealthCheck(time.Duration)              {}
-func (v *versionStubService) GetErrorStatistics() map[string]interface{}      { return nil }
-func (v *versionStubService) GetErrorReport() map[string]interface{}          { return nil }
-func (v *versionStubService) ResetErrorStatistics()                           {}
-func (v *versionStubService) GetTracingStatistics() map[string]interface{}    { return nil }
-func (v *versionStubService) GetRecentEvents(int) interface{}                 { return nil }
-func (v *versionStubService) ExportEvents() ([]byte, error)                   { return nil, nil }
-func (v *versionStubService) ClearEvents()                                    {}
-func (v *versionStubService) GetConfiguration() map[string]interface{}        { return nil }
+func (v *versionStubService) NotificationStream() *notifications.Stream {
+	return notifications.NewStream()
+}
+func (v *versionStubService) AddNotificationObserver(func(notifications.Entry)) {}
+func (v *versionStubService) GetConnectionHealth() map[string]interface{}       { return nil }
+func (v *versionStubService) ConfigureReconnection(int, time.Duration)          {}
+func (v *versionStubService) ConfigureHealthCheck(time.Duration)                {}
+func (v *versionStubService) GetErrorStatistics() map[string]interface{}        { return nil }
+func (v *versionStubService) GetErrorReport() map[string]interface{}            { return nil }
+func (v *versionStubService) ResetErrorStatistics()                             {}
+func (v *versionStubService) GetTracingStatistics() map[string]interface{}      { return nil }
+func (v *versionStubService) GetRecentEvents(int) interface{}                   { return nil }
+func (v *versionStubService) ExportEvents() ([]byte, error)                     { return nil, nil }
+func (v *versionStubService) ClearEvents()                                      {}
+func (v *versionStubService) GetConfiguration() map[string]interface{}          { return nil }
 func (v *versionStubService) UpdateConfiguration(map[string]interface{}) error {
 	return nil
 }

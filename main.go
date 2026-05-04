@@ -191,6 +191,13 @@ Examples:
 	rootCmd.PersistentFlags().StringSlice("root", nil, "Declare a root the server may access; format 'name=path' (repeatable)")
 	rootCmd.PersistentFlags().String("roots-file", "", "JSON file with a 'roots' array of {name, uri} entries")
 
+	// Notification streaming flag. When set, every server-to-client
+	// notification (logging, progress, list_changed, resource updates,
+	// cancelled) is written to stderr as a one-line summary. Useful for
+	// piping a long-running tool call into a tool that needs to react to
+	// progress or list_changed events without parsing the full MCP log.
+	rootCmd.PersistentFlags().Bool("watch-notifications", false, "Stream server-to-client notifications to stderr in CLI mode")
+
 	// OAuth flags. When the MCP server returns 401 + WWW-Authenticate the
 	// SDK transport delegates to an auth.OAuthHandler. mcp-tui supports two
 	// grants:

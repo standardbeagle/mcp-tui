@@ -13,20 +13,22 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 )
 
 // numDebugTabs is the count of tabs rendered by DebugScreen. Adding a new
 // tab means bumping this constant, the renderTabs labels slice, and the
 // switch in View(). Keeping the count in one place makes left/right key
 // modular arithmetic correct without scattering the magic number everywhere.
-const numDebugTabs = 5
+const numDebugTabs = 6
 
 const (
-	tabGeneralLogs  = 0
-	tabMCPProtocol  = 1
-	tabHTTPDebug    = 2
-	tabStatistics   = 3
-	tabCapabilities = 4
+	tabGeneralLogs   = 0
+	tabMCPProtocol   = 1
+	tabHTTPDebug     = 2
+	tabStatistics    = 3
+	tabCapabilities  = 4
+	tabNotifications = 5
 )
 
 // DebugScreen shows debug logs and MCP protocol communication
@@ -50,6 +52,23 @@ type DebugScreen struct {
 	// debug screen decoupled from the concrete mcp.Service type — tests can
 	// swap in a stub provider without dragging the whole service interface.
 	snapshotProvider func() *capabilities.Snapshot
+
+	// notificationsProvider returns the live notification stream, or nil if
+	// no service is wired in. Same closure-based decoupling as snapshotProvider:
+	// the debug screen reads notifications without importing the concrete
+	// service type.
+	notificationsProvider func() *notifications.Stream
+
+	// notificationFilter is applied to the snapshot at render time. Mutated
+	// in place by the toggle keybindings (1-7 toggle a type, 0 clears the
+	// type set, +/- adjust the level threshold). Stored on the screen so
+	// the filter survives across refreshes.
+	notificationFilter notifications.Filter
+
+	// notificationCursor is the index into the filtered list that the user
+	// is currently focused on. Distinct from selectedIndex so navigating
+	// the notifications tab does not stomp the MCP-protocol selection.
+	notificationCursor int
 
 	// Styles
 	tabStyle       lipgloss.Style
@@ -82,6 +101,15 @@ func NewDebugScreen() *DebugScreen {
 // receiver for chaining: `NewDebugScreen().WithSnapshotProvider(...)`.
 func (ds *DebugScreen) WithSnapshotProvider(provider func() *capabilities.Snapshot) *DebugScreen {
 	ds.snapshotProvider = provider
+	return ds
+}
+
+// WithNotificationsProvider installs a closure the Notifications tab uses to
+// read the current notification stream. Pass nil to clear. The provider is
+// invoked on every render — callers should return the same Stream pointer
+// each call so the cursor stays stable. Returns the receiver for chaining.
+func (ds *DebugScreen) WithNotificationsProvider(provider func() *notifications.Stream) *DebugScreen {
+	ds.notificationsProvider = provider
 	return ds
 }
 
@@ -238,6 +266,64 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ds, nil
 
+	case " ", "p", "P":
+		// Pause/resume the notification stream when on the Notifications tab.
+		// Spacebar (" ") is the canonical "pause" shortcut from media players;
+		// 'p'/'P' is included for vi-style users who avoid space in
+		// keyboard-only terminals. Only valid on the notifications tab so
+		// we don't surprise users who pressed space on a logs tab expecting
+		// page-down or similar.
+		if ds.activeTab == tabNotifications && ds.notificationsProvider != nil {
+			if stream := ds.notificationsProvider(); stream != nil {
+				if stream.TogglePaused() {
+					ds.SetStatus("Notification stream paused", StatusWarning)
+				} else {
+					ds.SetStatus("Notification stream resumed", StatusSuccess)
+				}
+			}
+		}
+		return ds, nil
+
+	case "1", "2", "3", "4", "5", "6", "7":
+		// Toggle a single notification type filter. The digit corresponds
+		// to the index in notifications.AllTypes(): 1=message, 2=progress,
+		// ..., 7=cancelled. Pressing the same digit twice removes the
+		// filter again (toggle semantics).
+		if ds.activeTab == tabNotifications {
+			idx := int(msg.String()[0] - '1')
+			types := notifications.AllTypes()
+			if idx >= 0 && idx < len(types) {
+				ds.toggleNotificationType(types[idx])
+				ds.notificationCursor = 0
+			}
+		}
+		return ds, nil
+
+	case "0":
+		// Clear all type filters on the notifications tab. Mirrors the
+		// "0 = wildcard" idiom users will recognize from filter pickers.
+		if ds.activeTab == tabNotifications {
+			ds.notificationFilter.Types = nil
+			ds.notificationCursor = 0
+			ds.SetStatus("Notification type filter cleared", StatusInfo)
+		}
+		return ds, nil
+
+	case "+", "=":
+		// Raise the level threshold one step. '=' is the unshifted '+' key
+		// so users don't have to hold shift on US keyboards.
+		if ds.activeTab == tabNotifications {
+			ds.bumpNotificationLevel(+1)
+		}
+		return ds, nil
+
+	case "-", "_":
+		// Lower the level threshold one step.
+		if ds.activeTab == tabNotifications {
+			ds.bumpNotificationLevel(-1)
+		}
+		return ds, nil
+
 	case "page_up":
 		ds.selectedIndex = max(0, ds.selectedIndex-10)
 		ds.adjustScrollOffset()
@@ -281,7 +367,16 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ds, ds.copySelectedItemCmd()
 
 	case "x":
-		// Clear logs
+		// Clear logs (or clear the notification stream on its tab — separate
+		// command path because logs and notifications use different buffers).
+		if ds.activeTab == tabNotifications && ds.notificationsProvider != nil {
+			if stream := ds.notificationsProvider(); stream != nil {
+				stream.Clear()
+				ds.notificationCursor = 0
+				ds.SetStatus("Notification stream cleared", StatusSuccess)
+			}
+			return ds, nil
+		}
 		return ds, ds.clearLogsCmd()
 
 	case "y":
@@ -308,16 +403,24 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // getCurrentList returns the current list based on active tab
 func (ds *DebugScreen) getCurrentList() []string {
 	switch ds.activeTab {
-	case 0:
+	case tabGeneralLogs:
 		return ds.generalLogs
-	case 1:
+	case tabMCPProtocol:
 		return ds.mcpLogs
-	case 2:
+	case tabHTTPDebug:
 		// HTTP debug tab - return HTTP error summary if available
 		if httpInfo := mcp.GetLastHTTPError(); httpInfo != nil {
 			return []string{mcp.FormatHTTPError(httpInfo)}
 		}
 		return []string{"No HTTP debugging information available"}
+	case tabNotifications:
+		// Notifications tab — render the current filtered list.
+		entries := ds.filteredNotificationEntries()
+		out := make([]string, len(entries))
+		for i, e := range entries {
+			out[i] = e.FormatLine()
+		}
+		return out
 	default:
 		return []string{}
 	}
@@ -368,6 +471,8 @@ func (ds *DebugScreen) View() string {
 		builder.WriteString(ds.renderStats())
 	case tabCapabilities:
 		builder.WriteString(ds.renderCapabilities())
+	case tabNotifications:
+		builder.WriteString(ds.renderNotifications())
 	}
 
 	// Help text
@@ -399,12 +504,22 @@ func (ds *DebugScreen) View() string {
 
 // renderTabs renders the tab bar
 func (ds *DebugScreen) renderTabs() string {
+	notifLabel := "Notifications"
+	if ds.notificationsProvider != nil {
+		if stream := ds.notificationsProvider(); stream != nil {
+			notifLabel = fmt.Sprintf("Notifications (%d)", stream.Len())
+			if stream.IsPaused() {
+				notifLabel += " ⏸"
+			}
+		}
+	}
 	tabs := []string{
 		fmt.Sprintf("General (%d)", len(ds.generalLogs)),
 		fmt.Sprintf("MCP Protocol (%d)", len(ds.mcpLogs)),
 		"HTTP Debug",
 		"Statistics",
 		"Capabilities",
+		notifLabel,
 	}
 
 	var renderedTabs []string
@@ -661,6 +776,28 @@ func (ds *DebugScreen) clearLogsCmd() tea.Cmd {
 // copySelectedItemCmd returns a command to copy the selected item to clipboard
 func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
 	return func() tea.Msg {
+		// On the notifications tab, prefer the full JSON of the selected
+		// entry over its one-line preview — the JSON is what users want to
+		// paste into bug reports or jq pipelines.
+		if ds.activeTab == tabNotifications {
+			entries := ds.filteredNotificationEntries()
+			if len(entries) == 0 || ds.selectedIndex >= len(entries) {
+				ds.SetStatus("Nothing to copy", StatusWarning)
+				return StatusMsg{Message: "Nothing to copy", Level: StatusWarning}
+			}
+			js, err := entries[ds.selectedIndex].FormatJSON()
+			if err != nil {
+				ds.SetStatus(fmt.Sprintf("Format failed: %v", err), StatusError)
+				return StatusMsg{Message: fmt.Sprintf("Format failed: %v", err), Level: StatusError}
+			}
+			if err := clipboard.WriteAll(js); err != nil {
+				ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
+				return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
+			}
+			ds.SetStatus("Copied notification JSON to clipboard", StatusSuccess)
+			return StatusMsg{Message: "Copied notification JSON to clipboard", Level: StatusSuccess}
+		}
+
 		currentList := ds.getCurrentList()
 		if len(currentList) == 0 || ds.selectedIndex >= len(currentList) {
 			ds.SetStatus("Nothing to copy", StatusWarning)
@@ -677,7 +814,7 @@ func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
 		}
 
 		// Show success message
-		tabNames := []string{"general log", "MCP message", "HTTP debug info", "statistics", "capabilities"}
+		tabNames := []string{"general log", "MCP message", "HTTP debug info", "statistics", "capabilities", "notification"}
 		tabName := "item"
 		if ds.activeTab < len(tabNames) {
 			tabName = tabNames[ds.activeTab]
@@ -1046,6 +1183,205 @@ func (ds *DebugScreen) copyCapabilitiesCmd() tea.Cmd {
 		ds.SetStatus("Copied capabilities JSON to clipboard", StatusSuccess)
 		return StatusMsg{Message: "Copied capabilities JSON to clipboard", Level: StatusSuccess}
 	}
+}
+
+// filteredNotificationEntries returns the current notification snapshot run
+// through ds.notificationFilter. Returns an empty slice when no provider is
+// installed so callers can safely range over the result.
+func (ds *DebugScreen) filteredNotificationEntries() []notifications.Entry {
+	if ds.notificationsProvider == nil {
+		return nil
+	}
+	stream := ds.notificationsProvider()
+	if stream == nil {
+		return nil
+	}
+	return notifications.FilterEntries(stream.Snapshot(), &ds.notificationFilter)
+}
+
+// toggleNotificationType flips membership of t in the type filter set,
+// allocating the map lazily so the zero-value Filter (no types restriction)
+// stays cheap until the user starts filtering.
+func (ds *DebugScreen) toggleNotificationType(t notifications.Type) {
+	if ds.notificationFilter.Types == nil {
+		ds.notificationFilter.Types = make(map[notifications.Type]struct{})
+	}
+	if _, present := ds.notificationFilter.Types[t]; present {
+		delete(ds.notificationFilter.Types, t)
+		if len(ds.notificationFilter.Types) == 0 {
+			ds.notificationFilter.Types = nil
+		}
+		ds.SetStatus(fmt.Sprintf("Filter %s OFF", t), StatusInfo)
+	} else {
+		ds.notificationFilter.Types[t] = struct{}{}
+		ds.SetStatus(fmt.Sprintf("Filter %s ON", t), StatusInfo)
+	}
+}
+
+// bumpNotificationLevel raises (delta>0) or lowers (delta<0) the level
+// threshold by one step. Empty starting level is treated as "below debug",
+// so a single '+' press lands on debug — the lowest meaningful threshold.
+func (ds *DebugScreen) bumpNotificationLevel(delta int) {
+	cur := ds.notificationFilter.MinLevel
+	idx := -1
+	if cur != "" {
+		idx = notifications.LevelRank(cur)
+	}
+	idx += delta
+	if idx < -1 {
+		idx = -1
+	}
+	if idx >= len(notifications.Levels) {
+		idx = len(notifications.Levels) - 1
+	}
+	if idx < 0 {
+		ds.notificationFilter.MinLevel = ""
+		ds.SetStatus("Notification level threshold cleared", StatusInfo)
+		return
+	}
+	ds.notificationFilter.MinLevel = notifications.Levels[idx]
+	ds.SetStatus(fmt.Sprintf("Notification level threshold: ≥ %s", notifications.Levels[idx]), StatusInfo)
+}
+
+// renderNotifications renders the Notifications tab. Layout (top to bottom):
+//
+//  1. one-line filter summary so the user always knows what they are seeing
+//  2. one-line type-filter legend showing which digits map to which types
+//  3. the filtered entry list (selected row highlighted)
+//  4. detail block for the cursor entry (preview + raw JSON snippet)
+//
+// The detail block shares the entry list's bordered box so the tab keeps the
+// same visual weight as the other tabs. We render the legend even when no
+// stream is wired so users can discover the keybindings before connecting.
+func (ds *DebugScreen) renderNotifications() string {
+	var b strings.Builder
+
+	b.WriteString("📡 Notification Stream\n")
+	b.WriteString(ds.renderNotificationFilterLine())
+	b.WriteString("\n")
+	b.WriteString(ds.renderNotificationLegend())
+	b.WriteString("\n\n")
+
+	if ds.notificationsProvider == nil {
+		return ds.logStyle.Render(b.String() + "No notification provider installed.\n" +
+			"Connect to an MCP server to start capturing notifications.")
+	}
+
+	stream := ds.notificationsProvider()
+	if stream == nil {
+		return ds.logStyle.Render(b.String() + "No notification stream available yet.\n" +
+			"Connect to an MCP server to start capturing notifications.")
+	}
+
+	entries := ds.filteredNotificationEntries()
+	if len(entries) == 0 {
+		hint := "No notifications captured yet."
+		if stream.Len() > 0 {
+			// We have entries but the filter excluded them all — make that
+			// distinction visible so the user does not assume the server
+			// stopped sending.
+			hint = fmt.Sprintf("All %d captured notifications hidden by current filter (press 0 to clear types, - to lower level).", stream.Len())
+		}
+		return ds.logStyle.Render(b.String() + hint)
+	}
+
+	// Clamp cursor into range (filter changes can shrink the list under us).
+	if ds.notificationCursor >= len(entries) {
+		ds.notificationCursor = len(entries) - 1
+	}
+	if ds.notificationCursor < 0 {
+		ds.notificationCursor = 0
+	}
+
+	const maxVisible = 12
+	startIdx := ds.scrollOffset
+	if startIdx > len(entries)-maxVisible {
+		startIdx = len(entries) - maxVisible
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	endIdx := startIdx + maxVisible
+	if endIdx > len(entries) {
+		endIdx = len(entries)
+	}
+
+	if startIdx > 0 {
+		b.WriteString("  ↑ More entries above ↑\n")
+	}
+	for i := startIdx; i < endIdx; i++ {
+		line := entries[i].FormatLine()
+		if i == ds.selectedIndex {
+			b.WriteString(ds.selectedStyle.Render("▶ " + line))
+		} else {
+			b.WriteString("  ")
+			b.WriteString(line)
+		}
+		b.WriteString("\n")
+	}
+	if endIdx < len(entries) {
+		b.WriteString("  ↓ More entries below ↓\n")
+	}
+
+	// Detail panel for the selected entry. We render full JSON of the params
+	// so the user can see fields the preview truncated. Limited to ~300
+	// characters so a verbose log payload doesn't dominate the screen.
+	if ds.selectedIndex < len(entries) {
+		b.WriteString("\nSelected:\n")
+		sel := entries[ds.selectedIndex]
+		if js, err := sel.FormatJSON(); err == nil {
+			if len(js) > 300 {
+				js = js[:297] + "..."
+			}
+			b.WriteString(js)
+		}
+	}
+
+	return ds.logStyle.Render(b.String())
+}
+
+// renderNotificationFilterLine produces the "Filter:" status line shown above
+// the entry list. Always returns a single-line string so rendered tab height
+// is stable. The "(none)" label keeps spacing consistent with active filters.
+func (ds *DebugScreen) renderNotificationFilterLine() string {
+	var parts []string
+	if ds.notificationFilter.HasTypes() {
+		typeNames := make([]string, 0, len(ds.notificationFilter.Types))
+		for _, t := range notifications.AllTypes() {
+			if _, ok := ds.notificationFilter.Types[t]; ok {
+				typeNames = append(typeNames, string(t))
+			}
+		}
+		parts = append(parts, "types="+strings.Join(typeNames, ","))
+	}
+	if ds.notificationFilter.MinLevel != "" {
+		parts = append(parts, "level≥"+ds.notificationFilter.MinLevel)
+	}
+	if ds.notificationsProvider != nil {
+		if stream := ds.notificationsProvider(); stream != nil && stream.IsPaused() {
+			parts = append(parts, "PAUSED")
+		}
+	}
+	if len(parts) == 0 {
+		return "Filter: (none — capturing all types and levels)"
+	}
+	return "Filter: " + strings.Join(parts, "  ")
+}
+
+// renderNotificationLegend produces the keybinding legend. Kept on its own
+// line below the filter summary so the user can scan filters and shortcuts
+// independently.
+func (ds *DebugScreen) renderNotificationLegend() string {
+	var b strings.Builder
+	b.WriteString("Types: ")
+	for i, t := range notifications.AllTypes() {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		fmt.Fprintf(&b, "%d=%s", i+1, t)
+	}
+	b.WriteString("   |   Space/P=pause • +/-=level • 0=clear types • x=clear • c/y=copy")
+	return b.String()
 }
 
 // Utility functions are defined in main.go

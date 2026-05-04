@@ -8,6 +8,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
@@ -79,6 +80,19 @@ type Service interface {
 	// — callers may marshal it to JSON or render it in the TUI but must
 	// not mutate it.
 	GetCapabilitiesSnapshot() *capabilities.Snapshot
+
+	// NotificationStream returns the per-service ring buffer of captured
+	// server-to-client notifications. The returned stream is shared across
+	// all callers (UI tab, CLI flag, tests) and is safe for concurrent use.
+	// Lazy-initialized so even tests that bypass Connect see a non-nil
+	// stream and can append fixture entries.
+	NotificationStream() *notifications.Stream
+
+	// AddNotificationObserver registers a callback that fires once per
+	// captured Entry, in addition to the entry being appended to the ring
+	// buffer. Callbacks must return quickly — they run on the SDK's
+	// receiving goroutine. Pass nil to make this a no-op.
+	AddNotificationObserver(fn func(notifications.Entry))
 
 	// Connection health and monitoring
 	GetConnectionHealth() map[string]interface{}

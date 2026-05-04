@@ -12,6 +12,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/roots"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
@@ -265,7 +266,30 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error
 	if err := c.configureRoots(cmd); err != nil {
 		return err
 	}
+	// Wire up --watch-notifications so server-to-client notifications stream
+	// to stderr. Must run before Connect — the observer is invoked from the
+	// SDK receiving goroutine via the service's notifications middleware,
+	// which is installed at createClient time.
+	c.configureWatchNotifications(cmd)
 	return nil
+}
+
+// configureWatchNotifications registers a notification observer that writes
+// each captured Entry to stderr as a one-line summary. Disabled by default;
+// users opt in with --watch-notifications. The observer formats with
+// Entry.FormatLine so the CLI output matches the TUI Notifications tab
+// verbatim — easy for users to grep across modes.
+func (c *BaseCommand) configureWatchNotifications(cmd *cobra.Command) {
+	watch, _ := cmd.Flags().GetBool("watch-notifications")
+	if !watch {
+		return
+	}
+	c.service.AddNotificationObserver(func(e notifications.Entry) {
+		// Single-line write to stderr. We deliberately bypass the debug
+		// logger so the output is not affected by --log-level — users
+		// asked for notifications, they get notifications.
+		fmt.Fprintln(os.Stderr, e.FormatLine())
+	})
 }
 
 // configureRoots reads --roots-file and --root flags, parses them into

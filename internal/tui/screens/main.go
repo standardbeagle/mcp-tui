@@ -663,6 +663,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			debugScreen := NewDebugScreen()
 			if ms.mcpService != nil {
 				debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
+				debugScreen.WithNotificationsProvider(ms.mcpService.NotificationStream)
 			}
 			return ms, func() tea.Msg {
 				return ToggleOverlayMsg{
@@ -776,11 +777,13 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+l", "ctrl+d", "f12":
 		// Show debug logs. Wire the snapshot provider so the Capabilities
-		// tab can read the negotiated state from the live service. Guard
-		// against the nil-service path used by some unit tests.
+		// tab can read the negotiated state from the live service, and the
+		// notifications provider so the Notifications tab streams server
+		// events. Guard against the nil-service path used by some unit tests.
 		debugScreen := NewDebugScreen()
 		if ms.mcpService != nil {
 			debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
+			debugScreen.WithNotificationsProvider(ms.mcpService.NotificationStream)
 		}
 		return ms, func() tea.Msg {
 			return ToggleOverlayMsg{

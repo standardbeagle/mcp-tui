@@ -163,10 +163,10 @@ func TestDebugScreen_CapabilitiesTab_MinimalSnapshot(t *testing.T) {
 	}
 }
 
-// TestDebugScreen_TabNavigation_5Tabs verifies that pressing Tab 5 times
-// returns to tab 0. This catches off-by-one regressions when adding the
-// Capabilities tab.
-func TestDebugScreen_TabNavigation_5Tabs(t *testing.T) {
+// TestDebugScreen_TabNavigation_AllTabs verifies that pressing Tab
+// numDebugTabs times returns to tab 0. This catches off-by-one regressions
+// when adding new tabs (Capabilities, Notifications, ...).
+func TestDebugScreen_TabNavigation_AllTabs(t *testing.T) {
 	ds := NewDebugScreen()
 	if ds.activeTab != 0 {
 		t.Fatalf("initial activeTab = %d; want 0", ds.activeTab)
@@ -184,11 +184,13 @@ func TestDebugScreen_TabNavigation_5Tabs(t *testing.T) {
 		t.Errorf("after 1 Tab press, activeTab = %d; want 1", ds.activeTab)
 	}
 
-	// Shift+Tab from tab 0 wraps to the last tab (tabCapabilities).
+	// Shift+Tab from tab 0 wraps to the last tab. The Notifications tab
+	// (tabNotifications) is the new last tab as of the notification stream
+	// pane being added.
 	ds.activeTab = 0
 	_, _ = ds.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if ds.activeTab != tabCapabilities {
-		t.Errorf("shift+tab from 0 = %d; want %d (tabCapabilities)", ds.activeTab, tabCapabilities)
+	if ds.activeTab != tabNotifications {
+		t.Errorf("shift+tab from 0 = %d; want %d (tabNotifications)", ds.activeTab, tabNotifications)
 	}
 }
 
