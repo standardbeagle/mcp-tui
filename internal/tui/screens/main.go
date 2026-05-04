@@ -2081,13 +2081,24 @@ func (ms *MainScreen) renderToolList() string {
 			warningIndicator = " " + warningStyle.Render("⚠")
 		}
 
+		// Badges (D/R/I/O) inform the user at-a-glance which tools mutate
+		// state vs. read-only — placed after the name and before the schema
+		// warning so the destructive flag stays visually next to the name.
+		badges := renderToolBadges(tool)
+		if badges != "" {
+			badges = " " + badges
+		}
+
+		// Use DisplayName so server-supplied titles render in the list.
+		displayName := tool.DisplayName()
+
 		if i == selectedIdx {
-			line := fmt.Sprintf("%2d. %s%s", i+1, tool.Name, warningIndicator)
+			line := fmt.Sprintf("%2d. %s%s%s", i+1, displayName, badges, warningIndicator)
 			listItems = append(listItems, ms.selectedStyle.Render("▶ "+line))
 		} else {
 			number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
-			name := nameStyle.Render(tool.Name)
-			listItems = append(listItems, "  "+number+name+warningIndicator)
+			name := nameStyle.Render(displayName)
+			listItems = append(listItems, "  "+number+name+badges+warningIndicator)
 		}
 	}
 
@@ -2110,10 +2121,23 @@ func (ms *MainScreen) renderToolDetail() string {
 	// Build full content first
 	var contentBuilder strings.Builder
 
-	// Tool name header
+	// Tool name header. DisplayName falls back through Title→Annotations.Title→
+	// Name; the badge string surfaces destructive/readOnly/idempotent/openWorld
+	// hints next to it.
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	contentBuilder.WriteString(headerStyle.Render("Tool: " + tool.Name))
-	contentBuilder.WriteString("\n\n")
+	header := headerStyle.Render("Tool: " + tool.DisplayName())
+	if badges := renderToolBadges(tool); badges != "" {
+		header = header + "  " + badges
+	}
+	contentBuilder.WriteString(header)
+	contentBuilder.WriteString("\n")
+	// Echo the raw Name when it differs from DisplayName for unambiguous reference.
+	if tool.DisplayName() != tool.Name {
+		nameLineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+		contentBuilder.WriteString(nameLineStyle.Render("Name: " + tool.Name))
+		contentBuilder.WriteString("\n")
+	}
+	contentBuilder.WriteString("\n")
 
 	// Schema error section (if any)
 	if tool.HasSchemaError() {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
@@ -116,7 +118,13 @@ func (tc *ToolCommand) createCallCommand() *cobra.Command {
 		Short: "Call a tool with arguments",
 		Long: `Call a tool with the provided arguments.
 Arguments should be provided as key=value pairs.
-Example: tool call myTool name=John age=30`,
+Example: tool call myTool name=John age=30
+
+When the target tool advertises destructiveHint=true the CLI will warn and
+prompt for confirmation on a TTY; pass --no-confirm to skip the prompt
+(useful for scripts and CI). Non-TTY callers without --no-confirm refuse
+to run destructive tools so an automated pipeline cannot accidentally fire
+a server-flagged-destructive tool.`,
 		Args:     cobra.MinimumNArgs(1),
 		PreRunE:  tc.PreRunE,
 		PostRunE: tc.PostRunE,
@@ -124,6 +132,9 @@ Example: tool call myTool name=John age=30`,
 			return tc.handleCall(cmd, args)
 		},
 	}
+
+	cmd.Flags().Bool("no-confirm", false,
+		"Skip the confirmation prompt for tools with destructiveHint=true")
 
 	return cmd
 }
@@ -209,8 +220,14 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 			fmt.Println()
 		}
 
-		// Tool name
-		fmt.Println(toolNameStyle.Render(tool.Name))
+		// Tool name + badges. DisplayName surfaces server-supplied titles.
+		// Badges are rendered with renderCLIBadges so the colour palette
+		// matches the TUI tool list.
+		header := toolNameStyle.Render(tool.DisplayName())
+		if badges := renderCLIBadges(tool); badges != "" {
+			header = header + " " + badges
+		}
+		fmt.Println(header)
 
 		// Description on next line, indented
 		if tool.Description != "" {
@@ -300,8 +317,18 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 		Foreground(lipgloss.Color("10")). // Green
 		MarginLeft(2)
 
-	// Display tool details
-	fmt.Println(labelStyle.Render("Tool:"), toolNameStyle.Render(foundTool.Name))
+	// Display tool details. The header line shows the human title (DisplayName)
+	// followed by annotation badges so the operator sees risk hints up front.
+	header := toolNameStyle.Render(foundTool.DisplayName())
+	if badges := renderCLIBadges(*foundTool); badges != "" {
+		header = header + " " + badges
+	}
+	fmt.Println(labelStyle.Render("Tool:"), header)
+	// Echo the raw Name when it differs from the display name so
+	// scripts have an unambiguous identifier to reference.
+	if foundTool.DisplayName() != foundTool.Name {
+		fmt.Println(labelStyle.Render("Name:"), foundTool.Name)
+	}
 
 	if foundTool.Description != "" {
 		fmt.Println()
@@ -387,6 +414,38 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
+	// Destructive-tool confirm gate. We need the tool's annotations to
+	// decide whether to prompt; the only way to learn them in the MCP
+	// protocol is tools/list. To keep --no-confirm callers (CI, scripts,
+	// hot-loop CLI use) at single-roundtrip cost, we only do the lookup
+	// when the user has NOT passed --no-confirm.
+	skipConfirm, _ := cmd.Flags().GetBool("no-confirm")
+	if !skipConfirm {
+		tools, listErr := tc.GetService().ListTools(ctx)
+		if listErr != nil {
+			// If listing fails we cannot determine destructiveness. Treat
+			// that as a hard error rather than silently bypassing the gate —
+			// refusing to run is the safer default.
+			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+				fmt.Fprintf(os.Stderr, "❌ Failed to fetch tool metadata before call\n")
+			}
+			return tc.HandleError(listErr, "list tools for confirmation gate")
+		}
+		var matchedTool *mcp.Tool
+		for i := range tools {
+			if tools[i].Name == toolName {
+				matchedTool = &tools[i]
+				break
+			}
+		}
+		if matchedTool == nil {
+			return fmt.Errorf("tool %q not found on the server", toolName)
+		}
+		if err := confirmDestructiveCall(os.Stdin, os.Stderr, *matchedTool, skipConfirm); err != nil {
+			return err
+		}
+	}
+
 	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
 	}
@@ -459,6 +518,78 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// renderCLIBadges produces a colored annotation badge string for terminal
+// output. Mirrors the TUI tool list palette so users see the same hints
+// regardless of which surface they list tools from.
+func renderCLIBadges(tool mcp.Tool) string {
+	var out strings.Builder
+	dStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))   // red
+	rStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))  // green
+	iStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))  // blue
+	oStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("243")) // gray
+
+	switch {
+	case tool.IsDestructive():
+		out.WriteString(dStyle.Render("[D]"))
+	case tool.IsReadOnly():
+		out.WriteString(rStyle.Render("[R]"))
+	}
+	if tool.IsIdempotent() {
+		out.WriteString(iStyle.Render("[I]"))
+	}
+	if tool.IsOpenWorld() {
+		out.WriteString(oStyle.Render("[O]"))
+	}
+	return out.String()
+}
+
+// confirmDestructiveCall prompts the operator before invoking a tool that
+// the server flagged with destructiveHint=true. The decision matrix is:
+//
+//   - skipConfirm=true            → return nil (caller handled --no-confirm)
+//   - tool not destructive        → return nil (no gate)
+//   - destructive + non-TTY stdin → return error: refuse without --no-confirm
+//   - destructive + TTY           → write a warning to stderr, read y/N from
+//     stdin, return nil on yes / error on no
+//
+// The non-TTY refusal is a guardrail for pipelines: a script that pipes input
+// to mcp-tui (or runs without a TTY) must explicitly opt out of confirmation
+// so an inadvertent destructive tool call is impossible.
+func confirmDestructiveCall(in *os.File, out *os.File, tool mcp.Tool, skipConfirm bool) error {
+	if !tool.IsDestructive() || skipConfirm {
+		return nil
+	}
+
+	// The TTY check uses the input stream because that is where we read the
+	// y/N answer from. A piped stdin means we cannot ask the user; refuse
+	// loudly rather than silently defaulting to "yes" or "no".
+	if !isatty.IsTerminal(in.Fd()) {
+		return fmt.Errorf("tool %q is flagged destructive (destructiveHint=true); refusing to run without --no-confirm because stdin is not a TTY",
+			tool.Name)
+	}
+
+	warningStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))
+	fmt.Fprintln(out, warningStyle.Render(
+		fmt.Sprintf("⚠ Tool %q is flagged destructive (destructiveHint=true).", tool.DisplayName())))
+	if tool.Description != "" {
+		fmt.Fprintln(out, "  "+tool.Description)
+	}
+	fmt.Fprint(out, "Proceed? [y/N]: ")
+
+	reader := bufio.NewReader(in)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read confirmation: %w", err)
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	switch answer {
+	case "y", "yes":
+		return nil
+	default:
+		return fmt.Errorf("execution cancelled by user")
+	}
 }
 
 // tryFormatJSON attempts to format a string as pretty JSON

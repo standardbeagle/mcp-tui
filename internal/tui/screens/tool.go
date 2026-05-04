@@ -73,6 +73,19 @@ type ToolScreen struct {
 	cliCommand     string // Generated CLI command
 	showCLICommand bool   // Whether to show the CLI command
 
+	// pendingConfirm tracks an outstanding destructive-tool confirm overlay so
+	// the user's Y/N decision (delivered via ConfirmDecisionMsg) can resume
+	// execution. It is set when the user presses Enter on Execute for a tool
+	// where IsDestructive() returns true, and cleared when the decision
+	// arrives. While set, executeTool runs without re-prompting.
+	pendingConfirm bool
+
+	// confirmBypassed records that the user already approved the most recent
+	// confirm prompt for this run; the executeTool path checks it once and
+	// clears it so a subsequent independent execution still triggers a fresh
+	// prompt.
+	confirmBypassed bool
+
 	// Result viewing mode
 	viewingResult bool          // Whether we're in result viewing mode
 	resultFields  []resultField // Parsed JSON fields
@@ -445,6 +458,8 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ts.executing = false
 		ts.lastExecution = time.Now()
 		ts.executionCount++
+		// Reset bypass so a subsequent execution triggers a fresh confirm.
+		ts.confirmBypassed = false
 
 		if msg.Error != nil {
 			ts.SetError(msg.Error)
@@ -514,6 +529,22 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return toolSpinnerTickMsg{}
 			})
 		}
+		return ts, nil
+
+	case ConfirmDecisionMsg:
+		// Confirm overlay finished. The ToolName check guards against stale
+		// decisions arriving after the user navigated to a different tool,
+		// which is unlikely with the current screen flow but cheap to defend.
+		if msg.ToolName != ts.tool.Name {
+			return ts, nil
+		}
+		ts.pendingConfirm = false
+		if msg.Approved {
+			ts.confirmBypassed = true
+			ts.SetStatus("Confirmed — executing destructive tool", StatusWarning)
+			return ts, ts.executeTool()
+		}
+		ts.SetStatus("Execution cancelled by user", StatusInfo)
 		return ts, nil
 	}
 
@@ -840,7 +871,13 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Handle enter based on current position
 		if ts.cursor == executePos {
-			// Execute button
+			// Execute button — gate destructive tools behind a confirm overlay.
+			// The check uses the same IsDestructive() helper as the CLI prompt
+			// so behaviour stays in lock-step across the two surfaces.
+			if ts.tool.IsDestructive() && !ts.confirmBypassed {
+				ts.pendingConfirm = true
+				return ts, openConfirmOverlay(ts.tool)
+			}
 			return ts, ts.executeTool()
 		} else if ts.cursor == cliPos {
 			// CLI button
@@ -864,6 +901,49 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Log unhandled keys for debugging
 		ts.logger.Info("Unhandled key", debug.F("key", msg.String()), debug.F("cursor", ts.cursor))
 		return ts, nil
+	}
+}
+
+// renderToolBadges produces a colored representation of the tool's
+// annotation badges for terminal display. Color coding (per task spec):
+//
+//	[D] red   — destructive
+//	[R] green — readOnly
+//	[I] blue  — idempotent
+//	[O] gray  — openWorld (informational)
+//
+// The plain (uncolored) badge string lives on Tool.BadgeString so non-TUI
+// callers (CLI list, JSON output, log lines) get a stable string while the
+// TUI applies styling.
+func renderToolBadges(tool mcp.Tool) string {
+	var out strings.Builder
+	dStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))   // red
+	rStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))  // green
+	iStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))  // blue
+	oStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("243")) // gray
+
+	switch {
+	case tool.IsDestructive():
+		out.WriteString(dStyle.Render("[D]"))
+	case tool.IsReadOnly():
+		out.WriteString(rStyle.Render("[R]"))
+	}
+	if tool.IsIdempotent() {
+		out.WriteString(iStyle.Render("[I]"))
+	}
+	if tool.IsOpenWorld() {
+		out.WriteString(oStyle.Render("[O]"))
+	}
+	return out.String()
+}
+
+// openConfirmOverlay returns a tea.Cmd that opens the destructive-tool
+// confirm overlay. Extracted as a free function so tests can route the
+// returned message through the screen without depending on the screen
+// manager's wiring.
+func openConfirmOverlay(tool mcp.Tool) tea.Cmd {
+	return func() tea.Msg {
+		return ToggleOverlayMsg{Screen: NewConfirmScreen(tool)}
 	}
 }
 
@@ -1078,12 +1158,18 @@ func (ts *ToolScreen) View() string {
 func (ts *ToolScreen) renderHeader() string {
 	var builder strings.Builder
 
-	// Title with execution count
-	title := fmt.Sprintf("Execute Tool: %s", ts.tool.Name)
+	// Title with execution count. Use DisplayName so a server-supplied human
+	// title (e.g. "Run Migration") shows in place of a snake_case Name.
+	displayName := ts.tool.DisplayName()
+	title := fmt.Sprintf("Execute Tool: %s", displayName)
 	if ts.executionCount > 0 {
-		title = fmt.Sprintf("Execute Tool: %s (Run #%d)", ts.tool.Name, ts.executionCount+1)
+		title = fmt.Sprintf("Execute Tool: %s (Run #%d)", displayName, ts.executionCount+1)
 	}
 	builder.WriteString(ts.titleStyle.Render(title))
+	if badges := ts.tool.BadgeString(); badges != "" {
+		builder.WriteString("  ")
+		builder.WriteString(renderToolBadges(ts.tool))
+	}
 	builder.WriteString("\n")
 
 	if ts.tool.Description != "" {

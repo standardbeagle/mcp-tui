@@ -799,10 +799,35 @@ func (s *service) convertTool(tool *officialMCP.Tool) Tool {
 
 	return Tool{
 		Name:        tool.Name,
+		Title:       tool.Title,
 		Description: tool.Description,
 		InputSchema: inputSchemaMap,
+		Annotations: convertToolAnnotations(tool.Annotations),
 		SchemaError: schemaErr,
 	}
+}
+
+// convertToolAnnotations maps the SDK ToolAnnotations to our internal type.
+// Returns nil when the SDK side is nil so downstream IsDestructive() / badge
+// rendering can short-circuit without a nil check.
+func convertToolAnnotations(a *officialMCP.ToolAnnotations) *ToolAnnotations {
+	if a == nil {
+		return nil
+	}
+	out := &ToolAnnotations{
+		Title:          a.Title,
+		ReadOnlyHint:   a.ReadOnlyHint,
+		IdempotentHint: a.IdempotentHint,
+	}
+	if a.DestructiveHint != nil {
+		v := *a.DestructiveHint
+		out.DestructiveHint = &v
+	}
+	if a.OpenWorldHint != nil {
+		v := *a.OpenWorldHint
+		out.OpenWorldHint = &v
+	}
+	return out
 }
 
 // convertInputSchema converts the tool's InputSchema and captures any parsing errors

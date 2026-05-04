@@ -127,17 +127,130 @@ type SchemaError struct {
 	Details   map[string]interface{} `json:"details,omitempty"`
 }
 
+// ToolAnnotations holds the MCP-spec annotation hints surfaced by a tool.
+//
+// The fields use *bool for hints that have non-default values per the MCP
+// spec (DestructiveHint defaults to true, OpenWorldHint defaults to true);
+// nil means "the server did not advertise a value" so callers can apply the
+// spec defaults. ReadOnlyHint and IdempotentHint default to false, so a
+// missing value is indistinguishable from an explicit false — matching the
+// SDK's representation.
+type ToolAnnotations struct {
+	// Title is a human-friendly title for the tool. UI surfaces should prefer
+	// the top-level Tool.Title field, falling back to this Annotations.Title,
+	// then to Tool.Name (per MCP 2025-06-18 §tools).
+	Title string `json:"title,omitempty"`
+
+	// ReadOnlyHint indicates the tool does not modify its environment.
+	ReadOnlyHint bool `json:"readOnlyHint,omitempty"`
+
+	// DestructiveHint indicates the tool may perform destructive updates.
+	// nil = server did not advertise (spec default: true when ReadOnlyHint=false).
+	DestructiveHint *bool `json:"destructiveHint,omitempty"`
+
+	// IdempotentHint indicates repeated calls with the same arguments are safe.
+	IdempotentHint bool `json:"idempotentHint,omitempty"`
+
+	// OpenWorldHint indicates the tool interacts with an open world of
+	// external entities. nil = server did not advertise (spec default: true).
+	OpenWorldHint *bool `json:"openWorldHint,omitempty"`
+}
+
 // Tool represents an MCP tool
 type Tool struct {
 	Name        string                 `json:"name"`
+	Title       string                 `json:"title,omitempty"`
 	Description string                 `json:"description,omitempty"`
 	InputSchema map[string]interface{} `json:"inputSchema,omitempty"`
+	Annotations *ToolAnnotations       `json:"annotations,omitempty"`
 	SchemaError *SchemaError           `json:"schemaError,omitempty"`
 }
 
 // HasSchemaError returns true if the tool has a schema parsing error
 func (t Tool) HasSchemaError() bool {
 	return t.SchemaError != nil
+}
+
+// DisplayName returns the user-facing label for the tool. Per MCP 2025-06-18
+// the precedence is: Tool.Title (top-level) → Annotations.Title → Tool.Name.
+func (t Tool) DisplayName() string {
+	if t.Title != "" {
+		return t.Title
+	}
+	if t.Annotations != nil && t.Annotations.Title != "" {
+		return t.Annotations.Title
+	}
+	return t.Name
+}
+
+// IsDestructive reports whether the tool is flagged as destructive.
+//
+// Resolution rules:
+//   - ReadOnlyHint=true ⇒ never destructive (the destructiveHint is meaningless
+//     when readOnlyHint is true per the MCP spec).
+//   - Annotations missing or DestructiveHint nil ⇒ NOT destructive. mcp-tui
+//     deliberately diverges from the spec's "default true" so existing
+//     unannotated tools keep their no-prompt behaviour; servers must opt in
+//     by advertising destructiveHint=true to trigger a confirm gate.
+//   - Otherwise the advertised hint is honoured.
+func (t Tool) IsDestructive() bool {
+	if t.Annotations == nil {
+		return false
+	}
+	if t.Annotations.ReadOnlyHint {
+		return false
+	}
+	if t.Annotations.DestructiveHint == nil {
+		return false
+	}
+	return *t.Annotations.DestructiveHint
+}
+
+// IsReadOnly reports whether the tool advertises readOnlyHint=true.
+func (t Tool) IsReadOnly() bool {
+	return t.Annotations != nil && t.Annotations.ReadOnlyHint
+}
+
+// IsIdempotent reports whether the tool advertises idempotentHint=true.
+// Per the MCP spec, idempotentHint is meaningful only when readOnlyHint=false;
+// a read-only tool is implicitly idempotent so we still surface a true hint
+// only when the server explicitly set it.
+func (t Tool) IsIdempotent() bool {
+	return t.Annotations != nil && t.Annotations.IdempotentHint
+}
+
+// IsOpenWorld reports whether the tool advertises openWorldHint=true. Returns
+// false when the hint is absent rather than the spec default of true: the badge
+// is informational, not safety-critical, and showing it for every unannotated
+// tool would create badge noise.
+func (t Tool) IsOpenWorld() bool {
+	if t.Annotations == nil || t.Annotations.OpenWorldHint == nil {
+		return false
+	}
+	return *t.Annotations.OpenWorldHint
+}
+
+// BadgeString returns a compact uncolored badge string for the tool's
+// annotations, e.g. "[D][I]". Returns an empty string when the tool has no
+// surfaceable hints. Order is fixed so list rendering stays stable across runs:
+// destructive → readOnly → idempotent → openWorld. R and D are mutually
+// exclusive (IsDestructive suppresses on read-only) so we render at most one
+// of them.
+func (t Tool) BadgeString() string {
+	var b []byte
+	switch {
+	case t.IsDestructive():
+		b = append(b, "[D]"...)
+	case t.IsReadOnly():
+		b = append(b, "[R]"...)
+	}
+	if t.IsIdempotent() {
+		b = append(b, "[I]"...)
+	}
+	if t.IsOpenWorld() {
+		b = append(b, "[O]"...)
+	}
+	return string(b)
 }
 
 // Resource represents an MCP resource
