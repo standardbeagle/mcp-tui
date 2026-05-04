@@ -78,17 +78,26 @@ func logMCPNotification(method string, params interface{}) {
 
 // service implements the Service interface using the official MCP Go SDK
 type service struct {
-	info             *ServerInfo
-	requestID        int
-	mu               sync.Mutex
-	debugMode        bool
-	transportFactory transports.TransportFactory
-	sessionManager   *session.Manager
-	errorHandler     *errors.ErrorHandler
-	config           *UnifiedConfig              // Add unified configuration
-	connectionConfig *configPkg.ConnectionConfig // Store connection config for CLI generation
-	samplingHandler    sampling.Handler     // Optional handler for sampling/createMessage requests
-	elicitationHandler elicitation.Handler // Optional handler for elicitation/create requests
+	info               *ServerInfo
+	requestID          int
+	mu                 sync.Mutex
+	debugMode          bool
+	transportFactory   transports.TransportFactory
+	sessionManager     *session.Manager
+	errorHandler       *errors.ErrorHandler
+	config             *UnifiedConfig              // Add unified configuration
+	connectionConfig   *configPkg.ConnectionConfig // Store connection config for CLI generation
+	samplingHandler    sampling.Handler            // Optional handler for sampling/createMessage requests
+	elicitationHandler elicitation.Handler         // Optional handler for elicitation/create requests
+
+	// roots holds the user-declared roots advertised to the server via the
+	// SDK's roots/list capability. It is populated before Connect and seeded
+	// onto the SDK client at construction time; mutations after connect are
+	// delegated to client.AddRoots / client.RemoveRoots, which both update
+	// the SDK's internal feature set and fire roots/list_changed
+	// notifications.
+	roots  []*officialMCP.Root
+	client *officialMCP.Client // captured at createClient so post-connect AddRoots/RemoveRoots can reach it
 }
 
 // getNextRequestID returns the next request ID
@@ -117,6 +126,89 @@ func (s *service) SetElicitationHandler(handler elicitation.Handler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.elicitationHandler = handler
+}
+
+// SetInitialRoots replaces the full pre-Connect roots list. Intended for
+// callers that build the list once (CLI flag parsing, config-file loading)
+// and want to install it as a single atomic operation.
+//
+// Calling SetInitialRoots after Connect replaces only the service's local
+// snapshot — it does NOT reach the SDK client, so it is effectively a no-op
+// for the session. Post-connect mutations should go through AddRoots /
+// RemoveRoots, which call into the SDK client and fire list_changed
+// notifications.
+func (s *service) SetInitialRoots(roots []*officialMCP.Root) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(roots) == 0 {
+		s.roots = nil
+		return
+	}
+	// Defensive copy so callers can mutate their slice without affecting us.
+	s.roots = append([]*officialMCP.Root(nil), roots...)
+}
+
+// AddRoots appends roots to the client. Before Connect, this just accumulates
+// in the service struct (the SDK is seeded at createClient). After Connect,
+// it delegates to the SDK client, which both updates the feature set and
+// fires a roots/list_changed notification (if the listChanged capability is
+// enabled, which the SDK turns on by default).
+func (s *service) AddRoots(roots ...*officialMCP.Root) {
+	if len(roots) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.roots = append(s.roots, roots...)
+	client := s.client
+	s.mu.Unlock()
+
+	// Delegate to the SDK client when we have one — that path fires the
+	// list_changed notification automatically. We deliberately pass a copy
+	// of the slice to avoid aliasing through the SDK's internal feature set.
+	if client != nil {
+		client.AddRoots(roots...)
+	}
+}
+
+// RemoveRoots removes roots with the given URIs. Before Connect, this is a
+// local-only operation; after Connect, it delegates to the SDK client so a
+// roots/list_changed notification fires.
+func (s *service) RemoveRoots(uris ...string) {
+	if len(uris) == 0 {
+		return
+	}
+	s.mu.Lock()
+	uriSet := make(map[string]struct{}, len(uris))
+	for _, u := range uris {
+		uriSet[u] = struct{}{}
+	}
+	out := s.roots[:0]
+	for _, r := range s.roots {
+		if r == nil {
+			continue
+		}
+		if _, drop := uriSet[r.URI]; drop {
+			continue
+		}
+		out = append(out, r)
+	}
+	s.roots = out
+	client := s.client
+	s.mu.Unlock()
+
+	if client != nil {
+		client.RemoveRoots(uris...)
+	}
+}
+
+// ListRoots returns a snapshot copy of the current roots. Callers may mutate
+// the returned slice without affecting the service.
+func (s *service) ListRoots() []*officialMCP.Root {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*officialMCP.Root, len(s.roots))
+	copy(out, s.roots)
+	return out
 }
 
 // SetDebugMode enables or disables debug mode
@@ -318,6 +410,20 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		client.AddSendingMiddleware(s.createLoggingMiddleware())
 	}
 
+	// Seed the client with any roots configured before connect. AddRoots is
+	// safe to call before Connect — the SDK accumulates them into its
+	// feature set and serves them when the server issues roots/list. Calls
+	// after Connect would also fire roots/list_changed notifications, but
+	// that path is exercised by AddRoots / RemoveRoots on the service.
+	if len(s.roots) > 0 {
+		client.AddRoots(s.roots...)
+		debug.Info("Seeded client roots", debug.F("count", len(s.roots)))
+	}
+
+	// Capture the client so post-connect AddRoots / RemoveRoots calls on the
+	// service can reach it (and therefore fire list_changed notifications).
+	s.client = client
+
 	return client, nil
 }
 
@@ -385,6 +491,12 @@ func (s *service) Disconnect() error {
 		debug.Error("Session manager disconnect failed", debug.F("error", err))
 		// Continue with cleanup even if disconnect failed
 	}
+
+	// Drop the client reference: after disconnect the SDK client is no longer
+	// valid for AddRoots / RemoveRoots calls (its sessions are torn down).
+	// Future SetInitialRoots / AddRoots calls will accumulate locally and
+	// be re-seeded on the next Connect.
+	s.client = nil
 
 	// Update server info
 	s.info.Connected = false

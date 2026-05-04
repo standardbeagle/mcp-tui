@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/tui/models"
@@ -58,6 +59,74 @@ type ConnectionScreen struct {
 	helpStyle         lipgloss.Style
 	cardStyle         lipgloss.Style
 	selectedCardStyle lipgloss.Style
+
+	// pendingRoots stores user-declared roots edited via the roots overlay
+	// before a connection exists. They are passed into the MainScreen at
+	// transition time so the SDK client is seeded before initialize.
+	pendingRoots []*officialMCP.Root
+}
+
+// pendingRootsAdapter implements the RootsEditorService interface against a
+// purely in-memory slice. It is the connection-screen counterpart to the
+// service-backed adapter used on the main screen: there is no live client
+// yet, so AddRoots / RemoveRoots only update the staged list. The list is
+// flushed onto the real service when the user presses Connect.
+type pendingRootsAdapter struct {
+	cs *ConnectionScreen
+}
+
+// ListRoots returns a copy of the staged roots so callers can mutate the
+// returned slice without affecting the screen.
+func (a *pendingRootsAdapter) ListRoots() []*officialMCP.Root {
+	out := make([]*officialMCP.Root, len(a.cs.pendingRoots))
+	copy(out, a.cs.pendingRoots)
+	return out
+}
+
+// AddRoots appends roots to the staging list. Same-URI entries are replaced
+// so the editor can model "rename" as remove + add (matching the SDK's
+// AddRoots semantics).
+func (a *pendingRootsAdapter) AddRoots(roots ...*officialMCP.Root) {
+	for _, r := range roots {
+		if r == nil {
+			continue
+		}
+		// Replace same-URI entry if present.
+		replaced := false
+		for i, existing := range a.cs.pendingRoots {
+			if existing != nil && existing.URI == r.URI {
+				a.cs.pendingRoots[i] = r
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			a.cs.pendingRoots = append(a.cs.pendingRoots, r)
+		}
+	}
+}
+
+// RemoveRoots removes any staged roots whose URI matches one of the given
+// URIs. Unknown URIs are silently ignored, mirroring the SDK behavior.
+func (a *pendingRootsAdapter) RemoveRoots(uris ...string) {
+	if len(uris) == 0 {
+		return
+	}
+	uriSet := make(map[string]struct{}, len(uris))
+	for _, u := range uris {
+		uriSet[u] = struct{}{}
+	}
+	out := a.cs.pendingRoots[:0]
+	for _, r := range a.cs.pendingRoots {
+		if r == nil {
+			continue
+		}
+		if _, drop := uriSet[r.URI]; drop {
+			continue
+		}
+		out = append(out, r)
+	}
+	a.cs.pendingRoots = out
 }
 
 // NewConnectionScreen creates a new connection screen
@@ -261,6 +330,20 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return cs, func() tea.Msg {
 			return ToggleOverlayMsg{
 				Screen: debugScreen,
+			}
+		}
+
+	case "R":
+		// Open the roots editor against a staging adapter. Mutations are
+		// stored on the connection screen until the user presses Connect,
+		// at which point they are seeded onto the live service.
+		if cs.isAnyInputFocused() {
+			break
+		}
+		rootsScreen := NewRootsScreen(&pendingRootsAdapter{cs: cs})
+		return cs, func() tea.Msg {
+			return TransitionMsg{
+				Transition: ScreenTransition{Screen: rootsScreen},
 			}
 		}
 
@@ -621,6 +704,15 @@ func (cs *ConnectionScreen) handleSavedConnectionConnect() (tea.Model, tea.Cmd) 
 
 	// Transition to main screen
 	mainScreen := NewMainScreen(cs.config, connConfig)
+	// Seed any roots staged via the connection-screen roots editor onto the
+	// live service before MainScreen.Init() begins the connection — this is
+	// the spec-compliant way to advertise roots during initialize, since
+	// the SDK reads the roots feature set at client construction time.
+	if len(cs.pendingRoots) > 0 {
+		if svc := mainScreen.Service(); svc != nil {
+			svc.SetInitialRoots(cs.pendingRoots)
+		}
+	}
 	return mainScreen, mainScreen.Init()
 }
 
@@ -764,6 +856,13 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 
 	// Transition to main screen
 	mainScreen := NewMainScreen(cs.config, connConfig)
+	// Seed any roots staged via the connection-screen roots editor onto the
+	// live service before MainScreen.Init() begins the connection.
+	if len(cs.pendingRoots) > 0 {
+		if svc := mainScreen.Service(); svc != nil {
+			svc.SetInitialRoots(cs.pendingRoots)
+		}
+	}
 	return mainScreen, mainScreen.Init()
 }
 
@@ -879,7 +978,7 @@ func (cs *ConnectionScreen) renderModeSelector() string {
 	}
 
 	tabRow := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
-	helpText := cs.helpStyle.Render("←/→: Switch tabs • Tab: Enter content • Ctrl+D: Debug • Esc: Quit")
+	helpText := cs.helpStyle.Render("←/→: Switch tabs • Tab: Enter content • R: Roots editor • Ctrl+D: Debug • Esc: Quit")
 
 	return tabRow + "\n" + helpText
 }

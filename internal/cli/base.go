@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/roots"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
 
@@ -197,6 +199,46 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error
 	if err := c.configureElicitationHandler(cmd); err != nil {
 		return err
 	}
+	// Wire up user-declared roots (--root and --roots-file). Roots are seeded
+	// onto the SDK client at construction time so they're visible to the
+	// server during initialize.
+	if err := c.configureRoots(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
+// configureRoots reads --roots-file and --root flags, parses them into
+// officialMCP.Root values, and installs the resulting list on the service.
+// File entries are loaded first; --root flags are appended in declaration
+// order, mirroring how cobra surfaces repeatable string slices.
+func (c *BaseCommand) configureRoots(cmd *cobra.Command) error {
+	rootsFile, _ := cmd.Flags().GetString("roots-file")
+	rootSpecs, _ := cmd.Flags().GetStringSlice("root")
+
+	if rootsFile == "" && len(rootSpecs) == 0 {
+		return nil
+	}
+
+	var combined = make([]*officialMCP.Root, 0, len(rootSpecs)+4)
+	if rootsFile != "" {
+		fromFile, err := roots.LoadFile(rootsFile)
+		if err != nil {
+			return err
+		}
+		combined = append(combined, fromFile...)
+	}
+	if len(rootSpecs) > 0 {
+		fromFlags, err := roots.ParseFlags(rootSpecs)
+		if err != nil {
+			return err
+		}
+		combined = append(combined, fromFlags...)
+	}
+	if len(combined) == 0 {
+		return nil
+	}
+	c.service.SetInitialRoots(combined)
 	return nil
 }
 

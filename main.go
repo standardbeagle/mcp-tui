@@ -162,6 +162,15 @@ Examples:
 	rootCmd.PersistentFlags().String("elicit-stub", "", "Auto-reply JSON for elicitation/create requests (CLI mode)")
 	rootCmd.PersistentFlags().String("elicit-stub-file", "", "JSON file with reply for elicitation/create requests")
 
+	// Roots flags. Filesystem-aware MCP servers ask the client which root
+	// directories the user has granted them via roots/list. --root takes a
+	// repeatable spec of the form "name=path" (or just "path") and converts
+	// each into a file:// URI. --roots-file reads the same shape from a JSON
+	// file. Both flags can be used together; entries from the file are
+	// loaded first, then --root flags are appended.
+	rootCmd.PersistentFlags().StringSlice("root", nil, "Declare a root the server may access; format 'name=path' (repeatable)")
+	rootCmd.PersistentFlags().String("roots-file", "", "JSON file with a 'roots' array of {name, uri} entries")
+
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())
 	rootCmd.AddCommand(createResourceCommand())

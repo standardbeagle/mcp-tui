@@ -717,6 +717,17 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "R":
+		// Open the roots editor overlay. Mutations from the overlay reach
+		// the SDK client through the service, which fires
+		// roots/list_changed notifications to the connected server.
+		rootsScreen := NewRootsScreen(ms.mcpService)
+		return ms, func() tea.Msg {
+			return TransitionMsg{
+				Transition: ScreenTransition{Screen: rootsScreen},
+			}
+		}
+
 	case "d":
 		// Disconnect and return to connection screen
 		ms.logger.Info("User requested disconnect")

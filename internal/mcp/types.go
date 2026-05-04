@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
@@ -26,6 +27,28 @@ type Service interface {
 	// elicitation/create requests. It must be called before Connect; the
 	// SDK reads the handler at client construction time. Pass nil to clear.
 	SetElicitationHandler(handler elicitation.Handler)
+
+	// SetInitialRoots installs the initial set of roots advertised to the
+	// server. Must be called before Connect — the SDK seeds the client's
+	// roots feature set at construction time, so installing later has no
+	// effect on already-running sessions. Pass nil or an empty slice to
+	// advertise no roots (the default).
+	SetInitialRoots(roots []*officialMCP.Root)
+
+	// AddRoots appends the given roots to the client and (if connected)
+	// fires a roots/list_changed notification so the server can re-fetch.
+	// Safe to call before Connect — the roots are accumulated and seeded
+	// at connect time.
+	AddRoots(roots ...*officialMCP.Root)
+
+	// RemoveRoots removes roots with the given URIs from the client and
+	// (if connected) fires a roots/list_changed notification. URIs that
+	// do not match any current root are silently ignored.
+	RemoveRoots(uris ...string)
+
+	// ListRoots returns a snapshot of the current roots. The slice is a
+	// copy and may be mutated by the caller without affecting the service.
+	ListRoots() []*officialMCP.Root
 
 	// Tool operations
 	ListTools(ctx context.Context) ([]Tool, error)
