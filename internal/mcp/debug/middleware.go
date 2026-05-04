@@ -97,10 +97,22 @@ func NewDebugClientOptions(tracer *EventTracer) *DebugClientOptions {
 	}
 }
 
-// CreateDebugClient creates an MCP client with enhanced debugging capabilities
-func CreateDebugClient(impl *officialMCP.Implementation, tracer *EventTracer) *officialMCP.Client {
+// CreateDebugClient creates an MCP client with enhanced debugging capabilities.
+// Optional extra ClientOptions are merged on top of the debug defaults so that
+// callers can install handlers (e.g. CreateMessageHandler for sampling) while
+// still getting tracing middleware. When extra is nil the default debug options
+// are used as-is.
+func CreateDebugClient(impl *officialMCP.Implementation, tracer *EventTracer, extra ...*officialMCP.ClientOptions) *officialMCP.Client {
 	options := NewDebugClientOptions(tracer)
-	client := officialMCP.NewClient(impl, options.ClientOptions)
+	merged := options.ClientOptions
+	for _, e := range extra {
+		if e == nil {
+			continue
+		}
+		merged = mergeClientOptions(merged, e)
+	}
+
+	client := officialMCP.NewClient(impl, merged)
 
 	// Add tracing middleware
 	middleware := NewTracingMiddleware(tracer)
@@ -111,6 +123,26 @@ func CreateDebugClient(impl *officialMCP.Implementation, tracer *EventTracer) *o
 		debug.F("version", impl.Version))
 
 	return client
+}
+
+// mergeClientOptions returns base with sampling-related fields from override
+// applied. Progress notification stays on the debug tracer's handler so we do
+// not lose tracing — only the sampling handlers are forwarded from the caller.
+func mergeClientOptions(base, override *officialMCP.ClientOptions) *officialMCP.ClientOptions {
+	if base == nil {
+		return override
+	}
+	if override == nil {
+		return base
+	}
+	merged := *base
+	if override.CreateMessageHandler != nil {
+		merged.CreateMessageHandler = override.CreateMessageHandler
+	}
+	if override.CreateMessageWithToolsHandler != nil {
+		merged.CreateMessageWithToolsHandler = override.CreateMessageWithToolsHandler
+	}
+	return &merged
 }
 
 // DebugSession wraps a ClientSession with enhanced debugging capabilities

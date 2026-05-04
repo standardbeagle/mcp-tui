@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
-	"github.com/standardbeagle/mcp-tui/internal/config"
 	"time"
+
+	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
 
 // Service provides high-level MCP operations
@@ -13,6 +15,11 @@ type Service interface {
 	Disconnect() error
 	IsConnected() bool
 	SetDebugMode(debug bool)
+
+	// SetSamplingHandler installs a handler for server-initiated
+	// sampling/createMessage requests. It must be called before Connect; the
+	// SDK reads the handler at client construction time. Pass nil to clear.
+	SetSamplingHandler(handler sampling.Handler)
 
 	// Tool operations
 	ListTools(ctx context.Context) ([]Tool, error)

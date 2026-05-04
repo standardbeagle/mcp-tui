@@ -13,6 +13,7 @@ import (
 	. "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
@@ -85,6 +86,7 @@ type service struct {
 	errorHandler     *errors.ErrorHandler
 	config           *UnifiedConfig              // Add unified configuration
 	connectionConfig *configPkg.ConnectionConfig // Store connection config for CLI generation
+	samplingHandler  sampling.Handler            // Optional handler for sampling/createMessage requests
 }
 
 // getNextRequestID returns the next request ID
@@ -93,6 +95,16 @@ func (s *service) getNextRequestID() int {
 	defer s.mu.Unlock()
 	s.requestID++
 	return s.requestID
+}
+
+// SetSamplingHandler installs a handler for server-initiated
+// sampling/createMessage requests. Must be called before Connect — the SDK
+// reads the handler at client construction time, so installing it later has
+// no effect on already-running sessions.
+func (s *service) SetSamplingHandler(handler sampling.Handler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.samplingHandler = handler
 }
 
 // SetDebugMode enables or disables debug mode
@@ -230,27 +242,39 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		Version: "0.1.0",
 	}
 
+	// Build the client options. Sampling handler (if configured) is the same
+	// in both the debug and non-debug paths, so build it once here.
+	clientOptions := &officialMCP.ClientOptions{
+		// Add progress notification handler for long-running operations
+		ProgressNotificationHandler: func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
+			debug.Info("Progress notification",
+				debug.F("progressToken", req.Params.ProgressToken),
+				debug.F("progress", req.Params.Progress))
+		},
+	}
+	if s.samplingHandler != nil {
+		// Capture the handler so the closure does not race with later
+		// SetSamplingHandler calls (which would have no effect anyway because
+		// the SDK already read the option, but capture is defensive).
+		handler := s.samplingHandler
+		clientOptions.CreateMessageHandler = func(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+			return handler.HandleCreateMessage(ctx, req)
+		}
+		debug.Info("Sampling handler registered with MCP client")
+	}
+
 	// Create client with enhanced debugging capabilities
 	var client *officialMCP.Client
 	if s.debugMode && s.sessionManager != nil {
 		// Use debug client with event tracing
 		eventTracer := s.sessionManager.GetEventTracer()
 		if eventTracer != nil {
-			client = mcpDebug.CreateDebugClient(impl, eventTracer)
+			client = mcpDebug.CreateDebugClient(impl, eventTracer, clientOptions)
 		} else {
-			// Fallback to regular client
-			client = officialMCP.NewClient(impl, &officialMCP.ClientOptions{})
+			// Fallback to regular client (still picks up sampling handler).
+			client = officialMCP.NewClient(impl, clientOptions)
 		}
 	} else {
-		// Create regular client
-		clientOptions := &officialMCP.ClientOptions{
-			// Add progress notification handler for long-running operations
-			ProgressNotificationHandler: func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
-				debug.Info("Progress notification",
-					debug.F("progressToken", req.Params.ProgressToken),
-					debug.F("progress", req.Params.Progress))
-			},
-		}
 		client = officialMCP.NewClient(impl, clientOptions)
 	}
 

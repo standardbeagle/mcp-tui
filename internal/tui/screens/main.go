@@ -188,6 +188,13 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 	return ms
 }
 
+// Service returns the MCP service used by this screen. This is intended for
+// the App layer to install cross-cutting handlers (e.g. a sampling handler
+// that bridges to tea.Program.Send) before the connection is initiated.
+func (ms *MainScreen) Service() mcp.Service {
+	return ms.mcpService
+}
+
 // initializeComponents initializes screen components
 func (ms *MainScreen) initializeComponents(connConfig *config.ConnectionConfig) {
 	// Initialize styles
@@ -293,9 +300,28 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinnerTickMsg:
 		return ms.handleSpinnerTick(msg)
+
+	case SamplingRequestMsg:
+		return ms.handleSamplingRequest(msg)
 	}
 
 	return ms, nil
+}
+
+// handleSamplingRequest opens the sampling overlay in response to a
+// server-initiated sampling/createMessage request. The overlay owns the
+// PendingRequest's lifecycle (Resolve or Reject must be called on it before
+// the overlay is dismissed); the SDK goroutine that produced the request is
+// blocked until the overlay reports back.
+func (ms *MainScreen) handleSamplingRequest(msg SamplingRequestMsg) (tea.Model, tea.Cmd) {
+	if msg.Pending == nil {
+		ms.logger.Warn("Received SamplingRequestMsg with nil pending request")
+		return ms, nil
+	}
+	overlay := NewSamplingScreen(msg.Pending)
+	return ms, func() tea.Msg {
+		return TransitionMsg{Transition: ScreenTransition{Screen: overlay}}
+	}
 }
 
 // handleConnectionStarted handles connection started messages

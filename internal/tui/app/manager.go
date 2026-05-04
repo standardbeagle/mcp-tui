@@ -79,6 +79,16 @@ func (sm *ScreenManager) checkAutoConnect() *config.ConnectionConfig {
 	return entry.ToConnectionConfig()
 }
 
+// CurrentMainScreen returns the underlying *MainScreen if it is currently the
+// active screen, or nil otherwise. Used by the App layer to wire global
+// handlers (e.g. sampling) before the screen begins its connection sequence.
+func (sm *ScreenManager) CurrentMainScreen() *screens.MainScreen {
+	if ms, ok := sm.currentScreen.(*screens.MainScreen); ok {
+		return ms
+	}
+	return nil
+}
+
 // Init initializes the screen manager
 func (sm *ScreenManager) Init() tea.Cmd {
 	// Request initial window size and initialize current screen

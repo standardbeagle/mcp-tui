@@ -141,6 +141,14 @@ Examples:
 	rootCmd.PersistentFlags().StringP("format", "f", "text", "Output format (text, json)")
 	rootCmd.PersistentFlags().Bool("porcelain", false, "Machine-readable output (disables progress messages)")
 
+	// Sampling stub flags. When the connected server issues a
+	// sampling/createMessage request, the CLI replies with this stub instead
+	// of prompting (CLI is non-interactive). Use --sampling-stub for a quick
+	// inline text reply, or --sampling-stub-file for a JSON template that can
+	// override role/model/stopReason.
+	rootCmd.PersistentFlags().String("sampling-stub", "", "Auto-reply text for sampling/createMessage requests (CLI mode)")
+	rootCmd.PersistentFlags().String("sampling-stub-file", "", "JSON file with reply template for sampling/createMessage requests")
+
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())
 	rootCmd.AddCommand(createResourceCommand())

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
 
 // OutputFormat represents supported output formats
@@ -108,7 +109,9 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	}
 
 	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
-	c.setupService(cmd, porcelainMode)
+	if err := c.setupService(cmd, porcelainMode); err != nil {
+		return err
+	}
 
 	ctx, cancel := c.WithContext()
 	defer cancel()
@@ -168,7 +171,7 @@ func (c *BaseCommand) connectionConfigError() error {
 }
 
 // setupService creates and configures the MCP service
-func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) {
+func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error {
 	if !porcelainMode {
 		fmt.Fprint(os.Stderr, ConnectionCreating)
 	}
@@ -178,6 +181,40 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) {
 	// Enable debug mode if flag is set
 	debugMode, _ := cmd.Flags().GetBool("debug")
 	c.service.SetDebugMode(debugMode)
+
+	// Wire up sampling stub handler when configured. CLI runs are
+	// non-interactive: if a server requests sampling, we either reply with the
+	// configured stub or — when nothing is configured — leave the handler
+	// unset so the SDK returns a "client does not support CreateMessage" error
+	// to the server, which is the spec-compliant behavior.
+	if err := c.configureSamplingHandler(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
+// configureSamplingHandler reads --sampling-stub / --sampling-stub-file from
+// the command and registers the corresponding handler on the service. Both
+// flags are mutually exclusive; setting both is a usage error.
+func (c *BaseCommand) configureSamplingHandler(cmd *cobra.Command) error {
+	stubText, _ := cmd.Flags().GetString("sampling-stub")
+	stubFile, _ := cmd.Flags().GetString("sampling-stub-file")
+
+	if stubText != "" && stubFile != "" {
+		return fmt.Errorf("--sampling-stub and --sampling-stub-file are mutually exclusive")
+	}
+
+	switch {
+	case stubText != "":
+		c.service.SetSamplingHandler(sampling.NewTextStubHandler(stubText))
+	case stubFile != "":
+		handler, err := sampling.NewFileStubHandler(stubFile)
+		if err != nil {
+			return err
+		}
+		c.service.SetSamplingHandler(handler)
+	}
+	return nil
 }
 
 // connectToServer establishes connection to the MCP server
