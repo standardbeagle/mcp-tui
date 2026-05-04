@@ -224,14 +224,13 @@ func TestLogLevels(t *testing.T) {
 }
 
 func TestSetGlobalOutput(t *testing.T) {
-	// Test setting new output
-	var buf bytes.Buffer
-	SetGlobalOutput(&buf)
+	buf := setupGlobalLoggerTest(t)
+	SetGlobalOutput(buf)
 
 	logger := Component("test")
 	logger.Info("test message")
 
-	output := buf.String()
+	output := syncWait(buf)
 	assert.Contains(t, output, "test message")
 }
 

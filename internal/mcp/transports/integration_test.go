@@ -35,7 +35,7 @@ func TestEnhancedSTDIOTransportIntegration(t *testing.T) {
 			args:              []string{},
 			expectError:       true,
 			expectedErrorType: "command validation failed",
-			expectedInOutput:  []string{"dangerous character"},
+			expectedInOutput:  []string{"dangerous pattern"},
 		},
 		{
 			name:             "python help command (should work)",

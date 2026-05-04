@@ -161,9 +161,9 @@ func (up *unixProcess) killProcessGroup() error {
 	}()
 
 	select {
-	case err := <-done:
+	case <-done:
 		up.markFinished(0)
-		return err
+		return nil
 	case <-time.After(2 * time.Second):
 		// Force kill if it didn't exit
 		if pgid > 0 {
@@ -174,9 +174,9 @@ func (up *unixProcess) killProcessGroup() error {
 
 		// Wait for the process to actually die
 		select {
-		case err := <-done:
+		case <-done:
 			up.markFinished(0)
-			return err
+			return nil
 		case <-time.After(1 * time.Second):
 			// Process is really stuck
 			up.markFinished(-1)

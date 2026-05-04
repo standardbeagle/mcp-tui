@@ -55,7 +55,7 @@ func TestCLIIntegration(t *testing.T) {
 			name:     "tool help",
 			args:     []string{"tool", "--help"},
 			wantErr:  false,
-			contains: []string{"Tool operations", "list", "call"},
+			contains: []string{"list", "call", "describe"},
 		},
 		{
 			name:     "tool list without connection",
@@ -67,13 +67,13 @@ func TestCLIIntegration(t *testing.T) {
 			name:     "tool list with invalid command",
 			args:     []string{"tool", "list", "--cmd", "nonexistent-command-xyz"},
 			wantErr:  true,
-			contains: []string{"failed to create STDIO client"},
+			contains: []string{"executable file not found"},
 		},
 		{
 			name:     "server help",
 			args:     []string{"server", "--help"},
 			wantErr:  false,
-			contains: []string{"Show server information"},
+			contains: []string{"Show information about"},
 		},
 		{
 			name:     "resource help",
@@ -133,7 +133,7 @@ func TestCommandValidation(t *testing.T) {
 		{
 			name:     "dangerous command rejected",
 			args:     []string{"tool", "list", "--cmd", "ls;rm", "--args", "test"},
-			contains: []string{"executable file not found", "ls;rm"}, // The system rejects the command with semicolon
+			contains: []string{"dangerous pattern", "ls;rm"}, // validator catches ';' before exec
 		},
 		{
 			name:     "absolute path works but fails at MCP level",
@@ -199,7 +199,7 @@ func TestEchoServerIntegration(t *testing.T) {
 		assert.NotContains(t, outputStr, "command validation failed")
 
 		// Should contain MCP-related error
-		assert.Contains(t, outputStr, "failed to initialize MCP connection")
+		assert.Contains(t, outputStr, "MCP initialization failed")
 	})
 }
 
@@ -221,7 +221,7 @@ func TestDebugMode(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		cmd := exec.CommandContext(ctx, "./mcp-tui-test", "tool", "list", "--debug", "--cmd", "echo", "--args", "test")
+		cmd := exec.CommandContext(ctx, "./mcp-tui-test", "tool", "list", "--log-level", "debug", "--cmd", "echo", "--args", "test")
 		output, err := cmd.CombinedOutput()
 		outputStr := string(output)
 

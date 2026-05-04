@@ -196,7 +196,7 @@ func TestErrorHandlingRegressionPrevention(t *testing.T) {
 		{
 			name:    "filesystem missing arguments",
 			command: "python3",
-			args:    []string{"-c", "import sys\nsys.stderr.write('Usage: mcp-server-filesystem <allowed-directory> [additional-directories...]\\n')\nsys.exit(1)"},
+			args:    []string{"-c", "import sys\nsys.stderr.write('Usage: mcp-server-filesystem DIRECTORY\\n')\nsys.exit(1)"},
 		},
 		{
 			name:    "package not found",

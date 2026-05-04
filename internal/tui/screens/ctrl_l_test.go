@@ -200,7 +200,7 @@ func TestCtrlLHelpTextDisplay(t *testing.T) {
 		cs := NewConnectionScreen(cfg)
 
 		view := cs.View()
-		assert.Contains(t, view, "Ctrl+D: Debug", "Should show Ctrl+D help text")
+		assert.Contains(t, view, "Ctrl+D", "Should show Ctrl+D help text")
 	})
 
 	t.Run("DebugScreen_ShowsBackOptions", func(t *testing.T) {

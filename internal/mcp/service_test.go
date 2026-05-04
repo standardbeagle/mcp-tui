@@ -122,7 +122,7 @@ func TestConnectionConfigValidation(t *testing.T) {
 				Type:    "stdio",
 				Command: "",
 			},
-			errMsg: "command validation failed",
+			errMsg: "command is required",
 		},
 		{
 			name: "stdio with dangerous command",
@@ -130,7 +130,7 @@ func TestConnectionConfigValidation(t *testing.T) {
 				Type:    "stdio",
 				Command: "ls;rm -rf /",
 			},
-			errMsg: "command validation failed",
+			errMsg: "dangerous pattern",
 		},
 		{
 			name: "http with empty URL",
@@ -138,7 +138,7 @@ func TestConnectionConfigValidation(t *testing.T) {
 				Type: "http",
 				URL:  "",
 			},
-			errMsg: "failed to create HTTP client",
+			errMsg: "URL is required",
 		},
 		{
 			name: "sse with empty URL",
@@ -146,7 +146,7 @@ func TestConnectionConfigValidation(t *testing.T) {
 				Type: "sse",
 				URL:  "",
 			},
-			errMsg: "failed to create SSE client",
+			errMsg: "URL is required",
 		},
 	}
 

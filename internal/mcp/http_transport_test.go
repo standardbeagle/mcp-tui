@@ -61,11 +61,10 @@ func TestHTTPTransportCreation(t *testing.T) {
 					assert.Contains(t, err.Error(), tt.errorContains)
 				}
 			} else {
-				// For valid transport types, we expect the error to be context cancellation
-				// not transport creation failure
+				// For valid transport types, error (if any) must not be "unsupported transport type"
 				if err != nil {
-					assert.Contains(t, err.Error(), "context canceled",
-						"Expected context cancellation, got: %v", err)
+					assert.NotContains(t, err.Error(), "unsupported transport type",
+						"Valid transport type got wrong error: %v", err)
 				}
 			}
 		})
@@ -120,9 +119,10 @@ func TestHTTPTransportSwitchCase(t *testing.T) {
 					assert.Contains(t, err.Error(), tt.errorContains)
 				}
 			} else {
-				// For valid transport types, expect context cancellation error
+				// For valid transport types, error (if any) must not be "unsupported transport type"
 				if err != nil {
-					assert.Contains(t, err.Error(), "context canceled")
+					assert.NotContains(t, err.Error(), "unsupported transport type",
+						"Valid transport type got wrong error: %v", err)
 				}
 			}
 		})

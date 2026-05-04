@@ -61,7 +61,7 @@ func TestServerStartupErrorClassification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := fmt.Errorf(tt.errorMessage)
+			err := fmt.Errorf("%s", tt.errorMessage)
 			classified := classifier.Classify(err, nil)
 
 			if classified.Category != tt.expectedCategory {

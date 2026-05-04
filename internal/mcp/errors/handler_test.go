@@ -42,7 +42,7 @@ func TestErrorHandlerServerStartupDetection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := fmt.Errorf(tt.error)
+			err := fmt.Errorf("%s", tt.error)
 			classified := handler.HandleError(context.Background(), err, tt.operation, nil)
 
 			if classified.Category != tt.expectedCategory {

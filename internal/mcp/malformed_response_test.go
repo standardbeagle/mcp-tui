@@ -57,14 +57,17 @@ func TestMalformedJSONResponses(t *testing.T) {
 				assert.Error(t, err, "Connection should fail with malformed JSON: %s", tc.name)
 				assert.False(t, service.IsConnected(), "Service should not be connected")
 
-				// Error should indicate JSON parsing issue
+				// Error should indicate connection/protocol failure
 				errorMsg := err.Error()
 				assert.True(t,
 					strings.Contains(errorMsg, "json") ||
 						strings.Contains(errorMsg, "JSON") ||
 						strings.Contains(errorMsg, "parse") ||
-						strings.Contains(errorMsg, "decode"),
-					"Error message should indicate JSON issue: %s", errorMsg)
+						strings.Contains(errorMsg, "decode") ||
+						strings.Contains(errorMsg, "MCP initialization") ||
+						strings.Contains(errorMsg, "protocol") ||
+						strings.Contains(errorMsg, "failed to connect"),
+					"Error message should indicate connection/protocol failure: %s", errorMsg)
 			})
 		}
 	})

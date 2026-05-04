@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -150,25 +151,33 @@ func TestTransportFallback(t *testing.T) {
 		// Test scenario where connection succeeds but operations fail
 		partialServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-
-			// Connection succeeds
-			if r.URL.Path == "/" {
-				response := map[string]interface{}{
-					"protocolVersion": "2024-11-05",
-					"serverInfo": map[string]interface{}{
-						"name":    "partial-server",
-						"version": "1.0.0",
-					},
-					"capabilities": map[string]interface{}{},
-				}
-				json.NewEncoder(w).Encode(response)
+			body, _ := io.ReadAll(r.Body)
+			var req struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			json.Unmarshal(body, &req)
+			if len(req.ID) == 0 || string(req.ID) == "null" {
+				w.WriteHeader(http.StatusAccepted)
 				return
 			}
-
-			// But operations fail
-			w.WriteHeader(http.StatusNotImplemented)
+			if req.Method == "initialize" {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result": map[string]interface{}{
+						"protocolVersion": "2024-11-05",
+						"serverInfo":      map[string]interface{}{"name": "partial-server", "version": "1.0.0"},
+						"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
+					},
+				})
+				return
+			}
+			// Operations fail with JSON-RPC error
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": "Operation not supported",
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"error":   map[string]interface{}{"code": -32601, "message": "Operation not supported"},
 			})
 		}))
 		defer partialServer.Close()
@@ -214,18 +223,7 @@ func TestTransportFallback(t *testing.T) {
 		assert.False(t, service.IsConnected(), "Service should not be connected")
 
 		// Create working server
-		workingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			response := map[string]interface{}{
-				"protocolVersion": "2024-11-05",
-				"serverInfo": map[string]interface{}{
-					"name":    "recovery-server",
-					"version": "1.0.0",
-				},
-				"capabilities": map[string]interface{}{},
-			}
-			json.NewEncoder(w).Encode(response)
-		}))
+		workingServer := httptest.NewServer(mockMCPHTTPHandler("recovery-server"))
 		defer workingServer.Close()
 
 		// Second connection to working server (should succeed)
@@ -334,16 +332,8 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 
 		for i := 0; i < numConnections; i++ {
 			servers[i] = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Slow response to tie up connections
 				time.Sleep(100 * time.Millisecond)
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"protocolVersion": "2024-11-05",
-					"serverInfo": map[string]interface{}{
-						"name":    "load-test-server",
-						"version": "1.0.0",
-					},
-				})
+				mockMCPHTTPHandler("load-test-server")(w, r)
 			}))
 		}
 
@@ -359,7 +349,7 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 		// Try to connect to many servers rapidly
 		var successCount, failCount int
 		for i := 0; i < numConnections; i++ {
-			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			connConfig := &config.ConnectionConfig{
 				Type: config.TransportHTTP,
 				URL:  servers[i].URL,

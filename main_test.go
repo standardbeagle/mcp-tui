@@ -21,15 +21,13 @@ func TestMainCommand(t *testing.T) {
 	}{
 		{
 			name:     "no args starts TUI",
-			args:     []string{},
-			wantErr:  false,
-			contains: "", // TUI mode doesn't output to stderr in tests
+			args:     nil, // skip: TUI requires real terminal
 		},
 		{
 			name:     "help flag",
 			args:     []string{"--help"},
 			wantErr:  false,
-			contains: "MCP-TUI is a test client for Model Context Protocol",
+			contains: "test client for Model Context Protocol",
 		},
 		{
 			name:     "version flag",
@@ -41,13 +39,13 @@ func TestMainCommand(t *testing.T) {
 			name:     "tool help",
 			args:     []string{"tool", "--help"},
 			wantErr:  false,
-			contains: "Tool operations",
+			contains: "List, describe, and call tools",
 		},
 		{
 			name:     "server help",
 			args:     []string{"server", "--help"},
 			wantErr:  false,
-			contains: "Show server information",
+			contains: "Show information about",
 		},
 		{
 			name:     "invalid command",
@@ -59,6 +57,9 @@ func TestMainCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.args == nil {
+				t.Skip("requires real terminal")
+			}
 			// Initialize config like main() does
 			originalCfg := cfg
 			cfg = config.Default()
@@ -123,8 +124,8 @@ func TestRootCommandStructure(t *testing.T) {
 
 	// Test global flags
 	flags := rootCmd.PersistentFlags()
-	debugFlag := flags.Lookup("debug")
-	assert.NotNil(t, debugFlag, "should have debug flag")
+	logLevelFlag := flags.Lookup("log-level")
+	assert.NotNil(t, logLevelFlag, "should have log-level flag")
 
 	cmdFlag := flags.Lookup("cmd")
 	assert.NotNil(t, cmdFlag, "should have cmd flag")
@@ -216,7 +217,7 @@ func TestMainCommandValidation(t *testing.T) {
 			name:    "tool command with invalid connection",
 			args:    []string{"tool", "list", "--cmd", ""},
 			wantErr: true,
-			errMsg:  "command cannot be empty",
+			errMsg:  "no MCP server connection specified",
 		},
 		{
 			name:    "valid tool command",

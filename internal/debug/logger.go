@@ -150,6 +150,8 @@ func (l *logger) WithFields(fields ...Field) Logger {
 		output:    l.output,
 		component: l.component,
 		fields:    newFields,
+		logChan:   l.logChan,
+		done:      l.done,
 	}
 }
 
@@ -165,6 +167,8 @@ func (l *logger) WithComponent(component string) Logger {
 		output:    l.output,
 		component: component,
 		fields:    newFields,
+		logChan:   l.logChan,
+		done:      l.done,
 	}
 }
 

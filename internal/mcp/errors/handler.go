@@ -329,7 +329,7 @@ func (eh *ErrorHandler) CreateUserFriendlyError(classified *ClassifiedError) err
 		}
 	}
 
-	return fmt.Errorf(message)
+	return fmt.Errorf("%s", message)
 }
 
 // FormatErrorForJSON formats a classified error for JSON serialization
