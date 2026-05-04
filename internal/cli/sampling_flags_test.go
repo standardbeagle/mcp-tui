@@ -19,6 +19,7 @@ func newCmdWithSamplingFlags() *cobra.Command {
 	root.PersistentFlags().Bool("debug", false, "")
 	root.PersistentFlags().String("sampling-stub", "", "")
 	root.PersistentFlags().String("sampling-stub-file", "", "")
+	root.PersistentFlags().String("sampling-tool-use", "", "")
 
 	child := &cobra.Command{Use: "child"}
 	root.AddCommand(child)
@@ -106,5 +107,83 @@ func TestSetupService_SamplingStubFileMissing_Errors(t *testing.T) {
 	err := c.setupService(cmd, true)
 	if err == nil {
 		t.Fatal("expected error for missing stub file, got nil")
+	}
+}
+
+// TestSetupService_SamplingToolUse_NoError verifies --sampling-tool-use parses
+// "<name>:<json>" and registers without error. Round-trip behavior is covered
+// by integration tests in internal/mcp/sampling.
+func TestSetupService_SamplingToolUse_NoError(t *testing.T) {
+	c := NewBaseCommand()
+	cmd := newCmdWithSamplingFlags()
+	if err := cmd.Root().PersistentFlags().Set("sampling-tool-use", `calculator:{"x":1,"y":2}`); err != nil {
+		t.Fatalf("set flag: %v", err)
+	}
+
+	if err := c.setupService(cmd, true); err != nil {
+		t.Fatalf("setupService: %v", err)
+	}
+}
+
+// TestSetupService_SamplingToolUse_BadSpec_Errors verifies that a malformed
+// flag value produces an error rather than silently registering nothing.
+func TestSetupService_SamplingToolUse_BadSpec_Errors(t *testing.T) {
+	c := NewBaseCommand()
+	cmd := newCmdWithSamplingFlags()
+	// Missing colon — must error in ParseToolUseSpec.
+	_ = cmd.Root().PersistentFlags().Set("sampling-tool-use", "calculator")
+
+	if err := c.setupService(cmd, true); err == nil {
+		t.Fatal("expected error for malformed tool-use spec, got nil")
+	}
+}
+
+// TestSetupService_SamplingToolUse_BadJSON_Errors verifies that invalid JSON
+// args produce an error.
+func TestSetupService_SamplingToolUse_BadJSON_Errors(t *testing.T) {
+	c := NewBaseCommand()
+	cmd := newCmdWithSamplingFlags()
+	_ = cmd.Root().PersistentFlags().Set("sampling-tool-use", `calculator:{not json`)
+
+	if err := c.setupService(cmd, true); err == nil {
+		t.Fatal("expected error for invalid JSON args, got nil")
+	}
+}
+
+// TestSetupService_AllSamplingFlags_Errors verifies the three sampling flags
+// are mutually exclusive — supplying any two of them must fail.
+func TestSetupService_AllSamplingFlags_Errors(t *testing.T) {
+	cases := []struct {
+		name string
+		set  map[string]string
+	}{
+		{
+			name: "stub+tool-use",
+			set:  map[string]string{"sampling-stub": "x", "sampling-tool-use": `c:{"x":1}`},
+		},
+		{
+			name: "stub-file+tool-use",
+			set:  map[string]string{"sampling-stub-file": "/no/such/file", "sampling-tool-use": `c:{"x":1}`},
+		},
+		{
+			name: "all three",
+			set:  map[string]string{"sampling-stub": "x", "sampling-stub-file": "/no/such/file", "sampling-tool-use": `c:{"x":1}`},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewBaseCommand()
+			cmd := newCmdWithSamplingFlags()
+			for k, v := range tc.set {
+				_ = cmd.Root().PersistentFlags().Set(k, v)
+			}
+			err := c.setupService(cmd, true)
+			if err == nil {
+				t.Fatal("expected mutually-exclusive error, got nil")
+			}
+			if !strings.Contains(err.Error(), "mutually exclusive") {
+				t.Errorf("expected 'mutually exclusive' in error, got: %v", err)
+			}
+		})
 	}
 }

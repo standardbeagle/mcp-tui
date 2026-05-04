@@ -58,8 +58,8 @@ type ToolScreen struct {
 	cursor int // current field index
 
 	// Raw JSON mode (when schema parsing fails)
-	rawJSONMode  bool              // Whether we're in raw JSON input mode
-	rawJSONInput textinput.Model   // Input for raw JSON arguments
+	rawJSONMode  bool            // Whether we're in raw JSON input mode
+	rawJSONInput textinput.Model // Input for raw JSON arguments
 
 	// Execution state
 	executing      bool
@@ -1393,7 +1393,7 @@ func (ts *ToolScreen) renderFooter() string {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("6")). // Cyan border
 			Padding(1).
-			Width(0). // No wrapping - let content define width naturally
+			Width(0).                        // No wrapping - let content define width naturally
 			Foreground(lipgloss.Color("15")) // White text
 
 		builder.WriteString(cliCommandStyle.Render(ts.cliCommand))

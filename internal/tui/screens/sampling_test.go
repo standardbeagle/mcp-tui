@@ -219,6 +219,196 @@ func TestSamplingScreen_EscFromManualReturnsToChoice(t *testing.T) {
 	}
 }
 
+// newPendingWithToolsFixture is the same as newPendingFixture but drives the
+// WithTools handler path with a server-supplied tool list, so tests can
+// exercise the tool picker UI.
+func newPendingWithToolsFixture(t *testing.T, tools []*officialMCP.Tool) *pendingWithToolsFixture {
+	t.Helper()
+
+	fx := &pendingWithToolsFixture{done: make(chan struct{})}
+
+	delivered := make(chan *sampling.PendingRequest, 1)
+	h := sampling.NewTUIHandler(func(p *sampling.PendingRequest) {
+		delivered <- p
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	go func() {
+		defer cancel()
+		defer close(fx.done)
+		fx.result, fx.err = h.HandleCreateMessageWithTools(ctx, &officialMCP.CreateMessageWithToolsRequest{
+			Params: &officialMCP.CreateMessageWithToolsParams{
+				MaxTokens: 256,
+				Messages: []*officialMCP.SamplingMessageV2{
+					{Role: "user", Content: []officialMCP.Content{&officialMCP.TextContent{Text: "go!"}}},
+				},
+				Tools: tools,
+			},
+		})
+	}()
+
+	select {
+	case fx.pending = <-delivered:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for delivery")
+	}
+	return fx
+}
+
+type pendingWithToolsFixture struct {
+	pending *sampling.PendingRequest
+	done    chan struct{}
+	result  *officialMCP.CreateMessageWithToolsResult
+	err     error
+}
+
+func (fx *pendingWithToolsFixture) wait(t *testing.T) {
+	t.Helper()
+	select {
+	case <-fx.done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for handler goroutine to return")
+	}
+}
+
+func (fx *pendingWithToolsFixture) cleanup() {
+	if fx.pending != nil {
+		fx.pending.Reject(nil)
+	}
+}
+
+func TestSamplingScreen_WithTools_OffersToolPickOption(t *testing.T) {
+	tools := []*officialMCP.Tool{
+		{Name: "calculator", Description: "math", InputSchema: map[string]any{"type": "object"}},
+	}
+	fx := newPendingWithToolsFixture(t, tools)
+	defer fx.cleanup()
+
+	s := NewSamplingScreen(fx.pending)
+	v := s.View()
+	if !strings.Contains(v, "Tool use") {
+		t.Errorf("expected View to advertise tool use option, got: %s", v)
+	}
+	if !strings.Contains(v, "calculator") {
+		t.Errorf("expected View to list the calculator tool, got: %s", v)
+	}
+}
+
+func TestSamplingScreen_WithTools_PicksToolReply(t *testing.T) {
+	tools := []*officialMCP.Tool{
+		{Name: "calculator", InputSchema: map[string]any{"type": "object"}},
+		{Name: "weather", InputSchema: map[string]any{"type": "object"}},
+	}
+	fx := newPendingWithToolsFixture(t, tools)
+	defer fx.cleanup()
+
+	s := NewSamplingScreen(fx.pending)
+
+	// Press '4' to enter tool-pick mode.
+	if _, _ = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")}); s.mode != samplingModeToolPick {
+		t.Fatalf("expected tool-pick mode, got %v", s.mode)
+	}
+	// Move to second tool.
+	s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if s.toolCursor != 1 {
+		t.Fatalf("expected cursor at 1, got %d", s.toolCursor)
+	}
+	// Enter to select.
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected BackMsg after selecting a tool")
+	}
+	if _, ok := cmd().(BackMsg); !ok {
+		t.Fatal("expected BackMsg")
+	}
+
+	fx.wait(t)
+	if fx.err != nil {
+		t.Fatalf("unexpected error: %v", fx.err)
+	}
+	if len(fx.result.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(fx.result.Content))
+	}
+	tu, ok := fx.result.Content[0].(*officialMCP.ToolUseContent)
+	if !ok {
+		t.Fatalf("expected ToolUseContent, got %T", fx.result.Content[0])
+	}
+	if tu.Name != "weather" {
+		t.Errorf("expected to invoke weather, got %q", tu.Name)
+	}
+	if fx.result.StopReason != "toolUse" {
+		t.Errorf("expected stopReason toolUse, got %q", fx.result.StopReason)
+	}
+}
+
+func TestSamplingScreen_WithTools_EscFromToolPickReturnsToChoice(t *testing.T) {
+	tools := []*officialMCP.Tool{
+		{Name: "calculator", InputSchema: map[string]any{"type": "object"}},
+	}
+	fx := newPendingWithToolsFixture(t, tools)
+	defer fx.cleanup()
+
+	s := NewSamplingScreen(fx.pending)
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	if s.mode != samplingModeToolPick {
+		t.Fatal("setup: expected tool-pick mode")
+	}
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		if _, ok := cmd().(BackMsg); ok {
+			t.Fatal("did not expect BackMsg when escaping tool-pick back to choice")
+		}
+	}
+	if s.mode != samplingModeChoice {
+		t.Errorf("expected choice mode, got %v", s.mode)
+	}
+}
+
+func TestSamplingScreen_WithTools_NoToolsHidesOption(t *testing.T) {
+	// A WithTools request that ships zero tools must not show the tool-pick
+	// option (otherwise pressing '4' lands in an empty list).
+	fx := newPendingWithToolsFixture(t, nil)
+	defer fx.cleanup()
+
+	s := NewSamplingScreen(fx.pending)
+	v := s.View()
+	if strings.Contains(v, "Tool use") {
+		t.Errorf("expected View to omit tool use option when no tools are present, got: %s", v)
+	}
+}
+
+func TestSamplingScreen_WithTools_CannedReplyUsesArrayContent(t *testing.T) {
+	// Pressing '2' (canned "ok") on a WithTools request must resolve via
+	// ResolveWithTools so the SDK gets a CreateMessageWithToolsResult back.
+	fx := newPendingWithToolsFixture(t, []*officialMCP.Tool{
+		{Name: "calc", InputSchema: map[string]any{"type": "object"}},
+	})
+	defer fx.cleanup()
+
+	s := NewSamplingScreen(fx.pending)
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	if cmd == nil {
+		t.Fatal("expected BackMsg")
+	}
+	if _, ok := cmd().(BackMsg); !ok {
+		t.Fatal("expected BackMsg")
+	}
+	fx.wait(t)
+	if fx.err != nil {
+		t.Fatalf("unexpected error: %v", fx.err)
+	}
+	if len(fx.result.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(fx.result.Content))
+	}
+	tc, ok := fx.result.Content[0].(*officialMCP.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent, got %T", fx.result.Content[0])
+	}
+	if tc.Text != "ok" {
+		t.Errorf("expected canned 'ok', got %q", tc.Text)
+	}
+}
+
 func TestSamplingScreen_OverlayShape(t *testing.T) {
 	fx := newPendingFixture(t)
 	defer fx.cleanup()

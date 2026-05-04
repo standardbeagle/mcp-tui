@@ -193,15 +193,23 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error
 	return nil
 }
 
-// configureSamplingHandler reads --sampling-stub / --sampling-stub-file from
-// the command and registers the corresponding handler on the service. Both
-// flags are mutually exclusive; setting both is a usage error.
+// configureSamplingHandler reads --sampling-stub / --sampling-stub-file /
+// --sampling-tool-use from the command and registers the corresponding handler
+// on the service. The three flags are mutually exclusive; setting more than
+// one is a usage error.
 func (c *BaseCommand) configureSamplingHandler(cmd *cobra.Command) error {
 	stubText, _ := cmd.Flags().GetString("sampling-stub")
 	stubFile, _ := cmd.Flags().GetString("sampling-stub-file")
+	toolUse, _ := cmd.Flags().GetString("sampling-tool-use")
 
-	if stubText != "" && stubFile != "" {
-		return fmt.Errorf("--sampling-stub and --sampling-stub-file are mutually exclusive")
+	set := 0
+	for _, v := range []string{stubText, stubFile, toolUse} {
+		if v != "" {
+			set++
+		}
+	}
+	if set > 1 {
+		return fmt.Errorf("--sampling-stub, --sampling-stub-file, and --sampling-tool-use are mutually exclusive")
 	}
 
 	switch {
@@ -209,6 +217,16 @@ func (c *BaseCommand) configureSamplingHandler(cmd *cobra.Command) error {
 		c.service.SetSamplingHandler(sampling.NewTextStubHandler(stubText))
 	case stubFile != "":
 		handler, err := sampling.NewFileStubHandler(stubFile)
+		if err != nil {
+			return err
+		}
+		c.service.SetSamplingHandler(handler)
+	case toolUse != "":
+		name, argsJSON, err := sampling.ParseToolUseSpec(toolUse)
+		if err != nil {
+			return err
+		}
+		handler, err := sampling.NewToolUseStubHandler(name, argsJSON)
 		if err != nil {
 			return err
 		}

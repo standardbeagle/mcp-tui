@@ -145,9 +145,12 @@ Examples:
 	// sampling/createMessage request, the CLI replies with this stub instead
 	// of prompting (CLI is non-interactive). Use --sampling-stub for a quick
 	// inline text reply, or --sampling-stub-file for a JSON template that can
-	// override role/model/stopReason.
+	// override role/model/stopReason. --sampling-tool-use injects a canned
+	// tool_use reply (sampling-with-tools, SDK v1.4.0+) of the form
+	// "<tool_name>:<json args>".
 	rootCmd.PersistentFlags().String("sampling-stub", "", "Auto-reply text for sampling/createMessage requests (CLI mode)")
 	rootCmd.PersistentFlags().String("sampling-stub-file", "", "JSON file with reply template for sampling/createMessage requests")
+	rootCmd.PersistentFlags().String("sampling-tool-use", "", "Auto-reply with a tool_use block of the form '<tool_name>:<json args>' (CLI mode)")
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())

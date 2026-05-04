@@ -26,11 +26,19 @@ type samplingMode int
 const (
 	samplingModeChoice samplingMode = iota
 	samplingModeManual
+	// samplingModeToolPick is the sub-mode shown for sampling-with-tools
+	// requests, where the user picks one of the server-supplied tools to
+	// reply with as a canned tool_use block.
+	samplingModeToolPick
 )
 
 // SamplingScreen is the overlay shown when an MCP server requests an LLM
 // sampling completion. The user can: type a manual reply, send a canned
 // "ok" reply, or abort the request (the server sees a JSON-RPC error).
+//
+// For sampling-with-tools requests (when Pending.IsWithTools() is true) the
+// overlay also offers a fourth option that lets the user pick one of the
+// server's tools and reply with a canned tool_use block.
 type SamplingScreen struct {
 	*BaseScreen
 
@@ -40,6 +48,9 @@ type SamplingScreen struct {
 
 	// Help/error messages displayed under the request summary.
 	helpText string
+
+	// toolCursor tracks which tool is highlighted in samplingModeToolPick.
+	toolCursor int
 
 	titleStyle    lipgloss.Style
 	labelStyle    lipgloss.Style
@@ -130,6 +141,14 @@ func (s *SamplingScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return s.resolveText("ok")
 		case "3", "a":
 			return s.abort("user aborted sampling request")
+		case "4", "t":
+			// Tool picker is only available for sampling-with-tools
+			// requests that have at least one tool listed.
+			if s.hasTools() {
+				s.mode = samplingModeToolPick
+				s.toolCursor = 0
+			}
+			return s, nil
 		}
 	case samplingModeManual:
 		switch m.String() {
@@ -149,12 +168,59 @@ func (s *SamplingScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		s.input, cmd = s.input.Update(m)
 		return s, cmd
+	case samplingModeToolPick:
+		tools := s.tools()
+		switch m.String() {
+		case "esc", "q":
+			s.mode = samplingModeChoice
+			return s, nil
+		case "up", "k":
+			if s.toolCursor > 0 {
+				s.toolCursor--
+			}
+			return s, nil
+		case "down", "j":
+			if s.toolCursor < len(tools)-1 {
+				s.toolCursor++
+			}
+			return s, nil
+		case "enter", " ":
+			if s.toolCursor >= 0 && s.toolCursor < len(tools) {
+				return s.resolveToolUse(tools[s.toolCursor])
+			}
+			return s, nil
+		}
 	}
 	return s, nil
 }
 
+// tools returns the tool list from the sampling-with-tools request, or nil
+// for basic sampling requests.
+func (s *SamplingScreen) tools() []*officialMCP.Tool {
+	if s.pending == nil || s.pending.RequestWithTools == nil ||
+		s.pending.RequestWithTools.Params == nil {
+		return nil
+	}
+	return s.pending.RequestWithTools.Params.Tools
+}
+
+// hasTools reports whether the request has at least one tool to pick from.
+func (s *SamplingScreen) hasTools() bool {
+	return len(s.tools()) > 0
+}
+
 func (s *SamplingScreen) resolveText(text string) (tea.Model, tea.Cmd) {
-	if s.pending != nil {
+	if s.pending == nil {
+		return s, func() tea.Msg { return BackMsg{} }
+	}
+	if s.pending.IsWithTools() {
+		s.pending.ResolveWithTools(&officialMCP.CreateMessageWithToolsResult{
+			Content:    []officialMCP.Content{&officialMCP.TextContent{Text: text}},
+			Model:      "mcp-tui-user",
+			Role:       officialMCP.Role("assistant"),
+			StopReason: "endTurn",
+		})
+	} else {
 		s.pending.Resolve(&officialMCP.CreateMessageResult{
 			Content:    &officialMCP.TextContent{Text: text},
 			Model:      "mcp-tui-user",
@@ -162,6 +228,30 @@ func (s *SamplingScreen) resolveText(text string) (tea.Model, tea.Cmd) {
 			StopReason: "endTurn",
 		})
 	}
+	return s, func() tea.Msg { return BackMsg{} }
+}
+
+// resolveToolUse replies to a sampling-with-tools request with a single
+// tool_use block invoking the supplied tool. The Input map is empty because
+// the TUI cannot know what valid arguments look like without dynamically
+// rendering each tool's input schema; users who need a non-empty Input should
+// fall back to the CLI's --sampling-tool-use flag or a custom client.
+func (s *SamplingScreen) resolveToolUse(tool *officialMCP.Tool) (tea.Model, tea.Cmd) {
+	if s.pending == nil || tool == nil {
+		return s, func() tea.Msg { return BackMsg{} }
+	}
+	s.pending.ResolveWithTools(&officialMCP.CreateMessageWithToolsResult{
+		Content: []officialMCP.Content{
+			&officialMCP.ToolUseContent{
+				ID:    "tui-" + tool.Name,
+				Name:  tool.Name,
+				Input: map[string]any{},
+			},
+		},
+		Model:      "mcp-tui-user",
+		Role:       officialMCP.Role("assistant"),
+		StopReason: "toolUse",
+	})
 	return s, func() tea.Msg { return BackMsg{} }
 }
 
@@ -176,41 +266,16 @@ func (s *SamplingScreen) abort(reason string) (tea.Model, tea.Cmd) {
 func (s *SamplingScreen) View() string {
 	var b strings.Builder
 
-	b.WriteString(s.titleStyle.Render("Sampling Request"))
+	title := "Sampling Request"
+	if s.pending != nil && s.pending.IsWithTools() {
+		title = "Sampling Request (with tools)"
+	}
+	b.WriteString(s.titleStyle.Render(title))
 	b.WriteString("\n")
 	b.WriteString(s.dimStyle.Render("The MCP server has requested an LLM sampling completion."))
 	b.WriteString("\n\n")
 
-	if s.pending != nil && s.pending.Request != nil && s.pending.Request.Params != nil {
-		params := s.pending.Request.Params
-		if params.SystemPrompt != "" {
-			b.WriteString(s.labelStyle.Render("System prompt: "))
-			b.WriteString(s.contentStyle.Render(truncate(params.SystemPrompt, 200)))
-			b.WriteString("\n")
-		}
-		if params.MaxTokens > 0 {
-			b.WriteString(s.labelStyle.Render("Max tokens: "))
-			b.WriteString(s.contentStyle.Render(fmt.Sprintf("%d", params.MaxTokens)))
-			b.WriteString("\n")
-		}
-		if prefs := params.ModelPreferences; prefs != nil {
-			b.WriteString(s.labelStyle.Render("Model preferences: "))
-			b.WriteString(s.contentStyle.Render(formatModelPrefs(prefs)))
-			b.WriteString("\n")
-		}
-		b.WriteString(s.labelStyle.Render("Messages:"))
-		b.WriteString("\n")
-		for i, msg := range params.Messages {
-			if msg == nil {
-				continue
-			}
-			b.WriteString(s.contentStyle.Render(fmt.Sprintf("  [%d] %s: %s", i+1, msg.Role, summarizeContent(msg.Content))))
-			b.WriteString("\n")
-		}
-	} else {
-		b.WriteString(s.dimStyle.Render("(request payload unavailable)"))
-		b.WriteString("\n")
-	}
+	s.renderRequestSummary(&b)
 	b.WriteString("\n")
 
 	switch s.mode {
@@ -222,14 +287,43 @@ func (s *SamplingScreen) View() string {
 		b.WriteString(s.contentStyle.Render("  2) Canned reply — send the literal text \"ok\""))
 		b.WriteString("\n")
 		b.WriteString(s.contentStyle.Render("  3) Abort — return a JSON-RPC error to the server"))
-		b.WriteString("\n\n")
-		b.WriteString(s.helpStyle.Render("Press 1/2/3 (or m/c/a) to choose, Esc/q to abort"))
+		b.WriteString("\n")
+		if s.hasTools() {
+			b.WriteString(s.contentStyle.Render("  4) Tool use — pick a tool to invoke"))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		if s.hasTools() {
+			b.WriteString(s.helpStyle.Render("Press 1/2/3/4 (or m/c/a/t) to choose, Esc/q to abort"))
+		} else {
+			b.WriteString(s.helpStyle.Render("Press 1/2/3 (or m/c/a) to choose, Esc/q to abort"))
+		}
 	case samplingModeManual:
 		b.WriteString(s.choiceStyle.Render("Manual reply:"))
 		b.WriteString("\n")
 		b.WriteString(s.input.View())
 		b.WriteString("\n")
 		b.WriteString(s.helpStyle.Render("Ctrl+S to send  •  Esc to go back to choices"))
+	case samplingModeToolPick:
+		b.WriteString(s.choiceStyle.Render("Pick a tool to invoke:"))
+		b.WriteString("\n")
+		tools := s.tools()
+		for i, t := range tools {
+			marker := "  "
+			line := s.contentStyle
+			if i == s.toolCursor {
+				marker = "▸ "
+				line = s.choiceStyle
+			}
+			name := t.Name
+			if t.Description != "" {
+				name = fmt.Sprintf("%s — %s", t.Name, truncate(t.Description, 80))
+			}
+			b.WriteString(line.Render(marker + name))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		b.WriteString(s.helpStyle.Render("↑/↓ to move, Enter to select, Esc to go back"))
 	}
 
 	if s.helpText != "" {
@@ -238,6 +332,103 @@ func (s *SamplingScreen) View() string {
 	}
 
 	return s.wrapInBorder(b.String())
+}
+
+// renderRequestSummary writes the system prompt / max tokens / model
+// preferences / messages / tools section to b. It supports both the basic and
+// the WithTools request shapes.
+func (s *SamplingScreen) renderRequestSummary(b *strings.Builder) {
+	if s.pending == nil {
+		b.WriteString(s.dimStyle.Render("(request payload unavailable)"))
+		b.WriteString("\n")
+		return
+	}
+
+	switch {
+	case s.pending.RequestWithTools != nil && s.pending.RequestWithTools.Params != nil:
+		p := s.pending.RequestWithTools.Params
+		if p.SystemPrompt != "" {
+			b.WriteString(s.labelStyle.Render("System prompt: "))
+			b.WriteString(s.contentStyle.Render(truncate(p.SystemPrompt, 200)))
+			b.WriteString("\n")
+		}
+		if p.MaxTokens > 0 {
+			b.WriteString(s.labelStyle.Render("Max tokens: "))
+			b.WriteString(s.contentStyle.Render(fmt.Sprintf("%d", p.MaxTokens)))
+			b.WriteString("\n")
+		}
+		if prefs := p.ModelPreferences; prefs != nil {
+			b.WriteString(s.labelStyle.Render("Model preferences: "))
+			b.WriteString(s.contentStyle.Render(formatModelPrefs(prefs)))
+			b.WriteString("\n")
+		}
+		b.WriteString(s.labelStyle.Render("Messages:"))
+		b.WriteString("\n")
+		for i, msg := range p.Messages {
+			if msg == nil {
+				continue
+			}
+			b.WriteString(s.contentStyle.Render(fmt.Sprintf("  [%d] %s: %s", i+1, msg.Role, summarizeContentSlice(msg.Content))))
+			b.WriteString("\n")
+		}
+		if len(p.Tools) > 0 {
+			b.WriteString(s.labelStyle.Render(fmt.Sprintf("Tools (%d):", len(p.Tools))))
+			b.WriteString("\n")
+			for _, t := range p.Tools {
+				if t == nil {
+					continue
+				}
+				if t.Description != "" {
+					b.WriteString(s.contentStyle.Render(fmt.Sprintf("  • %s — %s", t.Name, truncate(t.Description, 80))))
+				} else {
+					b.WriteString(s.contentStyle.Render("  • " + t.Name))
+				}
+				b.WriteString("\n")
+			}
+		}
+	case s.pending.Request != nil && s.pending.Request.Params != nil:
+		p := s.pending.Request.Params
+		if p.SystemPrompt != "" {
+			b.WriteString(s.labelStyle.Render("System prompt: "))
+			b.WriteString(s.contentStyle.Render(truncate(p.SystemPrompt, 200)))
+			b.WriteString("\n")
+		}
+		if p.MaxTokens > 0 {
+			b.WriteString(s.labelStyle.Render("Max tokens: "))
+			b.WriteString(s.contentStyle.Render(fmt.Sprintf("%d", p.MaxTokens)))
+			b.WriteString("\n")
+		}
+		if prefs := p.ModelPreferences; prefs != nil {
+			b.WriteString(s.labelStyle.Render("Model preferences: "))
+			b.WriteString(s.contentStyle.Render(formatModelPrefs(prefs)))
+			b.WriteString("\n")
+		}
+		b.WriteString(s.labelStyle.Render("Messages:"))
+		b.WriteString("\n")
+		for i, msg := range p.Messages {
+			if msg == nil {
+				continue
+			}
+			b.WriteString(s.contentStyle.Render(fmt.Sprintf("  [%d] %s: %s", i+1, msg.Role, summarizeContent(msg.Content))))
+			b.WriteString("\n")
+		}
+	default:
+		b.WriteString(s.dimStyle.Render("(request payload unavailable)"))
+		b.WriteString("\n")
+	}
+}
+
+// summarizeContentSlice renders a SamplingMessageV2.Content slice (used by
+// CreateMessageWithToolsParams) in a single-line representation.
+func summarizeContentSlice(cs []officialMCP.Content) string {
+	if len(cs) == 0 {
+		return "(empty)"
+	}
+	parts := make([]string, 0, len(cs))
+	for _, c := range cs {
+		parts = append(parts, summarizeContent(c))
+	}
+	return strings.Join(parts, " ; ")
 }
 
 // wrapInBorder applies a rounded border sized to the current viewport.
@@ -265,6 +456,14 @@ func summarizeContent(c officialMCP.Content) string {
 		return fmt.Sprintf("<image %s, %d bytes>", v.MIMEType, len(v.Data))
 	case *officialMCP.AudioContent:
 		return fmt.Sprintf("<audio %s, %d bytes>", v.MIMEType, len(v.Data))
+	case *officialMCP.ToolUseContent:
+		return fmt.Sprintf("<tool_use id=%s name=%s>", v.ID, v.Name)
+	case *officialMCP.ToolResultContent:
+		errMark := ""
+		if v.IsError {
+			errMark = " (error)"
+		}
+		return fmt.Sprintf("<tool_result toolUseId=%s%s>", v.ToolUseID, errMark)
 	case nil:
 		return "(none)"
 	default:

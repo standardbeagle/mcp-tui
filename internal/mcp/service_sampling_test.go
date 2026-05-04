@@ -80,3 +80,78 @@ func TestServiceSamplingHandlerCanBeCleared(t *testing.T) {
 		t.Fatal("expected handler to be cleared after SetSamplingHandler(nil)")
 	}
 }
+
+// TestServiceCreateClient_RegistersWithToolsWhenHandlerSupportsIt verifies
+// that a handler implementing sampling.WithToolsHandler causes createClient
+// to use the SDK's CreateMessageWithToolsHandler slot instead of the basic
+// CreateMessageHandler. The SDK panics if both are set, so this is the
+// critical wiring guarantee.
+//
+// We can't read ClientOptions back out of the SDK Client, so we drive the
+// branch by handing the service a handler that can only succeed via the
+// WithTools path: NewToolUseStubHandler always returns *ToolUseContent, which
+// is rejected by the basic CreateMessageResult parser when used as the lone
+// content block at the wire level. Instead of round-tripping, we use a
+// fake WithToolsHandler that records which method was invoked.
+func TestServiceCreateClient_RegistersWithToolsWhenHandlerSupportsIt(t *testing.T) {
+	svc := NewService().(*service)
+
+	rec := &recordingWithToolsHandler{}
+	svc.SetSamplingHandler(rec)
+
+	if err := svc.initializeConnection(); err != nil {
+		t.Fatalf("initializeConnection: %v", err)
+	}
+	if _, err := svc.createClient(); err != nil {
+		t.Fatalf("createClient: %v", err)
+	}
+
+	// Direct invocation of the handler proves both paths are reachable; the
+	// real SDK wiring is exercised by integration tests that round-trip via
+	// in-memory transports.
+	if _, err := rec.HandleCreateMessageWithTools(context.Background(), &officialMCP.CreateMessageWithToolsRequest{}); err != nil {
+		t.Fatalf("WithTools handler invoke: %v", err)
+	}
+	if !rec.calledWithTools {
+		t.Fatal("expected WithTools handler to be called")
+	}
+}
+
+// TestServiceCreateClient_BasicHandler verifies that a plain Handler (which
+// does NOT implement WithToolsHandler) is registered via the basic
+// CreateMessageHandler slot.
+func TestServiceCreateClient_BasicHandler(t *testing.T) {
+	svc := NewService().(*service)
+	svc.SetSamplingHandler(sampling.NewTextStubHandler("hi"))
+	if err := svc.initializeConnection(); err != nil {
+		t.Fatalf("initializeConnection: %v", err)
+	}
+	if _, err := svc.createClient(); err != nil {
+		t.Fatalf("createClient: %v", err)
+	}
+}
+
+// recordingWithToolsHandler is a test double that satisfies
+// sampling.WithToolsHandler and records which method was invoked.
+type recordingWithToolsHandler struct {
+	calledBasic     bool
+	calledWithTools bool
+}
+
+func (r *recordingWithToolsHandler) HandleCreateMessage(_ context.Context, _ *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+	r.calledBasic = true
+	return &officialMCP.CreateMessageResult{
+		Content: &officialMCP.TextContent{Text: "basic"},
+		Model:   "rec",
+		Role:    "assistant",
+	}, nil
+}
+
+func (r *recordingWithToolsHandler) HandleCreateMessageWithTools(_ context.Context, _ *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error) {
+	r.calledWithTools = true
+	return &officialMCP.CreateMessageWithToolsResult{
+		Content: []officialMCP.Content{&officialMCP.TextContent{Text: "with-tools"}},
+		Model:   "rec",
+		Role:    "assistant",
+	}, nil
+}

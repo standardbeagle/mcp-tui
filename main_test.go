@@ -20,8 +20,8 @@ func TestMainCommand(t *testing.T) {
 		contains string
 	}{
 		{
-			name:     "no args starts TUI",
-			args:     nil, // skip: TUI requires real terminal
+			name: "no args starts TUI",
+			args: nil, // skip: TUI requires real terminal
 		},
 		{
 			name:     "help flag",

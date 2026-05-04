@@ -257,10 +257,23 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		// SetSamplingHandler calls (which would have no effect anyway because
 		// the SDK already read the option, but capture is defensive).
 		handler := s.samplingHandler
-		clientOptions.CreateMessageHandler = func(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
-			return handler.HandleCreateMessage(ctx, req)
+
+		// The SDK panics if both CreateMessageHandler and
+		// CreateMessageWithToolsHandler are set, so register the richer
+		// handler when the underlying implementation supports it. Servers
+		// that send the basic CreateMessage variant will be routed through
+		// the SDK's automatic fallback to CreateMessageWithToolsHandler.
+		if wt, ok := handler.(sampling.WithToolsHandler); ok {
+			clientOptions.CreateMessageWithToolsHandler = func(ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error) {
+				return wt.HandleCreateMessageWithTools(ctx, req)
+			}
+			debug.Info("Sampling handler (with tools) registered with MCP client")
+		} else {
+			clientOptions.CreateMessageHandler = func(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+				return handler.HandleCreateMessage(ctx, req)
+			}
+			debug.Info("Sampling handler registered with MCP client")
 		}
-		debug.Info("Sampling handler registered with MCP client")
 	}
 
 	// Create client with enhanced debugging capabilities

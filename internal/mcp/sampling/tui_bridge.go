@@ -16,28 +16,65 @@ type PromptDelivery func(pending *PendingRequest)
 
 // PendingRequest is the bridge between the SDK goroutine that received a
 // sampling/createMessage request and the TUI goroutine that decides how to
-// reply. The TUI calls Resolve or Reject; the SDK goroutine blocks in
-// HandleCreateMessage until one of those is invoked or the context is
-// cancelled.
+// reply. The TUI calls Resolve, ResolveWithTools, or Reject; the SDK goroutine
+// blocks in HandleCreateMessage / HandleCreateMessageWithTools until one of
+// those is invoked or the context is cancelled.
+//
+// A PendingRequest carries either Request (basic sampling) or RequestWithTools
+// (sampling with tools). The two are mutually exclusive — exactly one is set
+// at construction time. The TUI inspects which is non-nil to decide whether
+// to surface a tool list and offer ToolUse replies.
 type PendingRequest struct {
-	// Request is the original SDK request. Read-only from the TUI side.
+	// Request is the original basic sampling request, or nil if this is a
+	// sampling-with-tools request. Read-only from the TUI side.
 	Request *officialMCP.CreateMessageRequest
+
+	// RequestWithTools is the original sampling-with-tools request, or nil if
+	// this is a basic sampling request. Read-only from the TUI side.
+	RequestWithTools *officialMCP.CreateMessageWithToolsRequest
 
 	resultCh chan samplingOutcome
 	once     sync.Once
 }
 
-type samplingOutcome struct {
-	result *officialMCP.CreateMessageResult
-	err    error
+// IsWithTools reports whether the pending request is the sampling-with-tools
+// variant. The TUI uses this to choose between the basic and tool-aware
+// overlays.
+func (p *PendingRequest) IsWithTools() bool {
+	return p != nil && p.RequestWithTools != nil
 }
 
-// Resolve completes the pending request with the given result. Subsequent
-// calls to Resolve or Reject are no-ops, so it is safe for UI code to wire
-// both "submit" and "cancel" buttons without worrying about ordering.
+type samplingOutcome struct {
+	result          *officialMCP.CreateMessageResult
+	resultWithTools *officialMCP.CreateMessageWithToolsResult
+	err             error
+}
+
+// Resolve completes the pending request with the given basic-sampling result.
+// Subsequent calls to Resolve, ResolveWithTools, or Reject are no-ops, so it
+// is safe for UI code to wire both "submit" and "cancel" buttons without
+// worrying about ordering.
+//
+// Calling Resolve on a sampling-with-tools request is permitted; the result
+// is wrapped in a single-element CreateMessageWithToolsResult so the SDK
+// goroutine receives the right type.
 func (p *PendingRequest) Resolve(result *officialMCP.CreateMessageResult) {
 	p.once.Do(func() {
 		p.resultCh <- samplingOutcome{result: result}
+		close(p.resultCh)
+	})
+}
+
+// ResolveWithTools completes the pending request with the given
+// sampling-with-tools result. Use this when the TUI returns a tool_use reply
+// or when array-content (parallel tool calls) is required. Calling it on a
+// basic sampling request is also legal — the wrapper code at
+// HandleCreateMessage will adapt the single-element Content slice if needed,
+// or the SDK will surface a "multiple content blocks" error if the slice has
+// more than one element.
+func (p *PendingRequest) ResolveWithTools(result *officialMCP.CreateMessageWithToolsResult) {
+	p.once.Do(func() {
+		p.resultCh <- samplingOutcome{resultWithTools: result}
 		close(p.resultCh)
 	})
 }
@@ -97,6 +134,69 @@ func (h *TUIHandler) HandleCreateMessage(ctx context.Context, req *officialMCP.C
 		if outcome.err != nil {
 			return nil, outcome.err
 		}
-		return outcome.result, nil
+		if outcome.result != nil {
+			return outcome.result, nil
+		}
+		// TUI resolved with the WithTools form even though the request was
+		// basic. Adapt the first content block; report an error if the result
+		// has zero or more than one block (basic CreateMessage cannot carry
+		// array content).
+		if outcome.resultWithTools != nil {
+			if len(outcome.resultWithTools.Content) != 1 {
+				return nil, fmt.Errorf("sampling: TUI returned %d content blocks but request was basic CreateMessage (only one block allowed)", len(outcome.resultWithTools.Content))
+			}
+			return &officialMCP.CreateMessageResult{
+				Meta:       outcome.resultWithTools.Meta,
+				Content:    outcome.resultWithTools.Content[0],
+				Model:      outcome.resultWithTools.Model,
+				Role:       outcome.resultWithTools.Role,
+				StopReason: outcome.resultWithTools.StopReason,
+			}, nil
+		}
+		return nil, fmt.Errorf("sampling: TUI delivered an empty outcome (no result and no error)")
+	}
+}
+
+// HandleCreateMessageWithTools implements WithToolsHandler. It delivers the
+// request to the TUI via the deliver callback and waits for Resolve,
+// ResolveWithTools, Reject, or context cancellation.
+func (h *TUIHandler) HandleCreateMessageWithTools(ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error) {
+	if h.deliver == nil {
+		return nil, fmt.Errorf("sampling: TUI handler has no delivery function configured")
+	}
+	pending := &PendingRequest{
+		RequestWithTools: req,
+		resultCh:         make(chan samplingOutcome, 1),
+	}
+
+	h.deliver(pending)
+
+	select {
+	case <-ctx.Done():
+		pending.Reject(ctx.Err())
+		return nil, ctx.Err()
+	case outcome := <-pending.resultCh:
+		if outcome.err != nil {
+			return nil, outcome.err
+		}
+		if outcome.resultWithTools != nil {
+			return outcome.resultWithTools, nil
+		}
+		// TUI replied with the basic form. Wrap it in a single-element
+		// CreateMessageWithToolsResult so the SDK receives the right type.
+		if outcome.result != nil {
+			content := []officialMCP.Content{}
+			if outcome.result.Content != nil {
+				content = []officialMCP.Content{outcome.result.Content}
+			}
+			return &officialMCP.CreateMessageWithToolsResult{
+				Meta:       outcome.result.Meta,
+				Content:    content,
+				Model:      outcome.result.Model,
+				Role:       outcome.result.Role,
+				StopReason: outcome.result.StopReason,
+			}, nil
+		}
+		return nil, fmt.Errorf("sampling: TUI delivered an empty outcome (no result and no error)")
 	}
 }

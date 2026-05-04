@@ -29,3 +29,23 @@ type HandlerFunc func(ctx context.Context, req *officialMCP.CreateMessageRequest
 func (f HandlerFunc) HandleCreateMessage(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
 	return f(ctx, req)
 }
+
+// WithToolsHandler is the optional richer interface implemented by handlers
+// that can satisfy sampling/createMessage requests carrying server tools (the
+// SDK v1.4.0+ CreateMessageWithTools variant). Handlers that implement this
+// interface are registered with the SDK as CreateMessageWithToolsHandler;
+// handlers that only implement Handler are registered with the simpler
+// CreateMessageHandler.
+//
+// The two SDK handlers are mutually exclusive (the SDK panics if both are
+// set), so choosing which one to register based on the handler type is the
+// caller's responsibility — see service.createClient.
+type WithToolsHandler interface {
+	Handler
+	// HandleCreateMessageWithTools handles a sampling/createMessage request
+	// that carries the server's available tools and supports array-content
+	// replies (text + parallel tool_use blocks). Implementations may return
+	// either a text reply or one or more tool_use blocks; the server then
+	// dispatches the tool calls and follows up with a tool_result message.
+	HandleCreateMessageWithTools(ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error)
+}
