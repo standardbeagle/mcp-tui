@@ -749,8 +749,14 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ts, func() tea.Msg { return BackMsg{} }
 
 	case "ctrl+l", "ctrl+d", "f12":
-		// Show debug logs
+		// Show debug logs. Wire the snapshot provider when a service exists
+		// so the Capabilities tab can render the negotiated state. Tests
+		// instantiate ToolScreen with a nil service, so the guard prevents
+		// a nil-method-value panic on Ctrl+L.
 		debugScreen := NewDebugScreen()
+		if ts.mcpService != nil {
+			debugScreen.WithSnapshotProvider(ts.mcpService.GetCapabilitiesSnapshot)
+		}
 		return ts, func() tea.Msg {
 			return ToggleOverlayMsg{
 				Screen: debugScreen,

@@ -597,8 +597,14 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}),
 			)
 		case "ctrl+l", "ctrl+d", "f12":
-			// Show debug logs even when disconnected
+			// Show debug logs even when disconnected. Wire the snapshot
+			// provider so the Capabilities tab can render the negotiated
+			// state from the most recent successful Connect. mcpService can
+			// be nil in some test paths; guard for safety.
 			debugScreen := NewDebugScreen()
+			if ms.mcpService != nil {
+				debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
+			}
 			return ms, func() tea.Msg {
 				return ToggleOverlayMsg{
 					Screen: debugScreen,
@@ -710,8 +716,13 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ms, ms.refreshCurrentTab()
 
 	case "ctrl+l", "ctrl+d", "f12":
-		// Show debug logs
+		// Show debug logs. Wire the snapshot provider so the Capabilities
+		// tab can read the negotiated state from the live service. Guard
+		// against the nil-service path used by some unit tests.
 		debugScreen := NewDebugScreen()
+		if ms.mcpService != nil {
+			debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
+		}
 		return ms, func() tea.Msg {
 			return ToggleOverlayMsg{
 				Screen: debugScreen,

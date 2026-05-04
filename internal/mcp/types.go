@@ -6,6 +6,7 @@ import (
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
@@ -71,6 +72,13 @@ type Service interface {
 
 	// Server info
 	GetServerInfo() *ServerInfo
+
+	// GetCapabilitiesSnapshot returns the negotiated server + client
+	// capabilities captured at the most recent successful Connect. Returns
+	// nil when the service has never connected. The snapshot is read-only
+	// — callers may marshal it to JSON or render it in the TUI but must
+	// not mutate it.
+	GetCapabilitiesSnapshot() *capabilities.Snapshot
 
 	// Connection health and monitoring
 	GetConnectionHealth() map[string]interface{}

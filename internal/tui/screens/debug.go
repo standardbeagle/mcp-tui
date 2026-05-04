@@ -1,6 +1,7 @@
 package screens
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,21 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
+)
+
+// numDebugTabs is the count of tabs rendered by DebugScreen. Adding a new
+// tab means bumping this constant, the renderTabs labels slice, and the
+// switch in View(). Keeping the count in one place makes left/right key
+// modular arithmetic correct without scattering the magic number everywhere.
+const numDebugTabs = 5
+
+const (
+	tabGeneralLogs  = 0
+	tabMCPProtocol  = 1
+	tabHTTPDebug    = 2
+	tabStatistics   = 3
+	tabCapabilities = 4
 )
 
 // DebugScreen shows debug logs and MCP protocol communication
@@ -18,7 +34,7 @@ type DebugScreen struct {
 	*BaseScreen
 
 	// UI state
-	activeTab     int // 0=general logs, 1=MCP protocol, 2=HTTP debug, 3=statistics
+	activeTab     int // 0=general logs, 1=MCP protocol, 2=HTTP debug, 3=statistics, 4=capabilities
 	selectedIndex int
 	scrollOffset  int
 	showDetail    bool // Show detailed view of selected MCP log
@@ -28,6 +44,12 @@ type DebugScreen struct {
 	mcpLogs     []string
 	mcpEntries  []debug.MCPLogEntry // Full MCP log entries for detail view
 	mcpStats    map[string]int
+
+	// snapshotProvider returns the current capabilities snapshot, or nil if
+	// no connection has been established. Reading via a closure keeps the
+	// debug screen decoupled from the concrete mcp.Service type — tests can
+	// swap in a stub provider without dragging the whole service interface.
+	snapshotProvider func() *capabilities.Snapshot
 
 	// Styles
 	tabStyle       lipgloss.Style
@@ -39,7 +61,11 @@ type DebugScreen struct {
 	detailStyle    lipgloss.Style
 }
 
-// NewDebugScreen creates a new debug screen
+// NewDebugScreen creates a new debug screen. The Capabilities tab will show
+// "no snapshot yet" until WithSnapshotProvider is called with a non-nil
+// provider — keeping the constructor parameter-free preserves source
+// compatibility with the four existing callers (main, connection, tool
+// screens; tests).
 func NewDebugScreen() *DebugScreen {
 	ds := &DebugScreen{
 		BaseScreen: NewOverlayScreen("Debug"),
@@ -48,6 +74,14 @@ func NewDebugScreen() *DebugScreen {
 	ds.initStyles()
 	ds.refreshData()
 
+	return ds
+}
+
+// WithSnapshotProvider installs a closure the Capabilities tab uses to read
+// the current negotiated capabilities. Pass nil to clear. Returns the
+// receiver for chaining: `NewDebugScreen().WithSnapshotProvider(...)`.
+func (ds *DebugScreen) WithSnapshotProvider(provider func() *capabilities.Snapshot) *DebugScreen {
+	ds.snapshotProvider = provider
 	return ds
 }
 
@@ -145,7 +179,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return ds, tea.Quit
 		case "c", "y":
 			// Copy full JSON to clipboard
-			if ds.activeTab == 1 && ds.selectedIndex < len(ds.mcpEntries) {
+			if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
 				entry := ds.mcpEntries[ds.selectedIndex]
 				fullJSON := entry.GetFormattedJSON()
 				if err := clipboard.WriteAll(fullJSON); err != nil {
@@ -169,19 +203,19 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ds, func() tea.Msg { return BackMsg{} }
 
 	case "tab", "right":
-		ds.activeTab = (ds.activeTab + 1) % 4
+		ds.activeTab = (ds.activeTab + 1) % numDebugTabs
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
 
 	case "shift+tab", "left":
-		ds.activeTab = (ds.activeTab - 1 + 4) % 4
+		ds.activeTab = (ds.activeTab - 1 + numDebugTabs) % numDebugTabs
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
 
 	case "up", "k":
-		if ds.activeTab != 3 { // Not in stats tab
+		if ds.activeTab != tabStatistics && ds.activeTab != tabCapabilities { // Not in stats or capabilities tab
 			currentList := ds.getCurrentList()
 			if len(currentList) > 0 {
 				if ds.selectedIndex > 0 {
@@ -193,7 +227,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ds, nil
 
 	case "down", "j":
-		if ds.activeTab != 3 { // Not in stats tab
+		if ds.activeTab != tabStatistics && ds.activeTab != tabCapabilities { // Not in stats or capabilities tab
 			currentList := ds.getCurrentList()
 			if len(currentList) > 0 {
 				if ds.selectedIndex < len(currentList)-1 {
@@ -236,8 +270,12 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "c":
 		// Clear logs (if not in a list, otherwise copy)
-		if ds.activeTab == 3 { // In stats tab
+		if ds.activeTab == tabStatistics { // In stats tab
 			return ds, ds.clearLogsCmd()
+		}
+		if ds.activeTab == tabCapabilities {
+			// On the capabilities tab, copy the JSON dump to the clipboard.
+			return ds, ds.copyCapabilitiesCmd()
 		}
 		// In log tabs, copy current item
 		return ds, ds.copySelectedItemCmd()
@@ -247,15 +285,18 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ds, ds.clearLogsCmd()
 
 	case "y":
-		// Copy current selected item to clipboard (vim-like)
-		if ds.activeTab != 3 { // Not in stats tab
+		// Copy current selected item to clipboard (vim-like).
+		if ds.activeTab == tabCapabilities {
+			return ds, ds.copyCapabilitiesCmd()
+		}
+		if ds.activeTab != tabStatistics { // Not in stats tab
 			return ds, ds.copySelectedItemCmd()
 		}
 		return ds, nil
 
 	case "enter":
 		// Show detail view for MCP logs
-		if ds.activeTab == 1 && ds.selectedIndex < len(ds.mcpEntries) {
+		if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
 			ds.showDetail = true
 		}
 		return ds, nil
@@ -317,19 +358,21 @@ func (ds *DebugScreen) View() string {
 
 	// Content based on active tab
 	switch ds.activeTab {
-	case 0:
+	case tabGeneralLogs:
 		builder.WriteString(ds.renderLogList("General Logs", ds.generalLogs))
-	case 1:
+	case tabMCPProtocol:
 		builder.WriteString(ds.renderLogList("MCP Protocol", ds.mcpLogs))
-	case 2:
+	case tabHTTPDebug:
 		builder.WriteString(ds.renderHTTPDebug())
-	case 3:
+	case tabStatistics:
 		builder.WriteString(ds.renderStats())
+	case tabCapabilities:
+		builder.WriteString(ds.renderCapabilities())
 	}
 
 	// Help text
 	builder.WriteString("\n\n")
-	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
+	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy (incl. Capabilities JSON) • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	builder.WriteString(helpStyle.Render(helpText))
 
@@ -361,6 +404,7 @@ func (ds *DebugScreen) renderTabs() string {
 		fmt.Sprintf("MCP Protocol (%d)", len(ds.mcpLogs)),
 		"HTTP Debug",
 		"Statistics",
+		"Capabilities",
 	}
 
 	var renderedTabs []string
@@ -633,7 +677,7 @@ func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
 		}
 
 		// Show success message
-		tabNames := []string{"general log", "MCP message", "HTTP debug info", "statistics"}
+		tabNames := []string{"general log", "MCP message", "HTTP debug info", "statistics", "capabilities"}
 		tabName := "item"
 		if ds.activeTab < len(tabNames) {
 			tabName = tabNames[ds.activeTab]
@@ -704,6 +748,304 @@ func (ds *DebugScreen) renderDetailView() string {
 	}
 
 	return builder.String()
+}
+
+// renderCapabilities renders the negotiated MCP capabilities. Layout:
+//
+//	┌─ Server ─────────────────────────────────────┐
+//	│ Name: foo, Version: 1.2.3                    │
+//	│ Protocol: 2025-11-25                         │
+//	│ Capabilities:                                │
+//	│   ✓ logging                                  │
+//	│   ✓ prompts (listChanged)                    │
+//	│   ✓ tools (listChanged)                      │
+//	│   ✓ resources (listChanged, subscribe)       │
+//	│ Extensions:                                  │
+//	│   acme/widgets: {"max":5}                    │
+//	└──────────────────────────────────────────────┘
+//	┌─ Client ─────────────────────────────────────┐
+//	│ ... same shape ...                           │
+//	└──────────────────────────────────────────────┘
+//
+// The "supported" check uses the snapshot's typed pointer fields directly
+// so an explicitly-empty struct (e.g. logging:{}) still shows as supported.
+// Falls back to a friendly message when no snapshot is available (pre-connect).
+func (ds *DebugScreen) renderCapabilities() string {
+	var snap *capabilities.Snapshot
+	if ds.snapshotProvider != nil {
+		snap = ds.snapshotProvider()
+	}
+
+	if snap == nil {
+		return ds.logStyle.Render(
+			"⚙️  No capabilities snapshot yet.\n\n" +
+				"Connect to an MCP server to see negotiated capabilities here.\n" +
+				"This tab shows server + client capabilities exchanged during the\n" +
+				"initialize handshake, including SDK v1.4+ extensions (SEP-2133).",
+		)
+	}
+
+	var b strings.Builder
+
+	b.WriteString("⚙️  Negotiated MCP Capabilities\n\n")
+	b.WriteString(fmt.Sprintf("Protocol Version: %s\n", capDisplayString(snap.ProtocolVersion)))
+	if snap.Instructions != "" {
+		b.WriteString(fmt.Sprintf("Instructions: %s\n", snap.Instructions))
+	}
+	b.WriteString("\n")
+
+	// Server section
+	b.WriteString(renderImplementation("Server", snap.ServerInfo))
+	b.WriteString(renderServerCaps(snap.ServerCaps))
+	b.WriteString("\n")
+
+	// Client section
+	b.WriteString(renderImplementation("Client", snap.ClientInfo))
+	b.WriteString(renderClientCaps(snap.ClientCaps))
+
+	b.WriteString("\nPress y or c to copy the full JSON snapshot to clipboard.")
+
+	return ds.logStyle.Render(b.String())
+}
+
+// capDisplayString returns "<unknown>" for empty strings so the rendered tab
+// always has stable layout — empty strings would collapse the line.
+func capDisplayString(s string) string {
+	if s == "" {
+		return "<unknown>"
+	}
+	return s
+}
+
+// renderImplementation prints the role header (Server / Client) plus the
+// Implementation fields in a compact form. Title and websiteURL are only
+// rendered when present so the common case (servers that don't set them)
+// stays uncluttered.
+func renderImplementation(role string, impl *capabilities.Implementation) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("── %s ──\n", role))
+	if impl == nil {
+		b.WriteString("  <not reported>\n")
+		return b.String()
+	}
+	b.WriteString(fmt.Sprintf("  Name:    %s\n", capDisplayString(impl.Name)))
+	if impl.Title != "" {
+		b.WriteString(fmt.Sprintf("  Title:   %s\n", impl.Title))
+	}
+	b.WriteString(fmt.Sprintf("  Version: %s\n", capDisplayString(impl.Version)))
+	if impl.WebsiteURL != "" {
+		b.WriteString(fmt.Sprintf("  Website: %s\n", impl.WebsiteURL))
+	}
+	if len(impl.Icons) > 0 {
+		b.WriteString(fmt.Sprintf("  Icons:   %d\n", len(impl.Icons)))
+	}
+	return b.String()
+}
+
+// renderServerCaps prints each known server capability with a checkmark
+// when present plus its sub-flags (listChanged, subscribe). Experimental and
+// extensions are listed verbatim — the rendering logic prioritizes
+// readability over completeness for nested values, and the user can copy the
+// full JSON via 'c' or 'y' for deep inspection.
+func renderServerCaps(caps *capabilities.ServerCaps) string {
+	var b strings.Builder
+	b.WriteString("  Capabilities:\n")
+	if caps == nil {
+		b.WriteString("    <none reported>\n")
+		return b.String()
+	}
+
+	// Order matches the spec doc so cross-server comparisons line up visually.
+	if caps.Logging != nil {
+		b.WriteString("    ✓ logging\n")
+	}
+	if caps.Prompts != nil {
+		b.WriteString(fmt.Sprintf("    ✓ prompts%s\n", subFlags(caps.Prompts.ListChanged, false)))
+	}
+	if caps.Resources != nil {
+		// ResourceCapabilities has both ListChanged and Subscribe.
+		b.WriteString(fmt.Sprintf("    ✓ resources%s\n",
+			subFlagsResources(caps.Resources.ListChanged, caps.Resources.Subscribe)))
+	}
+	if caps.Tools != nil {
+		b.WriteString(fmt.Sprintf("    ✓ tools%s\n", subFlags(caps.Tools.ListChanged, false)))
+	}
+	if caps.Completions != nil {
+		b.WriteString("    ✓ completions\n")
+	}
+
+	if caps.Logging == nil && caps.Prompts == nil && caps.Resources == nil &&
+		caps.Tools == nil && caps.Completions == nil {
+		b.WriteString("    <none of the standard capabilities>\n")
+	}
+
+	if len(caps.Experimental) > 0 {
+		b.WriteString("  Experimental:\n")
+		for _, k := range sortedMapKeys(caps.Experimental) {
+			b.WriteString(fmt.Sprintf("    %s: %s\n", k, summarizeValue(caps.Experimental[k])))
+		}
+	}
+	if len(caps.Extensions) > 0 {
+		b.WriteString("  Extensions:\n")
+		for _, k := range sortedMapKeys(caps.Extensions) {
+			b.WriteString(fmt.Sprintf("    %s: %s\n", k, summarizeValue(caps.Extensions[k])))
+		}
+	}
+	return b.String()
+}
+
+// renderClientCaps mirrors renderServerCaps for the client side.
+func renderClientCaps(caps *capabilities.ClientCaps) string {
+	var b strings.Builder
+	b.WriteString("  Capabilities:\n")
+	if caps == nil {
+		b.WriteString("    <none reported>\n")
+		return b.String()
+	}
+
+	if caps.Roots != nil {
+		b.WriteString(fmt.Sprintf("    ✓ roots%s\n", subFlags(caps.Roots.ListChanged, false)))
+	}
+	if caps.Sampling != nil {
+		extra := ""
+		if caps.Sampling.Tools != nil {
+			extra = " (tools)"
+		}
+		b.WriteString(fmt.Sprintf("    ✓ sampling%s\n", extra))
+	}
+	if caps.Elicitation != nil {
+		extra := ""
+		if caps.Elicitation.Form != nil {
+			extra = " (form)"
+		}
+		if caps.Elicitation.URL != nil {
+			if extra == "" {
+				extra = " (url)"
+			} else {
+				extra = " (form, url)"
+			}
+		}
+		b.WriteString(fmt.Sprintf("    ✓ elicitation%s\n", extra))
+	}
+
+	if caps.Roots == nil && caps.Sampling == nil && caps.Elicitation == nil {
+		b.WriteString("    <none of the standard capabilities>\n")
+	}
+
+	if len(caps.Experimental) > 0 {
+		b.WriteString("  Experimental:\n")
+		for _, k := range sortedMapKeys(caps.Experimental) {
+			b.WriteString(fmt.Sprintf("    %s: %s\n", k, summarizeValue(caps.Experimental[k])))
+		}
+	}
+	if len(caps.Extensions) > 0 {
+		b.WriteString("  Extensions:\n")
+		for _, k := range sortedMapKeys(caps.Extensions) {
+			b.WriteString(fmt.Sprintf("    %s: %s\n", k, summarizeValue(caps.Extensions[k])))
+		}
+	}
+	return b.String()
+}
+
+// subFlags returns " (listChanged)" or empty — the conventional sub-flag
+// label for prompts/tools. The second arg is reserved for capabilities that
+// might add more flags in the future.
+func subFlags(listChanged, _ bool) string {
+	if listChanged {
+		return " (listChanged)"
+	}
+	return ""
+}
+
+// subFlagsResources renders the resource-specific flag combination. We
+// cannot reuse subFlags because resources have two independent booleans.
+func subFlagsResources(listChanged, subscribe bool) string {
+	parts := make([]string, 0, 2)
+	if listChanged {
+		parts = append(parts, "listChanged")
+	}
+	if subscribe {
+		parts = append(parts, "subscribe")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
+}
+
+// sortedMapKeys returns keys of a map[string]interface{} in alphabetical
+// order so the rendered output is stable across renders.
+func sortedMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// Use sort.Strings via the package-local helper.
+	sortStrings(keys)
+	return keys
+}
+
+// sortStrings is a small wrapper around sort.Strings declared in this file
+// so we don't need to add another import — the existing sort.Strings call
+// would require an additional `sort` import that conflicts with no current
+// usage in debug.go. (Keeping the function name short and the import scoped
+// makes the diff to debug.go minimal.)
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		j := i
+		for j > 0 && s[j-1] > s[j] {
+			s[j-1], s[j] = s[j], s[j-1]
+			j--
+		}
+	}
+}
+
+// summarizeValue converts an arbitrary JSON-decoded value into a short,
+// human-readable string for inline display. We don't need a perfect
+// roundtrip — the user can press 'c' or 'y' to copy the full JSON. We
+// truncate very long renderings to keep the tab readable on small terminals.
+func summarizeValue(v interface{}) string {
+	if v == nil {
+		return "{}"
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("<%T>", v)
+	}
+	s := string(b)
+	const maxLen = 80
+	if len(s) > maxLen {
+		return s[:maxLen-3] + "..."
+	}
+	return s
+}
+
+// copyCapabilitiesCmd copies the full JSON snapshot to the clipboard. Same
+// surface area as the per-log-entry copy commands so users have one
+// consistent muscle-memory shortcut ('y' or 'c') across every tab that has
+// copyable content.
+func (ds *DebugScreen) copyCapabilitiesCmd() tea.Cmd {
+	return func() tea.Msg {
+		var snap *capabilities.Snapshot
+		if ds.snapshotProvider != nil {
+			snap = ds.snapshotProvider()
+		}
+		if snap == nil {
+			ds.SetStatus("No capabilities snapshot to copy", StatusWarning)
+			return StatusMsg{Message: "No capabilities snapshot to copy", Level: StatusWarning}
+		}
+		out, err := json.MarshalIndent(snap, "", "  ")
+		if err != nil {
+			ds.SetStatus(fmt.Sprintf("Marshal failed: %v", err), StatusError)
+			return StatusMsg{Message: fmt.Sprintf("Marshal failed: %v", err), Level: StatusError}
+		}
+		if err := clipboard.WriteAll(string(out)); err != nil {
+			ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
+			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
+		}
+		ds.SetStatus("Copied capabilities JSON to clipboard", StatusSuccess)
+		return StatusMsg{Message: "Copied capabilities JSON to clipboard", Level: StatusSuccess}
+	}
 }
 
 // Utility functions are defined in main.go

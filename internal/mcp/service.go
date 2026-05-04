@@ -10,6 +10,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 	. "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
@@ -105,6 +106,18 @@ type service struct {
 	// GetOAuthHandler() so the TUI status indicator can read state and
 	// the Re-authenticate keybinding can clear cached tokens.
 	oauthHandler *oauth.Handler
+
+	// capabilitiesSnapshot caches the negotiated capabilities from the most
+	// recent successful initialize. Exposed via GetCapabilitiesSnapshot for
+	// the Capabilities debug tab and the `mcp-tui capabilities` CLI subcommand.
+	// nil before the first Connect; rebuilt on every Connect; not cleared on
+	// Disconnect so users can still inspect the last session's negotiated state.
+	capabilitiesSnapshot *capabilities.Snapshot
+
+	// clientImpl is the Implementation we sent during initialize. We capture
+	// it so the snapshot can include client identity without re-deriving the
+	// values inside createClient.
+	clientImpl *officialMCP.Implementation
 }
 
 // getNextRequestID returns the next request ID
@@ -378,6 +391,9 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		Name:    "mcp-tui",
 		Version: "0.1.0",
 	}
+	// Capture for the capabilities snapshot. updateServerInfo reads this
+	// after the SDK finishes the initialize handshake.
+	s.clientImpl = impl
 
 	// Build the client options. Sampling handler (if configured) is the same
 	// in both the debug and non-debug paths, so build it once here.
@@ -479,35 +495,112 @@ func (s *service) logConnectionDetails(config *configPkg.ConnectionConfig) {
 	}
 }
 
-// updateServerInfo updates server information after successful connection
+// updateServerInfo updates server information after successful connection.
+// We pull both the human-readable summary (Name/Version/ProtocolVersion shown
+// in `mcp-tui server`) and the full negotiated capabilities snapshot (used by
+// the Capabilities debug tab and `mcp-tui capabilities` subcommand) from the
+// SDK's InitializeResult. Falling back to placeholder strings keeps the UI
+// alive when a transport (e.g. an in-memory test pair) skips the handshake.
 func (s *service) updateServerInfo() error {
-	session := s.sessionManager.GetSession()
-	if session == nil {
+	clientSession := s.sessionManager.GetSession()
+	if clientSession == nil {
 		return fmt.Errorf("session manager connected but no session available")
 	}
 
-	// Get server information from the session's initialize result
-	// The official SDK automatically handles initialization
-	serverInfo := "Connected Server"
+	// Defaults for transports that haven't completed initialize yet.
+	serverName := "Connected Server"
 	serverVersion := "Unknown"
 	protocolVersion := "2024-11-05"
+	sessionID := clientSession.ID()
 
-	// Try to get more details if available through reflection or other means
-	// For now, we'll use the session ID and other available info
-	sessionID := session.ID()
+	initRes := clientSession.InitializeResult()
+	if initRes != nil {
+		if initRes.ServerInfo != nil {
+			if initRes.ServerInfo.Name != "" {
+				serverName = initRes.ServerInfo.Name
+			}
+			if initRes.ServerInfo.Version != "" {
+				serverVersion = initRes.ServerInfo.Version
+			}
+		}
+		if initRes.ProtocolVersion != "" {
+			protocolVersion = initRes.ProtocolVersion
+		}
+	}
 
-	// Update server info
+	// Update server info — used by the legacy `server` subcommand and TUI
+	// connection card.
 	s.info.Connected = true
-	s.info.Name = serverInfo
+	s.info.Name = serverName
 	s.info.Version = serverVersion
 	s.info.ProtocolVersion = protocolVersion
 
+	// Propagate top-level capability flags into the legacy map so callers that
+	// only check info.Capabilities (e.g. mcp-tui server) see something useful.
+	if initRes != nil && initRes.Capabilities != nil {
+		s.info.Capabilities = serverCapabilitiesToFlagMap(initRes.Capabilities)
+	}
+
+	// Build the rich capabilities snapshot. We derive client capabilities
+	// ourselves because the SDK does not expose what it sent on the wire —
+	// the values are computed inside Client.Connect from ClientOptions.
+	clientCaps := capabilities.DeriveClientCapabilities(
+		s.samplingHandler != nil,
+		s.hasSamplingToolsHandler(),
+		s.elicitationHandler != nil,
+		protocolVersion,
+		true, // mcp-tui always advertises roots/listChanged (matches SDK default).
+	)
+	s.capabilitiesSnapshot = capabilities.FromInitializeResult(initRes, s.clientImpl, clientCaps)
+
 	debug.Info("Successfully connected using official MCP Go SDK",
 		debug.F("sessionID", sessionID),
-		debug.F("serverInfo", serverInfo),
+		debug.F("serverInfo", serverName),
 		debug.F("protocolVersion", protocolVersion))
 
 	return nil
+}
+
+// hasSamplingToolsHandler reports whether the registered sampling.Handler
+// also implements the WithToolsHandler interface. This drives the "Sampling.Tools"
+// flag in the client capability snapshot — the SDK only advertises that
+// sub-capability when the handler can answer the array-content variant.
+func (s *service) hasSamplingToolsHandler() bool {
+	if s.samplingHandler == nil {
+		return false
+	}
+	_, ok := s.samplingHandler.(sampling.WithToolsHandler)
+	return ok
+}
+
+// serverCapabilitiesToFlagMap projects the SDK ServerCapabilities struct into
+// the legacy ServerInfo.Capabilities map used by the `mcp-tui server` command.
+// Only non-nil top-level capabilities are added so the existing iteration
+// logic ("for key, value where value != nil") still works.
+func serverCapabilitiesToFlagMap(c *officialMCP.ServerCapabilities) map[string]interface{} {
+	out := make(map[string]interface{})
+	if c.Logging != nil {
+		out["logging"] = true
+	}
+	if c.Prompts != nil {
+		out["prompts"] = true
+	}
+	if c.Resources != nil {
+		out["resources"] = true
+	}
+	if c.Tools != nil {
+		out["tools"] = true
+	}
+	if c.Completions != nil {
+		out["completions"] = true
+	}
+	for k := range c.Experimental {
+		out["experimental:"+k] = true
+	}
+	for k := range c.Extensions {
+		out["extension:"+k] = true
+	}
+	return out
 }
 
 // Disconnect closes the connection
@@ -944,6 +1037,16 @@ func isJSONError(err error) bool {
 // GetServerInfo returns server information
 func (s *service) GetServerInfo() *ServerInfo {
 	return s.info
+}
+
+// GetCapabilitiesSnapshot returns the negotiated capabilities snapshot from
+// the most recent successful initialize. nil before the first Connect.
+// The snapshot is preserved across Disconnect so users can still inspect the
+// last session's negotiated state from the TUI Capabilities tab.
+func (s *service) GetCapabilitiesSnapshot() *capabilities.Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.capabilitiesSnapshot
 }
 
 // GetConnectionHealth returns detailed connection health information
