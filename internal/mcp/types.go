@@ -162,8 +162,16 @@ type Tool struct {
 	Title       string                 `json:"title,omitempty"`
 	Description string                 `json:"description,omitempty"`
 	InputSchema map[string]interface{} `json:"inputSchema,omitempty"`
-	Annotations *ToolAnnotations       `json:"annotations,omitempty"`
-	SchemaError *SchemaError           `json:"schemaError,omitempty"`
+	// OutputSchema is the JSON Schema describing the structured result this
+	// tool returns when callers consume `structuredContent` from CallToolResult.
+	// Optional per the MCP 2025-06-18 spec — nil means the server did not
+	// advertise a schema and validation is a no-op. Stored as map[string]any
+	// rather than *jsonschema.Schema so the schema-decode failure (if any) is
+	// captured in SchemaError without forcing the validator dependency on every
+	// consumer of the Tool struct.
+	OutputSchema map[string]interface{} `json:"outputSchema,omitempty"`
+	Annotations  *ToolAnnotations       `json:"annotations,omitempty"`
+	SchemaError  *SchemaError           `json:"schemaError,omitempty"`
 }
 
 // HasSchemaError returns true if the tool has a schema parsing error
@@ -307,6 +315,19 @@ type CallToolRequest struct {
 type CallToolResult struct {
 	Content []Content `json:"content"`
 	IsError bool      `json:"isError,omitempty"`
+	// StructuredContent carries the optional structured payload from MCP
+	// 2025-06-18 tool results. nil when the server did not return one. The
+	// service layer normalises it to a JSON-friendly Go value (map/slice/
+	// scalar) so consumers do not need the SDK type to render or validate it.
+	StructuredContent any `json:"structuredContent,omitempty"`
+	// OutputViolations lists schema-validation failures found by comparing
+	// StructuredContent against the calling Tool's OutputSchema. Empty (or
+	// nil) when validation passes, when no outputSchema was advertised, or
+	// when the tool returned no structured payload alongside no schema.
+	// Populated server-side by the service layer at CallTool time so every
+	// surface (TUI banner, CLI stderr warning, --strict-output exit code)
+	// reads the same authoritative slice.
+	OutputViolations []string `json:"outputViolations,omitempty"`
 }
 
 // GetPromptRequest represents a prompt request

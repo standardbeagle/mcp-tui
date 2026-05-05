@@ -1359,6 +1359,30 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 	}
 	builder.WriteString("\n")
 
+	// outputSchema violations (Tier 2 schema validation) are surfaced as a
+	// yellow warning banner above the result body so the operator notices
+	// the mismatch before reading the (possibly malformed) payload. The
+	// banner is intentionally non-blocking — the result still renders below
+	// — because the spec calls these "warnings, not errors": consumers may
+	// still want to see the data, they just need to know the contract was
+	// not honoured.
+	if violations := ts.result.OutputViolations; len(violations) > 0 {
+		// Yellow + bold matches the schema-error warning palette used
+		// elsewhere on this screen so the visual treatment is consistent.
+		warnStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("220"))
+		bulletStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("220"))
+		header := fmt.Sprintf("⚠ Output schema violations (%d):", len(violations))
+		builder.WriteString(warnStyle.Render(header))
+		builder.WriteString("\n")
+		for _, v := range violations {
+			builder.WriteString(bulletStyle.Render("  • " + v))
+			builder.WriteString("\n")
+		}
+	}
+
 	headerH := lipgloss.Height(header)
 	footerH := lipgloss.Height(footer)
 	availableHeight := ts.computeResultDisplayHeight(headerH, footerH)

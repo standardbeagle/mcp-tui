@@ -17,6 +17,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/outputvalidation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
@@ -131,6 +132,15 @@ type service struct {
 	// the CLI --watch-notifications flag and tests; never reads from the
 	// underlying ring buffer so observers cannot affect what TUI sees.
 	notificationObservers []func(notifications.Entry)
+
+	// outputSchemaCache stores the per-tool outputSchema observed during the
+	// most recent ListTools call. CallTool reads from this map to validate
+	// structuredContent against the right schema without paying for an extra
+	// tools/list round-trip. The map is keyed by the wire tool.Name (not
+	// DisplayName) because that is the identifier callers pass to CallTool.
+	// Mutations are guarded by `mu` so concurrent ListTools/CallTool calls
+	// (which the TUI tool screen issues back-to-back) stay race-free.
+	outputSchemaCache map[string]map[string]interface{}
 }
 
 // getNextRequestID returns the next request ID
@@ -785,6 +795,20 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		}
 	}
 
+	// Refresh the per-tool outputSchema cache so a subsequent CallTool can
+	// validate structuredContent without paying for another tools/list
+	// round-trip. We rebuild the whole map (rather than upserting) because
+	// the server may have removed tools since the last list and we do not
+	// want stale schema entries to leak into a future call.
+	s.mu.Lock()
+	s.outputSchemaCache = make(map[string]map[string]interface{}, len(tools))
+	for _, t := range tools {
+		if t.OutputSchema != nil {
+			s.outputSchemaCache[t.Name] = t.OutputSchema
+		}
+	}
+	s.mu.Unlock()
+
 	debug.Info("Listed tools successfully using iterator pattern",
 		debug.F("count", len(tools)))
 
@@ -797,13 +821,26 @@ func (s *service) convertTool(tool *officialMCP.Tool) Tool {
 	// Convert InputSchema to map[string]interface{}
 	inputSchemaMap, schemaErr := s.convertInputSchema(tool.InputSchema, tool.Name)
 
+	// Convert OutputSchema to map[string]interface{}. We reuse convertInputSchema
+	// because the marshal/unmarshal pipeline is identical — a JSON Schema
+	// object regardless of whether it describes inputs or outputs. Schema
+	// errors from the output schema are merged into the same SchemaError slot
+	// only when the input parsed cleanly, so the existing TUI surface that
+	// renders a schema error per tool keeps working without churn. If both
+	// fail the input error wins because it blocks more tool functionality.
+	outputSchemaMap, outputSchemaErr := s.convertInputSchema(tool.OutputSchema, tool.Name)
+	if schemaErr == nil && outputSchemaErr != nil {
+		schemaErr = outputSchemaErr
+	}
+
 	return Tool{
-		Name:        tool.Name,
-		Title:       tool.Title,
-		Description: tool.Description,
-		InputSchema: inputSchemaMap,
-		Annotations: convertToolAnnotations(tool.Annotations),
-		SchemaError: schemaErr,
+		Name:         tool.Name,
+		Title:        tool.Title,
+		Description:  tool.Description,
+		InputSchema:  inputSchemaMap,
+		OutputSchema: outputSchemaMap,
+		Annotations:  convertToolAnnotations(tool.Annotations),
+		SchemaError:  schemaErr,
 	}
 }
 
@@ -929,15 +966,77 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		}
 	}
 
+	// Locate the tool's outputSchema to drive structured-result validation.
+	// Prefer the cache populated by the most recent ListTools; if absent
+	// (CallTool issued before any ListTools — common in CLI direct-call
+	// flows) fetch it inline so schema-aware servers still get validated.
+	// Inline lookup failures are non-fatal: we simply skip validation and
+	// log a debug entry.
+	outputSchema := s.lookupOutputSchema(ctx, req.Name)
+
+	// Run schema validation against the structured content. The SDK exposes
+	// StructuredContent as `any`, so we hand it through verbatim — the
+	// validator round-trips it for normalisation. Validation is silent when
+	// schema is nil (most current servers) so the cost on the no-schema path
+	// is one map lookup.
+	violations := outputvalidation.Validate(outputSchema, result.StructuredContent)
+	if len(violations) > 0 {
+		debug.Warn("Tool result violates outputSchema",
+			debug.F("tool", req.Name),
+			debug.F("violations", len(violations)))
+	}
+
 	debug.Info("Called tool successfully",
 		debug.F("tool", req.Name),
 		debug.F("isError", result.IsError),
-		debug.F("contentCount", len(content)))
+		debug.F("contentCount", len(content)),
+		debug.F("hasStructured", result.StructuredContent != nil),
+		debug.F("violations", len(violations)))
 
 	return &CallToolResult{
-		Content: content,
-		IsError: result.IsError,
+		Content:           content,
+		IsError:           result.IsError,
+		StructuredContent: result.StructuredContent,
+		OutputViolations:  violations,
 	}, nil
+}
+
+// lookupOutputSchema returns the cached outputSchema for the named tool,
+// falling back to a one-shot tools/list when the cache is cold. nil is a
+// valid return value (and the common case) — it means the server did not
+// advertise a schema for this tool. Errors during the inline list are
+// swallowed and reported via debug logs because schema validation is
+// best-effort: a failed lookup must not block tool execution.
+func (s *service) lookupOutputSchema(ctx context.Context, toolName string) map[string]interface{} {
+	s.mu.Lock()
+	cache := s.outputSchemaCache
+	s.mu.Unlock()
+	if cache != nil {
+		// Cache populated — trust it (including the negative case where the
+		// tool exists but has no schema). A stale cache is acceptable: the
+		// worst case is missing one validation pass per tool addition, and
+		// the next ListTools will pick the schema up.
+		if schema, ok := cache[toolName]; ok {
+			return schema
+		}
+		return nil
+	}
+
+	// Cold cache: do a single inline list to populate it. ListTools holds
+	// the same mutex on write, so we must call it without holding the lock.
+	tools, err := s.ListTools(ctx)
+	if err != nil {
+		debug.Debug("inline tools/list for outputSchema lookup failed",
+			debug.F("tool", toolName),
+			debug.F("error", err))
+		return nil
+	}
+	for _, t := range tools {
+		if t.Name == toolName {
+			return t.OutputSchema
+		}
+	}
+	return nil
 }
 
 // ListResources returns available resources using the official SDK's natural iterator pattern

@@ -136,6 +136,14 @@ a server-flagged-destructive tool.`,
 	cmd.Flags().Bool("no-confirm", false,
 		"Skip the confirmation prompt for tools with destructiveHint=true")
 
+	// --strict-output upgrades outputSchema violations from a stderr warning
+	// to a non-zero exit code. The default is non-fatal because servers in
+	// the wild are still adopting outputSchema, and we don't want to break
+	// existing scripts that consume tool output without validating it. CI
+	// pipelines that need strict contracts opt in explicitly.
+	cmd.Flags().Bool("strict-output", false,
+		"Exit non-zero when the tool's structured result violates its outputSchema")
+
 	return cmd
 }
 
@@ -517,6 +525,48 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Surface outputSchema violations after the result body so users see
+	// the actual response first, then the validation report. We always
+	// write to stderr (not stdout) so consumers piping the result through
+	// `jq` or similar do not break on extra warning lines. --strict-output
+	// upgrades the warning to a non-zero exit so CI pipelines can fail
+	// loudly on schema-violating servers.
+	strictOutput, _ := cmd.Flags().GetBool("strict-output")
+	if err := reportOutputViolations(os.Stderr, result.OutputViolations, strictOutput); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// reportOutputViolations writes a human-readable warning block describing
+// each outputSchema violation to the given writer, then returns an error if
+// strict mode is enabled. Returns nil when there are no violations.
+//
+// The warning format is fixed (Warning header + bullet per violation) so
+// scripts grepping for "Warning:" or "outputSchema" can recognise the
+// signal. We deliberately avoid lipgloss styling on stderr because most
+// CI log viewers strip ANSI escapes anyway and a plain format is easier
+// to assert against in tests.
+func reportOutputViolations(w *os.File, violations []string, strict bool) error {
+	if len(violations) == 0 {
+		return nil
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "Warning: tool result violates outputSchema (%d issue", len(violations))
+	if len(violations) != 1 {
+		fmt.Fprint(w, "s")
+	}
+	fmt.Fprintln(w, "):")
+	for _, v := range violations {
+		fmt.Fprintf(w, "  - %s\n", v)
+	}
+	if strict {
+		// Returning a sentinel error lets cobra propagate a non-zero exit
+		// code without us having to call os.Exit directly. The message is
+		// intentionally short — the violations were already printed above.
+		return fmt.Errorf("tool result violates outputSchema (--strict-output enabled)")
+	}
 	return nil
 }
 
