@@ -280,6 +280,7 @@ Examples:
 	rootCmd.AddCommand(createPromptCommand())
 	rootCmd.AddCommand(createServerCommand())
 	rootCmd.AddCommand(createCapabilitiesCommand())
+	rootCmd.AddCommand(createVerifyCommand())
 
 	return rootCmd
 }
@@ -307,6 +308,11 @@ func createServerCommand() *cobra.Command {
 func createCapabilitiesCommand() *cobra.Command {
 	capCmd := cli.NewCapabilitiesCommand()
 	return capCmd.CreateCommand()
+}
+
+func createVerifyCommand() *cobra.Command {
+	verifyCmd := cli.NewVerifyCommand()
+	return verifyCmd.CreateCommand()
 }
 
 func runTUIMode(ctx context.Context, connectionConfig *config.ConnectionConfig) {

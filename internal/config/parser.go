@@ -97,9 +97,12 @@ func ParseArgs(args []string, cmdFlag, urlFlag string, argsFlag []string) *Parse
 	return result
 }
 
-// isKnownSubcommand checks if a string is a known subcommand
+// isKnownSubcommand checks if a string is a known subcommand. Keep this list
+// in sync with the AddCommand calls in main.go — every cobra subcommand the
+// root registers must appear here so the early-parse pattern in main()
+// doesn't mistake the subcommand name for a connection string.
 func isKnownSubcommand(arg string) bool {
-	knownCommands := []string{"tool", "resource", "prompt", "server", "completion", "help"}
+	knownCommands := []string{"tool", "resource", "prompt", "server", "completion", "help", "capabilities", "verify"}
 	for _, cmd := range knownCommands {
 		if arg == cmd {
 			return true
