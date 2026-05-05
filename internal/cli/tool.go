@@ -144,6 +144,16 @@ a server-flagged-destructive tool.`,
 	cmd.Flags().Bool("strict-output", false,
 		"Exit non-zero when the tool's structured result violates its outputSchema")
 
+	// --strict-errors upgrades isError:true tool results (the v1.5.0 channel
+	// for input-validation and business-rule errors) from a stderr warning
+	// to a non-zero exit code. Default is non-fatal so existing scripts that
+	// inspect tool-result error payloads (e.g. shell scripts that grep
+	// stdout for an error message) continue to work; CI pipelines that want
+	// loud failure on any tool-layer error opt in explicitly. Mirrors the
+	// --strict-output flag pattern so the two are easy to remember.
+	cmd.Flags().Bool("strict-errors", false,
+		"Exit non-zero when the tool returns a result with isError:true (v1.5.0 input-validation channel)")
+
 	return cmd
 }
 
@@ -492,8 +502,17 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "✅ Tool executed successfully\n\n")
 	}
 
-	// Display results
+	// Display results.
+	//
+	// isError:true is the v1.5.0+ channel for tool-layer errors (input
+	// validation, business-rule violations). We surface this to stderr — NOT
+	// stdout — so that scripts piping the tool response through `jq` or
+	// similar still see a clean payload. The non-zero exit code is reserved
+	// for --strict-errors (see reportToolError below) so existing scripts
+	// that read isError-flagged payloads from stdout keep working by
+	// default.
 	if result.IsError {
+		fmt.Fprintln(os.Stderr, "⚠ Tool reported an error (isError:true)")
 		fmt.Println("Error response from tool:")
 	} else {
 		fmt.Println("Tool response:")
@@ -536,7 +555,30 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --strict-errors upgrades a tool-layer error (isError:true) from a
+	// stderr warning to a non-zero exit. We check this after rendering the
+	// payload so the operator still sees the error content before the
+	// command exits — same ordering pattern as reportOutputViolations.
+	strictErrors, _ := cmd.Flags().GetBool("strict-errors")
+	if err := reportToolError(result.IsError, strictErrors); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// reportToolError returns a non-nil error when the call carried a tool-layer
+// error (isError:true) and the caller passed --strict-errors. The stderr
+// notice was already printed up-stream where the result is rendered; this
+// helper exists purely so the strict-mode exit-code policy is testable in
+// isolation. Returns nil when isError is false or strict mode is off.
+func reportToolError(isError, strict bool) error {
+	if !isError || !strict {
+		return nil
+	}
+	// Sentinel error wording mirrors --strict-output so anyone grepping CI
+	// logs for "strict-" sees both classes of failure with the same shape.
+	return fmt.Errorf("tool returned isError:true (--strict-errors enabled)")
 }
 
 // reportOutputViolations writes a human-readable warning block describing

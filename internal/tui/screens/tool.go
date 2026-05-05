@@ -510,11 +510,22 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Show execution count in status
-			execMsg := fmt.Sprintf("Tool executed successfully (#%d)", ts.executionCount)
-			if ts.executionCount > 1 {
-				execMsg = fmt.Sprintf("Tool executed successfully (#%d) ✨", ts.executionCount)
+			// Tool-result errors (isError:true) are NOT JSON-RPC failures —
+			// the call completed and the server returned a structured result
+			// flagged as an error. Surface that distinction in the status bar
+			// so operators see "Tool reported an error" rather than the
+			// misleading "executed successfully" message that older builds
+			// printed for every non-protocol-error path.
+			if msg.Result != nil && msg.Result.IsError {
+				errMsg := fmt.Sprintf("Tool reported an error (isError:true) (#%d)", ts.executionCount)
+				ts.SetStatus(errMsg, StatusError)
+			} else {
+				execMsg := fmt.Sprintf("Tool executed successfully (#%d)", ts.executionCount)
+				if ts.executionCount > 1 {
+					execMsg = fmt.Sprintf("Tool executed successfully (#%d) ✨", ts.executionCount)
+				}
+				ts.SetStatus(execMsg, StatusSuccess)
 			}
-			ts.SetStatus(execMsg, StatusSuccess)
 		}
 		return ts, nil
 
@@ -1352,7 +1363,24 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 	builder.WriteString(execInfoStyle.Render(execInfo))
 	builder.WriteString("\n")
 
+	// isError:true is the v1.5.0 channel for tool-layer errors (e.g. input
+	// validation failures, business-rule violations) — the call completed
+	// and the server responded with a structured payload tagged as an error.
+	// We render a red, padded banner above the result body to make this
+	// distinct from:
+	//   - JSON-RPC protocol errors (handled separately via ts.LastError(),
+	//     rendered in the footer with a different "Error: <message>" format)
+	//   - outputSchema violations (rendered just below as a yellow banner)
+	// The banner header still reads "Error Result:" inline so the result
+	// label stays unambiguous when the user reads top-down.
 	if ts.result.IsError {
+		errBannerStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("15")). // white text
+			Background(lipgloss.Color("9")).  // red background
+			Padding(0, 1)
+		builder.WriteString(errBannerStyle.Render("⚠ Tool reported an error (isError:true)"))
+		builder.WriteString("\n")
 		builder.WriteString(ts.errorStyle.Render("Error Result:"))
 	} else {
 		builder.WriteString(ts.labelStyle.Render("Result:"))
