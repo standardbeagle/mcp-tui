@@ -102,7 +102,7 @@ func ParseArgs(args []string, cmdFlag, urlFlag string, argsFlag []string) *Parse
 // root registers must appear here so the early-parse pattern in main()
 // doesn't mistake the subcommand name for a connection string.
 func isKnownSubcommand(arg string) bool {
-	knownCommands := []string{"tool", "resource", "prompt", "server", "completion", "help", "capabilities", "verify"}
+	knownCommands := []string{"tool", "resource", "prompt", "server", "completion", "help", "capabilities", "verify", "conform"}
 	for _, cmd := range knownCommands {
 		if arg == cmd {
 			return true
