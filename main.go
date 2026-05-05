@@ -136,6 +136,12 @@ Examples:
 				} else if oauthCfg != nil {
 					connectionConfig.OAuth = oauthCfg
 				}
+
+				// Mirror --mcp-method-headers into the connection config so
+				// the TUI's transport factory enables the SEP-2243 RoundTripper.
+				if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
+					connectionConfig.MCPMethodHeaders = true
+				}
 			}
 
 			// Run TUI mode with connection config
@@ -221,6 +227,16 @@ Examples:
 	rootCmd.PersistentFlags().Int("oauth-redirect-port", 0, "Port for the auth-code redirect URI (0 = ephemeral)")
 	rootCmd.PersistentFlags().Bool("oauth-dynamic-registration", false, "Enable RFC 7591 dynamic client registration when ClientID is empty")
 	rootCmd.PersistentFlags().String("oauth-cache", "", "Token cache directory ('-' to disable; default: platform cache dir)")
+
+	// SEP-2243 advisory headers. When --mcp-method-headers is set, every
+	// JSON-RPC request over HTTP/SSE/streamable-HTTP carries two extra HTTP
+	// headers — MCP-Method (the JSON-RPC method) and MCP-Name (the
+	// tool/prompt name, or resource URI for resources/read) — so load
+	// balancers, proxies, and observability tools can route MCP traffic
+	// without parsing the body. Off by default to preserve current wire
+	// behavior; STDIO ignores the flag because the headers only exist on
+	// the HTTP transport.
+	rootCmd.PersistentFlags().Bool("mcp-method-headers", false, "Inject SEP-2243 MCP-Method/MCP-Name headers on every JSON-RPC request (HTTP transports only)")
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())

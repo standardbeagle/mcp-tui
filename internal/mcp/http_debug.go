@@ -12,7 +12,47 @@ import (
 	"time"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
+
+// init registers an observer with the transports package so the SEP-2243
+// MCP-Method/MCP-Name values injected on every JSON-RPC request reach the
+// debug HTTP tab. Without this hook, requests routed through the custom
+// HTTP transport bypass the global debugRoundTripper and the headers stay
+// invisible.
+func init() {
+	transports.SetRequestHeaderObserver(func(req *http.Request, mcpMethod, mcpName string) {
+		captureRequestHeaders(req, mcpMethod, mcpName)
+	})
+}
+
+// captureRequestHeaders snapshots the outgoing request's headers (post
+// SEP-2243 injection) into lastHTTPError so the Ctrl+D HTTP tab surfaces
+// them alongside the existing timing display. It is intentionally additive:
+// it merges into the existing record when the URL matches, otherwise it
+// seeds a minimal record so the values are visible even before a response
+// arrives.
+func captureRequestHeaders(req *http.Request, mcpMethod, mcpName string) {
+	headers := make(map[string]string, len(req.Header))
+	for key, values := range req.Header {
+		headers[key] = strings.Join(values, ", ")
+	}
+
+	lastHTTPErrorLock.Lock()
+	defer lastHTTPErrorLock.Unlock()
+	if lastHTTPError != nil && lastHTTPError.URL == req.URL.String() {
+		// Same in-flight request — merge headers without clobbering the
+		// response side that may have already arrived.
+		lastHTTPError.RequestHeaders = headers
+		return
+	}
+	lastHTTPError = &HTTPErrorInfo{
+		Timestamp:      time.Now(),
+		Method:         req.Method,
+		URL:            req.URL.String(),
+		RequestHeaders: headers,
+	}
+}
 
 var (
 	// Global variable to store the last HTTP error response for debugging
@@ -22,13 +62,14 @@ var (
 
 // HTTPErrorInfo stores comprehensive information about HTTP requests for debugging
 type HTTPErrorInfo struct {
-	Timestamp    time.Time
-	Method       string
-	URL          string
-	StatusCode   int
-	RequestBody  string
-	ResponseBody string
-	Headers      map[string]string
+	Timestamp      time.Time
+	Method         string
+	URL            string
+	StatusCode     int
+	RequestBody    string
+	RequestHeaders map[string]string
+	ResponseBody   string
+	Headers        map[string]string
 
 	// Connection details for deep debugging
 	ConnectionDetails *ConnectionInfo
@@ -193,6 +234,14 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 
+	// Snapshot the request headers (including any SEP-2243 MCP-Method/MCP-Name
+	// values injected by an upstream RoundTripper) so the debug HTTP tab can
+	// surface them alongside the existing timing display.
+	requestHeaders := make(map[string]string)
+	for key, values := range req.Header {
+		requestHeaders[key] = strings.Join(values, ", ")
+	}
+
 	SetConnectionState(StageRequestSent, "MCP initialize request sent", req.URL.String(), nil)
 	if t.debugMode {
 		debug.Info("Starting HTTP request",
@@ -214,6 +263,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			URL:               req.URL.String(),
 			StatusCode:        0, // No response received
 			RequestBody:       string(requestBody),
+			RequestHeaders:    requestHeaders,
 			ResponseBody:      fmt.Sprintf("HTTP Request Failed: %v", err),
 			Headers:           headers,
 			ConnectionDetails: connInfo,
@@ -277,6 +327,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 				URL:               req.URL.String(),
 				StatusCode:        resp.StatusCode,
 				RequestBody:       string(requestBody),
+				RequestHeaders:    requestHeaders,
 				ResponseBody:      string(bodyBytes),
 				Headers:           headers,
 				ConnectionDetails: connInfo,
@@ -353,6 +404,14 @@ func FormatHTTPError(info *HTTPErrorInfo) string {
 		sb.WriteString(fmt.Sprintf("  Connection Drops: %d\n", sse.ConnectionDrops))
 		if sse.LastEventData != "" {
 			sb.WriteString(fmt.Sprintf("  Last Event Data: %s\n", truncateString(sse.LastEventData, 100)))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(info.RequestHeaders) > 0 {
+		sb.WriteString("Request Headers:\n")
+		for k, v := range info.RequestHeaders {
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
 		}
 		sb.WriteString("\n")
 	}

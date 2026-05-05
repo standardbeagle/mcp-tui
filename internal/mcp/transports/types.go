@@ -41,6 +41,12 @@ type TransportConfig struct {
 	// not support OAuth in the SDK and ignore this field.
 	OAuthHandler auth.OAuthHandler
 
+	// MCPMethodHeaders enables SEP-2243 advisory HTTP headers (MCP-Method,
+	// MCP-Name) on every JSON-RPC request. Honoured by HTTP, SSE, and
+	// streamable-HTTP transports; STDIO ignores it because the headers only
+	// make sense over an HTTP wire.
+	MCPMethodHeaders bool
+
 	// Common options
 	Timeout   time.Duration
 	DebugMode bool

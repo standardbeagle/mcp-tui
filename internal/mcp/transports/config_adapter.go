@@ -13,12 +13,13 @@ func FromConnectionConfig(config *configPkg.ConnectionConfig, debugMode bool, ti
 	}
 
 	transportConfig := &TransportConfig{
-		Type:      TransportType(config.Type),
-		Command:   config.Command,
-		Args:      config.Args,
-		URL:       config.URL,
-		Timeout:   timeout,
-		DebugMode: debugMode,
+		Type:             TransportType(config.Type),
+		Command:          config.Command,
+		Args:             config.Args,
+		URL:              config.URL,
+		MCPMethodHeaders: config.MCPMethodHeaders,
+		Timeout:          timeout,
+		DebugMode:        debugMode,
 	}
 
 	return transportConfig

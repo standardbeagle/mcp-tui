@@ -178,6 +178,14 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		connConfig.OAuth = oauthCfg
 	}
 
+	// Mirror --mcp-method-headers (SEP-2243) into the connection config so
+	// the transport factory wraps the HTTP client with the header injector
+	// at Connect time. STDIO ignores the flag because the SEP only applies
+	// over HTTP wires.
+	if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
+		connConfig.MCPMethodHeaders = true
+	}
+
 	return connConfig, nil
 }
 

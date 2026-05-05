@@ -63,6 +63,14 @@ type ConnectionConfig struct {
 	// config package free of an oauth-package import; the mcp service
 	// layer type-asserts it back to *oauth.Config.
 	OAuth interface{}
+
+	// MCPMethodHeaders, when true, makes HTTP/SSE/streamable-HTTP transports
+	// inject SEP-2243 advisory headers on every JSON-RPC request: MCP-Method
+	// (the method name) and MCP-Name (params.name for tools/prompts,
+	// params.uri for resources/read). Off by default to preserve current
+	// wire behavior; STDIO transports ignore the flag because the MCP HTTP
+	// transport spec is the only place these headers exist.
+	MCPMethodHeaders bool
 }
 
 // Validate checks if the configuration is valid
