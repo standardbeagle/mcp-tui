@@ -18,6 +18,7 @@ func FromConnectionConfig(config *configPkg.ConnectionConfig, debugMode bool, ti
 		Args:             config.Args,
 		URL:              config.URL,
 		MCPMethodHeaders: config.MCPMethodHeaders,
+		StaticHeaders:    config.Headers,
 		Timeout:          timeout,
 		DebugMode:        debugMode,
 	}

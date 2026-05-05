@@ -47,6 +47,14 @@ type TransportConfig struct {
 	// make sense over an HTTP wire.
 	MCPMethodHeaders bool
 
+	// StaticHeaders is the merged set of headers sourced from repeatable
+	// --header KEY=VALUE flags plus any headers carried in saved-connection
+	// JSON. Honoured by HTTP/SSE/streamable-HTTP transports via a
+	// RoundTripper that adds each entry to outgoing requests when not
+	// already present. Existing protocol headers (Content-Type, Accept) win
+	// — these flags are purely additive.
+	StaticHeaders map[string]string
+
 	// Common options
 	Timeout   time.Duration
 	DebugMode bool

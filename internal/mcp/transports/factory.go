@@ -58,7 +58,7 @@ func (f *factory) createSTDIOTransport(config *TransportConfig, strategy Context
 
 // createSSETransport creates an SSE transport with proper HTTP client configuration
 func (f *factory) createSSETransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
-	httpClient := GetHTTPClientForTransportWithMethodHeaders(TransportSSE, config.HTTPClient, config.MCPMethodHeaders)
+	httpClient := GetHTTPClientForTransportFull(TransportSSE, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
 
 	// Create SSE transport using official SDK (direct struct initialization)
 	transport := &officialMCP.SSEClientTransport{
@@ -71,7 +71,7 @@ func (f *factory) createSSETransport(config *TransportConfig, strategy ContextSt
 
 // createHTTPTransport creates an HTTP transport
 func (f *factory) createHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
-	httpClient := GetHTTPClientForTransportWithMethodHeaders(TransportHTTP, config.HTTPClient, config.MCPMethodHeaders)
+	httpClient := GetHTTPClientForTransportFull(TransportHTTP, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
 
 	// Create HTTP transport using official SDK (direct struct initialization).
 	// OAuthHandler is wired through when the user supplied OAuth flags;
@@ -87,7 +87,7 @@ func (f *factory) createHTTPTransport(config *TransportConfig, strategy ContextS
 
 // createStreamableHTTPTransport creates a streamable HTTP transport
 func (f *factory) createStreamableHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
-	httpClient := GetHTTPClientForTransportWithMethodHeaders(TransportStreamableHTTP, config.HTTPClient, config.MCPMethodHeaders)
+	httpClient := GetHTTPClientForTransportFull(TransportStreamableHTTP, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
 
 	// Create streamable HTTP transport using official SDK (direct struct initialization).
 	transport := &officialMCP.StreamableClientTransport{

@@ -162,18 +162,51 @@ func extractMethodAndName(body []byte) (method, name string) {
 // the SEP-2243 method-headers injector. We add a sibling rather than mutating
 // the existing helper so callers that don't opt in see no behavior change.
 func GetHTTPClientForTransportWithMethodHeaders(transportType TransportType, customClient *http.Client, methodHeaders bool) *http.Client {
+	return GetHTTPClientForTransportFull(transportType, customClient, methodHeaders, nil)
+}
+
+// GetHTTPClientForTransportFull builds the HTTP client used by the SDK
+// transport, layering optional wrappers in a deterministic order:
+//
+//  1. base transport from GetHTTPClientForTransport (timeout/keepalive policy)
+//  2. response observer (captures full response headers for the debug pane)
+//  3. static headers from --header KEY=VALUE (additive merge)
+//  4. SEP-2243 method headers injector
+//
+// The order matters: SEP-2243 runs last so its MCP-Method/MCP-Name headers
+// are not stomped by a user-supplied --header MCP-Method=... entry, and the
+// response observer wraps the base so it sees the unmodified server response
+// before any potential retry logic in inner round-trippers.
+func GetHTTPClientForTransportFull(transportType TransportType, customClient *http.Client, methodHeaders bool, staticHeaders map[string]string) *http.Client {
 	client := GetHTTPClientForTransport(transportType, customClient)
-	if !methodHeaders {
+	if !methodHeaders && len(staticHeaders) == 0 && getResponseObserver() == nil {
 		return client
 	}
 
-	// Clone the client so we don't mutate one shared by other transports. The
-	// transport itself is the only field we wrap.
+	// Clone so we don't mutate the shared default client.
 	wrapped := *client
 	base := wrapped.Transport
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	wrapped.Transport = newMethodHeadersRoundTripper(base)
+
+	// Layer 1 (innermost): response observer — captures the actual server
+	// response unmodified by any retry/redirect inner logic.
+	base = newResponseObserverRoundTripper(base)
+
+	// Layer 2: static headers — applied before SEP-2243 so user-supplied
+	// values can be inspected, but the observer still sees the final
+	// merged set on the outbound request.
+	if len(staticHeaders) > 0 {
+		base = newStaticHeadersRoundTripper(base, staticHeaders)
+	}
+
+	// Layer 3 (outermost): SEP-2243 method headers — these depend on the
+	// JSON-RPC body that the SDK has already serialized, so they go last.
+	if methodHeaders {
+		base = newMethodHeadersRoundTripper(base)
+	}
+
+	wrapped.Transport = base
 	return &wrapped
 }

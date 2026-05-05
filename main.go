@@ -11,6 +11,8 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/cli"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	mcptransports "github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	platformSignal "github.com/standardbeagle/mcp-tui/internal/platform/signal"
 	"github.com/standardbeagle/mcp-tui/internal/tui/app"
 )
@@ -142,6 +144,32 @@ Examples:
 				if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
 					connectionConfig.MCPMethodHeaders = true
 				}
+
+				// Mirror repeatable --header KEY=VALUE flags. We use the same
+				// parser as the CLI path (internal/cli/base.go) so a malformed
+				// flag fails identically in TUI and subcommand mode.
+				if headerFlags, _ := cmd.Flags().GetStringArray("header"); len(headerFlags) > 0 {
+					extras, err := mcptransports.ParseHeaderFlags(headerFlags)
+					if err != nil {
+						debug.Error("Invalid --header flag", debug.F("error", err))
+						os.Exit(1)
+					}
+					if connectionConfig.Headers == nil {
+						connectionConfig.Headers = extras
+					} else {
+						for k, v := range extras {
+							connectionConfig.Headers[k] = v
+						}
+					}
+				}
+
+				// Plumb --show-headers into the global redaction overrides
+				// used by the debug HTTP tab. Stored on a package-level
+				// register so the TUI's debug screen reads it without a
+				// dependency on cobra.Command.
+				if showHeaders, _ := cmd.Flags().GetString("show-headers"); showHeaders != "" {
+					mcp.SetShowHeaderOverrides(mcp.ParseShowHeadersCSV(showHeaders))
+				}
 			}
 
 			// Run TUI mode with connection config
@@ -237,6 +265,14 @@ Examples:
 	// behavior; STDIO ignores the flag because the headers only exist on
 	// the HTTP transport.
 	rootCmd.PersistentFlags().Bool("mcp-method-headers", false, "Inject SEP-2243 MCP-Method/MCP-Name headers on every JSON-RPC request (HTTP transports only)")
+
+	// Header forwarding visualization. --header is repeatable and adds the
+	// supplied KEY=VALUE pair to every outgoing HTTP request (additive: an
+	// existing protocol header on the request wins). --show-headers reveals
+	// specific header values verbatim in the Ctrl+D HTTP debug tab; without
+	// it, Authorization, Cookie, and Set-Cookie are masked as [REDACTED].
+	rootCmd.PersistentFlags().StringArray("header", nil, "Add an HTTP header to every request: KEY=VALUE (repeatable; HTTP transports only)")
+	rootCmd.PersistentFlags().String("show-headers", "", "Comma-separated list of header names to display verbatim in the debug HTTP tab (otherwise sensitive headers are redacted)")
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())

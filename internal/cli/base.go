@@ -16,6 +16,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/roots"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
 // OutputFormat represents supported output formats
@@ -184,6 +185,34 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	// over HTTP wires.
 	if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
 		connConfig.MCPMethodHeaders = true
+	}
+
+	// Mirror repeatable --header KEY=VALUE flags into the connection config.
+	// The flag is parsed in one place (transports.ParseHeaderFlags) so the
+	// CLI and TUI launchers reject the same set of malformed inputs. Static
+	// JSON-saved Headers survive when the flag is absent — we merge the two
+	// sources with flag values winning, which matches how users expect ad-hoc
+	// CLI overrides to behave.
+	if headerFlags, _ := cmd.Flags().GetStringArray("header"); len(headerFlags) > 0 {
+		extras, err := transports.ParseHeaderFlags(headerFlags)
+		if err != nil {
+			return nil, err
+		}
+		if connConfig.Headers == nil {
+			connConfig.Headers = extras
+		} else {
+			for k, v := range extras {
+				connConfig.Headers[k] = v
+			}
+		}
+	}
+
+	// Plumb --show-headers into the global redaction-override list used by
+	// FormatHTTPError. Setting it here (rather than per-subcommand) means
+	// every CLI subcommand that invokes the debug formatter honours the
+	// override consistently.
+	if showHeaders, _ := cmd.Flags().GetString("show-headers"); showHeaders != "" {
+		mcp.SetShowHeaderOverrides(mcp.ParseShowHeadersCSV(showHeaders))
 	}
 
 	return connConfig, nil

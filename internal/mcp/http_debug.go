@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptrace"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -15,15 +16,59 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
-// init registers an observer with the transports package so the SEP-2243
-// MCP-Method/MCP-Name values injected on every JSON-RPC request reach the
-// debug HTTP tab. Without this hook, requests routed through the custom
-// HTTP transport bypass the global debugRoundTripper and the headers stay
-// invisible.
+// init registers observers with the transports package so per-request
+// headers (both outbound after SEP-2243 injection and inbound after the
+// server replies) reach the Ctrl+D HTTP tab. The SDK uses a custom
+// http.Client that bypasses the global debugRoundTripper, so without these
+// hooks the debug tab would never see headers from real MCP traffic.
 func init() {
 	transports.SetRequestHeaderObserver(func(req *http.Request, mcpMethod, mcpName string) {
 		captureRequestHeaders(req, mcpMethod, mcpName)
 	})
+	transports.SetResponseObserver(func(req *http.Request, resp *http.Response, err error) {
+		captureRoundTrip(req, resp, err)
+	})
+}
+
+// captureRoundTrip records the request + response headers of every HTTP
+// transaction the SDK transport sees. It runs after the SDK's RoundTrip
+// returns but before the body is consumed, so resp.Header is the authoritative
+// post-handshake snapshot. Errors (resp == nil) still update the record so the
+// debug pane shows what we attempted when the connection fails outright.
+func captureRoundTrip(req *http.Request, resp *http.Response, err error) {
+	requestHeaders := make(map[string]string, len(req.Header))
+	for key, values := range req.Header {
+		requestHeaders[key] = strings.Join(values, ", ")
+	}
+
+	responseHeaders := map[string]string{}
+	statusCode := 0
+	if resp != nil {
+		responseHeaders = make(map[string]string, len(resp.Header))
+		for key, values := range resp.Header {
+			responseHeaders[key] = strings.Join(values, ", ")
+		}
+		statusCode = resp.StatusCode
+	}
+
+	lastHTTPErrorLock.Lock()
+	defer lastHTTPErrorLock.Unlock()
+	// Always reset to a fresh record so the response side reflects the
+	// most recent round-trip; the merge case in captureRequestHeaders only
+	// applies to the brief window between header injection and round-trip
+	// completion. Once we have a response we have a complete picture.
+	info := &HTTPErrorInfo{
+		Timestamp:      time.Now(),
+		Method:         req.Method,
+		URL:            req.URL.String(),
+		StatusCode:     statusCode,
+		RequestHeaders: requestHeaders,
+		Headers:        responseHeaders,
+	}
+	if err != nil {
+		info.ResponseBody = fmt.Sprintf("HTTP Request Failed: %v", err)
+	}
+	lastHTTPError = info
 }
 
 // captureRequestHeaders snapshots the outgoing request's headers (post
@@ -244,10 +289,13 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 
 	SetConnectionState(StageRequestSent, "MCP initialize request sent", req.URL.String(), nil)
 	if t.debugMode {
+		// Apply --show-headers redaction policy to the debug log too — the
+		// log file is just as exposable as the on-screen pane, so the same
+		// redaction rules apply.
 		debug.Info("Starting HTTP request",
 			debug.F("method", req.Method),
 			debug.F("url", req.URL.String()),
-			debug.F("headers", req.Header))
+			debug.F("headers", RedactHeaders(requestHeaders, GetShowHeaderOverrides())))
 	}
 
 	// Execute the request
@@ -348,7 +396,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 					debug.F("tlsTime", connInfo.TLSTime),
 					debug.F("firstByteTime", connInfo.FirstByteTime),
 					debug.F("responseLength", len(bodyBytes)),
-					debug.F("responseHeaders", headers))
+					debug.F("responseHeaders", RedactHeaders(headers, GetShowHeaderOverrides())))
 
 				if isError {
 					debug.Error("HTTP Error Details",
@@ -361,8 +409,19 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	return resp, nil
 }
 
-// FormatHTTPError formats the HTTP error information for display
+// FormatHTTPError formats the HTTP error information for display, applying
+// the default redaction policy (Authorization, Cookie, Set-Cookie are masked).
+// Use FormatHTTPErrorWithOverrides when the caller wired --show-headers and
+// needs to reveal specific headers verbatim.
 func FormatHTTPError(info *HTTPErrorInfo) string {
+	return FormatHTTPErrorWithOverrides(info, nil)
+}
+
+// FormatHTTPErrorWithOverrides formats the HTTP error information with an
+// explicit list of header names whose values should be shown verbatim instead
+// of redacted. Names are matched case-insensitively. Pass nil for the default
+// redaction-only behaviour.
+func FormatHTTPErrorWithOverrides(info *HTTPErrorInfo, showHeaders []string) string {
 	if info == nil {
 		return "No HTTP error information available"
 	}
@@ -410,9 +469,7 @@ func FormatHTTPError(info *HTTPErrorInfo) string {
 
 	if len(info.RequestHeaders) > 0 {
 		sb.WriteString("Request Headers:\n")
-		for k, v := range info.RequestHeaders {
-			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
-		}
+		writeHeaderLines(&sb, RedactHeaders(info.RequestHeaders, showHeaders))
 		sb.WriteString("\n")
 	}
 
@@ -428,12 +485,25 @@ func FormatHTTPError(info *HTTPErrorInfo) string {
 
 	if len(info.Headers) > 0 {
 		sb.WriteString("Response Headers:\n")
-		for k, v := range info.Headers {
-			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
-		}
+		writeHeaderLines(&sb, RedactHeaders(info.Headers, showHeaders))
 	}
 
 	return sb.String()
+}
+
+// writeHeaderLines renders a header map to sb in alphabetically-sorted order
+// so the debug pane produces stable, diff-friendly output. Sorting at format
+// time keeps the captured HTTPErrorInfo struct unordered (cheap to populate)
+// while the user-facing rendering remains deterministic.
+func writeHeaderLines(sb *strings.Builder, headers map[string]string) {
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		sb.WriteString(fmt.Sprintf("  %s: %s\n", k, headers[k]))
+	}
 }
 
 // truncateString truncates a string to maxLen characters

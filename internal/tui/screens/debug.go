@@ -644,8 +644,11 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 		return ds.logStyle.Render(builder.String())
 	}
 
-	// Format the detailed HTTP information
-	detailedInfo := mcp.FormatHTTPError(httpInfo)
+	// Format the detailed HTTP information. Pass the configured
+	// --show-headers overrides so users who opted into seeing specific
+	// sensitive headers see real values; everyone else gets [REDACTED] for
+	// Authorization/Cookie/Set-Cookie.
+	detailedInfo := mcp.FormatHTTPErrorWithOverrides(httpInfo, mcp.GetShowHeaderOverrides())
 	builder.WriteString(detailedInfo)
 
 	// Add analysis for connection issues
