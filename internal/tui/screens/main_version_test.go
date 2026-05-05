@@ -48,11 +48,17 @@ func (v *versionStubService) CallTool(context.Context, mcp.CallToolRequest) (*mc
 	return nil, nil
 }
 func (v *versionStubService) ListResources(context.Context) ([]mcp.Resource, error) { return nil, nil }
+func (v *versionStubService) ListResourceTemplates(context.Context) ([]mcp.ResourceTemplate, error) {
+	return nil, nil
+}
 func (v *versionStubService) ReadResource(context.Context, string) ([]mcp.ResourceContents, error) {
 	return nil, nil
 }
 func (v *versionStubService) ListPrompts(context.Context) ([]mcp.Prompt, error) { return nil, nil }
 func (v *versionStubService) GetPrompt(context.Context, mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	return nil, nil
+}
+func (v *versionStubService) Complete(context.Context, mcp.CompleteRequest) (*mcp.CompleteResult, error) {
 	return nil, nil
 }
 func (v *versionStubService) GetCapabilitiesSnapshot() *capabilities.Snapshot { return nil }

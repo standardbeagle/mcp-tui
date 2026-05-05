@@ -41,6 +41,17 @@ type MainScreen struct {
 	// Store actual objects for viewers
 	resourceObjects []mcp.Resource
 	promptObjects   []mcp.Prompt
+	// resourceTemplateObjects holds the URI-template descriptions surfaced
+	// by resources/templates/list. They render as a separate "Templates"
+	// section appended to the resource list. Selecting a template row opens
+	// ResourceTemplateScreen instead of reading the URI directly.
+	resourceTemplateObjects []mcp.ResourceTemplate
+	// resourceTemplateSectionStart is the index in `resources` (the display
+	// list) where the templates section begins. -1 when no templates were
+	// loaded; consumers use it to disambiguate row selection between
+	// concrete resources (idx < start) and templates (idx >= start+1, the
+	// +1 skips the section header line).
+	resourceTemplateSectionStart int
 
 	// Actual counts (0 when empty, not 1 for empty message)
 	toolCount        int
@@ -132,7 +143,11 @@ type ToolsLoadedMsg struct {
 
 // ResourcesLoadedMsg contains loaded resources with full data structure
 type ResourcesLoadedMsg struct {
-	Resources   []mcp.Resource
+	Resources []mcp.Resource
+	// Templates holds resource URI templates surfaced via
+	// resources/templates/list. They render in a separate section of the
+	// list pane after the concrete resources.
+	Templates   []mcp.ResourceTemplate
 	Items       []string // Backward compatible string format
 	ActualCount int
 	Error       error
@@ -175,19 +190,20 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 	}
 
 	ms := &MainScreen{
-		BaseScreen:       NewBaseScreen("Main", true),
-		config:           cfg,
-		connectionConfig: connConfig,
-		logger:           debug.Component("main-screen"),
-		mcpService:       service,
-		selectedIndex:    make(map[int]int),
-		tools:            []mcp.Tool{},
-		toolStrings:      []string{},
-		resources:        []string{},
-		prompts:          []string{},
-		events:           []debug.MCPLogEntry{},
-		connectionStatus: "Connecting...",
-		connecting:       true,
+		BaseScreen:                   NewBaseScreen("Main", true),
+		config:                       cfg,
+		connectionConfig:             connConfig,
+		logger:                       debug.Component("main-screen"),
+		mcpService:                   service,
+		selectedIndex:                make(map[int]int),
+		tools:                        []mcp.Tool{},
+		toolStrings:                  []string{},
+		resources:                    []string{},
+		prompts:                      []string{},
+		events:                       []debug.MCPLogEntry{},
+		connectionStatus:             "Connecting...",
+		connecting:                   true,
+		resourceTemplateSectionStart: -1,
 	}
 
 	// Initialize components
@@ -513,12 +529,24 @@ func (ms *MainScreen) handleResourcesLoaded(msg ResourcesLoadedMsg) (tea.Model, 
 	ms.resourcesLoading = false
 	if msg.Error != nil {
 		ms.resourceObjects = []mcp.Resource{}
+		ms.resourceTemplateObjects = nil
+		ms.resourceTemplateSectionStart = -1
 		ms.resources = []string{fmt.Sprintf("Error loading resources: %v", msg.Error)}
 		ms.resourceCount = 0
 	} else {
 		ms.resourceObjects = msg.Resources
+		ms.resourceTemplateObjects = msg.Templates
 		ms.resources = msg.Items
 		ms.resourceCount = msg.ActualCount
+		// Compute where the templates section starts in the display list.
+		// -1 means no templates were rendered; otherwise it is the index of
+		// the section header row, so the first selectable template row is
+		// at sectionStart+1.
+		if len(msg.Templates) > 0 {
+			ms.resourceTemplateSectionStart = len(msg.Resources)
+		} else {
+			ms.resourceTemplateSectionStart = -1
+		}
 	}
 	ms.ensureInitialFocus(1)
 	return ms, nil
@@ -995,7 +1023,30 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 		}
 
 	case 1: // Resources
-		// Extract resource URI from the display string (format: "uri - description")
+		// Three row types share this list: concrete resources (idx <
+		// templates section start), the section header (idx ==
+		// resourceTemplateSectionStart, when >= 0), and template rows
+		// (idx > resourceTemplateSectionStart). The header is decorative
+		// and intentionally non-selectable.
+		if ms.resourceTemplateSectionStart >= 0 {
+			if selectedIdx == ms.resourceTemplateSectionStart {
+				// Header row — ignore.
+				return ms, nil
+			}
+			if selectedIdx > ms.resourceTemplateSectionStart {
+				tmplIdx := selectedIdx - ms.resourceTemplateSectionStart - 1
+				if tmplIdx < 0 || tmplIdx >= len(ms.resourceTemplateObjects) {
+					return ms, nil
+				}
+				template := ms.resourceTemplateObjects[tmplIdx]
+				screen := NewResourceTemplateScreen(template, ms.mcpService)
+				return ms, func() tea.Msg {
+					return TransitionMsg{Transition: ScreenTransition{Screen: screen}}
+				}
+			}
+		}
+
+		// Concrete resource branch — unchanged behaviour.
 		parts := strings.SplitN(selectedItem, " - ", 2)
 		if len(parts) > 0 && selectedIdx < len(ms.resourceObjects) {
 			resourceURI := parts[0]
@@ -1742,7 +1793,16 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 	}
 }
 
-// loadResources loads the list of resources
+// loadResources loads the list of resources and any URI-template descriptors
+// surfaced by resources/templates/list. Both endpoints are called from the
+// same goroutine so the UI receives one update with both lists already
+// merged into the display strings — that keeps the loading-state spinner
+// honest (resources tab finishes only when both are done) and avoids a
+// half-rendered "templates" section that flashes onto the screen later.
+//
+// Errors from resources/templates/list are treated as soft: a server may
+// support resources but not templates, and we render the existing concrete
+// resources in that case rather than reporting a top-level failure.
 func (ms *MainScreen) loadResources() tea.Cmd {
 	return func() tea.Msg {
 		if !ms.mcpService.IsConnected() {
@@ -1778,27 +1838,56 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 			}
 		}
 
-		var resourceList []string
-		actualCount := len(resources)
-		if len(resources) == 0 {
-			resourceList = []string{"This MCP server doesn't provide any resources"}
-		} else {
-			for _, resource := range resources {
-				description := resource.Description
-				if description == "" {
-					description = "No description"
-				}
-				resourceList = append(resourceList, fmt.Sprintf("%s - %s", resource.URI, description))
-			}
+		// Templates are optional — log and continue on failure.
+		templates, terr := ms.mcpService.ListResourceTemplates(ctx)
+		if terr != nil && !isUnsupportedCapabilityError(terr) {
+			ms.logger.Warn("Failed to load resource templates", debug.F("error", terr))
+			templates = nil
 		}
+
+		items, actualCount := buildResourceListItems(resources, templates)
 
 		return ResourcesLoadedMsg{
 			Resources:   resources,
-			Items:       resourceList,
+			Templates:   templates,
+			Items:       items,
 			ActualCount: actualCount,
 			Error:       nil,
 		}
 	}
+}
+
+// buildResourceListItems renders the concrete resources followed by a
+// "Templates" section header and one row per URI template. The header is
+// only emitted when at least one template exists so servers without
+// templates produce the same single-section list as before.
+//
+// actualCount is the sum of selectable rows (resources + templates,
+// excluding the header). When both lists are empty we surface a friendly
+// placeholder line and report zero — the existing "no items" UX path.
+func buildResourceListItems(resources []mcp.Resource, templates []mcp.ResourceTemplate) ([]string, int) {
+	if len(resources) == 0 && len(templates) == 0 {
+		return []string{"This MCP server doesn't provide any resources"}, 0
+	}
+	out := make([]string, 0, len(resources)+len(templates)+1)
+	for _, r := range resources {
+		desc := r.Description
+		if desc == "" {
+			desc = "No description"
+		}
+		out = append(out, fmt.Sprintf("%s - %s", r.URI, desc))
+	}
+	if len(templates) > 0 {
+		out = append(out, "── Templates ──")
+		for _, t := range templates {
+			desc := t.Description
+			if desc == "" {
+				desc = "No description"
+			}
+			out = append(out, fmt.Sprintf("%s - %s", t.URITemplate, desc))
+		}
+	}
+	return out, len(resources) + len(templates)
 }
 
 // loadPrompts loads the list of prompts

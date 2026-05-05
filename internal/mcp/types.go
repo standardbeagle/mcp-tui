@@ -65,11 +65,24 @@ type Service interface {
 
 	// Resource operations
 	ListResources(ctx context.Context) ([]Resource, error)
+	// ListResourceTemplates returns the URI-template descriptions surfaced by
+	// resources/templates/list. Servers that lack the resources capability
+	// or never registered any templates return an empty slice without error
+	// — callers should render an empty section rather than treating absence
+	// as a failure.
+	ListResourceTemplates(ctx context.Context) ([]ResourceTemplate, error)
 	ReadResource(ctx context.Context, uri string) ([]ResourceContents, error)
 
 	// Prompt operations
 	ListPrompts(ctx context.Context) ([]Prompt, error)
 	GetPrompt(ctx context.Context, req GetPromptRequest) (*GetPromptResult, error)
+
+	// Complete sends a completion/complete request to the server. The
+	// request's Ref identifies a prompt or resource template, and ArgumentName
+	// + ArgumentValue describe the variable being typed and its prefix. The
+	// server returns a deterministic ordered list of suggestions; an empty
+	// list (with err == nil) is a normal "no matches" outcome.
+	Complete(ctx context.Context, req CompleteRequest) (*CompleteResult, error)
 
 	// Server info
 	GetServerInfo() *ServerInfo
@@ -267,6 +280,84 @@ type Resource struct {
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// ResourceTemplate represents an MCP resource URI template (RFC 6570) returned
+// by resources/templates/list. Unlike Resource, the URITemplate field carries
+// `{var}` placeholders that callers expand at read time. Title falls back to
+// Name for display, matching the MCP 2025-06-18 §resources spec.
+type ResourceTemplate struct {
+	URITemplate string `json:"uriTemplate"`
+	Name        string `json:"name,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// DisplayName returns the user-facing label for the template, preferring
+// Title (added in 2025-06-18) over Name to match the Resource spec, with the
+// raw URI template as a final fallback so the row never renders blank.
+func (t ResourceTemplate) DisplayName() string {
+	if t.Title != "" {
+		return t.Title
+	}
+	if t.Name != "" {
+		return t.Name
+	}
+	return t.URITemplate
+}
+
+// CompleteRequest carries the parameters for a completion/complete call. The
+// reference identifies what is being completed (a prompt argument or a resource
+// URI template variable), ArgumentName is the variable being typed, and
+// ArgumentValue is the prefix typed so far. Context.Arguments lets the caller
+// supply previously-resolved variables so the server can scope suggestions
+// (per MCP 2025-06-18 §completion).
+type CompleteRequest struct {
+	// Ref must have Type "ref/prompt" with Name set, or "ref/resource" with
+	// URI set to a URI template. Mismatched fields are rejected by the SDK
+	// before the request is sent.
+	Ref CompleteReference `json:"ref"`
+	// ArgumentName is the prompt-argument or template-variable name.
+	ArgumentName string `json:"argumentName"`
+	// ArgumentValue is the value typed so far. Empty string requests
+	// suggestions for an empty prefix.
+	ArgumentValue string `json:"argumentValue"`
+	// ContextArguments supplies previously-resolved values so the server can
+	// scope its suggestions. nil is allowed.
+	ContextArguments map[string]string `json:"contextArguments,omitempty"`
+}
+
+// CompleteReference targets either a prompt or a resource template. Exactly
+// one of Name/URI must be populated; mcp-tui constructs these via the
+// PromptRef and ResourceRef helpers.
+type CompleteReference struct {
+	// Type must be "ref/prompt" or "ref/resource".
+	Type string `json:"type"`
+	// Name is set for ref/prompt. URI is set for ref/resource (the raw URI
+	// template string).
+	Name string `json:"name,omitempty"`
+	URI  string `json:"uri,omitempty"`
+}
+
+// PromptRef constructs a ref/prompt CompleteReference for the named prompt.
+func PromptRef(name string) CompleteReference {
+	return CompleteReference{Type: "ref/prompt", Name: name}
+}
+
+// ResourceRef constructs a ref/resource CompleteReference targeting a URI
+// template. The caller passes the raw template (e.g. "users://{userId}").
+func ResourceRef(uriTemplate string) CompleteReference {
+	return CompleteReference{Type: "ref/resource", URI: uriTemplate}
+}
+
+// CompleteResult carries the suggestions returned by the server. HasMore
+// signals truncated results; Total is the server's claimed total when known
+// (zero means unspecified).
+type CompleteResult struct {
+	Values  []string `json:"values"`
+	HasMore bool     `json:"hasMore,omitempty"`
+	Total   int      `json:"total,omitempty"`
 }
 
 // ResourceContents represents the contents of a resource

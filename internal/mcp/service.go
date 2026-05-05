@@ -1076,6 +1076,106 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 	return resources, nil
 }
 
+// ListResourceTemplates returns the URI-template descriptions surfaced by
+// resources/templates/list. Returns an empty slice when the server advertises
+// none — callers do not need to handle nil specially. Errors that look like
+// "method not found" are returned verbatim so the caller can decide whether
+// to surface them; the TUI uses isUnsupportedCapabilityError to suppress the
+// expected case (server with resources capability but no templates registered).
+func (s *service) ListResourceTemplates(ctx context.Context) ([]ResourceTemplate, error) {
+	if !s.IsConnected() {
+		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
+	}
+
+	s.mu.Lock()
+	session := s.sessionManager.GetSession()
+	s.mu.Unlock()
+
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
+
+	// Use the SDK iterator pattern so pagination is handled transparently.
+	var templates []ResourceTemplate
+	for tpl, err := range session.ResourceTemplates(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate resource templates from MCP server: %w", err)
+		}
+		if tpl == nil {
+			continue
+		}
+		templates = append(templates, ResourceTemplate{
+			URITemplate: tpl.URITemplate,
+			Name:        tpl.Name,
+			Title:       tpl.Title,
+			Description: tpl.Description,
+			MimeType:    tpl.MIMEType,
+		})
+	}
+
+	debug.Info("Listed resource templates successfully using iterator pattern",
+		debug.F("count", len(templates)))
+
+	return templates, nil
+}
+
+// Complete dispatches a completion/complete request and translates the SDK
+// response to mcp-tui's CompleteResult shape. Validation of the reference
+// fields (Name vs URI exclusivity per MCP spec) is performed by the SDK; we
+// surface the error verbatim.
+func (s *service) Complete(ctx context.Context, req CompleteRequest) (*CompleteResult, error) {
+	if !s.IsConnected() {
+		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
+	}
+
+	s.mu.Lock()
+	session := s.sessionManager.GetSession()
+	s.mu.Unlock()
+
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
+
+	if req.Ref.Type != "ref/prompt" && req.Ref.Type != "ref/resource" {
+		return nil, fmt.Errorf("invalid completion reference type %q (want ref/prompt or ref/resource)", req.Ref.Type)
+	}
+	if req.ArgumentName == "" {
+		return nil, fmt.Errorf("completion requires a non-empty argument name")
+	}
+
+	params := &officialMCP.CompleteParams{
+		Ref: &officialMCP.CompleteReference{
+			Type: req.Ref.Type,
+			Name: req.Ref.Name,
+			URI:  req.Ref.URI,
+		},
+		Argument: officialMCP.CompleteParamsArgument{
+			Name:  req.ArgumentName,
+			Value: req.ArgumentValue,
+		},
+	}
+	if len(req.ContextArguments) > 0 {
+		params.Context = &officialMCP.CompleteContext{Arguments: req.ContextArguments}
+	}
+
+	result, err := session.Complete(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("completion/complete failed: %w", err)
+	}
+
+	out := &CompleteResult{
+		Values:  append([]string(nil), result.Completion.Values...),
+		HasMore: result.Completion.HasMore,
+		Total:   result.Completion.Total,
+	}
+	debug.Info("Completed successfully",
+		debug.F("refType", req.Ref.Type),
+		debug.F("argument", req.ArgumentName),
+		debug.F("count", len(out.Values)),
+		debug.F("hasMore", out.HasMore))
+	return out, nil
+}
+
 // ReadResource reads a resource
 func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceContents, error) {
 	if !s.IsConnected() {

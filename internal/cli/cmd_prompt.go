@@ -76,8 +76,77 @@ func (pc *PromptCommand) CreateCommand() *cobra.Command {
 	cmd.AddCommand(pc.createListCommand())
 	cmd.AddCommand(pc.createGetCommand())
 	cmd.AddCommand(pc.createExecuteCommand())
+	cmd.AddCommand(pc.createCompleteCommand())
 
 	return cmd
+}
+
+// createCompleteCommand wires the prompt-side completion/complete request.
+// The command takes a prompt name (the ref/prompt target) and one
+// `<var>=<prefix>` argument identifying which prompt argument to complete.
+// JSON output is always emitted on stdout so the result is pipe-friendly.
+func (pc *PromptCommand) createCompleteCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:      "complete <prompt-name> <var>=<prefix>",
+		Short:    "Get prompt-argument suggestions via completion/complete",
+		Long:     "Send a completion/complete request scoped to the given prompt argument. Output is a JSON suggestion list.",
+		Args:     cobra.ExactArgs(2),
+		PreRunE:  pc.PreRunE,
+		PostRunE: pc.PostRunE,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return pc.runCompleteCommand(cmd, args)
+		},
+	}
+}
+
+// runCompleteCommand executes the prompt complete command. Mirrors the
+// resource complete command structure so users only have to learn the format
+// once.
+func (pc *PromptCommand) runCompleteCommand(cmd *cobra.Command, args []string) error {
+	promptName := args[0]
+	varName, prefix, err := parseVarPrefixArg(args[1])
+	if err != nil {
+		return err
+	}
+
+	if err := pc.ValidateConnection(); err != nil {
+		return pc.HandleError(err, "validate connection")
+	}
+
+	ctx, cancel := pc.WithContext()
+	defer cancel()
+
+	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+		fmt.Fprintf(os.Stderr, "🔍 Requesting completions for prompt=%s arg=%s prefix=%q...\n", promptName, varName, prefix)
+	}
+
+	result, err := pc.GetService().Complete(ctx, mcp.CompleteRequest{
+		Ref:           mcp.PromptRef(promptName),
+		ArgumentName:  varName,
+		ArgumentValue: prefix,
+	})
+	if err != nil {
+		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+			fmt.Fprintf(os.Stderr, "❌ Completion request failed\n")
+		}
+		return pc.HandleError(err, "completion/complete")
+	}
+
+	out := map[string]interface{}{
+		"prompt":   promptName,
+		"argument": varName,
+		"prefix":   prefix,
+		"values":   result.Values,
+		"hasMore":  result.HasMore,
+		"total":    result.Total,
+	}
+	jsonBytes, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal completion result to JSON: %w", err)
+	}
+	fmt.Println(string(jsonBytes))
+	return nil
 }
 
 // createListCommand creates the prompt list command

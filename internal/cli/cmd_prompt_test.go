@@ -91,7 +91,7 @@ func TestCreatePromptCommand(t *testing.T) {
 
 	// Check that subcommands are added
 	subcommands := cmd.Commands()
-	expectedSubcommands := []string{"list", "get", "execute"}
+	expectedSubcommands := []string{"list", "get", "execute", "complete"}
 
 	if len(subcommands) != len(expectedSubcommands) {
 		t.Errorf("expected %d subcommands, got %d", len(expectedSubcommands), len(subcommands))
