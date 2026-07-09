@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-09
+
+### Added
+- **Session recording export**: `Ctrl+E` on the main or debug screen writes `mcp-tui-session-<ts>.json` (the raw traced events) plus a sibling `.sh` replay script that re-runs the recorded `tools/call`, `resources/read`, and `prompts/get` requests through the CLI against the same connection. Event tracing is now always on in the TUI so recording works without `--debug`.
+- **Windows CI**: the test suite now runs on Windows. Cross-platform process helpers spawn stand-in MCP servers via `pwsh` instead of `sh`/`python3`/`true`.
+- **Make targets**: `race`, `fmt-check`, and `ci`.
+
 ### Fixed
 - **Session state machine**: `Connect` was permitted while a reconnection was in flight. Both paths own `client`/`transport`/`session`, so the loser of the race had its session silently leaked. `StateReconnecting` now counts as busy.
 - **Session state machine**: a reconnection goroutine that woke up after `Disconnect` moved the manager out of `StateClosed` into `StateFailed` or even `StateConnected`, resurrecting a closed manager and leaking a live session. Every step that runs without the lock now re-checks that it still owns `StateReconnecting`, and a session that arrives after a `Disconnect` is closed rather than published.
@@ -15,9 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reconnection backoff**: the delay between attempts was constant. It now doubles from the configured base, capped at 30s.
 - **Disconnect during connect**: a `Disconnect` that completed before the session manager entered its own `Connect` left no context to cancel, so the handshake succeeded into a service that had already dropped its client reference — leaking the server process. `service.Connect` now detects this via a connect epoch and closes the orphaned session.
 - **Health monitor**: read `healthCheckInterval` without holding the lock.
+- **Roots**: `filepath.Abs` on Windows returns a drive path (`C:\foo`) with no leading slash, so slashing it produced the malformed file URI `file://C:/foo` — the drive letter was parsed as the host. Windows drive paths now build well-formed URIs.
+- **Connection config**: saved-connection env vars and headers were stored by reference, so a later edit mutated the saved entry. They are now copied defensively.
+- **STDIO env**: extra env vars replaced the parent environment instead of merging over it.
+- **Connection screen**: command-parse errors were swallowed rather than shown.
 
 ### Changed
 - `Info.ReconnectCount` now counts attempts within the current recovery and is reset by `Connect` and by a successful reconnection, rather than accumulating across a session's lifetime.
+- **Documentation site**: rewritten to match the actual CLI and TUI surface.
+- **CI**: the test suite runs before building or publishing.
 
 ## [0.8.3] - 2026-07-09
 
