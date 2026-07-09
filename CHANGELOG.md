@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-07-09
+
+### Fixed
+- **Build**: `GOOS=windows` and `GOOS=darwin` builds of the module failed. The unused `internal/platform/process` package had accumulated compile errors on Windows and was never built in CI. Removed.
+- **TUI connect**: The connection screen defaults to combined-command input, but validation checked the separate command field that mode never populates, so every default STDIO connection was rejected with "command is required for STDIO transport".
+- **TUI input**: `q` was handled as a global quit before the focus check, so typing a command containing the letter (`sqlite`, `sequential`) exited the program. It now quits only when no text field has focus; `ctrl+c` still always quits.
+- **TUI paste**: `Ctrl+V` was advertised in the tool screen's help text but never implemented. It now pastes into the focused field.
+- **Clipboard**: `copyToClipboard` discarded the OSC52 fallback error and always returned nil, so the UI reported a successful copy when nothing was copied.
+- **Deadlock**: `session.Manager.Connect` and `service.Connect` held their locks across the blocking connect handshake. For SSE, which connects on `context.Background()`, a hung server blocked every reader including `Disconnect`, making the hang uncancellable and freezing the TUI.
+- **Health check**: Only asserted that the cached session ID was non-empty, which stays true after the connection dies. Failures were never detected and the reconnection machinery was unreachable. It now pings the server with a bounded timeout.
+- **STDIO startup**: A "pre-flight validation" step ran the server command a second time before the transport started the real process, duplicating every startup side effect (port binds, file locks, auth prompts) and adding a mandatory probe timeout. The process now starts once; its stderr is captured and surfaced when the handshake fails.
+- **CLI arguments**: `tool call` guessed argument types by attempting `json.Unmarshal` with a silent string fallback, ignoring the tool's `InputSchema`. This corrupted values (`pin=1234` sent as a number, `version=1.10` as `1.1`). Arguments are now converted against the declared schema, and a type mismatch is a hard error.
+- **HTTP debugging**: `EnableHTTPDebugging(false)` was a no-op, so debugging could never be disabled, and each enable nested another round-tripper around `http.DefaultTransport`. It is now reversible and idempotent. The round-tripper also buffered `text/event-stream` bodies, which never reach EOF; streaming responses now pass through untouched.
+- **Data races** (verified with `-race`): unlocked `m.info` reads during reconnection; `GetServerInfo` returning the shared pointer while connect/disconnect mutated it; a non-atomic package-global request ID counter; and four debug-screen `tea.Cmd` closures mutating model state from command goroutines while `View` read it.
+- **Nil dereference**: `EventTracer.TraceResponseReceived` dereferenced the event returned by `addEvent`, which is nil when tracing is disabled — panicking if debug was toggled off between a request and its response. It also leaked `requestTracker` entries on that path.
+
+### Removed
+- Dead code with no non-test callers: `internal/platform/process`, `internal/mcp/debug_transport.go`, and `internal/mcp/config/{builder,manager}.go` (`ConfigBuilder`, `ConfigManager`, all config sources and validators).
+
+### Changed
+- `tool call` now always fetches the tool's metadata, including under `--no-confirm`, because correct argument conversion requires the input schema. An unknown tool name is now reported directly instead of being sent to the server.
+
 ## [0.8.2] - 2026-05-04
 
 ### Fixed
