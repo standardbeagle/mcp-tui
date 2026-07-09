@@ -181,37 +181,24 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryClientUsage, SeverityInfo
 	}
 
-	// Network connection errors
-	if netErr, ok := err.(net.Error); ok {
-		if netErr.Timeout() {
-			return CategoryTimeout, SeverityWarning
-		}
-		return CategoryConnection, SeverityError
-	}
+	// Typed network and syscall errors. These use errors.As, not a bare type
+	// assertion: transports wrap their failures (fmt.Errorf("%w"), jsonrpc),
+	// and an assertion on the outermost error misses every wrapped one --
+	// which sent real connection failures to CategoryUnknown, marking them
+	// unrecoverable and silently disabling reconnection.
 
-	// DNS resolution errors
-	if dnsErr, ok := err.(*net.DNSError); ok {
+	// DNS resolution errors (checked before net.Error: *net.DNSError is one).
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
 		if dnsErr.IsNotFound {
 			return CategoryConnection, SeverityError
 		}
 		return CategoryConnection, SeverityWarning
 	}
 
-	// System call errors
-	if syscallErr, ok := err.(*net.OpError); ok {
-		if syscallErr.Op == "dial" {
-			return CategoryConnection, SeverityError
-		}
-		return CategoryTransport, SeverityError
-	}
-
-	// Process execution errors
-	if _, ok := err.(*exec.ExitError); ok {
-		return CategoryServerInternal, SeverityError
-	}
-
-	// Syscall errors
-	if errno, ok := err.(syscall.Errno); ok {
+	// Syscall errors (checked before net.OpError, which usually wraps one).
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
 		switch errno {
 		case syscall.ECONNREFUSED:
 			return CategoryConnection, SeverityError
@@ -223,6 +210,45 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 			return CategoryClientConfig, SeverityError
 		}
 		return CategoryTransport, SeverityError
+	}
+
+	// Operation errors
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		if opErr.Op == "dial" {
+			return CategoryConnection, SeverityError
+		}
+		return CategoryTransport, SeverityError
+	}
+
+	// Any other network error
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			return CategoryTimeout, SeverityWarning
+		}
+		return CategoryConnection, SeverityError
+	}
+
+	// Process execution errors
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return CategoryServerInternal, SeverityError
+	}
+
+	// Message-based fallback for connection failures that reach us as plain
+	// strings, having lost their type on the way through the transport stack.
+	//
+	// Only unambiguous network faults belong here. "connection closed" and
+	// "broken pipe" are deliberately absent: a stdio server that exits during
+	// the MCP handshake produces exactly those, and treating them as transient
+	// network errors would send a misconfigured server into a pointless retry
+	// loop instead of reporting the protocol failure.
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "no such host") ||
+		strings.Contains(errStr, "network is unreachable") {
+		return CategoryConnection, SeverityError
 	}
 
 	// Server startup errors - detect common patterns (check before protocol errors)
