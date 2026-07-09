@@ -2,15 +2,36 @@ package main
 
 import (
 	"context"
-	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// buildTestBinary compiles mcp-tui into the test's temp directory and returns an
+// absolute path to it. An absolute path matters: a bare relative name like
+// "mcp-tui-test" is looked up on PATH by os/exec rather than in the working
+// directory, and on Windows the binary needs an .exe suffix.
+func buildTestBinary(t *testing.T) string {
+	t.Helper()
+
+	bin := filepath.Join(t.TempDir(), testutil.ExeName("mcp-tui-test"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
+	buildCmd.Dir = "."
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "Failed to build mcp-tui binary: %s", out)
+
+	return bin
+}
 
 func TestCLIIntegration(t *testing.T) {
 	// Skip integration tests in short mode
@@ -18,20 +39,7 @@ func TestCLIIntegration(t *testing.T) {
 		t.Skip("Skipping integration tests in short mode")
 	}
 
-	// Build the binary for testing
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Build the mcp-tui binary
-	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", "mcp-tui-test", ".")
-	buildCmd.Dir = "."
-	err := buildCmd.Run()
-	require.NoError(t, err, "Failed to build mcp-tui binary")
-
-	// Clean up after test
-	defer func() {
-		os.Remove("./mcp-tui-test")
-	}()
+	bin := buildTestBinary(t)
 
 	tests := []struct {
 		name     string
@@ -94,7 +102,7 @@ func TestCLIIntegration(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			cmd := exec.CommandContext(ctx, "./mcp-tui-test", tt.args...)
+			cmd := exec.CommandContext(ctx, bin, tt.args...)
 			output, err := cmd.CombinedOutput()
 			outputStr := string(output)
 
@@ -117,13 +125,13 @@ func TestCommandValidation(t *testing.T) {
 	}
 
 	// Build the binary
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	bin := buildTestBinary(t)
 
-	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", "mcp-tui-test", ".")
-	err := buildCmd.Run()
+	// An absolute path to a real executable, on every platform.
+	scriptPath := testutil.ScriptPath(t, "absolute-path-server", "exit 0\n")
+	testutil.RequirePwsh(t)
+	pwshPath, err := testutil.LookPwsh()
 	require.NoError(t, err)
-	defer os.Remove("./mcp-tui-test")
 
 	tests := []struct {
 		name     string
@@ -136,9 +144,11 @@ func TestCommandValidation(t *testing.T) {
 			contains: []string{"dangerous pattern", "ls;rm"}, // validator catches ';' before exec
 		},
 		{
+			// An absolute command path passes validation and is executed; the MCP
+			// handshake then fails because the script does not speak the protocol.
 			name:     "absolute path works but fails at MCP level",
-			args:     []string{"tool", "list", "--cmd", "/bin/ls"},
-			contains: []string{"Starting process", "/bin/ls"}, // Shows that command validation passed but MCP init fails
+			args:     append([]string{"tool", "list"}, testutil.ServerFlags(t, pwshPath, []string{"-NoProfile", "-NonInteractive", "-File", scriptPath})...),
+			contains: []string{"Starting process", pwshPath},
 		},
 		{
 			name:     "empty command rejected",
@@ -149,10 +159,10 @@ func TestCommandValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			cmd := exec.CommandContext(ctx, "./mcp-tui-test", tt.args...)
+			cmd := exec.CommandContext(ctx, bin, tt.args...)
 			output, err := cmd.CombinedOutput()
 			outputStr := string(output)
 
@@ -166,24 +176,18 @@ func TestCommandValidation(t *testing.T) {
 	}
 }
 
-func TestEchoServerIntegration(t *testing.T) {
+func TestStdioServerIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration tests in short mode")
 	}
 
-	// Test with a simple echo command that we know will work
+	// Test with a stand-in server command that we know will start
 	// This tests the stdio transport validation without requiring an actual MCP server
 
 	// Build the binary
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	bin := buildTestBinary(t)
 
-	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", "mcp-tui-test", ".")
-	err := buildCmd.Run()
-	require.NoError(t, err)
-	defer os.Remove("./mcp-tui-test")
-
-	t.Run("stdio transport with echo", func(t *testing.T) {
+	t.Run("stdio transport with a stand-in server", func(t *testing.T) {
 		// Spawning the CLI, which spawns a server process and fails the MCP
 		// handshake, takes ~2.5s unloaded. A 5s budget leaves no headroom: on a
 		// loaded machine the command is killed mid-run and the assertions below
@@ -191,8 +195,10 @@ func TestEchoServerIntegration(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Use echo command which should pass validation but fail at MCP initialization
-		cmd := exec.CommandContext(ctx, "./mcp-tui-test", "tool", "list", "--cmd", "echo", "--args", "test")
+		// A stand-in server that passes validation but never speaks MCP.
+		serverCmd, serverArgs := testutil.ServerExitsImmediately(t)
+		args := append([]string{"tool", "list"}, testutil.ServerFlags(t, serverCmd, serverArgs)...)
+		cmd := exec.CommandContext(ctx, bin, args...)
 		output, err := cmd.CombinedOutput()
 		outputStr := string(output)
 
@@ -213,19 +219,15 @@ func TestDebugMode(t *testing.T) {
 	}
 
 	// Build the binary
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", "mcp-tui-test", ".")
-	err := buildCmd.Run()
-	require.NoError(t, err)
-	defer os.Remove("./mcp-tui-test")
+	bin := buildTestBinary(t)
 
 	t.Run("debug flag", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		cmd := exec.CommandContext(ctx, "./mcp-tui-test", "tool", "list", "--log-level", "debug", "--cmd", "echo", "--args", "test")
+		serverCmd, serverArgs := testutil.ServerExitsImmediately(t)
+		args := append([]string{"tool", "list", "--log-level", "debug"}, testutil.ServerFlags(t, serverCmd, serverArgs)...)
+		cmd := exec.CommandContext(ctx, bin, args...)
 		output, err := cmd.CombinedOutput()
 		outputStr := string(output)
 
@@ -243,19 +245,15 @@ func TestOutputFormats(t *testing.T) {
 	}
 
 	// Build the binary
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", "mcp-tui-test", ".")
-	err := buildCmd.Run()
-	require.NoError(t, err)
-	defer os.Remove("./mcp-tui-test")
+	bin := buildTestBinary(t)
 
 	t.Run("verbose output", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		cmd := exec.CommandContext(ctx, "./mcp-tui-test", "tool", "list", "--cmd", "echo", "--args", "test")
+		serverCmd, serverArgs := testutil.ServerExitsImmediately(t)
+		args := append([]string{"tool", "list"}, testutil.ServerFlags(t, serverCmd, serverArgs)...)
+		cmd := exec.CommandContext(ctx, bin, args...)
 		output, _ := cmd.CombinedOutput()
 		outputStr := string(output)
 
