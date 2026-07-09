@@ -50,9 +50,14 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 	})
 
 	t.Run("paste_into_field", func(t *testing.T) {
-		// Skip if clipboard not available
+		// Skip unless the clipboard round-trips. Some environments (WSL, remote
+		// shells) provide a working writer via clip.exe but no reader, so a
+		// successful write alone does not mean paste can be exercised.
 		if err := clipboard.WriteAll("pasted text"); err != nil {
 			t.Skip("Clipboard not available in test environment")
+		}
+		if readBack, err := clipboard.ReadAll(); err != nil || readBack != "pasted text" {
+			t.Skip("Clipboard is write-only in this environment; cannot test paste")
 		}
 
 		tool := mcp.Tool{

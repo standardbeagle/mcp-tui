@@ -178,6 +178,15 @@ func (ds *DebugScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ds.mcpStats = msg.MCPStats
 		return ds, nil
 
+	case debugLogsClearedMsg:
+		ds.selectedIndex = 0
+		ds.scrollOffset = 0
+		ds.generalLogs = msg.data.GeneralLogs
+		ds.mcpLogs = msg.data.MCPLogs
+		ds.mcpEntries = msg.data.MCPEntries
+		ds.mcpStats = msg.data.MCPStats
+		return ds, nil
+
 	case StatusMsg:
 		ds.SetStatus(msg.Message, msg.Level)
 		return ds, nil
@@ -192,6 +201,12 @@ type debugDataRefreshMsg struct {
 	MCPLogs     []string
 	MCPEntries  []debug.MCPLogEntry
 	MCPStats    map[string]int
+}
+
+// debugLogsClearedMsg reports that the log buffers were cleared, carrying the
+// post-clear data so Update can reset the cursor and refresh in one step.
+type debugLogsClearedMsg struct {
+	data debugDataRefreshMsg
 }
 
 // handleKeyMsg handles keyboard input
@@ -723,34 +738,47 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 }
 
 // refreshData refreshes the debug data from the loggers
+// refreshData applies freshly collected debug data to the model. It must only
+// be called from Update, on the bubbletea event loop.
 func (ds *DebugScreen) refreshData() {
+	msg := collectDebugData()
+	ds.generalLogs = msg.GeneralLogs
+	ds.mcpLogs = msg.MCPLogs
+	ds.mcpEntries = msg.MCPEntries
+	ds.mcpStats = msg.MCPStats
+}
+
+// collectDebugData reads the log buffers without touching model state, so it is
+// safe to call from a tea.Cmd goroutine.
+func collectDebugData() debugDataRefreshMsg {
+	var msg debugDataRefreshMsg
+
 	// Get general logs
 	if logBuffer := debug.GetLogBuffer(); logBuffer != nil {
-		ds.generalLogs = logBuffer.GetEntriesAsStrings()
+		msg.GeneralLogs = logBuffer.GetEntriesAsStrings()
 	}
 
 	// Get MCP protocol logs
 	if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
-		ds.mcpLogs = mcpLogger.GetEntriesAsStrings()
-		ds.mcpEntries = mcpLogger.GetEntries()
-		ds.mcpStats = mcpLogger.GetStats()
+		msg.MCPLogs = mcpLogger.GetEntriesAsStrings()
+		msg.MCPEntries = mcpLogger.GetEntries()
+		msg.MCPStats = mcpLogger.GetStats()
 	}
+
+	return msg
 }
 
-// refreshDataCmd returns a command to refresh debug data
+// refreshDataCmd returns a command to refresh debug data. The command runs on
+// its own goroutine, so it only reads the log buffers; Update applies the
+// result to the model.
 func (ds *DebugScreen) refreshDataCmd() tea.Cmd {
 	return func() tea.Msg {
-		ds.refreshData()
-		return debugDataRefreshMsg{
-			GeneralLogs: ds.generalLogs,
-			MCPLogs:     ds.mcpLogs,
-			MCPEntries:  ds.mcpEntries,
-			MCPStats:    ds.mcpStats,
-		}
+		return collectDebugData()
 	}
 }
 
-// clearLogsCmd returns a command to clear the logs
+// clearLogsCmd returns a command to clear the logs. Cursor state is reset by
+// Update when it receives the resulting message, not from this goroutine.
 func (ds *DebugScreen) clearLogsCmd() tea.Cmd {
 	return func() tea.Msg {
 		// Clear both log buffers
@@ -761,70 +789,60 @@ func (ds *DebugScreen) clearLogsCmd() tea.Cmd {
 			mcpLogger.Clear()
 		}
 
-		// Reset UI state
-		ds.selectedIndex = 0
-		ds.scrollOffset = 0
-
-		// Refresh data
-		ds.refreshData()
-		return debugDataRefreshMsg{
-			GeneralLogs: ds.generalLogs,
-			MCPLogs:     ds.mcpLogs,
-			MCPEntries:  ds.mcpEntries,
-			MCPStats:    ds.mcpStats,
-		}
+		return debugLogsClearedMsg{data: collectDebugData()}
 	}
 }
 
-// copySelectedItemCmd returns a command to copy the selected item to clipboard
+// copySelectedItemCmd returns a command to copy the selected item to clipboard.
+//
+// The payload is resolved here, on the event loop, and captured by the closure.
+// The returned command therefore only performs clipboard IO: it neither reads
+// nor writes model state, and Update applies the resulting StatusMsg. Calling
+// SetStatus from inside the command would race with View.
 func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
-	return func() tea.Msg {
-		// On the notifications tab, prefer the full JSON of the selected
-		// entry over its one-line preview — the JSON is what users want to
-		// paste into bug reports or jq pipelines.
-		if ds.activeTab == tabNotifications {
-			entries := ds.filteredNotificationEntries()
-			if len(entries) == 0 || ds.selectedIndex >= len(entries) {
-				ds.SetStatus("Nothing to copy", StatusWarning)
-				return StatusMsg{Message: "Nothing to copy", Level: StatusWarning}
-			}
-			js, err := entries[ds.selectedIndex].FormatJSON()
-			if err != nil {
-				ds.SetStatus(fmt.Sprintf("Format failed: %v", err), StatusError)
-				return StatusMsg{Message: fmt.Sprintf("Format failed: %v", err), Level: StatusError}
-			}
-			if err := clipboard.WriteAll(js); err != nil {
-				ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
-				return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
-			}
-			ds.SetStatus("Copied notification JSON to clipboard", StatusSuccess)
-			return StatusMsg{Message: "Copied notification JSON to clipboard", Level: StatusSuccess}
-		}
+	var payload, successMessage string
 
+	// On the notifications tab, prefer the full JSON of the selected entry over
+	// its one-line preview — the JSON is what users want to paste into bug
+	// reports or jq pipelines.
+	if ds.activeTab == tabNotifications {
+		entries := ds.filteredNotificationEntries()
+		if len(entries) == 0 || ds.selectedIndex >= len(entries) {
+			return statusCmd("Nothing to copy", StatusWarning)
+		}
+		js, err := entries[ds.selectedIndex].FormatJSON()
+		if err != nil {
+			return statusCmd(fmt.Sprintf("Format failed: %v", err), StatusError)
+		}
+		payload = js
+		successMessage = "Copied notification JSON to clipboard"
+	} else {
 		currentList := ds.getCurrentList()
 		if len(currentList) == 0 || ds.selectedIndex >= len(currentList) {
-			ds.SetStatus("Nothing to copy", StatusWarning)
-			return StatusMsg{Message: "Nothing to copy", Level: StatusWarning}
+			return statusCmd("Nothing to copy", StatusWarning)
 		}
+		payload = currentList[ds.selectedIndex]
 
-		selectedItem := currentList[ds.selectedIndex]
-
-		// Copy to clipboard
-		err := clipboard.WriteAll(selectedItem)
-		if err != nil {
-			ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
-			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
-		}
-
-		// Show success message
 		tabNames := []string{"general log", "MCP message", "HTTP debug info", "statistics", "capabilities", "notification"}
 		tabName := "item"
 		if ds.activeTab < len(tabNames) {
 			tabName = tabNames[ds.activeTab]
 		}
-		message := fmt.Sprintf("Copied %s to clipboard", tabName)
-		ds.SetStatus(message, StatusSuccess)
-		return StatusMsg{Message: message, Level: StatusSuccess}
+		successMessage = fmt.Sprintf("Copied %s to clipboard", tabName)
+	}
+
+	return func() tea.Msg {
+		if err := clipboard.WriteAll(payload); err != nil {
+			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
+		}
+		return StatusMsg{Message: successMessage, Level: StatusSuccess}
+	}
+}
+
+// statusCmd returns a command that only reports a status message.
+func statusCmd(message string, level StatusLevel) tea.Cmd {
+	return func() tea.Msg {
+		return StatusMsg{Message: message, Level: level}
 	}
 }
 
@@ -1164,26 +1182,26 @@ func summarizeValue(v interface{}) string {
 // surface area as the per-log-entry copy commands so users have one
 // consistent muscle-memory shortcut ('y' or 'c') across every tab that has
 // copyable content.
+// The snapshot is resolved on the event loop; the command only marshals and
+// copies, returning a StatusMsg that Update applies. Calling SetStatus from
+// inside the command would race with View.
 func (ds *DebugScreen) copyCapabilitiesCmd() tea.Cmd {
+	var snap *capabilities.Snapshot
+	if ds.snapshotProvider != nil {
+		snap = ds.snapshotProvider()
+	}
+	if snap == nil {
+		return statusCmd("No capabilities snapshot to copy", StatusWarning)
+	}
+
 	return func() tea.Msg {
-		var snap *capabilities.Snapshot
-		if ds.snapshotProvider != nil {
-			snap = ds.snapshotProvider()
-		}
-		if snap == nil {
-			ds.SetStatus("No capabilities snapshot to copy", StatusWarning)
-			return StatusMsg{Message: "No capabilities snapshot to copy", Level: StatusWarning}
-		}
 		out, err := json.MarshalIndent(snap, "", "  ")
 		if err != nil {
-			ds.SetStatus(fmt.Sprintf("Marshal failed: %v", err), StatusError)
 			return StatusMsg{Message: fmt.Sprintf("Marshal failed: %v", err), Level: StatusError}
 		}
 		if err := clipboard.WriteAll(string(out)); err != nil {
-			ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
 			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
 		}
-		ds.SetStatus("Copied capabilities JSON to clipboard", StatusSuccess)
 		return StatusMsg{Message: "Copied capabilities JSON to clipboard", Level: StatusSuccess}
 	}
 }

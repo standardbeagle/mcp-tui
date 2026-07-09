@@ -321,7 +321,15 @@ func (cs *ConnectionScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// First, check for global keys that should work regardless of focus
 	switch msg.String() {
-	case "ctrl+c", "q":
+	case "ctrl+c":
+		return cs, tea.Quit
+
+	case "q":
+		// Only a quit shortcut when no text field has focus, otherwise the
+		// letter can never be typed into a command, args, or URL value.
+		if cs.isAnyInputFocused() {
+			break
+		}
 		return cs, tea.Quit
 
 	case "ctrl+l", "ctrl+d", "f12":
@@ -808,27 +816,7 @@ func (cs *ConnectionScreen) updateInputFocus() {
 
 // handleConnect processes the connection attempt
 func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
-	// Get values from text inputs
-	var command, args string
-
-	if cs.transportType == config.TransportStdio && cs.usesCombined {
-		// Parse combined command input
-		combinedCmd := cs.combinedInput.Value()
-		if combinedCmd != "" {
-			// Split command into command and args
-			fields := strings.Fields(combinedCmd)
-			if len(fields) > 0 {
-				command = fields[0]
-				if len(fields) > 1 {
-					args = strings.Join(fields[1:], " ")
-				}
-			}
-		}
-	} else {
-		command = cs.commandInput.Value()
-		args = cs.argsInput.Value()
-	}
-
+	command, args := cs.resolveCommand()
 	url := cs.urlInput.Value()
 
 	cs.logger.Info("Attempting to connect",
@@ -837,8 +825,9 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 		debug.F("args", args),
 		debug.F("url", url))
 
-	// Validate inputs
-	if err := cs.validateInputs(); err != nil {
+	// Validate the resolved values rather than the raw fields: in combined
+	// mode the command lives in combinedInput, not commandInput.
+	if err := cs.validateInputs(command, url); err != nil {
 		cs.SetError(err)
 		return cs, nil
 	}
@@ -876,16 +865,32 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 	return mainScreen, mainScreen.Init()
 }
 
-// validateInputs validates the form inputs
-func (cs *ConnectionScreen) validateInputs() error {
+// resolveCommand returns the command and argument string for the current
+// transport, reading from whichever input the user is actually editing.
+func (cs *ConnectionScreen) resolveCommand() (command, args string) {
+	if cs.transportType == config.TransportStdio && cs.usesCombined {
+		fields := strings.Fields(cs.combinedInput.Value())
+		if len(fields) > 0 {
+			command = fields[0]
+			if len(fields) > 1 {
+				args = strings.Join(fields[1:], " ")
+			}
+		}
+		return command, args
+	}
+	return cs.commandInput.Value(), cs.argsInput.Value()
+}
+
+// validateInputs validates the resolved connection values
+func (cs *ConnectionScreen) validateInputs(command, url string) error {
 	switch cs.transportType {
 	case config.TransportStdio:
-		if cs.commandInput.Value() == "" {
+		if command == "" {
 			return fmt.Errorf("command is required for STDIO transport")
 		}
 
 	case config.TransportSSE, config.TransportHTTP:
-		if cs.urlInput.Value() == "" {
+		if url == "" {
 			return fmt.Errorf("URL is required for %s transport", cs.transportType)
 		}
 	}

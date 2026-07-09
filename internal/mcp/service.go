@@ -390,23 +390,30 @@ func NewServiceWithConfig(config *UnifiedConfig) Service {
 }
 
 // Connect establishes connection to MCP server using official SDK
+// Connect prepares the transport under the service lock, then releases it for
+// the duration of the blocking session handshake. Holding s.mu across the
+// handshake would serialize every other service call -- including Disconnect
+// and the TUI's IsConnected/health polling -- behind a connect that can take
+// tens of seconds, or hang outright on a misbehaving SSE server.
 func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfig) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Store connection config for CLI command generation
 	s.connectionConfig = config
 
 	if err := s.initializeConnection(); err != nil {
+		s.mu.Unlock()
 		return err
 	}
 
 	if err := s.validateConnectionState(); err != nil {
+		s.mu.Unlock()
 		return err
 	}
 
 	client, err := s.createClient()
 	if err != nil {
+		s.mu.Unlock()
 		return err
 	}
 
@@ -420,10 +427,12 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	if oauthCfg, ok := config.OAuth.(*oauth.Config); ok && oauthCfg != nil && oauthCfg.Mode() != oauth.ModeNone {
 		cache, err := oauth.NewFileTokenCache(oauthCfg.CachePath)
 		if err != nil {
+			s.mu.Unlock()
 			return fmt.Errorf("failed to init oauth token cache: %w", err)
 		}
 		handler, err := oauth.NewHandler(oauthCfg, nil, cache)
 		if err != nil {
+			s.mu.Unlock()
 			return fmt.Errorf("failed to init oauth handler: %w", err)
 		}
 		s.oauthHandler = handler
@@ -434,14 +443,30 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 	transport, contextStrategy, err := s.transportFactory.CreateTransport(transportConfig)
 	if err != nil {
+		s.mu.Unlock()
 		return fmt.Errorf("failed to create transport: %w", err)
 	}
 
-	err = s.sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type)
-	if err != nil {
+	// Snapshot the session manager before releasing the lock; Disconnect may
+	// swap service fields while the handshake is in flight.
+	sessionManager := s.sessionManager
+	s.mu.Unlock()
+
+	// Blocking handshake, performed without the service lock. The session
+	// manager serializes concurrent connects internally.
+	if err := sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type); err != nil {
+		// A stdio server that dies during startup fails the handshake with an
+		// opaque EOF. Its stderr says what actually went wrong, so prefer that.
+		if diagnoser, ok := transport.(transports.StartupDiagnoser); ok {
+			if startupErr := diagnoser.StartupError(); startupErr != nil {
+				return startupErr
+			}
+		}
 		return fmt.Errorf("failed to connect to MCP server: %w", err)
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.updateServerInfo()
 }
 
@@ -1358,9 +1383,18 @@ func isJSONError(err error) bool {
 	return false
 }
 
-// GetServerInfo returns server information
+// GetServerInfo returns a copy of the server information. A copy, not the
+// shared pointer: s.info is replaced by Connect and cleared by Disconnect,
+// so handing out the pointer races with those writers.
 func (s *service) GetServerInfo() *ServerInfo {
-	return s.info
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.info == nil {
+		return nil
+	}
+	infoCopy := *s.info
+	return &infoCopy
 }
 
 // GetCapabilitiesSnapshot returns the negotiated capabilities snapshot from

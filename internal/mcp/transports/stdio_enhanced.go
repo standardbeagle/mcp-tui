@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -13,6 +14,12 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 )
+
+// StartupDiagnoser is implemented by transports that can explain, after a
+// failed connection, why the server process never completed startup.
+type StartupDiagnoser interface {
+	StartupError() error
+}
 
 // ServerStartupError represents a server startup failure with captured output
 type ServerStartupError struct {
@@ -32,33 +39,42 @@ func (e *ServerStartupError) Error() string {
 		e.Command, e.Output)
 }
 
-// EnhancedSTDIOTransport wraps the official MCP STDIO transport with pre-flight validation
+// EnhancedSTDIOTransport wraps the official MCP STDIO transport, capturing the
+// server's stderr so a failed handshake can be reported as a diagnosable
+// startup error rather than a bare EOF.
 type EnhancedSTDIOTransport struct {
 	transport officialMCP.Transport
 	command   string
 	args      []string
+	stderr    *syncBuffer
+
+	mu       sync.Mutex
+	startErr error // set when the process could not be started at all
 }
 
-// createEnhancedSTDIOTransport creates an enhanced STDIO transport with pre-flight server validation
+// createEnhancedSTDIOTransport creates an enhanced STDIO transport.
+//
+// The server process is started exactly once, by the transport itself. An
+// earlier revision ran the command a second time as a "pre-flight check",
+// which double-executed every side effect the server has at startup (binding
+// ports, taking file locks, prompting for auth) and forced a mandatory
+// multi-second wait for well-behaved servers that never exit on their own.
+// Startup diagnostics now come from the real process's stderr instead.
 func createEnhancedSTDIOTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
 	// Validate command for security before execution
 	if err := configPkg.ValidateCommand(config.Command, config.Args); err != nil {
 		return nil, nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
-	debug.Info("Enhanced STDIO: Starting pre-flight server validation",
+	debug.Info("Enhanced STDIO: Creating transport",
 		debug.F("command", config.Command),
 		debug.F("args", config.Args))
 
-	// Perform pre-flight server validation
-	if err := validateServerStartup(config.Command, config.Args); err != nil {
-		return nil, nil, err
-	}
-
-	debug.Info("Enhanced STDIO: Pre-flight validation successful, creating transport")
-
-	// Create command for STDIO transport
+	// Create command for STDIO transport. The SDK wires stdin/stdout; stderr is
+	// ours to capture for diagnostics.
 	cmd := exec.Command(config.Command, config.Args...)
+	stderr := &syncBuffer{}
+	cmd.Stderr = stderr
 
 	// Create STDIO transport using official SDK (direct struct initialization)
 	transport := &officialMCP.CommandTransport{
@@ -70,92 +86,29 @@ func createEnhancedSTDIOTransport(config *TransportConfig, strategy ContextStrat
 		transport: transport,
 		command:   config.Command,
 		args:      config.Args,
+		stderr:    stderr,
 	}
 
 	return enhanced, strategy, nil
 }
 
-// validateServerStartup performs pre-flight validation of server startup
-func validateServerStartup(command string, args []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+// syncBuffer is a bytes.Buffer guarded by a mutex. The child process writes to
+// it from an os/exec copy goroutine while Connect reads it on failure.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
 
-	// Create command for validation
-	cmd := exec.CommandContext(ctx, command, args...)
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
 
-	// Capture both stdout and stderr
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	debug.Info("Enhanced STDIO: Running pre-flight server validation",
-		debug.F("command", command),
-		debug.F("args", args),
-		debug.F("timeout", "5s"))
-
-	// Start the process
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start server command: %w", err)
-	}
-
-	// Wait for the process to complete or timeout
-	err := cmd.Wait()
-
-	// Capture all output
-	stdoutStr := strings.TrimSpace(stdout.String())
-	stderrStr := strings.TrimSpace(stderr.String())
-	combinedOutput := strings.TrimSpace(stdoutStr + "\n" + stderrStr)
-
-	debug.Info("Enhanced STDIO: Pre-flight validation complete",
-		debug.F("exitCode", cmd.ProcessState.ExitCode()),
-		debug.F("stdoutLen", len(stdoutStr)),
-		debug.F("stderrLen", len(stderrStr)))
-
-	// If the process exited with an error, analyze the output
-	if err != nil {
-		var exitCode int
-		if cmd.ProcessState != nil {
-			exitCode = cmd.ProcessState.ExitCode()
-		}
-
-		// Check if this looks like a startup error vs. a successful server that terminated
-		if isServerStartupError(combinedOutput, exitCode) {
-			suggestion := generateSuggestion(combinedOutput)
-			return &ServerStartupError{
-				Command:    command,
-				Args:       args,
-				Output:     combinedOutput,
-				ExitCode:   exitCode,
-				Suggestion: suggestion,
-			}
-		}
-	}
-
-	// If we get here, either:
-	// 1. The server started successfully and is ready
-	// 2. The server exited cleanly (which might be normal for some servers)
-	// 3. The timeout occurred (which might indicate the server is running)
-
-	// Check if the output indicates the server is ready for MCP connections
-	if isServerReadyForMCP(combinedOutput) {
-		debug.Info("Enhanced STDIO: Server appears ready for MCP connections")
-		return nil
-	}
-
-	// If there's stderr output that looks like an error, treat it as a startup failure
-	if stderrStr != "" && looksLikeError(stderrStr) {
-		suggestion := generateSuggestion(stderrStr)
-		return &ServerStartupError{
-			Command:    command,
-			Args:       args,
-			Output:     stderrStr,
-			ExitCode:   0, // Process might not have exited yet
-			Suggestion: suggestion,
-		}
-	}
-
-	debug.Info("Enhanced STDIO: Pre-flight validation passed")
-	return nil
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // isServerStartupError determines if the output indicates a server startup error
@@ -305,16 +258,58 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 	if err != nil {
 		debug.Error("Enhanced STDIO: MCP connection failed", debug.F("error", err))
 
-		// Check if this is a connection error that might be a startup issue
-		if strings.Contains(strings.ToLower(err.Error()), "eof") {
-			return nil, fmt.Errorf("MCP protocol connection failed - this may indicate the server exited during startup: %w", err)
-		}
+		// The SDK's CommandTransport only fails here before or at process
+		// start; once the process is running it returns a connection and any
+		// protocol failure surfaces later, during the initialize handshake.
+		startErr := fmt.Errorf("failed to start server command: %w", err)
 
-		return nil, err
+		// Remember it: the caller that sees this failure is the MCP client
+		// inside the session handshake, which replaces it with a generic
+		// classified message. StartupError lets the service recover the detail.
+		e.mu.Lock()
+		e.startErr = startErr
+		e.mu.Unlock()
+
+		return nil, startErr
 	}
 
 	debug.Info("Enhanced STDIO: MCP connection established successfully")
 	return conn, nil
+}
+
+// startupDiagnosticWait bounds how long StartupError waits for a failing
+// server's stderr to reach us. The process has already exited by the time the
+// handshake fails, but os/exec copies stderr on a goroutine we do not join.
+const startupDiagnosticWait = 500 * time.Millisecond
+
+// StartupError inspects the server's stderr after a failed handshake and, when
+// it looks like a startup failure, reports it as a diagnosable
+// *ServerStartupError. Returns nil when stderr reveals nothing useful.
+func (e *EnhancedSTDIOTransport) StartupError() error {
+	// The process never started: that error is already precise.
+	e.mu.Lock()
+	startErr := e.startErr
+	e.mu.Unlock()
+	if startErr != nil {
+		return startErr
+	}
+
+	deadline := time.Now().Add(startupDiagnosticWait)
+	for {
+		output := strings.TrimSpace(e.stderr.String())
+		if output != "" && looksLikeError(output) {
+			return &ServerStartupError{
+				Command:    e.command,
+				Args:       e.args,
+				Output:     output,
+				Suggestion: generateSuggestion(output),
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // ServerStartupErrorClassifier provides classification for server startup errors
