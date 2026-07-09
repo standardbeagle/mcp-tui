@@ -184,7 +184,11 @@ func TestEchoServerIntegration(t *testing.T) {
 	defer os.Remove("./mcp-tui-test")
 
 	t.Run("stdio transport with echo", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Spawning the CLI, which spawns a server process and fails the MCP
+		// handshake, takes ~2.5s unloaded. A 5s budget leaves no headroom: on a
+		// loaded machine the command is killed mid-run and the assertions below
+		// see empty output rather than the error they are checking for.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		// Use echo command which should pass validation but fail at MCP initialization

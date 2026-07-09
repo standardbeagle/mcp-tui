@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Session state machine**: `Connect` was permitted while a reconnection was in flight. Both paths own `client`/`transport`/`session`, so the loser of the race had its session silently leaked. `StateReconnecting` now counts as busy.
+- **Session state machine**: a reconnection goroutine that woke up after `Disconnect` moved the manager out of `StateClosed` into `StateFailed` or even `StateConnected`, resurrecting a closed manager and leaking a live session. Every step that runs without the lock now re-checks that it still owns `StateReconnecting`, and a session that arrives after a `Disconnect` is closed rather than published.
+- **Session state machine**: a failed reconnection attempt reverted the manager to `StateConnected` while its session was dead, purely so the health monitor would retry. `IsConnected()` and `GetSession()` therefore handed out a broken session. `attemptReconnection` now owns its retry loop, stays in `StateReconnecting` throughout, and ends in exactly one terminal state (`StateConnected` or `StateFailed`).
+- **Reconnection was effectively dead code**: the error classifier used bare type assertions (`err.(net.Error)`, `err.(syscall.Errno)`) instead of `errors.As`. Transports wrap their failures, so every real connection error fell through to `CategoryUnknown` and was marked unrecoverable — meaning reconnection almost never triggered. Wrapped `ECONNREFUSED`/`ECONNRESET`/`net.OpError`/`net.DNSError` are now classified correctly.
+- **Reconnection backoff**: the delay between attempts was constant. It now doubles from the configured base, capped at 30s.
+- **Disconnect during connect**: a `Disconnect` that completed before the session manager entered its own `Connect` left no context to cancel, so the handshake succeeded into a service that had already dropped its client reference — leaking the server process. `service.Connect` now detects this via a connect epoch and closes the orphaned session.
+- **Health monitor**: read `healthCheckInterval` without holding the lock.
+
+### Changed
+- `Info.ReconnectCount` now counts attempts within the current recovery and is reset by `Connect` and by a successful reconnection, rather than accumulating across a session's lifetime.
+
 ## [0.8.3] - 2026-07-09
 
 ### Fixed
