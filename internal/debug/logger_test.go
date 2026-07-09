@@ -11,12 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testLoggerSetup creates an isolated logger for testing
-func testLoggerSetup() (*logger, *bytes.Buffer) {
-	var buf bytes.Buffer
+// testLoggerSetup creates an isolated logger for testing.
+//
+// The output must be a safeBuffer, not a bare bytes.Buffer: the logger writes
+// from its own goroutine while the test reads, which the race detector flags.
+func testLoggerSetup() (*logger, *safeBuffer) {
+	buf := &safeBuffer{}
 	l := &logger{
 		level:   LogLevelInfo,
-		output:  &buf,
+		output:  buf,
 		fields:  make([]Field, 0),
 		logChan: make(chan logEntry, 10000),
 		done:    make(chan struct{}),
@@ -25,7 +28,25 @@ func testLoggerSetup() (*logger, *bytes.Buffer) {
 	l.start()
 	// Wait for goroutine to be ready
 	<-l.ready
-	return l, &buf
+	return l, buf
+}
+
+// waitForOutput polls until the buffer contains want, or fails. Logging is
+// asynchronous, so a fixed sleep is either slower than necessary or too short
+// on a loaded machine.
+func waitForOutput(t *testing.T, buf *safeBuffer, want string) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		output := buf.String()
+		if strings.Contains(output, want) {
+			return output
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %q in log output; got: %q", want, output)
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // testLoggerTeardown properly shuts down the test logger
@@ -143,15 +164,7 @@ func TestLogger(t *testing.T) {
 	// Test basic logging
 	logger.Info("test message")
 
-	// Wait for processing
-	time.Sleep(20 * time.Millisecond)
-
-	output := buf.String()
-	if output == "" {
-		t.Logf("Buffer is empty after logging")
-		t.Logf("Logger level: %v", l.level)
-		t.Logf("Logger output: %v", l.output)
-	}
+	output := waitForOutput(t, buf, "test message")
 	assert.Contains(t, output, "INFO")
 	assert.Contains(t, output, "test message")
 	assert.Contains(t, output, "[test-component]")
@@ -162,10 +175,7 @@ func TestLogger(t *testing.T) {
 	// Test with fields
 	logger.Error("error occurred", F("error", "test error"), F("code", 123))
 
-	// Wait for processing
-	time.Sleep(20 * time.Millisecond)
-
-	output = buf.String()
+	output = waitForOutput(t, buf, "error occurred")
 	assert.Contains(t, output, "ERROR")
 	assert.Contains(t, output, "error occurred")
 	assert.Contains(t, output, "error=test error")
