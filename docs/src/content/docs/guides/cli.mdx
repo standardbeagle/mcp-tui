@@ -6,7 +6,9 @@ description: Use mcp-tui as a scriptable command-line client. Perfect for CI, sm
 import cliList from '../../../assets/recordings/cli-tool-list.webp';
 import cliCall from '../../../assets/recordings/cli-tool-call.webp';
 
-CLI mode is activated by passing a subcommand (`tool`, `resource`, or `prompt`) after the connection flags.
+CLI mode is activated by passing a subcommand after the connection flags. The
+subcommands are `tool`, `resource`, `prompt`, `server`, `capabilities`,
+`verify`, and `conform`.
 
 ```bash
 mcp-tui [connection-flags] <subcommand> [args]
@@ -37,14 +39,35 @@ mcp-tui ... tool call echo message='hello'
 
 ```bash
 mcp-tui ... resource list
-mcp-tui ... resource read 'file:///example.txt'
+mcp-tui ... resource get 'file:///example.txt'   # alias: read
+mcp-tui ... resource templates                    # URI templates
+mcp-tui ... resource complete 'file:///{path}' path=doc
 ```
 
 ## Prompts
 
 ```bash
 mcp-tui ... prompt list
-mcp-tui ... prompt get my-prompt arg=value
+mcp-tui ... prompt get my-prompt
+mcp-tui ... prompt execute my-prompt --arg key=value   # -a for short
+mcp-tui ... prompt complete my-prompt topic=go
+```
+
+## Server introspection
+
+```bash
+mcp-tui ... server            # name, version, protocol
+mcp-tui ... capabilities      # negotiated capabilities as JSON
+```
+
+## Conformance and probes
+
+`verify` runs behavior probes; `conform` runs the full scenario matrix. Both
+are covered in [Conformance testing](/mcp-tui/guides/testing/).
+
+```bash
+mcp-tui verify http://localhost:8000/mcp
+mcp-tui conform --report-junit conform.xml http://localhost:8000/mcp
 ```
 
 ## Argument coercion
@@ -58,17 +81,22 @@ mcp-tui ... tool call enabled flag=true
 mcp-tui ... tool call query filter='{"limit":10}'
 ```
 
-If schema coercion is wrong, force a string with `key:str=value` (planned).
+Coercion is driven entirely by the tool's input schema: a value is parsed as
+the type the schema declares for that key (string, number, integer, boolean,
+object/array as JSON), falling back to the raw string when the schema gives no
+type. There is currently no per-argument type override — if a server's schema
+is wrong, the coercion follows it.
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Connection failure |
-| 2 | Invalid arguments / usage |
-| 3 | Tool / resource not found |
-| 4 | Tool execution error |
-| 5 | Protocol error |
+| 1 | Any failure |
+
+mcp-tui exits `1` on every error — connection failures, invalid usage,
+tool/protocol errors, a failing `verify` probe or `conform` scenario, or a
+tool-layer error surfaced by `--strict-output` / `--strict-errors`. There are
+no distinct per-class codes. Read stderr for the human-readable classification.
 
 See [Automation & CI](/mcp-tui/guides/automation/) for pipeline patterns.

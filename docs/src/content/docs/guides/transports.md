@@ -24,6 +24,24 @@ mcp-tui --transport http --url https://example.com/mcp tool list
 mcp-tui --transport streamable-http --url https://example.com/mcp tool list
 ```
 
+### SEP-2243 method headers
+
+`--mcp-method-headers` adds two advisory HTTP headers to every JSON-RPC request
+— `MCP-Method` (the JSON-RPC method) and `MCP-Name` (the tool/prompt name, or
+resource URI for `resources/read`) — so load balancers, proxies, and
+observability tools can route MCP traffic without parsing the body. It is off
+by default and applies only to the HTTP transports (STDIO ignores it).
+
+```bash
+mcp-tui --mcp-method-headers --transport http --url https://example.com/mcp tool list
+```
+
+### Custom and OAuth headers
+
+Add arbitrary headers with the repeatable `--header KEY=VALUE`. For servers
+behind OAuth (`401` + `WWW-Authenticate`), use the `--oauth-*` flags instead of
+hand-crafting an `Authorization` header — see [OAuth](/mcp-tui/guides/oauth/).
+
 ## SSE
 
 Long-lived event stream pattern: GET establishes the stream, POST sends requests, responses arrive on the stream.

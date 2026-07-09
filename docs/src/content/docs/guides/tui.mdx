@@ -26,15 +26,20 @@ The TUI is the default when you run `mcp-tui` without a subcommand. It opens to 
   <img src={tuiBrowse.src} alt="Browse tools, resources, prompts" loading="lazy" />
 </div>
 
-After connecting, the main screen has three columns:
+After connecting, the main screen has four tabs:
 
-| Column | Source | Action |
-|--------|--------|--------|
+| Tab | Source | Action |
+|-----|--------|--------|
 | Tools | `tools/list` | `Enter` opens the input form |
 | Resources | `resources/list` | `Enter` reads and renders content |
 | Prompts | `prompts/list` | `Enter` retrieves the prompt template |
+| Events | server notifications | live feed of notifications; `Enter` opens a detail pane |
 
-`←/→` moves between columns. `↑/↓` selects within a column.
+`Tab` / `Shift+Tab` (or `←/→`) moves between tabs. `↑/↓` (or `j`/`k`) selects
+within a tab. Number keys `1`–`9` quick-select an item.
+
+The **Events** tab streams every server-to-client notification — logging,
+progress, list-changed, resource updates, cancellations — as it arrives.
 
 ## Execute a tool
 
@@ -42,15 +47,32 @@ The input form is generated from the tool's JSON Schema. Required fields are mar
 
 Result panels are scrollable. `Ctrl+↑/↓`, `PgUp`/`PgDn`, `Home`/`End`, and `v` (view fields) all work.
 
+## Server-initiated screens
+
+Some MCP servers call back into the client. The TUI renders each request as a
+dedicated interactive screen:
+
+- **Sampling** — when a server issues `sampling/createMessage`, a screen shows
+  the requested messages and lets you compose or approve a reply.
+- **Elicitation** — an `elicitation/create` request renders as a form built
+  from the requested schema; you fill it in, or decline/cancel.
+- **Roots** — press `R` to open the roots editor. Changes propagate to the
+  server via a `roots/list_changed` notification. See
+  [Client features](/mcp-tui/guides/client-features/).
+
 ## Useful keys
 
 | Key | Action |
 |-----|--------|
 | `c` | Copy CLI command equivalent of the last action |
 | `Ctrl+C` | Copy current result |
-| `Ctrl+D` | Open debug screen (HTTP timing, MCP messages, logs) |
-| `Ctrl+L` | Open log viewer |
+| `r` | Refresh the current tab |
+| `R` | Open the roots editor |
+| `d` | Disconnect and return to the connection screen |
+| `e` | Show schema-error details for the selected tool |
+| `Ctrl+E` | Export session recording (`.json` trace + `.sh` CLI replay script) |
+| `Ctrl+D` / `Ctrl+L` / `F12` | Open the debug screen |
 | `b` / `Alt+←` | Back |
-| `Esc` | Cancel / back |
+| `q` / `Esc` / `Ctrl+C` | Quit |
 
 See the [keyboard reference](/mcp-tui/reference/keyboard/) for the full list.

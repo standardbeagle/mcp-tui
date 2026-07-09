@@ -7,33 +7,59 @@ MCP-TUI auto-discovers MCP server configurations on your machine so you do not h
 
 ## Discovered locations
 
-| Source | Path |
-|--------|------|
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), `%APPDATA%/Claude/...` (Windows) |
-| VS Code MCP | `.vscode/mcp.json` in the current workspace |
-| Native MCP-TUI | `~/.config/mcp-tui/servers.json` |
+The Discovery tab scans the current working directory and a few well-known
+user paths. Only files that contain a valid MCP server configuration are shown.
 
-The Discovery tab in the TUI shows every server it found, with names and descriptions when present.
+**Current working directory:**
+
+- `.mcp.json`
+- `.claude.json`
+- `mcp.json`
+- `mcp-config.json`
+- `connections.json`
+- `.vscode/mcp.json`
+
+**User config directory:**
+
+- `~/.config/mcp-tui/connections.json` (native format)
+- `~/.config/mcp/config.json`
+
+**Claude Desktop** (first that exists wins):
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+Claude Desktop (`mcpServers`) and VS Code (`servers`) formats are imported
+automatically alongside the native format. The Discovery tab shows every server
+it found, with names and descriptions when present.
 
 ## Native config format
 
+The native file (`connections.json`) is a versioned object whose `servers` map
+is keyed by server ID:
+
 ```json
 {
-  "servers": [
-    {
-      "name": "everything",
+  "version": "1.0",
+  "defaultServer": "everything",
+  "servers": {
+    "everything": {
+      "id": "everything",
+      "name": "Everything",
+      "description": "Reference test server",
       "transport": "stdio",
       "command": "npx",
-      "args": ["@modelcontextprotocol/server-everything", "stdio"],
-      "description": "Reference test server"
+      "args": ["@modelcontextprotocol/server-everything", "stdio"]
     },
-    {
-      "name": "remote",
+    "remote": {
+      "id": "remote",
+      "name": "Remote",
       "transport": "http",
       "url": "https://my-mcp.example.com/mcp",
       "headers": { "Authorization": "Bearer ${MCP_TOKEN}" }
     }
-  ]
+  }
 }
 ```
 
@@ -49,4 +75,9 @@ Validation rejects empty expansions when the field is required.
 
 ## Auto-connect
 
-If exactly one server is configured (or one is marked default), MCP-TUI connects to it on launch instead of showing the connection screen. Override with `--no-auto-connect`.
+If exactly one server is configured, or one is marked as the `defaultServer`,
+MCP-TUI connects to it on launch instead of showing the connection screen.
+
+There is no flag to disable this. To reach the connection screen when
+auto-connect would fire, configure more than one server without a
+`defaultServer`, or launch with explicit connection flags (`--cmd` / `--url`).

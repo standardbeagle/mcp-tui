@@ -13,11 +13,32 @@ Adds DNS lookup, TCP connect, TLS handshake, time-to-first-byte, and connection-
 
 ## Debug screen (TUI)
 
-`Ctrl+D` opens a tabbed debug overlay:
+`Ctrl+D` (also `Ctrl+L` or `F12`) opens a debug overlay with six tabs:
 
 - **Logs** — every internal event with category, severity, and timestamp.
+- **MCP Protocol** — every JSON-RPC frame in/out, in order (`Enter` for detail).
 - **HTTP Debug** — connection-level timings and reuse counters.
-- **MCP Messages** — every JSON-RPC frame in/out, in order.
+- **Statistics** — aggregate counters for the session.
+- **Capabilities** — the negotiated server/client capabilities (`c`/`y` copies the JSON).
+- **Notifications** — the live notification stream, with per-type filters
+  (`1`–`7`, `0` clears), a level threshold (`+`/`-`), and pause (`space`/`p`).
+
+`Tab`/`Shift+Tab` cycles tabs; `j`/`k` scroll; `r` refreshes. See the
+[keyboard reference](/mcp-tui/reference/keyboard/) for the complete set.
+
+## Header redaction
+
+By default the HTTP Debug tab masks sensitive headers — `Authorization`,
+`Cookie`, and `Set-Cookie` render as `[REDACTED]`. Pass
+`--show-headers Authorization,Cookie` to reveal specific header values verbatim
+when you need to inspect exactly what was sent.
+
+## Conformance as a debugging tool
+
+When a server misbehaves, the `verify` and `conform` subcommands localize the
+problem faster than reading raw frames. `verify` runs targeted behavior probes
+and prints a fix suggestion for each failure; `conform` walks the whole
+protocol matrix. See [Conformance testing](/mcp-tui/guides/testing/).
 
 ## Error classification
 

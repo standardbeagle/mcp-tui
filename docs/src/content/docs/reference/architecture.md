@@ -7,8 +7,8 @@ description: How MCP-TUI is organized internally — transports, services, TUI, 
 
 - **Transport** (`internal/mcp/`) — connects to an MCP server. Wraps the official Go SDK with command validation, HTTP timing, and SSE-specific context handling.
 - **Service** (`internal/mcp/service.go`) — high-level operations: list/describe/call tools, list/read resources, list/get prompts. Both UIs talk to this layer.
-- **TUI** (`internal/tui/`) — Bubbletea-based terminal interface. Connection screen with tabbed discovery, main screen with three columns, scrollable result panes, debug overlay.
-- **CLI** (`cmd_*.go`) — Cobra subcommands. Each command opens a connection through Service, runs one operation, prints, exits.
+- **TUI** (`internal/tui/`) — Bubbletea-based terminal interface. Connection screen with tabbed discovery, main screen with four tabs (Tools, Resources, Prompts, Events), scrollable result panes, server-callback screens (sampling, elicitation, roots), and a six-tab debug overlay.
+- **CLI** (`internal/cli/`, wired in `main.go`) — Cobra subcommands: `tool`, `resource`, `prompt`, `server`, `capabilities`, `verify`, and `conform`. Most commands open a connection through Service, run one operation, print, and exit; `verify` and `conform` drive their own short-lived connections per probe/scenario.
 
 ## Why a separate Service layer
 
