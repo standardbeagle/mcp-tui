@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,59 +19,49 @@ import (
 
 // TestTransportFallback tests the transport fallback mechanism
 func TestTransportFallback(t *testing.T) {
-	t.Run("HTTP_Fallback_To_SSE", func(t *testing.T) {
-		// Create servers where HTTP fails but SSE succeeds
+	// After a failed HTTP connection the service must be reusable: connecting
+	// over SSE to a working server has to succeed. The SSE server here is a real
+	// MCP server behind the SDK's SSE handler, not a hand-rolled mock that never
+	// completed a handshake -- the old version could only log "SSE connection
+	// also failed in mock environment" and pass regardless.
+	t.Run("SSE_Connect_After_HTTP_Failure", func(t *testing.T) {
 		httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// HTTP server returns error
 			w.WriteHeader(http.StatusServiceUnavailable)
 			w.Write([]byte("HTTP service unavailable"))
 		}))
 		defer httpServer.Close()
 
-		sseServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// SSE server works
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("Cache-Control", "no-cache")
-			initResponse := map[string]interface{}{
-				"protocolVersion": "2024-11-05",
-				"serverInfo": map[string]interface{}{
-					"name":    "fallback-sse-server",
-					"version": "1.0.0",
-				},
-				"capabilities": map[string]interface{}{},
-			}
-			initData, _ := json.Marshal(initResponse)
-			w.Write([]byte("data: " + string(initData) + "\n\n"))
-		}))
-		defer sseServer.Close()
+		sseURL := newTestSSEServer(t)
 
-		// Test fallback behavior manually since automatic fallback isn't implemented
 		service := NewService()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		// First try HTTP (should fail)
-		httpConfig := &config.ConnectionConfig{
+		err := service.Connect(ctx, &config.ConnectionConfig{
 			Type: config.TransportHTTP,
 			URL:  httpServer.URL,
-		}
-		err := service.Connect(ctx, httpConfig)
-		assert.Error(t, err, "HTTP connection should fail")
-		assert.False(t, service.IsConnected(), "Service should not be connected after HTTP failure")
+		})
+		require.Error(t, err, "HTTP connection should fail")
+		require.False(t, service.IsConnected(), "Service should not be connected after HTTP failure")
 
-		// Then try SSE (should succeed)
-		sseConfig := &config.ConnectionConfig{
+		// Then SSE against a real server: this must succeed.
+		require.NoError(t, service.Connect(ctx, &config.ConnectionConfig{
 			Type: config.TransportSSE,
-			URL:  sseServer.URL,
-		}
-		err = service.Connect(ctx, sseConfig)
-		// Note: SSE might still fail in mock, but the test structure is correct
-		if err == nil {
-			assert.True(t, service.IsConnected(), "Service should be connected after SSE success")
-			service.Disconnect()
-		} else {
-			t.Logf("SSE connection also failed in mock environment: %v", err)
-		}
+			URL:  sseURL,
+		}), "SSE connection to a real MCP server must succeed")
+		defer service.Disconnect()
+
+		require.True(t, service.IsConnected(), "Service should be connected after SSE success")
+
+		info := service.GetServerInfo()
+		require.NotNil(t, info)
+		assert.Equal(t, "sse-test-server", info.Name)
+
+		tools, err := service.ListTools(ctx)
+		require.NoError(t, err, "listing tools over SSE must succeed")
+		require.Len(t, tools, 1)
+		assert.Equal(t, "ping", tools[0].Name)
 	})
 
 	t.Run("All_Transports_Fail", func(t *testing.T) {
@@ -191,20 +183,21 @@ func TestTransportFallback(t *testing.T) {
 			URL:  partialServer.URL,
 		}
 
-		// Connection should succeed
-		err := service.Connect(ctx, connConfig)
-		if err == nil {
-			assert.True(t, service.IsConnected(), "Service should be connected")
+		// The mock completes initialize, so the connection must succeed. Guarding
+		// these assertions behind `if err == nil` made the whole subtest pass
+		// even when Connect failed outright.
+		require.NoError(t, service.Connect(ctx, connConfig), "connect must succeed against the mock")
+		defer service.Disconnect()
+		require.True(t, service.IsConnected(), "Service should be connected")
 
-			// But operations should fail gracefully
-			tools, err := service.ListTools(ctx)
-			if err != nil {
-				assert.Error(t, err, "Operations should fail gracefully")
-				assert.Nil(t, tools, "No tools should be returned on operation failure")
-			}
+		// The mock rejects every non-initialize method, so listing tools must
+		// surface that error rather than returning a partial result.
+		tools, err := service.ListTools(ctx)
+		require.Error(t, err, "operations must fail when the server rejects them")
+		assert.Nil(t, tools, "No tools should be returned on operation failure")
 
-			service.Disconnect()
-		}
+		// A failed operation must not tear down the session.
+		assert.True(t, service.IsConnected(), "a rejected operation must not disconnect the service")
 	})
 
 	t.Run("Connection_Recovery_After_Failure", func(t *testing.T) {
@@ -255,19 +248,70 @@ func detectTransportType(url string) config.TransportType {
 }
 
 // TestTransportSpecificErrorHandling tests error handling specific to each transport
+// newTestSSEServer stands up a real MCP server behind the SDK's SSE handler.
+// SSE is the transport this project documents as least reliable, and it had no
+// end-to-end coverage: the only "SSE" test used a hand-rolled handler that
+// never completed an MCP handshake.
+func newTestSSEServer(t *testing.T) string {
+	t.Helper()
+
+	server := officialMCP.NewServer(&officialMCP.Implementation{
+		Name:    "sse-test-server",
+		Version: "1.0.0",
+	}, nil)
+
+	type pingInput struct{}
+	type pingOutput struct {
+		Pong bool `json:"pong" jsonschema:"always true"`
+	}
+	officialMCP.AddTool(server, &officialMCP.Tool{
+		Name:        "ping",
+		Description: "Reply with pong",
+	}, func(ctx context.Context, req *officialMCP.CallToolRequest, in pingInput) (*officialMCP.CallToolResult, pingOutput, error) {
+		return nil, pingOutput{Pong: true}, nil
+	})
+
+	handler := officialMCP.NewSSEHandler(func(*http.Request) *officialMCP.Server { return server }, nil)
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+	return httpServer.URL
+}
+
+// closedLocalEndpoint returns a URL whose port was bound and then released, so
+// connecting to it is refused immediately instead of hanging.
+func closedLocalEndpoint(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserving a local port: %v", err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("releasing the local port: %v", err)
+	}
+	return "http://" + addr
+}
+
 func TestTransportSpecificErrorHandling(t *testing.T) {
 	t.Run("HTTP_Transport_Network_Errors", func(t *testing.T) {
 		service := NewService()
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 
+		// A local address with nothing listening. This refuses immediately.
+		// The previous case used the blackholed TEST-NET address 192.0.2.1,
+		// whose dial hangs: the SDK transport retries the connect (MaxRetries
+		// defaults to 5, with backoff), so the subtest cost 36 seconds and
+		// exercised backoff timing rather than error handling.
+		closedURL := closedLocalEndpoint(t)
+
 		// Test various network error conditions
 		testCases := []struct {
 			url         string
 			description string
 		}{
-			{"http://localhost:99999", "Connection refused"},
-			{"http://192.0.2.1:80", "Network unreachable (test IP)"},
+			{"http://localhost:99999", "Invalid port"},
+			{closedURL, "Connection refused"},
 			{"http://example.invalid", "DNS resolution failure"},
 		}
 
@@ -322,57 +366,35 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 		}
 	})
 
-	t.Run("Transport_Resource_Exhaustion", func(t *testing.T) {
-		// Test behavior under resource exhaustion conditions
-		service := NewService()
+	// Reconnecting a single service repeatedly must succeed every time: each
+	// Disconnect has to release the previous session cleanly, leaving the
+	// service reusable. The old version of this test connected sequentially to
+	// 50 servers that each slept 100ms, called that "resource exhaustion", and
+	// then asserted only that one connection out of the fifty worked.
+	t.Run("Repeated_Connect_Disconnect_Cycles", func(t *testing.T) {
+		const numCycles = 20
 
-		// Create many concurrent connections to exhaust resources
-		const numConnections = 50
-		servers := make([]*httptest.Server, numConnections)
-
-		for i := 0; i < numConnections; i++ {
-			servers[i] = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				time.Sleep(100 * time.Millisecond)
-				mockMCPHTTPHandler("load-test-server")(w, r)
-			}))
+		servers := make([]*httptest.Server, numCycles)
+		for i := 0; i < numCycles; i++ {
+			servers[i] = httptest.NewServer(mockMCPHTTPHandler("load-test-server"))
+			defer servers[i].Close()
 		}
 
-		// Cleanup servers
-		defer func() {
-			for _, server := range servers {
-				if server != nil {
-					server.Close()
-				}
-			}
-		}()
+		service := NewService()
+		for i := 0; i < numCycles; i++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
-		// Try to connect to many servers rapidly
-		var successCount, failCount int
-		for i := 0; i < numConnections; i++ {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			connConfig := &config.ConnectionConfig{
+			err := service.Connect(ctx, &config.ConnectionConfig{
 				Type: config.TransportHTTP,
 				URL:  servers[i].URL,
-			}
+			})
+			require.NoError(t, err, "cycle %d: connect must succeed against a local server", i)
+			require.True(t, service.IsConnected(), "cycle %d: service must report connected", i)
 
-			err := service.Connect(ctx, connConfig)
-			if err == nil {
-				successCount++
-				service.Disconnect()
-			} else {
-				failCount++
-			}
+			require.NoError(t, service.Disconnect(), "cycle %d: disconnect must succeed", i)
+			require.False(t, service.IsConnected(), "cycle %d: service must report disconnected", i)
+
 			cancel()
-		}
-
-		t.Logf("Resource exhaustion test: %d successes, %d failures", successCount, failCount)
-
-		// At least some connections should work, even under load
-		assert.True(t, successCount > 0, "At least some connections should succeed")
-
-		// Some failures are expected under resource pressure
-		if failCount > 0 {
-			t.Logf("Resource exhaustion caused %d failures (expected)", failCount)
 		}
 	})
 }
