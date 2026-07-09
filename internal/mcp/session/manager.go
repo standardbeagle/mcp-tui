@@ -17,6 +17,9 @@ import (
 // cannot stall the monitoring goroutine until the next tick.
 const healthCheckTimeout = 5 * time.Second
 
+// maxReconnectDelay caps the exponential backoff between reconnection attempts.
+const maxReconnectDelay = 30 * time.Second
+
 // State represents the current state of a session
 type State int
 
@@ -119,8 +122,11 @@ func (m *Manager) SetDebugEnabled(enabled bool) {
 func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, transport officialMCP.Transport, contextStrategy transports.ContextStrategy, transportType transports.TransportType) error {
 	m.mu.Lock()
 
-	// Ensure we're in a valid state to connect
-	if m.info.State == StateConnecting || m.info.State == StateConnected {
+	// Ensure we're in a valid state to connect. StateReconnecting counts as
+	// busy: a reconnection goroutine owns m.client/m.transport/m.session, and
+	// overwriting them here would leak whichever session loses the race.
+	switch m.info.State {
+	case StateConnecting, StateConnected, StateReconnecting:
 		state := m.info.State
 		m.mu.Unlock()
 		return fmt.Errorf("session is already connecting or connected (state: %s)", state)
@@ -252,11 +258,9 @@ func (m *Manager) disconnectLocked() error {
 
 	var lastErr error
 
-	// Cancel connection context
-	if m.closeFunc != nil {
-		m.closeFunc()
-		m.closeFunc = nil
-	}
+	// Cancel connection context. This also aborts an in-flight reconnection
+	// attempt, which observes the state change and stands down.
+	m.stopConnectionLocked()
 
 	// Close session if exists
 	if m.session != nil {
@@ -471,11 +475,15 @@ func (m *Manager) setState(newState State) {
 
 // startHealthMonitoring monitors connection health for long-lived connections
 func (m *Manager) startHealthMonitoring(ctx context.Context) {
-	ticker := time.NewTicker(m.healthCheckInterval)
+	m.mu.RLock()
+	interval := m.healthCheckInterval
+	m.mu.RUnlock()
+
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	debug.Info("Session manager: Starting health monitoring",
-		debug.F("interval", m.healthCheckInterval))
+		debug.F("interval", interval))
 
 	for {
 		select {
@@ -522,13 +530,16 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 		debug.F("transport", transportType))
 }
 
-// handleConnectionFailure handles connection failures and triggers reconnection if appropriate
+// handleConnectionFailure handles connection failures and triggers reconnection
+// if appropriate. It transitions StateConnected -> StateReconnecting or
+// StateFailed; from any other state it is a no-op, which is what keeps a single
+// reconnection goroutine in flight at a time.
 func (m *Manager) handleConnectionFailure(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.info.State != StateConnected {
-		return // Already handling failure or not connected
+		return // Already handling failure, closed, or never connected
 	}
 
 	// Classify the error
@@ -540,124 +551,175 @@ func (m *Manager) handleConnectionFailure(err error) {
 
 	debug.Error("Session manager: Connection failure detected", debug.F("classified", classified.Category))
 
-	// Check if we should attempt reconnection based on error classification
-	if m.info.ReconnectCount >= m.maxReconnectAttempts || !classified.Recoverable {
+	m.info.LastError = classified
+
+	if !classified.Recoverable || m.maxReconnectAttempts <= 0 {
 		debug.Error("Session manager: Cannot reconnect",
-			debug.F("attempts", m.info.ReconnectCount),
 			debug.F("maxAttempts", m.maxReconnectAttempts),
 			debug.F("recoverable", classified.Recoverable))
 		m.setState(StateFailed)
-		m.info.LastError = classified
+		m.stopConnectionLocked()
 		return
 	}
 
-	// Mark as reconnecting and attempt reconnection
-	m.setState(StateReconnecting)
-	m.info.LastError = classified
-	m.info.ReconnectCount++
+	// The connection is dead, so its context (and the health monitor running on
+	// it) is useless. Cancel it now; attemptReconnection installs its own.
+	m.stopConnectionLocked()
 
-	// Start reconnection attempt in background
+	m.setState(StateReconnecting)
+	m.info.ReconnectCount = 0
+
 	go m.attemptReconnection()
 }
 
-// attemptReconnection attempts to reconnect the session
+// stopConnectionLocked cancels the current connection context. Callers hold m.mu.
+func (m *Manager) stopConnectionLocked() {
+	if m.closeFunc != nil {
+		m.closeFunc()
+		m.closeFunc = nil
+	}
+}
+
+// reconnectBackoff returns the delay before the given 1-based attempt,
+// doubling from the configured base and capped so a long outage does not push
+// retries arbitrarily far apart.
+func (m *Manager) reconnectBackoff(base time.Duration, attempt int) time.Duration {
+	delay := base
+	for i := 1; i < attempt && delay < maxReconnectDelay; i++ {
+		delay *= 2
+	}
+	if delay > maxReconnectDelay {
+		delay = maxReconnectDelay
+	}
+	return delay
+}
+
+// attemptReconnection owns the whole retry sequence for one recovery: it loops
+// up to maxReconnectAttempts and ends in exactly one terminal outcome --
+// StateConnected, StateFailed, or (if the manager was closed underneath it) no
+// state change at all.
+//
+// The manager is StateReconnecting for the whole loop. Every step that runs
+// without the lock is followed by a re-check that we are still the owner of
+// that state; if not, a Disconnect (or a superseding transition) happened while
+// we were blocked, its state is authoritative, and we must not resurrect the
+// manager. This is the same discipline Connect uses.
 func (m *Manager) attemptReconnection() {
-	// Snapshot everything this goroutine needs under the lock. Reading
-	// m.info/m.reconnectDelay directly would race with GetInfo and Disconnect.
 	m.mu.RLock()
-	attempt := m.info.ReconnectCount
-	delay := m.reconnectDelay
+	base := m.reconnectDelay
+	maxAttempts := m.maxReconnectAttempts
 	transportType := m.info.TransportType
 	m.mu.RUnlock()
 
-	debug.Info("Session manager: Starting reconnection attempt",
-		debug.F("attempt", attempt),
-		debug.F("delay", delay))
-
-	// Wait before attempting reconnection
-	time.Sleep(delay)
-
-	m.mu.Lock()
-	client := m.client
-	transport := m.transport
-	contextStrategy := m.contextStrategy
-	m.mu.Unlock()
-
-	if client == nil || transport == nil || contextStrategy == nil {
-		debug.Error("Session manager: Cannot reconnect - missing connection components")
-		m.mu.Lock()
-		// Create classified error for missing components
-		err := fmt.Errorf("reconnection failed: missing connection components")
-		classified := m.errorHandler.HandleError(context.Background(), err, "session_reconnect", map[string]interface{}{
-			"reason": "missing_connection_components",
-		})
-		m.setState(StateFailed)
-		m.info.LastError = classified
-		m.mu.Unlock()
-		return
-	}
-
-	// Create new connection context
-	connectCtx := contextStrategy.GetConnectionContext(context.Background())
-	connectCtx, cancel := context.WithCancel(connectCtx)
-
-	// Try to reconnect
-	session, err := client.Connect(connectCtx, transport, &officialMCP.ClientSessionOptions{})
-	if err != nil {
-		// Classify reconnection error
-		classified := m.errorHandler.HandleError(connectCtx, err, "session_reconnect", map[string]interface{}{
-			"transport_type": transportType,
-			"attempt":        attempt,
-		})
-
-		debug.Error("Session manager: Reconnection failed",
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		delay := m.reconnectBackoff(base, attempt)
+		debug.Info("Session manager: Starting reconnection attempt",
 			debug.F("attempt", attempt),
-			debug.F("category", classified.Category),
-			debug.F("recoverable", classified.Recoverable))
+			debug.F("maxAttempts", maxAttempts),
+			debug.F("delay", delay))
 
+		time.Sleep(delay)
+
+		// Re-check ownership after the sleep, and take the components under lock.
 		m.mu.Lock()
-		if m.info.ReconnectCount >= m.maxReconnectAttempts || !classified.Recoverable {
+		if m.info.State != StateReconnecting {
+			m.mu.Unlock()
+			debug.Info("Session manager: Reconnection abandoned (state changed)")
+			return
+		}
+		client, transport, contextStrategy := m.client, m.transport, m.contextStrategy
+		m.info.ReconnectCount = attempt
+
+		if client == nil || transport == nil || contextStrategy == nil {
+			classified := m.errorHandler.HandleError(context.Background(),
+				fmt.Errorf("reconnection failed: missing connection components"),
+				"session_reconnect", map[string]interface{}{"reason": "missing_connection_components"})
 			m.setState(StateFailed)
 			m.info.LastError = classified
-		} else {
-			// Will try again on next health check failure
-			m.setState(StateConnected) // Revert to connected to allow retry
-			m.info.LastError = classified
+			m.mu.Unlock()
+			debug.Error("Session manager: Cannot reconnect - missing connection components")
+			return
 		}
+
+		// Publish this attempt's cancel func so a concurrent Disconnect aborts
+		// the blocking Connect below instead of waiting it out.
+		connectCtx := contextStrategy.GetConnectionContext(context.Background())
+		connectCtx, cancel := context.WithCancel(connectCtx)
+		m.closeFunc = cancel
 		m.mu.Unlock()
-		cancel()
-		return
-	}
 
-	// Successfully reconnected
-	m.mu.Lock()
-	// Clean up old session if it still exists
-	if m.session != nil {
-		if closeErr := m.session.Close(); closeErr != nil {
-			debug.Error("Session manager: Failed to close old session during reconnection",
-				debug.F("error", closeErr))
+		session, err := client.Connect(connectCtx, transport, &officialMCP.ClientSessionOptions{})
+
+		m.mu.Lock()
+		if m.info.State != StateReconnecting {
+			// Disconnect won the race. Its state is authoritative; close whatever
+			// we just opened rather than leaking it, and leave the state alone.
+			m.mu.Unlock()
+			if err == nil {
+				if closeErr := session.Close(); closeErr != nil {
+					debug.Error("Session manager: Failed to close session abandoned by disconnect",
+						debug.F("error", closeErr))
+				}
+			}
+			cancel()
+			debug.Info("Session manager: Reconnection abandoned (state changed during connect)")
+			return
 		}
-	}
 
-	// Update with new session
-	if m.closeFunc != nil {
-		m.closeFunc() // Cancel old context
-	}
-	m.closeFunc = cancel
-	m.session = session
-	m.setState(StateConnected)
-	m.info.ConnectedAt = time.Now()
-	m.info.SessionID = session.ID()
-	m.info.LastError = nil
-	// Keep reconnect count for monitoring
+		if err != nil {
+			classified := m.errorHandler.HandleError(connectCtx, err, "session_reconnect", map[string]interface{}{
+				"transport_type": transportType,
+				"attempt":        attempt,
+			})
+			m.info.LastError = classified
+			m.closeFunc = nil
 
-	debug.Info("Session manager: Reconnection successful",
-		debug.F("attempt", attempt),
-		debug.F("newSessionID", m.info.SessionID))
-	m.mu.Unlock()
+			lastAttempt := attempt >= maxAttempts
+			if !classified.Recoverable || lastAttempt {
+				m.setState(StateFailed)
+				m.mu.Unlock()
+				cancel()
+				debug.Error("Session manager: Reconnection failed permanently",
+					debug.F("attempt", attempt),
+					debug.F("category", classified.Category),
+					debug.F("recoverable", classified.Recoverable))
+				return
+			}
 
-	// Restart health monitoring if needed
-	if contextStrategy.RequiresLongLivedConnection() {
-		go m.startHealthMonitoring(connectCtx)
+			// Stay in StateReconnecting and try again. The manager never claims
+			// to be connected while its session is dead.
+			m.mu.Unlock()
+			cancel()
+			debug.Error("Session manager: Reconnection attempt failed, retrying",
+				debug.F("attempt", attempt),
+				debug.F("category", classified.Category))
+			continue
+		}
+
+		// Successfully reconnected. Close the old, dead session if it is still here.
+		if m.session != nil {
+			if closeErr := m.session.Close(); closeErr != nil {
+				debug.Error("Session manager: Failed to close old session during reconnection",
+					debug.F("error", closeErr))
+			}
+		}
+
+		m.session = session
+		m.setState(StateConnected)
+		m.info.ConnectedAt = time.Now()
+		m.info.SessionID = session.ID()
+		m.info.LastError = nil
+		m.info.ReconnectCount = attempt
+		requiresMonitor := contextStrategy.RequiresLongLivedConnection()
+		m.mu.Unlock()
+
+		debug.Info("Session manager: Reconnection successful",
+			debug.F("attempt", attempt),
+			debug.F("newSessionID", session.ID()))
+
+		if requiresMonitor {
+			go m.startHealthMonitoring(connectCtx)
+		}
+		return
 	}
 }
