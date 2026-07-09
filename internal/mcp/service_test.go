@@ -225,9 +225,11 @@ func TestServerInfo(t *testing.T) {
 	assert.Empty(t, info.ProtocolVersion)
 	assert.Empty(t, info.Capabilities)
 
-	// Test that we get the same instance
+	// GetServerInfo returns a defensive copy rather than the shared pointer,
+	// so successive calls are equal in value but distinct instances.
 	info2 := service.GetServerInfo()
-	assert.Same(t, info, info2)
+	assert.NotSame(t, info, info2)
+	assert.Equal(t, info, info2)
 }
 
 func TestSchemaErrorHandling(t *testing.T) {
