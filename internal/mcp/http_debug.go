@@ -160,16 +160,36 @@ func setLastHTTPError(info *HTTPErrorInfo) {
 
 // EnableHTTPDebugging modifies the default HTTP transport to log requests/responses
 // This is a global change that affects all HTTP clients
+// httpDebugMu guards the process-global http.DefaultTransport swap below.
+// originalTransport holds the pre-wrap transport so debugging can be turned
+// back off; without it, repeated enables nest round-trippers (each buffering
+// every response body) and a disable is impossible.
+var (
+	httpDebugMu       sync.Mutex
+	originalTransport http.RoundTripper
+)
+
 func EnableHTTPDebugging(debugMode bool) {
-	if !debugMode {
+	httpDebugMu.Lock()
+	defer httpDebugMu.Unlock()
+
+	if debugMode {
+		if originalTransport != nil {
+			return // Already wrapped; wrapping again would nest round-trippers.
+		}
+		originalTransport = http.DefaultTransport
+		http.DefaultTransport = &debugRoundTripper{
+			base:      originalTransport,
+			debugMode: true,
+		}
 		return
 	}
 
-	// Wrap the default transport
-	http.DefaultTransport = &debugRoundTripper{
-		base:      http.DefaultTransport,
-		debugMode: debugMode,
+	if originalTransport == nil {
+		return // Not wrapped.
 	}
+	http.DefaultTransport = originalTransport
+	originalTransport = nil
 }
 
 // debugRoundTripper wraps an http.RoundTripper to capture error responses
@@ -330,8 +350,14 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 
 	SetConnectionState(StageResponseReceived, "Response received", req.URL.String(), nil)
+
+	// Never buffer a streaming body. An SSE response never reaches EOF, so
+	// io.ReadAll would block forever and grow without bound.
+	isStream := strings.Contains(
+		strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
+
 	// Capture response body
-	if resp.Body != nil {
+	if resp.Body != nil && !isStream {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", err)
