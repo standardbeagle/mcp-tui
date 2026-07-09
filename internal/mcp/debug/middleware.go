@@ -3,6 +3,7 @@ package debug
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
@@ -70,12 +71,13 @@ func (tm *TracingMiddleware) CreateProgressHandler() func(ctx context.Context, r
 	}
 }
 
-// requestIDCounter provides unique request IDs
-var requestIDCounter int64
+// requestIDCounter provides unique request IDs. Shared across every
+// TracingMiddleware instance and incremented from concurrent request paths,
+// so it must be updated atomically.
+var requestIDCounter atomic.Int64
 
 func (tm *TracingMiddleware) getNextRequestID() int64 {
-	requestIDCounter++
-	return requestIDCounter
+	return requestIDCounter.Add(1)
 }
 
 // DebugClientOptions provides enhanced client options with tracing

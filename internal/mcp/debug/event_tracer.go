@@ -188,12 +188,17 @@ func (et *EventTracer) TraceResponseReceived(requestID interface{}, result inter
 
 	event := et.addEvent(EventResponseReceived, "", requestID, data)
 
-	// Calculate request duration if we tracked the original request
+	// Calculate request duration if we tracked the original request. The
+	// tracker entry is always released, even when tracing was disabled
+	// between the request and its response and addEvent returned nil --
+	// otherwise the correlation map grows without bound.
 	if requestID != nil {
 		et.mu.Lock()
 		if requestEvent, exists := et.requestTracker[requestID]; exists {
-			duration := time.Since(requestEvent.Timestamp)
-			event.Duration = &duration
+			if event != nil {
+				duration := time.Since(requestEvent.Timestamp)
+				event.Duration = &duration
+			}
 			delete(et.requestTracker, requestID)
 		}
 		et.mu.Unlock()
@@ -378,35 +383,6 @@ func (et *EventTracer) GetRecentEvents(count int) []*Event {
 }
 
 // GetEventsByType returns events filtered by type
-func (et *EventTracer) GetEventsByType(eventType EventType) []*Event {
-	et.mu.RLock()
-	defer et.mu.RUnlock()
-
-	var filtered []*Event
-	for _, event := range et.events {
-		if event.Type == eventType {
-			filtered = append(filtered, event)
-		}
-	}
-
-	return filtered
-}
-
-// GetEventsByMethod returns events filtered by method
-func (et *EventTracer) GetEventsByMethod(method string) []*Event {
-	et.mu.RLock()
-	defer et.mu.RUnlock()
-
-	var filtered []*Event
-	for _, event := range et.events {
-		if event.Method == method {
-			filtered = append(filtered, event)
-		}
-	}
-
-	return filtered
-}
-
 // GetStatistics returns event tracing statistics
 func (et *EventTracer) GetStatistics() map[string]interface{} {
 	et.mu.RLock()
