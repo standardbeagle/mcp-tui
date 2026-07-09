@@ -1,6 +1,8 @@
 package screens_test
 
 import (
+	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -134,8 +136,30 @@ func TestRootsScreen_AddRootViaForm(t *testing.T) {
 	if got.Name != "home" {
 		t.Errorf("Name = %q, want %q", got.Name, "home")
 	}
-	if got.URI != "file:///tmp/x" {
-		t.Errorf("URI = %q, want %q", got.URI, "file:///tmp/x")
+	// The screen resolves the typed path to an absolute file:// URI. Hard-coding
+	// "file:///tmp/x" only holds on POSIX: on Windows "/tmp/x" resolves against
+	// the current drive, so the URI carries a drive letter.
+	abs, err := filepath.Abs("/tmp/x")
+	if err != nil {
+		t.Fatalf("filepath.Abs: %v", err)
+	}
+	slashed := filepath.ToSlash(abs)
+	if !strings.HasPrefix(slashed, "/") {
+		slashed = "/" + slashed
+	}
+	want := (&url.URL{Scheme: "file", Path: slashed}).String()
+
+	if got.URI != want {
+		t.Errorf("URI = %q, want %q", got.URI, want)
+	}
+
+	// A drive letter must never end up as the URI authority.
+	parsed, err := url.Parse(got.URI)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", got.URI, err)
+	}
+	if parsed.Host != "" {
+		t.Errorf("URI %q has host %q; a file URI must have an empty authority", got.URI, parsed.Host)
 	}
 }
 

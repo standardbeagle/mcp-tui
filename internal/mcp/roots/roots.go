@@ -126,6 +126,24 @@ func LoadFile(path string) ([]*officialMCP.Root, error) {
 	return out, nil
 }
 
+// absPathToFileURI converts an already-absolute OS path into a file:// URI.
+//
+// On Unix an absolute path already starts with "/". On Windows filepath.Abs
+// produces a drive path such as C:\foo\bar, which slashes to "C:/foo/bar" --
+// with no leading slash. url.URL.String() then reads the first segment as the
+// authority and emits "file://C:/foo/bar", where "C:" is the *host*. A file URI
+// needs "file:///C:/foo/bar", so the slash is added explicitly.
+//
+// It takes the path rather than deriving it so the Windows behaviour can be
+// tested from any platform.
+func absPathToFileURI(abs string) string {
+	slashed := filepath.ToSlash(abs)
+	if !strings.HasPrefix(slashed, "/") {
+		slashed = "/" + slashed
+	}
+	return (&url.URL{Scheme: "file", Path: slashed}).String()
+}
+
 // pathToFileURI normalizes a path-or-URI string into a file:// URI. Already-
 // well-formed file:// URIs are passed through. Other schemes are rejected.
 // Bare paths are made absolute (relative to the current working directory)
@@ -152,8 +170,5 @@ func pathToFileURI(input string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve %q to absolute path: %w", input, err)
 	}
-	// On Unix, file:// + abs path is well-formed. On Windows, filepath.Abs
-	// produces something like C:\foo\bar, which needs to be converted. The
-	// (&url.URL{}).String() form takes care of escaping in either case.
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}).String(), nil
+	return absPathToFileURI(abs), nil
 }

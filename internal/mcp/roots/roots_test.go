@@ -1,6 +1,7 @@
 package roots_test
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,12 +20,46 @@ func TestParseFlag_NamedAbsolute(t *testing.T) {
 	if r.Name != "home" {
 		t.Errorf("Name = %q, want %q", r.Name, "home")
 	}
-	if r.URI != "file:///tmp/x" {
-		t.Errorf("URI = %q, want %q", r.URI, "file:///tmp/x")
+	if want := wantFileURI(t, "/tmp/x"); r.URI != want {
+		t.Errorf("URI = %q, want %q", r.URI, want)
 	}
+	assertWellFormedFileURI(t, r.URI)
 }
 
 // TestParseFlag_UnnamedAbsolute confirms a bare absolute path is accepted
+
+// wantFileURI is the file:// URI the package should produce for path on the
+// current platform. Hard-coding "file:///tmp/x" only holds on POSIX: on Windows
+// filepath.Abs("/tmp/x") yields a drive path such as D:\tmp\x.
+func wantFileURI(t *testing.T, path string) string {
+	t.Helper()
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("filepath.Abs(%q): %v", path, err)
+	}
+	slashed := filepath.ToSlash(abs)
+	if !strings.HasPrefix(slashed, "/") {
+		slashed = "/" + slashed
+	}
+	return (&url.URL{Scheme: "file", Path: slashed}).String()
+}
+
+// assertWellFormedFileURI pins the invariant the Windows bug violated: a file
+// URI must carry no authority, so a drive letter can never become the host.
+func assertWellFormedFileURI(t *testing.T, uri string) {
+	t.Helper()
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", uri, err)
+	}
+	if parsed.Scheme != "file" {
+		t.Errorf("URI %q has scheme %q, want file", uri, parsed.Scheme)
+	}
+	if parsed.Host != "" {
+		t.Errorf("URI %q has host %q; a file URI must have an empty authority", uri, parsed.Host)
+	}
+}
+
 // without a name and is converted to a file:// URI.
 func TestParseFlag_UnnamedAbsolute(t *testing.T) {
 	r, err := roots.ParseFlag("/tmp/x")
@@ -34,9 +69,10 @@ func TestParseFlag_UnnamedAbsolute(t *testing.T) {
 	if r.Name != "" {
 		t.Errorf("Name = %q, want empty", r.Name)
 	}
-	if r.URI != "file:///tmp/x" {
-		t.Errorf("URI = %q, want %q", r.URI, "file:///tmp/x")
+	if want := wantFileURI(t, "/tmp/x"); r.URI != want {
+		t.Errorf("URI = %q, want %q", r.URI, want)
 	}
+	assertWellFormedFileURI(t, r.URI)
 }
 
 // TestParseFlag_Relative confirms relative paths are resolved against the
@@ -145,9 +181,10 @@ func TestLoadFile_HappyPath(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("len(got) = %d, want 2", len(got))
 	}
-	if got[0].Name != "home" || got[0].URI != "file:///tmp/home" {
-		t.Errorf("got[0] = %+v, want {home, file:///tmp/home}", got[0])
+	if want := wantFileURI(t, "/tmp/home"); got[0].Name != "home" || got[0].URI != want {
+		t.Errorf("got[0] = %+v, want {home, %s}", got[0], want)
 	}
+	assertWellFormedFileURI(t, got[0].URI)
 	if got[1].Name != "etc" || got[1].URI != "file:///etc" {
 		t.Errorf("got[1] = %+v, want {etc, file:///etc}", got[1])
 	}
