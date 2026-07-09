@@ -9,11 +9,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newIsolatedConnectionScreen builds a connection screen against an empty home
+// directory. Without this the screen loads the developer's real
+// ~/.config/mcp-tui/connections.json, so its default view -- and therefore
+// which handler receives a key press -- depends on the machine running the test.
+func newIsolatedConnectionScreen(t *testing.T) *ConnectionScreen {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir()) // os.UserHomeDir on Windows
+	return NewConnectionScreen(&config.Config{})
+}
+
 // The connection screen defaults to combined-command input, where the command
 // lives in combinedInput rather than commandInput. Validating commandInput in
 // that mode rejected every default STDIO connection attempt.
 func TestValidateInputsUsesCombinedCommand(t *testing.T) {
-	cs := NewConnectionScreen(&config.Config{})
+	cs := newIsolatedConnectionScreen(t)
 	require.True(t, cs.usesCombined, "combined input is expected to be the default")
 	require.Equal(t, config.TransportStdio, cs.transportType)
 
@@ -28,7 +39,7 @@ func TestValidateInputsUsesCombinedCommand(t *testing.T) {
 }
 
 func TestValidateInputsRejectsEmptyCombinedCommand(t *testing.T) {
-	cs := NewConnectionScreen(&config.Config{})
+	cs := newIsolatedConnectionScreen(t)
 	cs.combinedInput.SetValue("")
 
 	command, _ := cs.resolveCommand()
@@ -36,7 +47,7 @@ func TestValidateInputsRejectsEmptyCombinedCommand(t *testing.T) {
 }
 
 func TestResolveCommandUsesSeparateFieldsWhenNotCombined(t *testing.T) {
-	cs := NewConnectionScreen(&config.Config{})
+	cs := newIsolatedConnectionScreen(t)
 	cs.usesCombined = false
 	cs.commandInput.SetValue("npx")
 	cs.argsInput.SetValue("-y server")
@@ -50,10 +61,7 @@ func TestResolveCommandUsesSeparateFieldsWhenNotCombined(t *testing.T) {
 // 'q' is a quit shortcut only when no text field has focus. Otherwise the
 // letter could never be typed into a command, args, or URL value.
 func TestQuitKeyDoesNotFireWhileTyping(t *testing.T) {
-	cs := NewConnectionScreen(&config.Config{})
-	// Pin manual-entry mode: the default view depends on whether the machine
-	// running the test happens to have saved connections on disk.
-	cs.viewMode = "manual"
+	cs := newIsolatedConnectionScreen(t)
 	// focusIndex 1 is the command field; updateInputFocus focuses it, which is
 	// how the screen enters text-entry state in normal use.
 	cs.updateMaxFocus()
@@ -72,7 +80,7 @@ func TestQuitKeyDoesNotFireWhileTyping(t *testing.T) {
 }
 
 func TestQuitKeyFiresWhenNoInputFocused(t *testing.T) {
-	cs := NewConnectionScreen(&config.Config{})
+	cs := newIsolatedConnectionScreen(t)
 	cs.combinedInput.Blur()
 	cs.commandInput.Blur()
 	cs.argsInput.Blur()
@@ -86,7 +94,7 @@ func TestQuitKeyFiresWhenNoInputFocused(t *testing.T) {
 
 // ctrl+c always quits, focused input or not.
 func TestCtrlCAlwaysQuits(t *testing.T) {
-	cs := NewConnectionScreen(&config.Config{})
+	cs := newIsolatedConnectionScreen(t)
 	cs.combinedInput.Focus()
 
 	_, cmd := cs.handleKeyMsg(tea.KeyMsg{Type: tea.KeyCtrlC})
