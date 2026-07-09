@@ -17,7 +17,7 @@ GOFMT=$(GOCMD) fmt
 # Build flags
 LDFLAGS=-ldflags "-X main.version=$(VERSION)"
 
-.PHONY: all build clean test coverage lint fmt vet deps install dev release help
+.PHONY: all build clean test race fmt-check ci coverage lint fmt vet deps install dev release help
 
 # Default target
 all: clean deps lint test build
@@ -40,6 +40,21 @@ test:
 	$(GOTEST) -v ./...
 
 # Run tests with coverage
+race:
+	@echo "Running tests with the race detector..."
+	$(GOTEST) -race ./internal/... -timeout 20m
+
+fmt-check:
+	@echo "Checking formatting..."
+	@unformatted="$$(gofmt -l . | grep -v '^vendor/' || true)"; \
+	if [ -n "$$unformatted" ]; then \
+		echo "These files are not gofmt'd:"; echo "$$unformatted"; exit 1; \
+	fi
+
+# Mirrors the CI workflow. Run this before pushing.
+ci: vet fmt-check test race
+	@echo "All CI checks passed."
+
 coverage:
 	@echo "Running tests with coverage..."
 	$(GOTEST) -v -coverprofile=coverage.out ./...
@@ -109,6 +124,9 @@ help:
 	@echo "  build      - Build the binary"
 	@echo "  clean      - Clean build artifacts"
 	@echo "  test       - Run tests"
+	@echo "  race       - Run tests with the race detector"
+	@echo "  fmt-check  - Fail if any file is not gofmt'd"
+	@echo "  ci         - Run everything CI runs (vet, fmt-check, test, race)"
 	@echo "  coverage   - Run tests with coverage"
 	@echo "  lint       - Run linter"
 	@echo "  fmt        - Format code"
