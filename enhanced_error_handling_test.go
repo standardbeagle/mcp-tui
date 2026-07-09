@@ -9,6 +9,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	mcpConfig "github.com/standardbeagle/mcp-tui/internal/mcp/config"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // TestEnhancedErrorHandlingEndToEnd tests the complete error handling flow
@@ -17,6 +18,12 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping end-to-end test in short mode")
 	}
+
+	missingVarCmd, missingVarArgs := testutil.ServerFailsWithStderr(t,
+		"Error: REQUIRED_VAR environment variable is required")
+	usageErrCmd, usageErrArgs := testutil.ServerFailsWithStderr(t,
+		"Usage: command directory options")
+	quickExitCmd, quickExitArgs := testutil.ServerExitsImmediately(t)
 
 	tests := []struct {
 		name                     string
@@ -29,8 +36,8 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 			name: "missing environment variable error",
 			connectionConfig: &config.ConnectionConfig{
 				Type:    config.TransportStdio,
-				Command: "python3",
-				Args:    []string{"-c", "import os, sys\nsys.stderr.write('Error: REQUIRED_VAR environment variable is required\\n')\nexit(1)"},
+				Command: missingVarCmd,
+				Args:    missingVarArgs,
 			},
 			expectedErrorContains: []string{
 				"REQUIRED_VAR environment variable is required",
@@ -44,8 +51,8 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 			name: "usage error simulation",
 			connectionConfig: &config.ConnectionConfig{
 				Type:    config.TransportStdio,
-				Command: "python3",
-				Args:    []string{"-c", "import sys\nsys.stderr.write('Usage: command directory options\\n')\nexit(1)"},
+				Command: usageErrCmd,
+				Args:    usageErrArgs,
 			},
 			expectedErrorContains: []string{
 				"Usage: command directory options",
@@ -75,8 +82,8 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 			name: "successful command that exits quickly",
 			connectionConfig: &config.ConnectionConfig{
 				Type:    config.TransportStdio,
-				Command: "echo",
-				Args:    []string{"test output"},
+				Command: quickExitCmd,
+				Args:    quickExitArgs,
 			},
 			// This will fail at MCP protocol initialization level (not a real MCP server)
 			// but should pass pre-flight validation (command executes successfully)
@@ -183,6 +190,13 @@ func TestErrorHandlingRegressionPrevention(t *testing.T) {
 	}
 
 	// These are the exact scenarios from the original bug report
+	braveCmd, braveArgs := testutil.ServerFailsWithStderr(t,
+		"Error: BRAVE_API_KEY environment variable is required")
+	fsCmd, fsArgs := testutil.ServerFailsWithStderr(t,
+		"Usage: mcp-server-filesystem DIRECTORY")
+	pkgCmd, pkgArgs := testutil.ServerFailsWithStderr(t,
+		"npm error 404 Not Found - GET https://registry.npmjs.org/@modelcontextprotocol%2fserver-git")
+
 	bugReportScenarios := []struct {
 		name    string
 		command string
@@ -190,18 +204,18 @@ func TestErrorHandlingRegressionPrevention(t *testing.T) {
 	}{
 		{
 			name:    "brave-search missing API key",
-			command: "python3",
-			args:    []string{"-c", "import sys\nsys.stderr.write('Error: BRAVE_API_KEY environment variable is required\\n')\nsys.exit(1)"},
+			command: braveCmd,
+			args:    braveArgs,
 		},
 		{
 			name:    "filesystem missing arguments",
-			command: "python3",
-			args:    []string{"-c", "import sys\nsys.stderr.write('Usage: mcp-server-filesystem DIRECTORY\\n')\nsys.exit(1)"},
+			command: fsCmd,
+			args:    fsArgs,
 		},
 		{
 			name:    "package not found",
-			command: "python3",
-			args:    []string{"-c", "import sys\nsys.stderr.write('npm error 404 Not Found - GET https://registry.npmjs.org/@modelcontextprotocol%2fserver-git\\n')\nsys.exit(1)"},
+			command: pkgCmd,
+			args:    pkgArgs,
 		},
 	}
 
@@ -262,10 +276,11 @@ func TestWorkingServerCompatibility(t *testing.T) {
 	service := mcp.NewServiceWithConfig(mcpConfig.Default())
 	service.SetDebugMode(true)
 
+	runningCmd, runningArgs := testutil.ServerPrintsThenSleeps(t, "MCP server running on stdio", 10)
 	connectionConfig := &config.ConnectionConfig{
 		Type:    config.TransportStdio,
-		Command: "python3",
-		Args:    []string{"-c", "import time\nprint('MCP server running on stdio')\ntime.sleep(10)"},
+		Command: runningCmd,
+		Args:    runningArgs,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

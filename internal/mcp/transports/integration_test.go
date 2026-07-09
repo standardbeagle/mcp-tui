@@ -2,12 +2,13 @@ package transports
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 func TestEnhancedSTDIOTransportIntegration(t *testing.T) {
@@ -15,6 +16,9 @@ func TestEnhancedSTDIOTransportIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+
+	// A real, launchable server command that behaves the same on every platform.
+	scriptCommand, scriptArgs := testutil.ServerExitsImmediately(t)
 
 	tests := []struct {
 		name                string
@@ -47,16 +51,9 @@ func TestEnhancedSTDIOTransportIntegration(t *testing.T) {
 			expectedInOutput:  []string{"dangerous pattern"},
 		},
 		{
-			name:             "python help command (should work)",
-			command:          "python3",
-			args:             []string{"--help"},
-			expectError:      false,
-			expectedInOutput: []string{}, // We expect this to work
-		},
-		{
-			name:             "echo command (should work quickly)",
-			command:          "echo",
-			args:             []string{"test"},
+			name:             "script command (should work)",
+			command:          scriptCommand,
+			args:             scriptArgs,
 			expectError:      false,
 			expectedInOutput: []string{}, // We expect this to work
 		},
@@ -123,16 +120,11 @@ func TestEnhancedSTDIOStartsProcessOnce(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	dir := t.TempDir()
-	counter := filepath.Join(dir, "invocations")
-	script := filepath.Join(dir, "server.sh")
-	body := fmt.Sprintf("#!/bin/sh\necho x >> %s\nsleep 0.2\n", counter)
-	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
-		t.Fatalf("writing script: %v", err)
-	}
+	counter := filepath.Join(t.TempDir(), "invocations")
+	command, args := testutil.ServerRecordsInvocation(t, counter, 0.5)
 
 	transport, _, err := createEnhancedSTDIOTransport(
-		&TransportConfig{Type: TransportSTDIO, Command: script},
+		&TransportConfig{Type: TransportSTDIO, Command: command, Args: args},
 		NewContextStrategy(TransportSTDIO),
 	)
 	if err != nil {
@@ -147,7 +139,12 @@ func TestEnhancedSTDIOStartsProcessOnce(t *testing.T) {
 	if _, err := transport.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
+
+	// Wait for the child to record its first invocation, then give a second one
+	// a fair chance to appear. Polling beats a fixed sleep: the interpreter's
+	// startup cost varies by platform.
+	waitForFile(t, counter, 10*time.Second)
+	time.Sleep(500 * time.Millisecond)
 
 	data, err := os.ReadFile(counter)
 	if err != nil {
@@ -155,6 +152,21 @@ func TestEnhancedSTDIOStartsProcessOnce(t *testing.T) {
 	}
 	if got := strings.Count(string(data), "x"); got != 1 {
 		t.Errorf("server command ran %d times, want exactly 1", got)
+	}
+}
+
+// waitForFile blocks until path exists, or fails the test.
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", path)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -185,14 +197,11 @@ func TestEnhancedSTDIOStartupDiagnostics(t *testing.T) {
 	})
 
 	t.Run("server exits with stderr diagnostics", func(t *testing.T) {
-		script := filepath.Join(t.TempDir(), "failing-server.sh")
-		body := "#!/bin/sh\necho 'Error: REQUIRED_VAR environment variable is required' >&2\nexit 1\n"
-		if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
-			t.Fatalf("writing script: %v", err)
-		}
+		command, args := testutil.ServerFailsWithStderr(t,
+			"Error: REQUIRED_VAR environment variable is required")
 
 		enhanced, _, err := createEnhancedSTDIOTransport(
-			&TransportConfig{Type: TransportSTDIO, Command: script},
+			&TransportConfig{Type: TransportSTDIO, Command: command, Args: args},
 			NewContextStrategy(TransportSTDIO),
 		)
 		if err != nil {
@@ -209,9 +218,20 @@ func TestEnhancedSTDIOStartupDiagnostics(t *testing.T) {
 			t.Fatal("enhanced STDIO transport does not implement StartupDiagnoser")
 		}
 
-		startupErr := diagnoser.StartupError()
-		if startupErr == nil {
-			t.Fatal("Expected a startup error from captured stderr, got nil")
+		// In production StartupError runs only after the handshake has failed, by
+		// which point the server has exited and flushed stderr. Here we call it
+		// straight after Connect, so we must wait for the interpreter to start
+		// and die -- StartupError's own window is shorter than pwsh's startup.
+		var startupErr error
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			if startupErr = diagnoser.StartupError(); startupErr != nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("Expected a startup error from captured stderr, got nil")
+			}
+			time.Sleep(50 * time.Millisecond)
 		}
 		if !strings.Contains(startupErr.Error(), "REQUIRED_VAR environment variable is required") {
 			t.Errorf("Expected stderr in error, got: %v", startupErr)

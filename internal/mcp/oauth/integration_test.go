@@ -23,6 +23,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // TestServiceWiring_OAuthAttached creates a service, supplies an OAuth
@@ -67,9 +68,13 @@ func TestServiceWiring_OAuthAttached(t *testing.T) {
 // OAuth config is supplied (the dominant case for STDIO connections).
 func TestServiceWiring_NoOAuth(t *testing.T) {
 	svc := mcp.NewService()
+	// A process that exits cleanly without speaking MCP. The connection fails;
+	// what matters here is that no OAuth handler was built for a STDIO config.
+	command, args := testutil.ServerExitsImmediately(t)
 	connCfg := &config.ConnectionConfig{
 		Type:    config.TransportStdio,
-		Command: "true", // /usr/bin/true exits cleanly; SDK still won't talk MCP
+		Command: command,
+		Args:    args,
 	}
 	_ = svc.Connect(t.Context(), connCfg)
 	assert.Nil(t, svc.GetOAuthHandler())
