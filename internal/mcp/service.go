@@ -82,9 +82,14 @@ func logMCPNotification(method string, params interface{}) {
 
 // service implements the Service interface using the official MCP Go SDK
 type service struct {
-	info               *ServerInfo
-	requestID          int
-	mu                 sync.Mutex
+	info      *ServerInfo
+	requestID int
+	mu        sync.Mutex
+
+	// connectEpoch is bumped by every Disconnect. Connect captures it before
+	// releasing s.mu for the handshake and re-checks it afterwards, so a
+	// Disconnect that lands mid-handshake is not silently overwritten.
+	connectEpoch       uint64
 	debugMode          bool
 	transportFactory   transports.TransportFactory
 	sessionManager     *session.Manager
@@ -448,8 +453,10 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	}
 
 	// Snapshot the session manager before releasing the lock; Disconnect may
-	// swap service fields while the handshake is in flight.
+	// swap service fields while the handshake is in flight. The epoch lets us
+	// detect that afterwards.
 	sessionManager := s.sessionManager
+	epoch := s.connectEpoch
 	s.mu.Unlock()
 
 	// Blocking handshake, performed without the service lock. The session
@@ -465,8 +472,26 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		return fmt.Errorf("failed to connect to MCP server: %w", err)
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	return s.commitConnection(epoch, sessionManager)
+}
+
+// commitConnection publishes a completed handshake, unless a Disconnect landed
+// while it was in flight.
+//
+// A Disconnect that runs before the session manager enters its own Connect has
+// no context to cancel, so the handshake succeeds into a service that considers
+// itself disconnected and has already dropped its client reference. The epoch
+// detects that and closes the orphaned session instead of leaking the server
+// process.
+func (s *service) commitConnection(epoch uint64, sessionManager *session.Manager) error {
+	if s.connectEpoch != epoch {
+		// sessionManager.Disconnect takes only the session lock, never s.mu.
+		if err := sessionManager.Disconnect(); err != nil {
+			debug.Error("Failed to close session abandoned by disconnect", debug.F("error", err))
+		}
+		return fmt.Errorf("connection aborted: disconnected during connect")
+	}
+
 	return s.updateServerInfo()
 }
 
@@ -742,6 +767,9 @@ func serverCapabilitiesToFlagMap(c *officialMCP.ServerCapabilities) map[string]i
 func (s *service) Disconnect() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Invalidate any Connect currently blocked in its handshake.
+	s.connectEpoch++
 
 	if s.sessionManager == nil {
 		return nil // Already disconnected
