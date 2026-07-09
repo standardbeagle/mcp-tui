@@ -30,9 +30,10 @@ func TestValidateInputsUsesCombinedCommand(t *testing.T) {
 
 	cs.combinedInput.SetValue("npx -y @modelcontextprotocol/server-everything stdio")
 
-	command, args := cs.resolveCommand()
+	command, args, err := cs.resolveCommand()
+	require.NoError(t, err)
 	assert.Equal(t, "npx", command)
-	assert.Equal(t, "-y @modelcontextprotocol/server-everything stdio", args)
+	assert.Equal(t, []string{"-y", "@modelcontextprotocol/server-everything", "stdio"}, args)
 
 	assert.NoError(t, cs.validateInputs(command, ""),
 		"a command typed into the combined field must satisfy STDIO validation")
@@ -42,7 +43,8 @@ func TestValidateInputsRejectsEmptyCombinedCommand(t *testing.T) {
 	cs := newIsolatedConnectionScreen(t)
 	cs.combinedInput.SetValue("")
 
-	command, _ := cs.resolveCommand()
+	command, _, err := cs.resolveCommand()
+	require.NoError(t, err)
 	assert.Error(t, cs.validateInputs(command, ""))
 }
 
@@ -52,10 +54,21 @@ func TestResolveCommandUsesSeparateFieldsWhenNotCombined(t *testing.T) {
 	cs.commandInput.SetValue("npx")
 	cs.argsInput.SetValue("-y server")
 
-	command, args := cs.resolveCommand()
+	command, args, err := cs.resolveCommand()
+	require.NoError(t, err)
 	assert.Equal(t, "npx", command)
-	assert.Equal(t, "-y server", args)
+	assert.Equal(t, []string{"-y", "server"}, args)
 	assert.NoError(t, cs.validateInputs(command, ""))
+}
+
+func TestResolveCommandPreservesQuotedCombinedArgs(t *testing.T) {
+	cs := newIsolatedConnectionScreen(t)
+	cs.combinedInput.SetValue(`node server.js --label "my project" --root 'src files'`)
+
+	command, args, err := cs.resolveCommand()
+	require.NoError(t, err)
+	assert.Equal(t, "node", command)
+	assert.Equal(t, []string{"server.js", "--label", "my project", "--root", "src files"}, args)
 }
 
 // 'q' is a quit shortcut only when no text field has focus. Otherwise the

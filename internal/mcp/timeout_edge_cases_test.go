@@ -18,6 +18,8 @@ import (
 
 // TestConnectionTimeouts tests various timeout scenarios
 func TestConnectionTimeouts(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Connection_Establishment_Timeout", func(t *testing.T) {
 		// Test connection to non-existent port (will timeout)
 		service := NewService()
@@ -237,6 +239,8 @@ func TestConnectionTimeouts(t *testing.T) {
 
 // TestNetworkInterruption tests network interruption scenarios
 func TestNetworkInterruption(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Connection_Interruption_During_Operation", func(t *testing.T) {
 		var serverStopped int32
 
@@ -359,6 +363,8 @@ func TestNetworkInterruption(t *testing.T) {
 
 // TestTimeoutRecovery tests recovery from timeout scenarios
 func TestTimeoutRecovery(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Recovery_After_Timeout", func(t *testing.T) {
 		var requestCount int32
 
@@ -437,6 +443,8 @@ func TestTimeoutRecovery(t *testing.T) {
 
 // TestEdgeCaseTimeouts tests unusual timeout scenarios
 func TestEdgeCaseTimeouts(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Zero_Timeout", func(t *testing.T) {
 		service := NewService()
 		ctx, cancel := context.WithTimeout(context.Background(), 0)

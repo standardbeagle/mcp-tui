@@ -13,6 +13,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // newSDKTestServer boots an httptest server backed by the SDK's own
@@ -22,6 +23,7 @@ import (
 // depending on an external process.
 func newSDKTestServer(t *testing.T, register func(*officialMCP.Server)) *httptest.Server {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	getServer := func(*http.Request) *officialMCP.Server {
 		srv := officialMCP.NewServer(
 			&officialMCP.Implementation{Name: "conform-test", Version: "0.0.0"},

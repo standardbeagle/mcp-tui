@@ -49,11 +49,12 @@ const (
 
 // ConnectionConfig holds connection-specific settings
 type ConnectionConfig struct {
-	Type    TransportType
-	Command string
-	Args    []string
-	URL     string
-	Headers map[string]string
+	Type        TransportType
+	Command     string
+	Args        []string
+	URL         string
+	Headers     map[string]string
+	Environment map[string]string
 
 	// OAuth carries optional OAuth 2.0 client configuration. When non-nil
 	// and the transport is HTTP/streamable-HTTP, the service plugs an

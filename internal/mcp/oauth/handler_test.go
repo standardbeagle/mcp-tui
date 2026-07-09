@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -311,6 +312,8 @@ func TestPreregistered(t *testing.T) {
 // TestLocalServerFetcher_RedirectURL verifies that LocalServerFetcher binds
 // a loopback listener and produces a callback URL matching its address.
 func TestLocalServerFetcher_RedirectURL(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	f := newLocalServerFetcher("127.0.0.1", 0)
 	defer f.Close() //nolint:errcheck
 
@@ -328,6 +331,8 @@ func TestLocalServerFetcher_RedirectURL(t *testing.T) {
 // TestLocalServerFetcher_Fetch_HappyPath issues a callback to the local
 // server and verifies the returned AuthorizationResult.
 func TestLocalServerFetcher_Fetch_HappyPath(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	f := newLocalServerFetcher("127.0.0.1", 0)
 	redirectURL := f.RedirectURL()
 	require.NotEmpty(t, redirectURL)
@@ -357,6 +362,8 @@ func TestLocalServerFetcher_Fetch_HappyPath(t *testing.T) {
 // TestLocalServerFetcher_Fetch_OAuthError checks the error path when the
 // OAuth server returns ?error= instead of ?code=.
 func TestLocalServerFetcher_Fetch_OAuthError(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	f := newLocalServerFetcher("127.0.0.1", 0)
 	redirectURL := f.RedirectURL()
 

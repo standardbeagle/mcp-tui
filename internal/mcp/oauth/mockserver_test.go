@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // mockAuthServer is a minimal RFC 6749 / RFC 9728 / RFC 8414 surface used
@@ -54,6 +56,7 @@ type mockAuthServer struct {
 
 func newMockAuthServer(t *testing.T) *mockAuthServer {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	m := &mockAuthServer{
 		t:                 t,
 		clientID:          "test-client",

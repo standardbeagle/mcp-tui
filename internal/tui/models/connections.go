@@ -443,11 +443,24 @@ func (cm *ConnectionsManager) updateRecentConnections(serverID string, success b
 // ToConnectionConfig converts a ConnectionEntry to config.ConnectionConfig
 func (entry *ConnectionEntry) ToConnectionConfig() *config.ConnectionConfig {
 	return &config.ConnectionConfig{
-		Type:    entry.Transport,
-		Command: entry.Command,
-		Args:    entry.Args,
-		URL:     entry.URL,
+		Type:        entry.Transport,
+		Command:     entry.Command,
+		Args:        append([]string(nil), entry.Args...),
+		URL:         entry.URL,
+		Headers:     cloneStringMap(entry.Headers),
+		Environment: cloneStringMap(entry.Environment),
 	}
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // GetRecentConnections returns recent connections sorted by last used
@@ -494,7 +507,6 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 		"mcp-config.json",
 		"connections.json",
 		".vscode/mcp.json",
-		"package.json", // May contain MCP server configs
 	}
 
 	// Check current directory
@@ -585,37 +597,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 				serverCount = len(nativeConfig.Servers)
 				config.Servers = cm.extractNativeServers(nativeConfig.Servers)
 			} else {
-				// Check for package.json with MCP references - only include if has actual MCP servers
-				if filepath.Base(filePath) == "package.json" {
-					var packageJSON map[string]interface{}
-					if err := json.Unmarshal(data, &packageJSON); err == nil {
-						if scripts, ok := packageJSON["scripts"].(map[string]interface{}); ok {
-							mcpScriptCount := 0
-							for name, script := range scripts {
-								if scriptStr, ok := script.(string); ok {
-									if strings.Contains(strings.ToLower(name), "mcp") ||
-										strings.Contains(strings.ToLower(scriptStr), "mcp") ||
-										strings.Contains(strings.ToLower(scriptStr), "model-context-protocol") {
-										mcpScriptCount++
-									}
-								}
-							}
-							if mcpScriptCount > 0 {
-								config.Format = "package.json"
-								serverCount = mcpScriptCount
-							} else {
-								// No MCP-related content found
-								config.Format = "unknown"
-							}
-						} else {
-							config.Format = "unknown"
-						}
-					} else {
-						config.Format = "unknown"
-					}
-				} else {
-					config.Format = "unknown"
-				}
+				config.Format = "unknown"
 			}
 		}
 	}

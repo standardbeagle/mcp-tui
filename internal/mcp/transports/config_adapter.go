@@ -16,6 +16,7 @@ func FromConnectionConfig(config *configPkg.ConnectionConfig, debugMode bool, ti
 		Type:             TransportType(config.Type),
 		Command:          config.Command,
 		Args:             config.Args,
+		Environment:      config.Environment,
 		URL:              config.URL,
 		MCPMethodHeaders: config.MCPMethodHeaders,
 		StaticHeaders:    config.Headers,
@@ -33,9 +34,11 @@ func ToConnectionConfig(config *TransportConfig) *configPkg.ConnectionConfig {
 	}
 
 	return &configPkg.ConnectionConfig{
-		Type:    configPkg.TransportType(config.Type),
-		Command: config.Command,
-		Args:    config.Args,
-		URL:     config.URL,
+		Type:        configPkg.TransportType(config.Type),
+		Command:     config.Command,
+		Args:        config.Args,
+		URL:         config.URL,
+		Headers:     config.StaticHeaders,
+		Environment: config.Environment,
 	}
 }

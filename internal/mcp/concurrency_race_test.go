@@ -77,6 +77,8 @@ func mockMCPHTTPHandler(serverName string) http.HandlerFunc {
 
 // TestConcurrentServiceOperations tests concurrent operations on MCP service
 func TestConcurrentServiceOperations(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Concurrent_Tool_Execution", func(t *testing.T) {
 		// Server that tracks concurrent requests
 		var activeRequests int64
@@ -325,6 +327,7 @@ func TestDataRaceDetection(t *testing.T) {
 	if !isRaceEnabled() {
 		t.Skip("Race detector not enabled, skipping race detection tests")
 	}
+	requireLocalListener(t)
 
 	t.Run("Service_Info_Race_Detection", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +474,8 @@ func TestDataRaceDetection(t *testing.T) {
 
 // TestMemoryConsistencyUnderConcurrency tests memory consistency under concurrent access
 func TestMemoryConsistencyUnderConcurrency(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Service_Connection_State_Consistency", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -649,6 +654,8 @@ func TestMemoryConsistencyUnderConcurrency(t *testing.T) {
 
 // TestConcurrentResourceAccess tests concurrent access to shared resources
 func TestConcurrentResourceAccess(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Multiple_Services_Same_Server", func(t *testing.T) {
 		var requestCounter int64
 

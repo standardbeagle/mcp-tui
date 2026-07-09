@@ -32,6 +32,8 @@ import (
 // have built and stashed the OAuth handler before the transport tried to
 // dial.
 func TestServiceWiring_OAuthAttached(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	// Use httptest server URL just to keep Validate() happy with http://.
 	srv := httptest.NewServer(nil)
 	defer srv.Close()

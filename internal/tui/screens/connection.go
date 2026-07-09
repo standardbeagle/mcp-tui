@@ -816,7 +816,7 @@ func (cs *ConnectionScreen) updateInputFocus() {
 
 // handleConnect processes the connection attempt
 func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
-	command, args := cs.resolveCommand()
+	command, args, err := cs.resolveCommand()
 	url := cs.urlInput.Value()
 
 	cs.logger.Info("Attempting to connect",
@@ -827,6 +827,10 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 
 	// Validate the resolved values rather than the raw fields: in combined
 	// mode the command lives in combinedInput, not commandInput.
+	if err != nil {
+		cs.SetError(err)
+		return cs, nil
+	}
 	if err := cs.validateInputs(command, url); err != nil {
 		cs.SetError(err)
 		return cs, nil
@@ -836,7 +840,7 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 	connConfig := &config.ConnectionConfig{
 		Type:    cs.transportType,
 		Command: command,
-		Args:    strings.Fields(args),
+		Args:    args,
 		URL:     url,
 	}
 
@@ -867,18 +871,25 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 
 // resolveCommand returns the command and argument string for the current
 // transport, reading from whichever input the user is actually editing.
-func (cs *ConnectionScreen) resolveCommand() (command, args string) {
+func (cs *ConnectionScreen) resolveCommand() (command string, args []string, err error) {
 	if cs.transportType == config.TransportStdio && cs.usesCombined {
-		fields := strings.Fields(cs.combinedInput.Value())
+		fields, err := config.ParseCommandLine(cs.combinedInput.Value())
+		if err != nil {
+			return "", nil, err
+		}
 		if len(fields) > 0 {
 			command = fields[0]
 			if len(fields) > 1 {
-				args = strings.Join(fields[1:], " ")
+				args = fields[1:]
 			}
 		}
-		return command, args
+		return command, args, nil
 	}
-	return cs.commandInput.Value(), cs.argsInput.Value()
+	args, err = config.ParseCommandLine(cs.argsInput.Value())
+	if err != nil {
+		return "", nil, err
+	}
+	return cs.commandInput.Value(), args, nil
 }
 
 // validateInputs validates the resolved connection values

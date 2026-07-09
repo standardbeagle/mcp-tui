@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/standardbeagle/mcp-tui/internal/cli/conform"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // withConformParentFlags adds the persistent flags that main.go normally
@@ -39,6 +40,7 @@ func withConformParentFlags(cmd *cobra.Command) *cobra.Command {
 // self-contained (no implicit cross-test dependency).
 func newSDKConformServer(t *testing.T, register func(*officialMCP.Server)) *httptest.Server {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	getServer := func(*http.Request) *officialMCP.Server {
 		s := officialMCP.NewServer(&officialMCP.Implementation{Name: "conform-cli-test", Version: "0.0.0"}, nil)
 		if register != nil {

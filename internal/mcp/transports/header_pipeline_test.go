@@ -17,6 +17,8 @@ import (
 // path and the iter-14 static headers / response observer paths cooperate
 // rather than overwriting each other.
 func TestHeaderPipeline_FullStackForwardsAndObserves(t *testing.T) {
+	requireLocalListener(t)
+
 	// Track what the server saw — these assertions verify that --header
 	// values reach the wire alongside SEP-2243 headers without conflict.
 	var (
@@ -105,6 +107,8 @@ func TestHeaderPipeline_FullStackForwardsAndObserves(t *testing.T) {
 // bearing assertion for acceptance criterion 5: the debug pane must show
 // the MCP-Method header alongside other request headers.
 func TestHeaderPipeline_ObserverSeesMethodHeaders(t *testing.T) {
+	requireLocalListener(t)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

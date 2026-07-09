@@ -29,8 +29,9 @@ type TransportConfig struct {
 	Type TransportType
 
 	// STDIO specific
-	Command string
-	Args    []string
+	Command     string
+	Args        []string
+	Environment map[string]string
 
 	// HTTP/SSE specific
 	URL        string

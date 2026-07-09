@@ -115,8 +115,8 @@ func TestCommitConnectionRejectsStaleEpoch(t *testing.T) {
 	svc.mu.Lock()
 	svc.sessionManager = sm
 	svc.connectEpoch = 7 // a Disconnect happened after our snapshot
-	err = svc.commitConnection(6, sm)
 	svc.mu.Unlock()
+	err = svc.commitConnection(6, sm)
 
 	require.Error(t, err, "a stale epoch must abort the connection")
 	assert.Contains(t, err.Error(), "aborted")
@@ -144,8 +144,8 @@ func TestCommitConnectionAcceptsCurrentEpoch(t *testing.T) {
 	svc.mu.Lock()
 	svc.sessionManager = sm
 	svc.connectEpoch = 3
-	err = svc.commitConnection(3, sm)
 	svc.mu.Unlock()
+	err = svc.commitConnection(3, sm)
 
 	require.NoError(t, err)
 	assert.True(t, sm.IsConnected())

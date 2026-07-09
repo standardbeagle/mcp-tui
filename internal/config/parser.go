@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"strings"
+	"unicode"
 )
 
 // ParsedArgs represents the result of parsing command line arguments
@@ -30,7 +32,10 @@ func ParseConnectionString(connStr string) *ConnectionConfig {
 	}
 
 	// Otherwise it's a command string
-	parts := strings.Fields(connStr)
+	parts, err := ParseCommandLine(connStr)
+	if err != nil {
+		return nil
+	}
 	if len(parts) == 0 {
 		return nil
 	}
@@ -40,6 +45,71 @@ func ParseConnectionString(connStr string) *ConnectionConfig {
 		Command: parts[0],
 		Args:    parts[1:],
 	}
+}
+
+// ParseCommandLine splits a single command line into argv-style fields without
+// invoking a shell. It supports single quotes, double quotes, and backslash
+// escaping outside single quotes. Shell operators are not interpreted; command
+// safety is still enforced later by ValidateCommand.
+func ParseCommandLine(input string) ([]string, error) {
+	var fields []string
+	var current strings.Builder
+	var quote rune
+	escaped := false
+	inField := false
+
+	for _, r := range input {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			inField = true
+			continue
+		}
+
+		if quote != '\'' && r == '\\' {
+			escaped = true
+			inField = true
+			continue
+		}
+
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+				inField = true
+				continue
+			}
+			current.WriteRune(r)
+			inField = true
+			continue
+		}
+
+		switch {
+		case r == '\'' || r == '"':
+			quote = r
+			inField = true
+		case unicode.IsSpace(r):
+			if inField {
+				fields = append(fields, current.String())
+				current.Reset()
+				inField = false
+			}
+		default:
+			current.WriteRune(r)
+			inField = true
+		}
+	}
+
+	if escaped {
+		return nil, fmt.Errorf("unterminated escape in command line")
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated quoted string in command line")
+	}
+	if inField {
+		fields = append(fields, current.String())
+	}
+
+	return fields, nil
 }
 
 // ParseArgs parses command line arguments to extract connection info and subcommands

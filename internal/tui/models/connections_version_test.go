@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
@@ -34,6 +35,67 @@ func TestUpdateLastUsedWithVersion(t *testing.T) {
 	}
 	if entry.LastUsed == nil {
 		t.Errorf("LastUsed not set after successful update")
+	}
+}
+
+func TestConnectionEntryToConnectionConfigPreservesMetadata(t *testing.T) {
+	entry := &ConnectionEntry{
+		ID:        "http-server",
+		Name:      "HTTP Server",
+		Transport: config.TransportHTTP,
+		URL:       "http://localhost:3000/mcp",
+		Headers: map[string]string{
+			"Authorization": "Bearer token",
+		},
+		Environment: map[string]string{
+			"API_KEY": "secret",
+		},
+	}
+
+	conn := entry.ToConnectionConfig()
+	if !reflect.DeepEqual(conn.Headers, entry.Headers) {
+		t.Fatalf("Headers = %#v; want %#v", conn.Headers, entry.Headers)
+	}
+	if !reflect.DeepEqual(conn.Environment, entry.Environment) {
+		t.Fatalf("Environment = %#v; want %#v", conn.Environment, entry.Environment)
+	}
+
+	conn.Headers["Authorization"] = "changed"
+	conn.Environment["API_KEY"] = "changed"
+	if entry.Headers["Authorization"] != "Bearer token" {
+		t.Fatalf("ToConnectionConfig aliased Headers back to source entry")
+	}
+	if entry.Environment["API_KEY"] != "secret" {
+		t.Fatalf("ToConnectionConfig aliased Environment back to source entry")
+	}
+}
+
+func TestDiscoverConfigFilesExcludesUnloadablePackageJSON(t *testing.T) {
+	cm := newTestConnectionsManager(t)
+	tmp := t.TempDir()
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("Chdir temp: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+
+	packageJSON := []byte(`{"scripts":{"mcp":"node server.js --mcp"}}`)
+	if err := os.WriteFile(filepath.Join(tmp, "package.json"), packageJSON, 0644); err != nil {
+		t.Fatalf("WriteFile package.json: %v", err)
+	}
+
+	files := cm.DiscoverConfigFiles()
+	for _, file := range files {
+		if file.Name == "package.json" {
+			t.Fatalf("DiscoverConfigFiles returned unloadable package.json: %#v", file)
+		}
 	}
 }
 

@@ -32,6 +32,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // readJSONRPCRequest decodes a JSON-RPC request from the POST body. Returns
@@ -118,6 +119,7 @@ func dispatchMethod(method string, serverName string) interface{} {
 // whose data buffer is empty without breaking the stream.
 func newEmptySSEServer(t *testing.T, emptyChunkCount *int64) *httptest.Server {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -236,6 +238,7 @@ func TestStreamableHTTP_TolerantOfEmptySSEChunks(t *testing.T) {
 // reject these — the SDK must use mime.ParseMediaType to match.
 func newParamContentTypeServer(t *testing.T, contentType string, observedCT *atomic.Value) *httptest.Server {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -340,6 +343,7 @@ func TestStreamableHTTP_TolerantOfParameterizedContentType(t *testing.T) {
 // look like in production.
 func newComboServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

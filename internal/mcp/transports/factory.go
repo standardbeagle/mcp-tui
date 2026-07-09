@@ -47,6 +47,9 @@ func (f *factory) createSTDIOTransport(config *TransportConfig, strategy Context
 
 	// Create command for STDIO transport
 	cmd := exec.Command(config.Command, config.Args...)
+	if len(config.Environment) > 0 {
+		cmd.Env = mergeEnvironment(config.Environment)
+	}
 
 	// Create STDIO transport using official SDK (direct struct initialization)
 	transport := &officialMCP.CommandTransport{

@@ -19,6 +19,8 @@ import (
 
 // TestTransportFallback tests the transport fallback mechanism
 func TestTransportFallback(t *testing.T) {
+	requireLocalListener(t)
+
 	// After a failed HTTP connection the service must be reusable: connecting
 	// over SSE to a working server has to succeed. The SSE server here is a real
 	// MCP server behind the SDK's SSE handler, not a hand-rolled mock that never
@@ -293,6 +295,8 @@ func closedLocalEndpoint(t *testing.T) string {
 }
 
 func TestTransportSpecificErrorHandling(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("HTTP_Transport_Network_Errors", func(t *testing.T) {
 		service := NewService()
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)

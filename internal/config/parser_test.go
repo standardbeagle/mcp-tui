@@ -59,6 +59,15 @@ func TestParseConnectionString(t *testing.T) {
 				Args:    []string{},
 			},
 		},
+		{
+			name:  "quoted arguments",
+			input: `node server.js --label "my project" --path 'dir with spaces'`,
+			expected: &ConnectionConfig{
+				Type:    TransportStdio,
+				Command: "node",
+				Args:    []string{"server.js", "--label", "my project", "--path", "dir with spaces"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -66,6 +75,59 @@ func TestParseConnectionString(t *testing.T) {
 			result := ParseConnectionString(tt.input)
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("ParseConnectionString(%q) = %+v, want %+v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseCommandLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:  "simple fields",
+			input: "npx -y server stdio",
+			want:  []string{"npx", "-y", "server", "stdio"},
+		},
+		{
+			name:  "quotes preserve spaces",
+			input: `node server.js --name "team workspace" --root 'src files'`,
+			want:  []string{"node", "server.js", "--name", "team workspace", "--root", "src files"},
+		},
+		{
+			name:  "backslash escapes space",
+			input: `node server.js --root work\ files`,
+			want:  []string{"node", "server.js", "--root", "work files"},
+		},
+		{
+			name:    "unterminated quote",
+			input:   `node "server`,
+			wantErr: true,
+		},
+		{
+			name:    "unterminated escape",
+			input:   `node server\`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseCommandLine(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ParseCommandLine(%q) error = nil; want error", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseCommandLine(%q) unexpected error: %v", tt.input, err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("ParseCommandLine(%q) = %#v; want %#v", tt.input, got, tt.want)
 			}
 		})
 	}

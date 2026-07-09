@@ -11,6 +11,8 @@ import (
 // transport. Inputs from --header KEY=VALUE land here; if the headers don't
 // reach the wire, downstream proxies and auth middleware never see them.
 func TestStaticHeadersRoundTripper_AppliesHeaders(t *testing.T) {
+	requireLocalListener(t)
+
 	var captured *http.Request
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured = r
@@ -45,6 +47,8 @@ func TestStaticHeadersRoundTripper_AppliesHeaders(t *testing.T) {
 // This keeps protocol-correct headers intact while still letting users add
 // custom forwarding values via --header.
 func TestStaticHeadersRoundTripper_DoesNotOverrideExisting(t *testing.T) {
+	requireLocalListener(t)
+
 	var captured *http.Request
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured = r
@@ -75,6 +79,8 @@ func TestStaticHeadersRoundTripper_DoesNotOverrideExisting(t *testing.T) {
 // "no --header flags" path: the wrapper must be a no-op so callers can use a
 // single code path regardless of whether the user supplied any flags.
 func TestStaticHeadersRoundTripper_NilHeadersPassthrough(t *testing.T) {
+	requireLocalListener(t)
+
 	var captured *http.Request
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured = r

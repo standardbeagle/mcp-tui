@@ -12,6 +12,7 @@ import (
 	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // Each test boots a tiny in-process HTTP server with controlled behavior,
@@ -29,6 +30,7 @@ import (
 // Used by the probes that look for "server rejects malformed request".
 func rejectIfHeader(t *testing.T, match func(*http.Request) bool) *httptest.Server {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if match(r) {
 			http.Error(w, "rejected", http.StatusForbidden)
@@ -43,6 +45,7 @@ func rejectIfHeader(t *testing.T, match func(*http.Request) bool) *httptest.Serv
 // of malformed headers — the negative test for security probes.
 func alwaysAcceptServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
@@ -155,6 +158,8 @@ func TestProbeContentType_AcceptsTextPlain_Fails(t *testing.T) {
 // 405 means the server simply doesn't expose GET — that's NOT a failure of
 // "Origin enforcement should be POST-only" because Origin wasn't the reason.
 func TestProbeOriginHeader_GetWithoutOriginAccepted(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -173,6 +178,8 @@ func TestProbeOriginHeader_GetWithoutOriginAccepted(t *testing.T) {
 // TestProbeOriginHeader_GetReturns403_Fails ensures the probe correctly
 // flags servers that over-broadly enforce Origin on GET.
 func TestProbeOriginHeader_GetReturns403_Fails(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.Header.Get("Origin") == "" {
 			http.Error(w, "origin required", http.StatusForbidden)
@@ -194,6 +201,8 @@ func TestProbeOriginHeader_GetReturns403_Fails(t *testing.T) {
 // --- ProbeMCPMethodHeaders -------------------------------------------------
 
 func TestProbeMCPMethodHeaders_TolerantServerPasses(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	var sawMethod, sawName atomic.Value
 	sawMethod.Store("")
 	sawName.Store("")
@@ -218,6 +227,8 @@ func TestProbeMCPMethodHeaders_TolerantServerPasses(t *testing.T) {
 }
 
 func TestProbeMCPMethodHeaders_HostileServerFails(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("MCP-Method") != "" {
 			// Unfriendly server explicitly rejects unknown advisory headers.
@@ -243,6 +254,8 @@ func TestProbeMCPMethodHeaders_HostileServerFails(t *testing.T) {
 // assertion is "the headers passed through cleanly", not "the call
 // succeeded end-to-end".
 func TestProbeMCPMethodHeaders_4xxWithoutHeaderRefPasses(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"missing required field"}`, http.StatusBadRequest)
 	}))
@@ -433,6 +446,8 @@ func TestAllPassed(t *testing.T) {
 // reads real-world rejection signals correctly without depending on our
 // hand-rolled mock servers.
 func TestProbeContentType_AgainstSDKHandler(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	getServer := func(*http.Request) *officialMCP.Server {
 		return officialMCP.NewServer(&officialMCP.Implementation{Name: "verify-test", Version: "0.0.0"}, nil)
 	}
@@ -449,6 +464,8 @@ func TestProbeContentType_AgainstSDKHandler(t *testing.T) {
 // TestProbeMCPMethodHeaders_AgainstSDKHandler confirms the SDK handler
 // tolerates SEP-2243 advisory headers (it should ignore unknown headers).
 func TestProbeMCPMethodHeaders_AgainstSDKHandler(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	getServer := func(*http.Request) *officialMCP.Server {
 		return officialMCP.NewServer(&officialMCP.Implementation{Name: "verify-test", Version: "0.0.0"}, nil)
 	}

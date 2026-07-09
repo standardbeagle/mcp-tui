@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -73,6 +75,9 @@ func createEnhancedSTDIOTransport(config *TransportConfig, strategy ContextStrat
 	// Create command for STDIO transport. The SDK wires stdin/stdout; stderr is
 	// ours to capture for diagnostics.
 	cmd := exec.Command(config.Command, config.Args...)
+	if len(config.Environment) > 0 {
+		cmd.Env = mergeEnvironment(config.Environment)
+	}
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 
@@ -90,6 +95,23 @@ func createEnhancedSTDIOTransport(config *TransportConfig, strategy ContextStrat
 	}
 
 	return enhanced, strategy, nil
+}
+
+func mergeEnvironment(extra map[string]string) []string {
+	env := os.Environ()
+	if len(extra) == 0 {
+		return env
+	}
+
+	keys := make([]string, 0, len(extra))
+	for key := range extra {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		env = append(env, key+"="+extra[key])
+	}
+	return env
 }
 
 // syncBuffer is a bytes.Buffer guarded by a mutex. The child process writes to

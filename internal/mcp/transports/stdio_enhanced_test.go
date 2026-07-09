@@ -33,6 +33,23 @@ func TestServerStartupError(t *testing.T) {
 	}
 }
 
+func TestMergeEnvironmentAppendsConfiguredVariables(t *testing.T) {
+	env := mergeEnvironment(map[string]string{
+		"MCP_TUI_TEST_ENV": "expected",
+	})
+
+	found := false
+	for _, item := range env {
+		if strings.HasPrefix(item, "MCP_TUI_TEST_ENV=") {
+			found = item == "MCP_TUI_TEST_ENV=expected"
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("mergeEnvironment did not include configured variable; env=%#v", env)
+	}
+}
+
 func TestServerStartupErrorWithoutSuggestion(t *testing.T) {
 	err := &ServerStartupError{
 		Command:    "npx",

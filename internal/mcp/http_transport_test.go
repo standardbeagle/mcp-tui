@@ -19,6 +19,7 @@ import (
 // handshake against a local socket -- no network, no timeouts.
 func newTestMCPServer(t *testing.T) string {
 	t.Helper()
+	requireLocalListener(t)
 
 	server := officialMCP.NewServer(&officialMCP.Implementation{
 		Name:    "test-server",

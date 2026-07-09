@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/standardbeagle/mcp-tui/internal/cli/verify"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // TestNewVerifyCommand checks the command constructor returns a non-nil
@@ -178,6 +179,8 @@ func TestVerifyCommand_HappyPath_AgainstSDKHandler(t *testing.T) {
 // probe against a permissive server that ALWAYS accepts. The probe should
 // fail and RunE should return errVerifyFailed so main exits 1.
 func TestVerifyCommand_FailingProbeReturnsExitError(t *testing.T) {
+	testutil.RequireLocalListener(t)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
@@ -327,6 +330,7 @@ func withVerifyParentFlags(cmd *cobra.Command) *cobra.Command {
 // resources — the probes only need it to honor the wire shape.
 func newSDKTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	testutil.RequireLocalListener(t)
 	getServer := func(*http.Request) *officialMCP.Server {
 		return officialMCP.NewServer(&officialMCP.Implementation{Name: "verify-cli-test", Version: "0.0.0"}, nil)
 	}

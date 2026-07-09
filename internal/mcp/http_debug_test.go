@@ -76,6 +76,8 @@ func TestEnableHTTPDebuggingDisableWithoutEnable(t *testing.T) {
 // must never do that for a stream: an SSE body has no EOF, so io.ReadAll would
 // block forever and grow without bound.
 func TestDebugRoundTripperDoesNotBufferEventStream(t *testing.T) {
+	requireLocalListener(t)
+
 	// A server that sends one SSE event and then holds the connection open,
 	// exactly like a real MCP SSE endpoint.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +129,8 @@ func TestDebugRoundTripperDoesNotBufferEventStream(t *testing.T) {
 // A non-streaming body is still buffered and remains fully readable by the
 // caller after the round-tripper has inspected it.
 func TestDebugRoundTripperPreservesJSONBody(t *testing.T) {
+	requireLocalListener(t)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))

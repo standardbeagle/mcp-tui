@@ -19,6 +19,8 @@ import (
 
 // TestMalformedJSONResponses tests handling of various malformed JSON responses
 func TestMalformedJSONResponses(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Incomplete_JSON", func(t *testing.T) {
 		malformedResponses := []struct {
 			name     string
@@ -190,6 +192,8 @@ func TestMalformedJSONResponses(t *testing.T) {
 
 // TestCharacterEncodingIssues tests handling of character encoding problems
 func TestCharacterEncodingIssues(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Invalid_UTF8_Sequences", func(t *testing.T) {
 		invalidUTF8Sequences := []struct {
 			name string
@@ -349,6 +353,8 @@ func TestCharacterEncodingIssues(t *testing.T) {
 
 // TestBinaryDataHandling tests handling of binary data in responses
 func TestBinaryDataHandling(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Binary_Data_In_Response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -426,6 +432,8 @@ func TestBinaryDataHandling(t *testing.T) {
 
 // TestResponseSizeEdgeCases tests edge cases related to response sizes
 func TestResponseSizeEdgeCases(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Empty_Response_Body", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -515,6 +523,8 @@ func TestResponseSizeEdgeCases(t *testing.T) {
 
 // TestStreamingResponseIssues tests issues with streaming responses
 func TestStreamingResponseIssues(t *testing.T) {
+	requireLocalListener(t)
+
 	t.Run("Chunked_Transfer_Incomplete", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

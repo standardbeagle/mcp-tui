@@ -176,6 +176,8 @@ func TestMethodHeadersRoundTripper_BodyPreservedForInner(t *testing.T) {
 }
 
 func TestGetHTTPClientForTransport_FlagOnInjectsHeaders(t *testing.T) {
+	requireLocalListener(t)
+
 	// When the flag is on, GetHTTPClientForTransportWithMethodHeaders must
 	// return an http.Client whose Transport injects MCP-Method.
 	client := GetHTTPClientForTransportWithMethodHeaders(TransportHTTP, nil, true)
@@ -248,6 +250,8 @@ func TestSetRequestHeaderObserver_FiresWithInjectedValues(t *testing.T) {
 }
 
 func TestGetHTTPClientForTransport_FlagOffOmitsHeaders(t *testing.T) {
+	requireLocalListener(t)
+
 	// Default path: no flag → no MCP-Method/MCP-Name. This guards against the
 	// regression where the wrapper would be installed unconditionally.
 	client := GetHTTPClientForTransportWithMethodHeaders(TransportHTTP, nil, false)
