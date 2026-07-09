@@ -37,14 +37,15 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Tests that need a child process spawn PowerShell 7 (pwsh), which is
+    # preinstalled on all three runner images. Requiring it here means a missing
+    # pwsh fails the job rather than silently skipping the cross-platform tests.
+    env:
+      MCP_TUI_REQUIRE_PWSH: '1'
     strategy:
       fail-fast: false
       matrix:
-        # POSIX only. Dozens of tests spawn `sh`, `python3`, `echo` and `sleep`
-        # directly, so the suite cannot run on Windows as written. Windows is
-        # still covered by the cross-platform build job below, which is what
-        # regressed and went unnoticed before.
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -65,6 +66,8 @@ jobs:
   race:
     name: Race detector
     runs-on: ubuntu-latest
+    env:
+      MCP_TUI_REQUIRE_PWSH: '1'
     steps:
       - uses: actions/checkout@v4
 
