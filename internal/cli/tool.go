@@ -396,7 +396,11 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "🛠️  Preparing to call tool '%s'...\n", toolName)
 	}
 
-	// Parse arguments (key=value pairs)
+	// Split the key=value pairs. Type conversion is deferred until the tool's
+	// input schema is known, below.
+	type rawArg struct{ key, value string }
+	rawArgs := make([]rawArg, 0, len(args)-1)
+
 	if len(args) > 1 && tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "📝 Parsing arguments...\n")
 	}
@@ -420,48 +424,55 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("argument validation failed: %w", err)
 		}
 
-		// Try to parse as JSON first, then fall back to string
-		var parsedValue interface{}
-		if err := json.Unmarshal([]byte(value), &parsedValue); err != nil {
-			parsedValue = value
-		}
-
-		toolArgs[key] = parsedValue
+		rawArgs = append(rawArgs, rawArg{key: key, value: value})
 	}
 
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
-	// Destructive-tool confirm gate. We need the tool's annotations to
-	// decide whether to prompt; the only way to learn them in the MCP
-	// protocol is tools/list. To keep --no-confirm callers (CI, scripts,
-	// hot-loop CLI use) at single-roundtrip cost, we only do the lookup
-	// when the user has NOT passed --no-confirm.
+	// Fetch the tool's metadata. It serves two purposes: its annotations drive
+	// the destructive-call confirm gate, and its input schema drives argument
+	// type conversion. Guessing argument types from their syntax silently
+	// corrupts values, so the schema is fetched even under --no-confirm.
 	skipConfirm, _ := cmd.Flags().GetBool("no-confirm")
+
+	tools, listErr := tc.GetService().ListTools(ctx)
+	if listErr != nil {
+		// Without the schema we cannot convert arguments correctly, and without
+		// annotations we cannot determine destructiveness. Refusing to run is
+		// the safer default in both cases.
+		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+			fmt.Fprintf(os.Stderr, "❌ Failed to fetch tool metadata before call\n")
+		}
+		return tc.HandleError(listErr, "list tools before call")
+	}
+	var matchedTool *mcp.Tool
+	for i := range tools {
+		if tools[i].Name == toolName {
+			matchedTool = &tools[i]
+			break
+		}
+	}
+	if matchedTool == nil {
+		return fmt.Errorf("tool %q not found on the server", toolName)
+	}
+
 	if !skipConfirm {
-		tools, listErr := tc.GetService().ListTools(ctx)
-		if listErr != nil {
-			// If listing fails we cannot determine destructiveness. Treat
-			// that as a hard error rather than silently bypassing the gate —
-			// refusing to run is the safer default.
-			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-				fmt.Fprintf(os.Stderr, "❌ Failed to fetch tool metadata before call\n")
-			}
-			return tc.HandleError(listErr, "list tools for confirmation gate")
-		}
-		var matchedTool *mcp.Tool
-		for i := range tools {
-			if tools[i].Name == toolName {
-				matchedTool = &tools[i]
-				break
-			}
-		}
-		if matchedTool == nil {
-			return fmt.Errorf("tool %q not found on the server", toolName)
-		}
 		if err := confirmDestructiveCall(os.Stdin, os.Stderr, *matchedTool, skipConfirm); err != nil {
 			return err
 		}
+	}
+
+	// Convert each argument to the type the tool declares for it.
+	for _, raw := range rawArgs {
+		parsedValue, err := coerceToolArgument(matchedTool.InputSchema, raw.key, raw.value)
+		if err != nil {
+			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
+			}
+			return err
+		}
+		toolArgs[raw.key] = parsedValue
 	}
 
 	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
