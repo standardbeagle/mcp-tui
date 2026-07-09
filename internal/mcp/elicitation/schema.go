@@ -109,20 +109,20 @@ type Form struct {
 // hands us — *jsonschema.Schema, map[string]any, or json.RawMessage — without
 // importing jsonschema-go directly here.
 type rawSchema struct {
-	Type        string                    `json:"type"`
+	Type        string                     `json:"type"`
 	Properties  map[string]json.RawMessage `json:"properties"`
-	Required    []string                  `json:"required"`
-	Title       string                    `json:"title"`
-	Description string                    `json:"description"`
+	Required    []string                   `json:"required"`
+	Title       string                     `json:"title"`
+	Description string                     `json:"description"`
 }
 
 // rawProp is a single property entry inside rawSchema.Properties.
 type rawProp struct {
-	Type        string          `json:"type"`
-	Title       string          `json:"title"`
-	Description string          `json:"description"`
+	Type        string            `json:"type"`
+	Title       string            `json:"title"`
+	Description string            `json:"description"`
 	Enum        []json.RawMessage `json:"enum"`
-	EnumNames   []string        `json:"enumNames"`
+	EnumNames   []string          `json:"enumNames"`
 	// Default is decoded as raw JSON because it can be a string, number, or
 	// boolean depending on Type. The renderer converts to a display string.
 	Default json.RawMessage `json:"default"`
