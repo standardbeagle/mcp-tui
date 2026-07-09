@@ -13,6 +13,10 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
+// healthCheckTimeout bounds a single health-check ping so a hung server
+// cannot stall the monitoring goroutine until the next tick.
+const healthCheckTimeout = 5 * time.Second
+
 // State represents the current state of a session
 type State int
 
@@ -108,13 +112,18 @@ func (m *Manager) SetDebugEnabled(enabled bool) {
 }
 
 // Connect establishes a new session with proper lifecycle management
+// The manager lock is deliberately released across the blocking client.Connect
+// call. Holding it there would block every reader -- including Disconnect --
+// for the entire duration of the handshake, which for SSE runs on
+// context.Background() and can hang indefinitely, leaving no way to cancel.
 func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, transport officialMCP.Transport, contextStrategy transports.ContextStrategy, transportType transports.TransportType) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	// Ensure we're in a valid state to connect
 	if m.info.State == StateConnecting || m.info.State == StateConnected {
-		return fmt.Errorf("session is already connecting or connected (state: %s)", m.info.State)
+		state := m.info.State
+		m.mu.Unlock()
+		return fmt.Errorf("session is already connecting or connected (state: %s)", state)
 	}
 
 	// Set up connection context with cancellation
@@ -122,7 +131,8 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 	connectCtx, cancel := context.WithCancel(connectCtx)
 	m.closeFunc = cancel
 
-	// Update state
+	// Update state. StateConnecting claims the connect slot, so a concurrent
+	// Connect is rejected above while the lock is released below.
 	m.setState(StateConnecting)
 	m.client = client
 	m.transport = transport
@@ -145,14 +155,25 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 	if m.transportDebugger != nil {
 		connectionStartEvent = m.transportDebugger.TraceConnectionStart("session_connect")
 	}
+	transportDebugger := m.transportDebugger
 
-	// Attempt connection
+	m.mu.Unlock()
+
+	// Attempt connection without holding the lock. Disconnect may run
+	// concurrently; it cancels connectCtx via closeFunc, which aborts this call.
 	session, err := client.Connect(connectCtx, transport, &officialMCP.ClientSessionOptions{})
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// A concurrent Disconnect may have closed the manager while we were
+	// blocked. Its state is authoritative -- do not resurrect it.
+	aborted := m.info.State == StateClosed || m.info.State == StateDisconnected
+
 	if err != nil {
-		// Trace connection failure
-		if m.transportDebugger != nil {
-			m.transportDebugger.TraceConnectionEnd(connectionStartEvent, false, err.Error())
-			m.transportDebugger.TraceTransportError("session_connect", err, nil)
+		if transportDebugger != nil {
+			transportDebugger.TraceConnectionEnd(connectionStartEvent, false, err.Error())
+			transportDebugger.TraceTransportError("session_connect", err, nil)
 		}
 
 		// Classify and handle the error
@@ -161,13 +182,25 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 			"state":          "connecting",
 		})
 
-		m.setState(StateFailed)
-		m.info.LastError = classified
+		if !aborted {
+			m.setState(StateFailed)
+			m.info.LastError = classified
+		}
 		cancel()
 
 		// Return user-friendly error
 		userError := m.errorHandler.CreateUserFriendlyError(classified)
 		return fmt.Errorf("session connection failed: %w", userError)
+	}
+
+	if aborted {
+		// The connection landed after Disconnect. Close it rather than leak it.
+		if closeErr := session.Close(); closeErr != nil {
+			debug.Error("Session manager: Failed to close session abandoned by disconnect",
+				debug.F("error", closeErr))
+		}
+		cancel()
+		return fmt.Errorf("session connection aborted: manager disconnected during connect")
 	}
 
 	// Successfully connected
@@ -177,8 +210,8 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 	m.info.SessionID = session.ID()
 
 	// Trace successful connection
-	if m.transportDebugger != nil {
-		m.transportDebugger.TraceConnectionEnd(connectionStartEvent, true, "")
+	if transportDebugger != nil {
+		transportDebugger.TraceConnectionEnd(connectionStartEvent, true, "")
 		m.eventTracer.SetSessionID(m.info.SessionID)
 		m.eventTracer.TraceSessionState("connected", map[string]interface{}{
 			"session_id":     m.info.SessionID,
@@ -467,11 +500,19 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 		return // Not in a state that needs health checking
 	}
 
-	// For now, perform a simple health check by verifying session is valid
-	// In the future, this could be enhanced with actual server ping
-	if session.ID() == "" {
-		debug.Error("Session manager: Health check failed - session has no ID")
-		m.handleConnectionFailure(fmt.Errorf("health check failed: session has no ID"))
+	// Ping the server. A cached session ID stays non-empty long after the
+	// underlying connection dies, so checking it proves nothing -- only a
+	// real round-trip detects a dropped connection.
+	pingCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
+	defer cancel()
+
+	if err := session.Ping(pingCtx, nil); err != nil {
+		// A cancelled parent context means we are shutting down, not failing.
+		if ctx.Err() != nil {
+			return
+		}
+		debug.Error("Session manager: Health check failed", debug.F("error", err))
+		m.handleConnectionFailure(fmt.Errorf("health check failed: %w", err))
 		return
 	}
 
@@ -521,12 +562,20 @@ func (m *Manager) handleConnectionFailure(err error) {
 
 // attemptReconnection attempts to reconnect the session
 func (m *Manager) attemptReconnection() {
+	// Snapshot everything this goroutine needs under the lock. Reading
+	// m.info/m.reconnectDelay directly would race with GetInfo and Disconnect.
+	m.mu.RLock()
+	attempt := m.info.ReconnectCount
+	delay := m.reconnectDelay
+	transportType := m.info.TransportType
+	m.mu.RUnlock()
+
 	debug.Info("Session manager: Starting reconnection attempt",
-		debug.F("attempt", m.info.ReconnectCount),
-		debug.F("delay", m.reconnectDelay))
+		debug.F("attempt", attempt),
+		debug.F("delay", delay))
 
 	// Wait before attempting reconnection
-	time.Sleep(m.reconnectDelay)
+	time.Sleep(delay)
 
 	m.mu.Lock()
 	client := m.client
@@ -557,12 +606,12 @@ func (m *Manager) attemptReconnection() {
 	if err != nil {
 		// Classify reconnection error
 		classified := m.errorHandler.HandleError(connectCtx, err, "session_reconnect", map[string]interface{}{
-			"transport_type": m.info.TransportType,
-			"attempt":        m.info.ReconnectCount,
+			"transport_type": transportType,
+			"attempt":        attempt,
 		})
 
 		debug.Error("Session manager: Reconnection failed",
-			debug.F("attempt", m.info.ReconnectCount),
+			debug.F("attempt", attempt),
 			debug.F("category", classified.Category),
 			debug.F("recoverable", classified.Recoverable))
 
@@ -603,7 +652,7 @@ func (m *Manager) attemptReconnection() {
 	// Keep reconnect count for monitoring
 
 	debug.Info("Session manager: Reconnection successful",
-		debug.F("attempt", m.info.ReconnectCount),
+		debug.F("attempt", attempt),
 		debug.F("newSessionID", m.info.SessionID))
 	m.mu.Unlock()
 
