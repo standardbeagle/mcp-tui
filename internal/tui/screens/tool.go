@@ -178,15 +178,19 @@ func (ts *ToolScreen) computeResultDisplayHeight(headerH, footerH int) int {
 	return avail
 }
 
-// copyToClipboard copies text to clipboard using multiple methods
+// copyToClipboard copies text to the system clipboard, falling back to an
+// OSC52 terminal escape. Both failures are reported: silently returning nil
+// makes callers announce a successful copy that never happened.
 func (ts *ToolScreen) copyToClipboard(text string) error {
-	// Try standard clipboard first
-	if err := clipboard.WriteAll(text); err == nil {
+	clipErr := clipboard.WriteAll(text)
+	if clipErr == nil {
 		return nil
 	}
 
 	// Fall back to OSC52 for terminal clipboard
-	fmt.Fprint(os.Stderr, osc52.New(text))
+	if _, err := fmt.Fprint(os.Stderr, osc52.New(text)); err != nil {
+		return fmt.Errorf("clipboard unavailable (%v) and OSC52 write failed: %w", clipErr, err)
+	}
 	return nil
 }
 
@@ -619,6 +623,18 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Don't pass these to textinput, handle navigation
 		case "esc":
 			// Don't pass to textinput, handle escape
+		case "ctrl+v":
+			// Paste clipboard contents into the focused field. The help text
+			// advertises this binding; textinput itself ignores ctrl+v.
+			text, err := ts.readFromClipboard()
+			if err != nil {
+				ts.SetStatus(err.Error(), StatusError)
+				return ts, nil
+			}
+			field.input.SetValue(ts.sanitizeInput(text))
+			ts.validateField(ts.cursor)
+			ts.SetStatus("Pasted from clipboard", StatusSuccess)
+			return ts, nil
 		default:
 			// Pass all other keys to the textinput model
 			var cmd tea.Cmd
