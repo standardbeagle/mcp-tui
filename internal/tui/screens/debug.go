@@ -53,6 +53,12 @@ type DebugScreen struct {
 	// swap in a stub provider without dragging the whole service interface.
 	snapshotProvider func() *capabilities.Snapshot
 
+	// exportService is used by the Ctrl+E "export session" keybinding to read
+	// recorded events and build a CLI replay script. nil in test paths and
+	// before a service is wired in, in which case the keybinding reports a
+	// friendly "nothing to export" status.
+	exportService mcp.Service
+
 	// notificationsProvider returns the live notification stream, or nil if
 	// no service is wired in. Same closure-based decoupling as snapshotProvider:
 	// the debug screen reads notifications without importing the concrete
@@ -101,6 +107,14 @@ func NewDebugScreen() *DebugScreen {
 // receiver for chaining: `NewDebugScreen().WithSnapshotProvider(...)`.
 func (ds *DebugScreen) WithSnapshotProvider(provider func() *capabilities.Snapshot) *DebugScreen {
 	ds.snapshotProvider = provider
+	return ds
+}
+
+// WithExportService installs the MCP service used by the Ctrl+E "export
+// session" keybinding. Pass nil to disable export. Returns the receiver for
+// chaining.
+func (ds *DebugScreen) WithExportService(service mcp.Service) *DebugScreen {
+	ds.exportService = service
 	return ds
 }
 
@@ -365,6 +379,10 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ds, nil
 
+	case "ctrl+e":
+		// Export the recorded session to timestamped JSON + .sh replay files.
+		return ds, ds.exportSessionCmd()
+
 	case "r":
 		// Refresh data
 		return ds, ds.refreshDataCmd()
@@ -492,7 +510,7 @@ func (ds *DebugScreen) View() string {
 
 	// Help text
 	builder.WriteString("\n\n")
-	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy (incl. Capabilities JSON) • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
+	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy (incl. Capabilities JSON) • Ctrl+E: Export session • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	builder.WriteString(helpStyle.Render(helpText))
 
@@ -836,6 +854,18 @@ func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
 			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
 		}
 		return StatusMsg{Message: successMessage, Level: StatusSuccess}
+	}
+}
+
+// exportSessionCmd writes the recorded session to disk on a command goroutine
+// and reports the result as a StatusMsg. The service is captured here on the
+// event loop so the goroutine only performs IO — it does not touch model state,
+// which View reads concurrently.
+func (ds *DebugScreen) exportSessionCmd() tea.Cmd {
+	service := ds.exportService
+	return func() tea.Msg {
+		msg, level := exportSession(service)
+		return StatusMsg{Message: msg, Level: level}
 	}
 }
 

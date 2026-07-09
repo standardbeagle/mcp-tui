@@ -484,6 +484,9 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 // detects that and closes the orphaned session instead of leaking the server
 // process.
 func (s *service) commitConnection(epoch uint64, sessionManager *session.Manager) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.connectEpoch != epoch {
 		// sessionManager.Disconnect takes only the session lock, never s.mu.
 		if err := sessionManager.Disconnect(); err != nil {
@@ -1595,6 +1598,33 @@ func (s *service) ExportEvents() ([]byte, error) {
 	}
 
 	return s.sessionManager.ExportEvents()
+}
+
+// ExportReplayScript translates the recorded client→server requests into an
+// equivalent `mcp-tui` CLI shell script, so an interactive TUI session can be
+// re-run as CLI automation. Requests are read from the event tracer and
+// targeted at the same server the recording was made against.
+func (s *service) ExportReplayScript() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.sessionManager == nil {
+		return "", fmt.Errorf("no session manager available")
+	}
+	tracer := s.sessionManager.GetEventTracer()
+	if tracer == nil {
+		return "", fmt.Errorf("no event tracer available")
+	}
+
+	conn := mcpDebug.ConnectionInfo{}
+	if s.connectionConfig != nil {
+		conn.Transport = string(s.connectionConfig.Type)
+		conn.Command = s.connectionConfig.Command
+		conn.Args = s.connectionConfig.Args
+		conn.URL = s.connectionConfig.URL
+	}
+
+	return mcpDebug.BuildReplayScript(tracer.GetEvents(), conn), nil
 }
 
 // ClearEvents clears all traced events

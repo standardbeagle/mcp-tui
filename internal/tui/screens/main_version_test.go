@@ -75,6 +75,7 @@ func (v *versionStubService) ResetErrorStatistics()                             
 func (v *versionStubService) GetTracingStatistics() map[string]interface{}      { return nil }
 func (v *versionStubService) GetRecentEvents(int) interface{}                   { return nil }
 func (v *versionStubService) ExportEvents() ([]byte, error)                     { return nil, nil }
+func (v *versionStubService) ExportReplayScript() (string, error)                { return "", nil }
 func (v *versionStubService) ClearEvents()                                      {}
 func (v *versionStubService) GetConfiguration() map[string]interface{}          { return nil }
 func (v *versionStubService) UpdateConfiguration(map[string]interface{}) error {

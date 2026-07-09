@@ -97,6 +97,7 @@ func (f *fakeCompletionService) ResetErrorStatistics()                          
 func (f *fakeCompletionService) GetTracingStatistics() map[string]interface{}      { return nil }
 func (f *fakeCompletionService) GetRecentEvents(int) interface{}                   { return nil }
 func (f *fakeCompletionService) ExportEvents() ([]byte, error)                     { return nil, nil }
+func (f *fakeCompletionService) ExportReplayScript() (string, error)                { return "", nil }
 func (f *fakeCompletionService) ClearEvents()                                      {}
 func (f *fakeCompletionService) GetConfiguration() map[string]interface{}          { return nil }
 func (f *fakeCompletionService) UpdateConfiguration(map[string]interface{}) error  { return nil }

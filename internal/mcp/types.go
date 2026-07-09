@@ -121,6 +121,9 @@ type Service interface {
 	GetTracingStatistics() map[string]interface{}
 	GetRecentEvents(count int) interface{}
 	ExportEvents() ([]byte, error)
+	// ExportReplayScript translates the recorded client→server requests into
+	// an equivalent `mcp-tui` CLI shell script for automation replay.
+	ExportReplayScript() (string, error)
 	ClearEvents()
 
 	// Configuration management

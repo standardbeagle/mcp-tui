@@ -184,10 +184,10 @@ type spinnerTickMsg struct{}
 // NewMainScreen creates a new main screen
 func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *MainScreen {
 	service := mcp.NewService()
-	// Enable debug mode if configured
-	if cfg.DebugMode {
-		service.SetDebugMode(true)
-	}
+	// Always enable debug mode in the TUI so the event tracer records the
+	// session — this powers the Ctrl+E "export session" feature (JSON dump +
+	// CLI replay script) out of the box, regardless of the --debug flag.
+	service.SetDebugMode(true)
 
 	ms := &MainScreen{
 		BaseScreen:                   NewBaseScreen("Main", true),
@@ -692,6 +692,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if ms.mcpService != nil {
 				debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
 				debugScreen.WithNotificationsProvider(ms.mcpService.NotificationStream)
+				debugScreen.WithExportService(ms.mcpService)
 			}
 			return ms, func() tea.Msg {
 				return ToggleOverlayMsg{
@@ -812,12 +813,20 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ms.mcpService != nil {
 			debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
 			debugScreen.WithNotificationsProvider(ms.mcpService.NotificationStream)
+			debugScreen.WithExportService(ms.mcpService)
 		}
 		return ms, func() tea.Msg {
 			return ToggleOverlayMsg{
 				Screen: debugScreen,
 			}
 		}
+
+	case "ctrl+e":
+		// Export the recorded session to timestamped JSON + .sh replay files
+		// without leaving the main screen.
+		msgText, level := exportSession(ms.mcpService)
+		ms.SetStatus(msgText, level)
+		return ms, nil
 
 	case "R":
 		// Open the roots editor overlay. Mutations from the overlay reach
@@ -1242,6 +1251,7 @@ func (ms *MainScreen) View() string {
 			"r: Refresh",
 			"d: Disconnect",
 			"Ctrl+D/F12: Debug Log",
+			"Ctrl+E: Export session",
 			"q: Quit",
 		}
 	case ms.activeTab == 0 && ms.toolCount > 0:
@@ -1254,6 +1264,7 @@ func (ms *MainScreen) View() string {
 			"d: Disconnect",
 			"Tab: Switch tabs",
 			"Ctrl+D/F12: Debug Log",
+			"Ctrl+E: Export session",
 			"q: Quit",
 		}
 	default:
@@ -1263,6 +1274,7 @@ func (ms *MainScreen) View() string {
 			"r: Refresh",
 			"d: Disconnect",
 			"Ctrl+L: Debug",
+			"Ctrl+E: Export session",
 			"q: Quit",
 		}
 	}
