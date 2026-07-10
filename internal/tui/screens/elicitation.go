@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 )
@@ -75,7 +76,7 @@ func NewElicitationScreen(pending *elicitation.PendingRequest) *ElicitationScree
 
 	// Parse the form upfront — schema parsing is cheap and we want to
 	// surface any parse errors in errorText immediately rather than at submit.
-	if pending != nil && pending.Request != nil && pending.Request.Params != nil {
+	if pending != nil && pending.Request != nil && pending.Request.Params != nil && !s.isURLMode() {
 		form, err := elicitation.ParseForm(
 			pending.Request.Params.Message,
 			pending.Request.Params.RequestedSchema,
@@ -94,6 +95,9 @@ func NewElicitationScreen(pending *elicitation.PendingRequest) *ElicitationScree
 // initFieldStates allocates per-field state slices and seeds them with the
 // schema-supplied defaults.
 func (s *ElicitationScreen) initFieldStates() {
+	if s.isURLMode() {
+		return
+	}
 	n := len(s.form.Fields)
 	s.textInputs = make([]textinput.Model, n)
 	s.boolValues = make([]bool, n)
@@ -207,6 +211,12 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "alt+d":
 		// Decline (explicit user rejection — different from cancel).
 		return s.decline()
+	}
+	if s.isURLMode() {
+		if m.String() == "enter" || m.String() == "ctrl+s" {
+			return s.submit()
+		}
+		return s, nil
 	}
 
 	if s.focused < 0 || s.focused >= len(s.form.Fields) {
@@ -327,6 +337,10 @@ func (s *ElicitationScreen) submit() (tea.Model, tea.Cmd) {
 	if s.pending == nil {
 		return s, func() tea.Msg { return BackMsg{} }
 	}
+	if s.isURLMode() {
+		s.pending.Resolve(&officialMCP.ElicitResult{Action: "accept"})
+		return s, func() tea.Msg { return BackMsg{} }
+	}
 
 	content, err := s.collectContent()
 	if err != nil {
@@ -425,12 +439,27 @@ func (s *ElicitationScreen) View() string {
 
 	b.WriteString(s.titleStyle.Render("Elicitation Request"))
 	b.WriteString("\n")
-	b.WriteString(s.dimStyle.Render("The MCP server has requested structured input."))
+	if s.isURLMode() {
+		b.WriteString(s.dimStyle.Render("The MCP server requests consent for an external URL."))
+	} else {
+		b.WriteString(s.dimStyle.Render("The MCP server has requested structured input."))
+	}
 	b.WriteString("\n\n")
 
 	if msg := s.form.Message; msg != "" {
 		b.WriteString(s.contentStyle.Render(msg))
 		b.WriteString("\n\n")
+	}
+	if s.isURLMode() {
+		params := s.pending.Request.Params
+		b.WriteString(s.labelStyle.Render("URL:"))
+		b.WriteString("\n")
+		b.WriteString(s.contentStyle.Render(params.URL))
+		b.WriteString("\n\n")
+		b.WriteString(s.dimStyle.Render("Accept confirms consent. Open the URL manually in a browser; it is never fetched automatically."))
+		b.WriteString("\n\n")
+		b.WriteString(s.helpStyle.Render("Enter/Ctrl+S to accept  •  Alt+D to decline  •  Esc to cancel"))
+		return s.wrapInBorder(b.String())
 	}
 
 	if len(s.form.Fields) == 0 {
@@ -455,6 +484,10 @@ func (s *ElicitationScreen) View() string {
 	))
 
 	return s.wrapInBorder(b.String())
+}
+
+func (s *ElicitationScreen) isURLMode() bool {
+	return s.pending != nil && s.pending.Request != nil && s.pending.Request.Params != nil && s.pending.Request.Params.Mode == "url"
 }
 
 // renderField renders one field — label, input control, and help — to b.

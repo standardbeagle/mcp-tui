@@ -158,10 +158,15 @@ func ParseArgs(args []string, cmdFlag, urlFlag string, argsFlag []string) *Parse
 		}
 	}
 
-	// Extract subcommand and its args
-	if len(argsToProcess) > 0 && isKnownSubcommand(argsToProcess[0]) {
-		result.SubCommand = argsToProcess[0]
-		result.SubCommandArgs = argsToProcess[1:]
+	// Locate a subcommand anywhere after a positional connection string. This
+	// permits normal Cobra persistent flags between the connection and command,
+	// e.g. `mcp-tui "server command" --timeout 5s tool list`.
+	for i, arg := range argsToProcess {
+		if isKnownSubcommand(arg) {
+			result.SubCommand = arg
+			result.SubCommandArgs = argsToProcess[i+1:]
+			break
+		}
 	}
 
 	return result

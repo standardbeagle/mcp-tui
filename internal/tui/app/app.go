@@ -73,7 +73,11 @@ func (a *App) Run(ctx context.Context) error {
 	// Run the program
 	finalModel, err := program.Run()
 	if err != nil {
+		_ = model.Shutdown()
 		return fmt.Errorf("TUI program failed: %w", err)
+	}
+	if err := model.Shutdown(); err != nil {
+		return fmt.Errorf("close MCP session: %w", err)
 	}
 
 	// Check if the final model has any exit status

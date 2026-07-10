@@ -172,6 +172,20 @@ func TestParseArgs(t *testing.T) {
 			description: "Should parse connection and tool call with parameters",
 		},
 		{
+			name: "natural CLI with persistent flags before subcommand",
+			args: []string{"./brum --mcp", "--timeout", "5s", "--debug", "tool", "list"},
+			expected: &ParsedArgs{
+				Connection: &ConnectionConfig{
+					Type:    TransportStdio,
+					Command: "./brum",
+					Args:    []string{"--mcp"},
+				},
+				SubCommand:     "tool",
+				SubCommandArgs: []string{"list"},
+			},
+			description: "Persistent flags must not prevent natural CLI command detection",
+		},
+		{
 			name:     "flag-based connection",
 			args:     []string{"tool", "list"},
 			cmdFlag:  "npx",

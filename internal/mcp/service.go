@@ -302,8 +302,6 @@ func (s *service) AddNotificationObserver(fn func(notifications.Entry)) {
 // SetDebugMode enables or disables debug mode
 func (s *service) SetDebugMode(debug bool) {
 	s.debugMode = debug
-	// Enable HTTP debugging if in debug mode
-	EnableHTTPDebugging(debug)
 
 	// Enable session manager debug tracing
 	if s.sessionManager != nil {
@@ -588,6 +586,18 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		clientOptions.ElicitationHandler = func(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
 			return ehandler.HandleElicit(ctx, req)
 		}
+		clientOptions.ElicitationCompleteHandler = func(_ context.Context, req *officialMCP.ElicitationCompleteNotificationRequest) {
+			if req != nil && req.Params != nil {
+				debug.Info("URL elicitation completed", debug.F("elicitationID", req.Params.ElicitationID))
+			}
+		}
+		clientOptions.Capabilities = capabilities.DeriveClientCapabilities(
+			s.samplingHandler != nil,
+			s.hasSamplingToolsHandler(),
+			true,
+			"2025-11-25",
+			true,
+		)
 		debug.Info("Elicitation handler registered with MCP client")
 	}
 
@@ -893,6 +903,7 @@ func (s *service) convertTool(tool *officialMCP.Tool) Tool {
 		Name:         tool.Name,
 		Title:        tool.Title,
 		Description:  tool.Description,
+		Icons:        append([]officialMCP.Icon(nil), tool.Icons...),
 		InputSchema:  inputSchemaMap,
 		OutputSchema: outputSchemaMap,
 		Annotations:  convertToolAnnotations(tool.Annotations),
@@ -992,34 +1003,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 	// Convert the result format
 	var content []Content
 	for _, c := range result.Content {
-		switch v := c.(type) {
-		case *officialMCP.TextContent:
-			content = append(content, Content{
-				Type: "text",
-				Text: v.Text,
-			})
-		case *officialMCP.ImageContent:
-			content = append(content, Content{
-				Type:     "image",
-				Data:     string(v.Data), // Convert []byte to string
-				MimeType: v.MIMEType,
-			})
-		case *officialMCP.EmbeddedResource:
-			content = append(content, Content{
-				Type: "resource",
-				Resource: &ResourceReference{
-					Type: "embedded",
-					URI:  "", // EmbeddedResource doesn't have URI
-				},
-			})
-		default:
-			// Try to handle as generic content
-			contentJSON, _ := json.Marshal(c)
-			content = append(content, Content{
-				Type: "text",
-				Text: string(contentJSON),
-			})
-		}
+		content = append(content, convertContent(c))
 	}
 
 	// Locate the tool's outputSchema to drive structured-result validation.
@@ -1120,8 +1104,10 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 			resources = append(resources, Resource{
 				URI:         resource.URI,
 				Name:        resource.Name,
+				Title:       resource.Title,
 				Description: resource.Description,
 				MimeType:    resource.MIMEType,
+				Icons:       append([]officialMCP.Icon(nil), resource.Icons...),
 			})
 		}
 	}
@@ -1166,6 +1152,7 @@ func (s *service) ListResourceTemplates(ctx context.Context) ([]ResourceTemplate
 			Title:       tpl.Title,
 			Description: tpl.Description,
 			MimeType:    tpl.MIMEType,
+			Icons:       append([]officialMCP.Icon(nil), tpl.Icons...),
 		})
 	}
 
@@ -1316,8 +1303,10 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 
 			prompts = append(prompts, Prompt{
 				Name:        prompt.Name,
+				Title:       prompt.Title,
 				Description: prompt.Description,
 				Arguments:   argumentsMap,
+				Icons:       append([]officialMCP.Icon(nil), prompt.Icons...),
 			})
 		}
 	}
@@ -1363,22 +1352,14 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 		return nil, fmt.Errorf("failed to get prompt '%s': %w", req.Name, err)
 	}
 
-	// Convert to compatible format
+	// Preserve the wire content type so prompt consumers render text as text
+	// and retain media/resource metadata instead of displaying JSON payloads.
 	var messages []PromptMessage
 	for _, msg := range result.Messages {
 		if msg != nil {
-			// Convert content - msg.Content is a single Content interface
-			contentJSON, _ := json.Marshal(msg.Content)
-			content := []Content{
-				{
-					Type: "text",
-					Text: string(contentJSON),
-				},
-			}
-
 			messages = append(messages, PromptMessage{
 				Role:    string(msg.Role),
-				Content: content,
+				Content: []Content{convertContent(msg.Content)},
 			})
 		}
 	}
@@ -1391,6 +1372,35 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 		Description: result.Description,
 		Messages:    messages,
 	}, nil
+}
+
+func convertContent(content officialMCP.Content) Content {
+	switch value := content.(type) {
+	case *officialMCP.TextContent:
+		return Content{Type: "text", Text: value.Text}
+	case *officialMCP.ImageContent:
+		return Content{Type: "image", Data: string(value.Data), MimeType: value.MIMEType}
+	case *officialMCP.AudioContent:
+		return Content{Type: "audio", Data: string(value.Data), MimeType: value.MIMEType}
+	case *officialMCP.EmbeddedResource:
+		uri := ""
+		if value.Resource != nil {
+			uri = value.Resource.URI
+		}
+		return Content{Type: "resource", Resource: &ResourceReference{Type: "embedded", URI: uri}}
+	case *officialMCP.ResourceLink:
+		return Content{Type: "resource_link", Resource: &ResourceReference{
+			Type: "link", URI: value.URI, Name: value.Name, Title: value.Title,
+			Description: value.Description, MimeType: value.MIMEType, Size: value.Size,
+			Icons: append([]officialMCP.Icon(nil), value.Icons...),
+		}}
+	default:
+		contentJSON, err := json.Marshal(content)
+		if err != nil {
+			return Content{Type: "text", Text: fmt.Sprintf("%v", content)}
+		}
+		return Content{Type: "text", Text: string(contentJSON)}
+	}
 }
 
 // isJSONError checks if an error is related to JSON parsing/unmarshaling

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-09
+
+### Added
+- **URL elicitation**: The TUI now advertises MCP 2025-11-25 URL-mode elicitation, shows the complete server-provided URL, and requires explicit accept, decline, or cancel. URLs are never fetched or opened automatically.
+- **Rich MCP metadata**: Tool, prompt, resource, resource-template, and resource-link titles and icon metadata now survive the service layer and render in the TUI.
+
+### Fixed
+- **TUI shutdown**: Exiting the TUI now disconnects active MCP sessions, preventing STDIO server processes and persistent connections from being left behind.
+- **CLI connection parsing**: Positional connection strings now preserve persistent flags placed before the subcommand; their transport, headers, OAuth, and timeout settings are applied consistently.
+- **Prompt content**: Native MCP prompt content is preserved instead of being rendered as JSON text.
+
+### Changed
+- **MCP SDK**: Upgraded `github.com/modelcontextprotocol/go-sdk` from v1.6.0 to v1.6.1.
+
 ## [0.9.0] - 2026-07-09
 
 ### Added

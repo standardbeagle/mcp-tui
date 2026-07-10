@@ -109,6 +109,10 @@ func (c *BaseCommand) GetOutputFormat() OutputFormat {
 
 // CreateClient creates and initializes an MCP client
 func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
+	if timeout, err := cmd.Flags().GetDuration("timeout"); err == nil && timeout > 0 {
+		c.timeout = timeout
+	}
+
 	connConfig, err := c.parseConnectionConfig(cmd)
 	if err != nil {
 		return err
@@ -137,11 +141,6 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 // parseConnectionConfig parses the connection configuration from various sources
 func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.ConnectionConfig, error) {
 	// Check if we have a global connection config (from natural CLI usage)
-	if globalConnConfig := c.getGlobalConnection(); globalConnConfig != nil {
-		return globalConnConfig, nil
-	}
-
-	// Parse from flags
 	cmdFlag, _ := cmd.Flags().GetString("cmd")
 	urlFlag, _ := cmd.Flags().GetString("url")
 	transportFlag, _ := cmd.Flags().GetString("transport")
@@ -149,9 +148,14 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	// Get args as string slice (multiple --args flags)
 	argsFlag, _ := cmd.Flags().GetStringSlice("args")
 
-	// Use the unified parser
-	parsedArgs := config.ParseArgs(cmd.Flags().Args(), cmdFlag, urlFlag, argsFlag)
-	connConfig := parsedArgs.Connection
+	var connConfig *config.ConnectionConfig
+	if globalConnConfig := c.getGlobalConnection(); globalConnConfig != nil {
+		connConfig = cloneConnectionConfig(globalConnConfig)
+	} else {
+		// Use the unified parser when the connection comes from flags.
+		parsedArgs := config.ParseArgs(cmd.Flags().Args(), cmdFlag, urlFlag, argsFlag)
+		connConfig = parsedArgs.Connection
+	}
 
 	// Apply explicit transport type if specified (and not the default)
 	if transportFlag != "" && transportFlag != "stdio" && connConfig != nil {
@@ -216,6 +220,27 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	}
 
 	return connConfig, nil
+}
+
+func cloneConnectionConfig(source *config.ConnectionConfig) *config.ConnectionConfig {
+	if source == nil {
+		return nil
+	}
+	clone := *source
+	clone.Args = append([]string(nil), source.Args...)
+	if source.Headers != nil {
+		clone.Headers = make(map[string]string, len(source.Headers))
+		for key, value := range source.Headers {
+			clone.Headers[key] = value
+		}
+	}
+	if source.Environment != nil {
+		clone.Environment = make(map[string]string, len(source.Environment))
+		for key, value := range source.Environment {
+			clone.Environment[key] = value
+		}
+	}
+	return &clone
 }
 
 // BuildOAuthConfig translates --oauth-* flags into an *oauth.Config. Returns

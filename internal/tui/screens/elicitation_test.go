@@ -248,6 +248,39 @@ func TestElicitationScreen_KeyboardDeclineResolves(t *testing.T) {
 	}
 }
 
+func TestElicitationScreen_URLModeRequiresExplicitAccept(t *testing.T) {
+	resCh := make(chan *officialMCP.ElicitResult, 1)
+	h := elicitation.NewTUIHandler(func(p *elicitation.PendingRequest) {
+		go func() {
+			screen := NewElicitationScreen(p)
+			screen.UpdateSize(80, 24)
+			if view := screen.View(); !strings.Contains(view, "https://auth.example.test/authorize") {
+				t.Errorf("URL elicitation view did not show the requested URL: %s", view)
+			}
+			_, _ = screen.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		}()
+	})
+
+	go func() {
+		res, err := h.HandleElicit(t.Context(), &officialMCP.ElicitRequest{Params: &officialMCP.ElicitParams{
+			Mode:          "url",
+			Message:       "Authorize access",
+			URL:           "https://auth.example.test/authorize",
+			ElicitationID: "elicit-1",
+		}})
+		if err != nil {
+			t.Errorf("HandleElicit returned error: %v", err)
+			return
+		}
+		resCh <- res
+	}()
+
+	res := <-resCh
+	if res.Action != "accept" || res.Content != nil {
+		t.Errorf("URL mode result = %#v, want accept without content", res)
+	}
+}
+
 // TestElicitationScreen_SubmitMultiSelectAcceptResolves drives the keyboard
 // path that the v1.4.0 fix targets: multi-select form, user toggles two
 // options, submits with Ctrl+S, server receives []string content.

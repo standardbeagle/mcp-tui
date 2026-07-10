@@ -177,6 +177,7 @@ type Tool struct {
 	Name        string                 `json:"name"`
 	Title       string                 `json:"title,omitempty"`
 	Description string                 `json:"description,omitempty"`
+	Icons       []officialMCP.Icon     `json:"icons,omitempty"`
 	InputSchema map[string]interface{} `json:"inputSchema,omitempty"`
 	// OutputSchema is the JSON Schema describing the structured result this
 	// tool returns when callers consume `structuredContent` from CallToolResult.
@@ -279,10 +280,22 @@ func (t Tool) BadgeString() string {
 
 // Resource represents an MCP resource
 type Resource struct {
-	URI         string `json:"uri"`
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-	MimeType    string `json:"mimeType,omitempty"`
+	URI         string             `json:"uri"`
+	Name        string             `json:"name,omitempty"`
+	Title       string             `json:"title,omitempty"`
+	Description string             `json:"description,omitempty"`
+	MimeType    string             `json:"mimeType,omitempty"`
+	Icons       []officialMCP.Icon `json:"icons,omitempty"`
+}
+
+func (r Resource) DisplayName() string {
+	if r.Title != "" {
+		return r.Title
+	}
+	if r.Name != "" {
+		return r.Name
+	}
+	return r.URI
 }
 
 // ResourceTemplate represents an MCP resource URI template (RFC 6570) returned
@@ -290,11 +303,12 @@ type Resource struct {
 // `{var}` placeholders that callers expand at read time. Title falls back to
 // Name for display, matching the MCP 2025-06-18 §resources spec.
 type ResourceTemplate struct {
-	URITemplate string `json:"uriTemplate"`
-	Name        string `json:"name,omitempty"`
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-	MimeType    string `json:"mimeType,omitempty"`
+	URITemplate string             `json:"uriTemplate"`
+	Name        string             `json:"name,omitempty"`
+	Title       string             `json:"title,omitempty"`
+	Description string             `json:"description,omitempty"`
+	MimeType    string             `json:"mimeType,omitempty"`
+	Icons       []officialMCP.Icon `json:"icons,omitempty"`
 }
 
 // DisplayName returns the user-facing label for the template, preferring
@@ -374,8 +388,17 @@ type ResourceContents struct {
 // Prompt represents an MCP prompt
 type Prompt struct {
 	Name        string                 `json:"name"`
+	Title       string                 `json:"title,omitempty"`
 	Description string                 `json:"description,omitempty"`
 	Arguments   map[string]interface{} `json:"arguments,omitempty"`
+	Icons       []officialMCP.Icon     `json:"icons,omitempty"`
+}
+
+func (p Prompt) DisplayName() string {
+	if p.Title != "" {
+		return p.Title
+	}
+	return p.Name
 }
 
 // PromptMessage represents a message in a prompt
@@ -395,8 +418,14 @@ type Content struct {
 
 // ResourceReference represents a reference to a resource
 type ResourceReference struct {
-	Type string `json:"type"`
-	URI  string `json:"uri"`
+	Type        string             `json:"type"`
+	URI         string             `json:"uri"`
+	Name        string             `json:"name,omitempty"`
+	Title       string             `json:"title,omitempty"`
+	Description string             `json:"description,omitempty"`
+	MimeType    string             `json:"mimeType,omitempty"`
+	Size        *int64             `json:"size,omitempty"`
+	Icons       []officialMCP.Icon `json:"icons,omitempty"`
 }
 
 // CallToolRequest represents a tool call request

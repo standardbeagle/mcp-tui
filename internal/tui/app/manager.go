@@ -105,6 +105,25 @@ func (sm *ScreenManager) CurrentMainScreen() *screens.MainScreen {
 	return nil
 }
 
+// Shutdown closes the active MCP service before Bubble Tea returns control to
+// the caller. MainScreen can be underneath a detail screen or overlay, so walk
+// the navigation stack as well as the current screen.
+func (sm *ScreenManager) Shutdown() error {
+	main := sm.CurrentMainScreen()
+	if main == nil {
+		for i := len(sm.screenStack) - 1; i >= 0; i-- {
+			if candidate, ok := sm.screenStack[i].(*screens.MainScreen); ok {
+				main = candidate
+				break
+			}
+		}
+	}
+	if main == nil || main.Service() == nil {
+		return nil
+	}
+	return main.Service().Disconnect()
+}
+
 // Init initializes the screen manager
 func (sm *ScreenManager) Init() tea.Cmd {
 	// Request initial window size and initialize current screen

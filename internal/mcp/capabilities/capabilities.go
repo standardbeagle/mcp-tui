@@ -256,6 +256,7 @@ func DeriveClientCapabilities(
 		// older servers (they ignore unknown sub-fields).
 		if protocolVersion >= "2025-11-25" {
 			caps.Elicitation.Form = &officialMCP.FormElicitationCapabilities{}
+			caps.Elicitation.URL = &officialMCP.URLElicitationCapabilities{}
 		}
 	}
 

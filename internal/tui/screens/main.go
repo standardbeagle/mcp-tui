@@ -1001,34 +1001,12 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 
 	switch ms.activeTab {
 	case 0: // Tools
-		// Extract tool name from the display string (format: "name - description")
-		parts := strings.SplitN(selectedItem, " - ", 2)
-		if len(parts) > 0 {
-			toolName := parts[0]
-			// Find the actual tool object
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			tools, err := ms.mcpService.ListTools(ctx)
-			if err != nil {
-				ms.SetError(fmt.Errorf("failed to get tool details: %v", err))
-				return ms, nil
-			}
-
-			for _, tool := range tools {
-				if tool.Name == toolName {
-					// Create tool screen
-					toolScreen := NewToolScreen(tool, ms.mcpService)
-					return ms, func() tea.Msg {
-						return TransitionMsg{
-							Transition: ScreenTransition{
-								Screen: toolScreen,
-							},
-						}
-					}
-				}
-			}
-			ms.SetError(fmt.Errorf("tool '%s' not found", toolName))
+		if selectedIdx >= len(ms.tools) {
+			return ms, nil
+		}
+		toolScreen := NewToolScreen(ms.tools[selectedIdx], ms.mcpService)
+		return ms, func() tea.Msg {
+			return TransitionMsg{Transition: ScreenTransition{Screen: toolScreen}}
 		}
 
 	case 1: // Resources
@@ -1724,8 +1702,11 @@ func (ms *MainScreen) connectToServer() tea.Cmd {
 			debug.F("command", ms.connectionConfig.Command),
 			debug.F("args", ms.connectionConfig.Args))
 
-		// Use context with timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		timeout := 10 * time.Second
+		if ms.config != nil && ms.config.ConnectionTimeout > 0 {
+			timeout = ms.config.ConnectionTimeout
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		// Actually connect to the MCP server
@@ -1792,7 +1773,7 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 				if description == "" {
 					description = "No description"
 				}
-				toolList = append(toolList, fmt.Sprintf("%s - %s", tool.Name, description))
+				toolList = append(toolList, fmt.Sprintf("%s%s - %s", iconMarker(len(tool.Icons)), tool.DisplayName(), description))
 			}
 		}
 
@@ -1887,7 +1868,7 @@ func buildResourceListItems(resources []mcp.Resource, templates []mcp.ResourceTe
 		if desc == "" {
 			desc = "No description"
 		}
-		out = append(out, fmt.Sprintf("%s - %s", r.URI, desc))
+		out = append(out, fmt.Sprintf("%s%s - %s", iconMarker(len(r.Icons)), r.DisplayName(), desc))
 	}
 	if len(templates) > 0 {
 		out = append(out, "── Templates ──")
@@ -1896,10 +1877,17 @@ func buildResourceListItems(resources []mcp.Resource, templates []mcp.ResourceTe
 			if desc == "" {
 				desc = "No description"
 			}
-			out = append(out, fmt.Sprintf("%s - %s", t.URITemplate, desc))
+			out = append(out, fmt.Sprintf("%s%s - %s", iconMarker(len(t.Icons)), t.DisplayName(), desc))
 		}
 	}
 	return out, len(resources) + len(templates)
+}
+
+func iconMarker(count int) string {
+	if count > 0 {
+		return "[icon] "
+	}
+	return ""
 }
 
 // loadPrompts loads the list of prompts
@@ -1948,7 +1936,7 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 				if description == "" {
 					description = "No description"
 				}
-				promptList = append(promptList, fmt.Sprintf("%s - %s", prompt.Name, description))
+				promptList = append(promptList, fmt.Sprintf("%s%s - %s", iconMarker(len(prompt.Icons)), prompt.DisplayName(), description))
 			}
 		}
 
@@ -2191,7 +2179,7 @@ func (ms *MainScreen) renderToolList() string {
 		}
 
 		// Use DisplayName so server-supplied titles render in the list.
-		displayName := tool.DisplayName()
+		displayName := iconMarker(len(tool.Icons)) + tool.DisplayName()
 
 		if i == selectedIdx {
 			line := fmt.Sprintf("%2d. %s%s%s", i+1, displayName, badges, warningIndicator)
@@ -2502,13 +2490,13 @@ func (ms *MainScreen) renderResourceViewer() string {
 
 	// Header
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
-	builder.WriteString(headerStyle.Render(fmt.Sprintf("Resource: %s", ms.selectedResource.URI)))
+	builder.WriteString(headerStyle.Render(fmt.Sprintf("Resource: %s", ms.selectedResource.DisplayName())))
 	builder.WriteString("\n\n")
 
 	// Metadata
 	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	if ms.selectedResource.Name != "" && ms.selectedResource.Name != ms.selectedResource.URI {
-		builder.WriteString(metaStyle.Render(fmt.Sprintf("Name: %s", ms.selectedResource.Name)))
+	if ms.selectedResource.DisplayName() != ms.selectedResource.URI {
+		builder.WriteString(metaStyle.Render(fmt.Sprintf("Name: %s", ms.selectedResource.DisplayName())))
 		builder.WriteString("\n")
 	}
 	if ms.selectedResource.Description != "" {
@@ -2582,7 +2570,7 @@ func (ms *MainScreen) renderPromptViewer() string {
 
 	// Header
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13"))
-	builder.WriteString(headerStyle.Render(fmt.Sprintf("Prompt: %s", ms.selectedPrompt.Name)))
+	builder.WriteString(headerStyle.Render(fmt.Sprintf("Prompt: %s", ms.selectedPrompt.DisplayName())))
 	builder.WriteString("\n\n")
 
 	// Metadata

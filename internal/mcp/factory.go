@@ -7,7 +7,5 @@ func NewService() Service {
 		requestID: 0,
 		debugMode: true, // Always enable debug mode - this is a testing tool
 	}
-	// Enable HTTP debugging immediately
-	s.SetDebugMode(true)
 	return s
 }

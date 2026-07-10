@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	version = "0.9.0"
+	version = "0.9.1"
 	cfg     *config.Config
 
 	// Global connection config that can be passed to subcommands
@@ -62,20 +62,20 @@ func main() {
 	// Create root command
 	rootCmd := createRootCommand(ctx)
 
-	// If we detected a connection string, we need to adjust the args
-	// so Cobra doesn't treat the connection string as a command
+	// Remove only the positional connection string so Cobra can parse all
+	// remaining persistent flags regardless of whether they appear before or
+	// after the subcommand.
 	if globalConnConfig != nil {
 		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
 
 		if parsedArgs.SubCommand != "" {
-			// CLI mode: Reconstruct args without the connection string
-			newArgs := []string{os.Args[0], parsedArgs.SubCommand}
-			newArgs = append(newArgs, parsedArgs.SubCommandArgs...)
-			os.Args = newArgs
+			// CLI mode: make the positional connection available to commands.
+			cli.SetGlobalConnection(globalConnConfig)
 		} else {
-			// TUI mode: Remove the connection string from args
-			os.Args = []string{os.Args[0]}
+			// TUI mode does not use the CLI package state.
+			cli.SetGlobalConnection(nil)
 		}
+		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 	}
 
 	// Execute
@@ -132,6 +132,11 @@ Examples:
 			// fatal — running the TUI with a misconfigured handler would
 			// silently fail every connection attempt.
 			if connectionConfig != nil {
+				transportFlag, _ := cmd.Flags().GetString("transport")
+				if transportFlag != "" && transportFlag != "stdio" {
+					connectionConfig.Type = config.TransportType(transportFlag)
+				}
+
 				if oauthCfg, err := cli.BuildOAuthConfig(cmd, connectionConfig); err != nil {
 					debug.Error("OAuth flag parsing failed", debug.F("error", err))
 					os.Exit(1)

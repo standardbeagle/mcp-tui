@@ -111,7 +111,7 @@ func TestDebugScreen_CapabilitiesTab_FullSnapshot(t *testing.T) {
 		"Version: 0.8.2",
 		"✓ roots (listChanged)",
 		"✓ sampling (tools)",
-		"✓ elicitation (form)",
+		"✓ elicitation (form, url)",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("client section missing %q:\n%s", want, view)
