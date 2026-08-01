@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI**: Bumped `go-version` in publish workflow to 1.25 for SDK compatibility.
 
 ### Added
-- **Documentation site**: New Astro Starlight site under `docs/` deployed to GitHub Pages at https://standardbeagle.github.io/mcp-tui/. Includes Get Started, TUI/CLI/Transports/Configuration/Automation/Debugging guides, and CLI/Keyboard/Architecture reference.
+- **Documentation site**: New Astro Starlight site under `docs/` deployed to GitHub Pages at https://dev.standardbeagle.com/mcp-tui/. Includes Get Started, TUI/CLI/Transports/Configuration/Automation/Debugging guides, and CLI/Keyboard/Architecture reference.
 - **Animated demos**: Generated WebP recordings of CLI and TUI flows via `vhs` (`docs/recordings/*.tape`).
 - **GitHub Pages workflow**: `.github/workflows/docs.yml` builds and deploys docs on `docs/**` changes.
 

@@ -3,7 +3,7 @@
 [![go install](https://img.shields.io/badge/go%20install-github.com%2Fstandardbeagle%2Fmcp--tui-00ADD8?logo=go&logoColor=white)](https://github.com/standardbeagle/mcp-tui)
 [![npm](https://img.shields.io/npm/v/@standardbeagle/mcp-tui?logo=npm)](https://www.npmjs.com/package/@standardbeagle/mcp-tui)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-online-2563eb)](https://standardbeagle.github.io/mcp-tui/)
+[![Docs](https://img.shields.io/badge/docs-online-2563eb)](https://dev.standardbeagle.com/mcp-tui/)
 
 **Fast terminal UI and CLI for testing, debugging, and automating Model Context Protocol servers.**
 
@@ -64,15 +64,15 @@ mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" \
 
 ## Documentation
 
-Full docs at **<https://standardbeagle.github.io/mcp-tui/>**.
+Full docs at **<https://dev.standardbeagle.com/mcp-tui/>**.
 
-- [Install](https://standardbeagle.github.io/mcp-tui/install/)
-- [Quick start](https://standardbeagle.github.io/mcp-tui/quick-start/)
-- [TUI guide](https://standardbeagle.github.io/mcp-tui/guides/tui/)
-- [CLI reference](https://standardbeagle.github.io/mcp-tui/reference/cli/)
-- [Transports](https://standardbeagle.github.io/mcp-tui/guides/transports/)
-- [Automation & CI](https://standardbeagle.github.io/mcp-tui/guides/automation/)
-- [Debugging](https://standardbeagle.github.io/mcp-tui/guides/debugging/)
+- [Install](https://dev.standardbeagle.com/mcp-tui/install/)
+- [Quick start](https://dev.standardbeagle.com/mcp-tui/quick-start/)
+- [TUI guide](https://dev.standardbeagle.com/mcp-tui/guides/tui/)
+- [CLI reference](https://dev.standardbeagle.com/mcp-tui/reference/cli/)
+- [Transports](https://dev.standardbeagle.com/mcp-tui/guides/transports/)
+- [Automation & CI](https://dev.standardbeagle.com/mcp-tui/guides/automation/)
+- [Debugging](https://dev.standardbeagle.com/mcp-tui/guides/debugging/)
 
 ## Contributing
 

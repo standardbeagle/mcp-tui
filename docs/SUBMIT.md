@@ -11,7 +11,7 @@ This file lists the catalogs we submit to and the canonical blurb / metadata use
 | Name | MCP-TUI |
 | Tagline | Fast terminal UI and CLI for testing, debugging, and automating Model Context Protocol servers |
 | Repository | https://github.com/standardbeagle/mcp-tui |
-| Website / Docs | https://standardbeagle.github.io/mcp-tui/ |
+| Website / Docs | https://dev.standardbeagle.com/mcp-tui/ |
 | npm | `@standardbeagle/mcp-tui` |
 | Go | `go install github.com/standardbeagle/mcp-tui@latest` |
 | License | MIT |

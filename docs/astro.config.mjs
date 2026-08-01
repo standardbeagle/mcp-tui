@@ -2,7 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://standardbeagle.github.io',
+  site: 'https://dev.standardbeagle.com',
   base: '/mcp-tui',
   integrations: [
     starlight({
@@ -30,7 +30,7 @@ export default defineConfig({
           tag: 'meta',
           attrs: {
             property: 'og:image',
-            content: 'https://standardbeagle.github.io/mcp-tui/og.png',
+            content: 'https://dev.standardbeagle.com/mcp-tui/og.png',
           },
         },
         {
