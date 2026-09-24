@@ -86,6 +86,13 @@ type Config struct {
 	// client). Pass empty for public clients in auth-code mode.
 	ClientSecret string
 
+	// ClientMetadataURL is the https URL of a Client ID Metadata Document
+	// (SEP-991). When the authorization server advertises
+	// client_id_metadata_document_supported the URL itself is the
+	// client_id; otherwise the pre-registered client or DCR is used.
+	// Authorization-code only.
+	ClientMetadataURL string
+
 	// TokenURL is an optional override for the token endpoint. When empty
 	// the endpoint is auto-discovered via Protected Resource Metadata
 	// (RFC 9728) + Authorization Server Metadata (RFC 8414).
@@ -137,7 +144,7 @@ func (c *Config) Mode() Mode {
 	// Anything beyond client-credentials requires auth-code. We still
 	// allow a credential-less invocation (DCR-only) provided the caller
 	// asked for it; the CLI layer signals that by enabling DCR explicitly.
-	if c.ClientID != "" || c.EnableDynamicRegistration {
+	if c.ClientID != "" || c.ClientMetadataURL != "" || c.EnableDynamicRegistration {
 		return ModeAuthorizationCode
 	}
 	return ModeNone
@@ -167,10 +174,16 @@ func (c *Config) Validate() error {
 		if c.ClientSecret == "" {
 			return errors.New("oauth: client-credentials requires ClientSecret")
 		}
+		if c.ClientMetadataURL != "" {
+			return errors.New("oauth: ClientMetadataURL identifies a public client and cannot be combined with client-credentials")
+		}
 	case ModeAuthorizationCode:
-		// ClientID may be empty when DCR is enabled.
-		if c.ClientID == "" && !c.EnableDynamicRegistration {
-			return errors.New("oauth: authorization-code without ClientID requires dynamic client registration")
+		// ClientID may be empty when CIMD or DCR supplies the identity.
+		if c.ClientID == "" && c.ClientMetadataURL == "" && !c.EnableDynamicRegistration {
+			return errors.New("oauth: authorization-code without ClientID requires a client metadata URL or dynamic client registration")
+		}
+		if c.ClientMetadataURL != "" && !isNonRootHTTPSURL(c.ClientMetadataURL) {
+			return fmt.Errorf("oauth: ClientMetadataURL %q must be a non-root https URL", c.ClientMetadataURL)
 		}
 		if c.RedirectPort < 0 || c.RedirectPort > 65535 {
 			return fmt.Errorf("oauth: RedirectPort %d out of range", c.RedirectPort)
@@ -182,6 +195,13 @@ func (c *Config) Validate() error {
 		// Nothing to validate.
 	}
 	return nil
+}
+
+// isNonRootHTTPSURL mirrors the SDK's check on a client ID metadata URL so
+// a bad flag fails at parse time rather than on the first 401.
+func isNonRootHTTPSURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Path != "" && u.Path != "/"
 }
 
 // isLoopbackHost reports whether host names the loopback interface:

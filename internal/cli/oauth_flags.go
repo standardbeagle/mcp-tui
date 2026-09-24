@@ -13,7 +13,10 @@ import (
 //     set.
 //   - authorization-code + PKCE (RFC 6749 §4.1, RFC 7636) for interactive
 //     auth. Triggered when --oauth-client-id is set without a secret, or
-//     when --oauth-dynamic-registration is used.
+//     when --oauth-client-metadata-url or --oauth-dynamic-registration is
+//     used. The client identity is resolved in the SDK's order: Client ID
+//     Metadata Document (when the AS supports it), pre-registered client
+//     ID, dynamic registration.
 //
 // --oauth-token-url overrides automatic discovery via Protected Resource
 // Metadata + Authorization Server Metadata; useful when the server cannot
@@ -25,6 +28,7 @@ import (
 func RegisterOAuthFlags(flags *pflag.FlagSet) {
 	flags.String("oauth-client-id", "", "OAuth client ID (enables OAuth on HTTP transports)")
 	flags.String("oauth-client-secret", "", "OAuth client secret (with --oauth-client-id, switches to client-credentials grant)")
+	flags.String("oauth-client-metadata-url", "", "HTTPS URL of a Client ID Metadata Document used as the client_id when the authorization server supports it (SEP-991)")
 	flags.String("oauth-token-url", "", "OAuth token endpoint override (skips auto-discovery)")
 	flags.String("oauth-scopes", "", "Comma- or space-separated OAuth scopes to request")
 	flags.String("oauth-redirect-host", "127.0.0.1", "Host for the auth-code redirect URI (loopback only)")

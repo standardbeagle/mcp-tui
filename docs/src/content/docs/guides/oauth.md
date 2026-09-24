@@ -25,7 +25,7 @@ Control the loopback redirect URI:
 
 | Flag | Default | Purpose |
 |------|---------|---------|
-| `--oauth-redirect-host` | `127.0.0.1` | Redirect host (loopback only) |
+| `--oauth-redirect-host` | `127.0.0.1` | Redirect host: `localhost`, `127.0.0.0/8` or `::1` |
 | `--oauth-redirect-port` | `0` | Redirect port (`0` = ephemeral) |
 
 ## Client credentials (service-to-service)
@@ -50,6 +50,24 @@ fly via RFC 7591, then proceeds with the authorization-code + PKCE flow:
 mcp-tui --transport http --url https://api.example.com/mcp \
   --oauth-dynamic-registration tool list
 ```
+
+## Client ID Metadata Document
+
+With a Client ID Metadata Document (SEP-991) you host your client's metadata
+at an HTTPS URL and use that URL as the client ID; no registration step is
+needed. Pass it with `--oauth-client-metadata-url`:
+
+```bash
+mcp-tui --transport http --url https://api.example.com/mcp \
+  --oauth-client-metadata-url https://example.com/oauth/mcp-tui.json \
+  --oauth-dynamic-registration tool list
+```
+
+The URL must be `https` with a path. The document is used only when the
+authorization server advertises `client_id_metadata_document_supported`.
+Otherwise MCP-TUI tries the next configured method: a pre-registered
+`--oauth-client-id`, then dynamic registration. The debug log records which
+method was chosen and why (`Client registration resolved`).
 
 ## Discovery and overrides
 
@@ -87,9 +105,10 @@ request triggers a fresh authorization.
 |------|---------|-------------|
 | `--oauth-client-id` | | Client ID (enables OAuth on HTTP transports) |
 | `--oauth-client-secret` | | Client secret (switches to client-credentials grant) |
+| `--oauth-client-metadata-url` | | Client ID Metadata Document URL (SEP-991) |
 | `--oauth-token-url` | | Token endpoint override (skips discovery) |
 | `--oauth-scopes` | | Comma- or space-separated scopes |
-| `--oauth-redirect-host` | `127.0.0.1` | Auth-code redirect host (loopback only) |
+| `--oauth-redirect-host` | `127.0.0.1` | Auth-code redirect host (`localhost`, `127.0.0.0/8` or `::1`) |
 | `--oauth-redirect-port` | `0` | Auth-code redirect port (`0` = ephemeral) |
 | `--oauth-dynamic-registration` | `false` | RFC 7591 dynamic registration when client ID is empty |
 | `--oauth-cache` | platform cache dir | Token cache directory (`-` disables) |

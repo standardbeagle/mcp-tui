@@ -53,11 +53,16 @@ type mockAuthServer struct {
 	advertiseIss bool
 	callbackIss  string
 
+	// supportCIMD advertises client_id_metadata_document_supported, so an
+	// https client_id URL is accepted as the client identifier.
+	supportCIMD bool
+
 	// recorded token requests (mutex-guarded).
 	mu                     sync.Mutex
 	tokenRequests          []url.Values
 	registerRequests       []json.RawMessage
 	authorizeStates        []string
+	authorizeRequests      []url.Values
 	issuedAccessToken      string
 	requireSecretOnRefresh bool
 }
@@ -131,6 +136,9 @@ func (m *mockAuthServer) handleASM(w http.ResponseWriter, _ *http.Request) {
 	}
 	if m.advertiseIss {
 		asm["authorization_response_iss_parameter_supported"] = true
+	}
+	if m.supportCIMD {
+		asm["client_id_metadata_document_supported"] = true
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(asm)
@@ -216,6 +224,7 @@ func (m *mockAuthServer) handleAuthorize(w http.ResponseWriter, r *http.Request)
 	state := q.Get("state")
 	m.mu.Lock()
 	m.authorizeStates = append(m.authorizeStates, state)
+	m.authorizeRequests = append(m.authorizeRequests, q)
 	m.mu.Unlock()
 	if redirectURI == "" {
 		http.Error(w, "missing redirect_uri", http.StatusBadRequest)
@@ -299,6 +308,15 @@ func (m *mockAuthServer) tokenRequestCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.tokenRequests)
+}
+
+func (m *mockAuthServer) lastAuthorizeRequest() url.Values {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.authorizeRequests) == 0 {
+		return nil
+	}
+	return m.authorizeRequests[len(m.authorizeRequests)-1]
 }
 
 func (m *mockAuthServer) lastTokenRequest() url.Values {

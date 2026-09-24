@@ -64,9 +64,10 @@ See [OAuth](/mcp-tui/guides/oauth/) for the full flow.
 |------|---------|-------------|
 | `--oauth-client-id <id>` | | OAuth client ID (enables OAuth on HTTP transports) |
 | `--oauth-client-secret <secret>` | | Client secret (with `--oauth-client-id`, switches to client-credentials grant) |
+| `--oauth-client-metadata-url <url>` | | HTTPS URL of a Client ID Metadata Document (SEP-991), used as the client ID when the authorization server supports it |
 | `--oauth-token-url <url>` | | Token endpoint override (skips auto-discovery) |
 | `--oauth-scopes <a,b>` | | Comma- or space-separated scopes to request |
-| `--oauth-redirect-host <host>` | `127.0.0.1` | Host for the auth-code redirect URI (loopback only) |
+| `--oauth-redirect-host <host>` | `127.0.0.1` | Host for the auth-code redirect URI; must be `localhost`, `127.0.0.0/8` or `::1` |
 | `--oauth-redirect-port <port>` | `0` | Port for the redirect URI (`0` = ephemeral) |
 | `--oauth-dynamic-registration` | `false` | Enable RFC 7591 dynamic client registration when client ID is empty |
 | `--oauth-cache <dir>` | platform cache dir | Token cache directory (`-` to disable persistence) |

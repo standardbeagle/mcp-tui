@@ -71,7 +71,7 @@ func TestAuthorizationCodeFlow_DCR_LogsEveryStepWithoutSecrets(t *testing.T) {
 
 	assertLogged(t, out,
 		"[oauth] OAuth mode selected mode=authorization_code",
-		"registration=dynamic",
+		"registration_order=[dynamic]",
 		"[oauth] Authorization required status=401",
 		"[oauth] Protected resource metadata discovered",
 		"scopes_supported=[mcp:read mcp:write]",

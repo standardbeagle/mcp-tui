@@ -59,3 +59,24 @@ func TestBuildOAuthConfig_RejectsNonLoopbackRedirectHost(t *testing.T) {
 		t.Fatalf("err = %v, want loopback rejection", err)
 	}
 }
+
+// TestBuildOAuthConfig_ClientMetadataURL: --oauth-client-metadata-url alone
+// selects the authorization-code grant with a CIMD client identity.
+func TestBuildOAuthConfig_ClientMetadataURL(t *testing.T) {
+	const metadataURL = "https://mcp-tui.standardbeagle.dev/oauth/client-metadata.json"
+	cfg, err := buildOAuthConfigFromArgs(t, "https://mcp.example.com/mcp", "--oauth-client-metadata-url", metadataURL)
+	if err != nil {
+		t.Fatalf("BuildOAuthConfig: %v", err)
+	}
+	if cfg == nil || cfg.ClientMetadataURL != metadataURL {
+		t.Fatalf("config = %+v, want ClientMetadataURL %q", cfg, metadataURL)
+	}
+	if cfg.Mode() != oauth.ModeAuthorizationCode {
+		t.Errorf("mode = %s, want authorization_code", cfg.Mode())
+	}
+
+	if _, err := buildOAuthConfigFromArgs(t, "https://mcp.example.com/mcp",
+		"--oauth-client-metadata-url", "http://mcp-tui.standardbeagle.dev/client.json"); err == nil {
+		t.Error("an http client metadata URL must be rejected")
+	}
+}

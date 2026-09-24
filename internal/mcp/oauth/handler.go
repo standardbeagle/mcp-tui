@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -256,15 +257,21 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 		return nil, fmt.Errorf("oauth: failed to bind callback listener (host=%s, port=%d)", h.cfg.RedirectHost, h.cfg.RedirectPort)
 	}
 	cfg := &auth.AuthorizationCodeHandlerConfig{
-		RedirectURL:              redirectURL,
-		AuthorizationCodeFetcher: fetcher.Fetch,
-		Client:                   h.httpClient,
+		RedirectURL: redirectURL,
+		AuthorizationCodeFetcher: func(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
+			logRegistrationResolved(h.cfg, args.URL)
+			return fetcher.Fetch(ctx, args)
+		},
+		Client: h.httpClient,
 		// Observation only: the discovered set is returned unchanged, so
 		// the SDK's scope selection is exactly what it would be without it.
 		ScopeFilter: func(discovered []string) []string {
 			authLog().Info("Scopes discovered", debug.F("scopes", discovered))
 			return discovered
 		},
+	}
+	if h.cfg.ClientMetadataURL != "" {
+		cfg.ClientIDMetadataDocumentConfig = &auth.ClientIDMetadataDocumentConfig{URL: h.cfg.ClientMetadataURL}
 	}
 	if pre := h.cfg.preregistered(); pre != nil {
 		cfg.PreregisteredClient = pre
@@ -280,7 +287,7 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 	}
 	authLog().Info("Authorization-code handler ready",
 		debug.F("redirect_url", redirectURL),
-		debug.F("registration", registrationPath(h.cfg)))
+		debug.F("registration_order", registrationOrder(h.cfg)))
 	return auth.NewAuthorizationCodeHandler(cfg)
 }
 
@@ -360,15 +367,69 @@ func tokenSummary(tok *oauth2.Token) []debug.Field {
 	}
 }
 
-// registrationPath names how the client identifies itself to the AS.
-func registrationPath(cfg *Config) string {
-	switch {
-	case cfg.ClientID != "":
-		return "preregistered"
-	case cfg.EnableDynamicRegistration:
-		return "dynamic"
+// Client registration paths, in the order the SDK tries them.
+const (
+	registrationCIMD          = "client_id_metadata_document"
+	registrationPreregistered = "preregistered"
+	registrationDynamic       = "dynamic"
+)
+
+// registrationOrder lists the configured ways the client can identify
+// itself to the AS, in the SDK's order of preference: a Client ID Metadata
+// Document (used only when the AS advertises support), then a
+// pre-registered client, then dynamic registration.
+func registrationOrder(cfg *Config) []string {
+	order := make([]string, 0, 3)
+	if cfg.ClientMetadataURL != "" {
+		order = append(order, registrationCIMD)
+	}
+	if cfg.ClientID != "" {
+		order = append(order, registrationPreregistered)
+	}
+	if cfg.EnableDynamicRegistration && cfg.Mode() == ModeAuthorizationCode {
+		order = append(order, registrationDynamic)
+	}
+	return order
+}
+
+// logRegistrationResolved records which registration path the SDK took and
+// why, read off the client_id in the authorization URL: the SDK picks the
+// first path in registrationOrder the AS supports, so a later path means
+// every earlier one was unsupported.
+func logRegistrationResolved(cfg *Config, authURL string) {
+	u, err := url.Parse(authURL)
+	if err != nil {
+		authLog().Warn("Authorization URL unparseable", debug.F("error", redact.Error(err)))
+		return
+	}
+	clientID := u.Query().Get("client_id")
+	path := registrationDynamic
+	switch clientID {
+	case cfg.ClientMetadataURL:
+		path = registrationCIMD
+	case cfg.ClientID:
+		path = registrationPreregistered
+	}
+	authLog().Info("Client registration resolved",
+		debug.F("path", path),
+		debug.F("reason", registrationReason(cfg, path)),
+		debug.F("client_id", clientID))
+}
+
+func registrationReason(cfg *Config, path string) string {
+	switch path {
+	case registrationCIMD:
+		return "authorization server advertises client_id_metadata_document_supported"
+	case registrationPreregistered:
+		if cfg.ClientMetadataURL != "" {
+			return "authorization server does not advertise client_id_metadata_document_supported"
+		}
+		return "configured client ID"
 	default:
-		return noneValue
+		if cfg.ClientMetadataURL != "" {
+			return "authorization server does not advertise client_id_metadata_document_supported; no pre-registered client"
+		}
+		return "no pre-registered client"
 	}
 }
 
@@ -379,7 +440,7 @@ func logModeSelected(cfg *Config, cache TokenCache) {
 	authLog().Info("OAuth mode selected",
 		debug.F("mode", cfg.Mode()),
 		debug.F("server_url", redact.URL(cfg.ServerURL)),
-		debug.F("registration", registrationPath(cfg)),
+		debug.F("registration_order", registrationOrder(cfg)),
 		debug.F("confidential_client", cfg.ClientSecret != ""),
 		debug.F("token_cache", cache != nil && !cacheDisabled))
 	if len(cfg.scopeList()) > 0 || cfg.TokenURL != "" {
