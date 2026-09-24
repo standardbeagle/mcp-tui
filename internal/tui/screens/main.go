@@ -109,10 +109,13 @@ type MainScreen struct {
 	// reported it changed; cleared when the resource is read again.
 	resourceUpdates map[string]time.Time
 	// resourceUpdateFeed carries resource updates from the service's
-	// notification observer to the bubbletea loop; resourceFeedStopped
-	// ends the wait on it (startResourceUpdateFeed).
-	resourceUpdateFeed  chan ResourceUpdatedMsg
-	resourceFeedStopped chan struct{}
+	// notification observer to the bubbletea loop
+	// (startResourceUpdateFeed); inputRequestFeed carries the server's
+	// sampling and elicitation requests (installInputHandlers).
+	// feedsStopped ends the wait on both.
+	resourceUpdateFeed chan ResourceUpdatedMsg
+	inputRequestFeed   chan tea.Msg
+	feedsStopped       chan struct{}
 
 	// Connection status
 	connectionStatus string
@@ -235,18 +238,20 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 		connecting:                   true,
 		resourceTemplateSectionStart: -1,
 		resourceUpdateFeed:           make(chan ResourceUpdatedMsg, resourceUpdateBuffer),
-		resourceFeedStopped:          make(chan struct{}),
+		inputRequestFeed:             make(chan tea.Msg),
+		feedsStopped:                 make(chan struct{}),
 	}
 
 	// Initialize components
 	ms.initializeComponents(connConfig)
+	ms.installInputHandlers()
 
 	return ms
 }
 
-// Service returns the MCP service used by this screen. This is intended for
-// the App layer to install cross-cutting handlers (e.g. a sampling handler
-// that bridges to tea.Program.Send) before the connection is initiated.
+// Service returns the MCP service used by this screen, for callers that
+// seed it (initial roots) before the connection is initiated or close it on
+// shutdown.
 func (ms *MainScreen) Service() mcp.Service {
 	return ms.mcpService
 }
@@ -346,6 +351,7 @@ func (ms *MainScreen) Init() tea.Cmd {
 		ms.connectToServer(),
 		ms.tickEvents(), // Start periodic event refresh
 		ms.startResourceUpdateFeed(),
+		ms.nextInputRequest(),
 	)
 }
 
@@ -421,9 +427,9 @@ func (ms *MainScreen) handleSamplingRequest(msg SamplingRequestMsg) (tea.Model, 
 		return ms, nil
 	}
 	overlay := NewSamplingScreen(msg.Pending)
-	return ms, func() tea.Msg {
+	return ms, tea.Batch(func() tea.Msg {
 		return TransitionMsg{Transition: ScreenTransition{Screen: overlay}}
-	}
+	}, ms.nextInputRequest())
 }
 
 // handleElicitationRequest opens the elicitation overlay in response to a
@@ -437,9 +443,9 @@ func (ms *MainScreen) handleElicitationRequest(msg ElicitationRequestMsg) (tea.M
 		return ms, nil
 	}
 	overlay := NewElicitationScreen(msg.Pending)
-	return ms, func() tea.Msg {
+	return ms, tea.Batch(func() tea.Msg {
 		return TransitionMsg{Transition: ScreenTransition{Screen: overlay}}
-	}
+	}, ms.nextInputRequest())
 }
 
 // handleConnectionStarted handles connection started messages
@@ -920,7 +926,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ms.logger.Info("User requested disconnect")
 
 		// Disconnect from the MCP server
-		ms.stopResourceUpdateFeed()
+		ms.stopFeeds()
 		if err := ms.mcpService.Disconnect(); err != nil {
 			ms.logger.Error("Failed to disconnect cleanly", debug.F("error", err))
 			// Continue with transition even if disconnect fails

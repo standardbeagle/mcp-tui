@@ -69,7 +69,7 @@ func (ms *MainScreen) startResourceUpdateFeed() tea.Cmd {
 // nextResourceUpdate waits for the next queued resource update, or returns
 // nil once the screen stopped (disconnect).
 func (ms *MainScreen) nextResourceUpdate() tea.Cmd {
-	updates, stopped := ms.resourceUpdateFeed, ms.resourceFeedStopped
+	updates, stopped := ms.resourceUpdateFeed, ms.feedsStopped
 	return func() tea.Msg {
 		select {
 		case msg := <-updates:
@@ -80,13 +80,14 @@ func (ms *MainScreen) nextResourceUpdate() tea.Cmd {
 	}
 }
 
-// stopResourceUpdateFeed releases the goroutine waiting in
-// nextResourceUpdate; called when the screen disconnects.
-func (ms *MainScreen) stopResourceUpdateFeed() {
+// stopFeeds releases the goroutines waiting in nextResourceUpdate and
+// nextInputRequest, and makes later server requests fail instead of
+// waiting for a screen that is gone; called when the screen disconnects.
+func (ms *MainScreen) stopFeeds() {
 	select {
-	case <-ms.resourceFeedStopped:
+	case <-ms.feedsStopped:
 	default:
-		close(ms.resourceFeedStopped)
+		close(ms.feedsStopped)
 	}
 }
 

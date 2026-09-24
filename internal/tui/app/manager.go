@@ -96,8 +96,7 @@ func (sm *ScreenManager) checkAutoConnect() (*config.ConnectionConfig, *models.C
 }
 
 // CurrentMainScreen returns the underlying *MainScreen if it is currently the
-// active screen, or nil otherwise. Used by the App layer to wire global
-// handlers (e.g. sampling) before the screen begins its connection sequence.
+// active screen, or nil otherwise.
 func (sm *ScreenManager) CurrentMainScreen() *screens.MainScreen {
 	if ms, ok := sm.currentScreen.(*screens.MainScreen); ok {
 		return ms
