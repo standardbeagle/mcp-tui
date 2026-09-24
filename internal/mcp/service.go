@@ -1041,6 +1041,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		})
 	if err != nil {
 		// Classify and handle the error
+		err = nameProtocolError(err, "tools/list")
 		classified := s.errorHandler.HandleError(ctx, err, "list_tools", map[string]interface{}{
 			"session_id": sessionPkg.SessionLabel(session),
 		})
@@ -1216,7 +1217,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 			return res.InputRequests, res.RequestState, nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("failed to call tool '%s': %w", req.Name, err)
+		return nil, fmt.Errorf("failed to call tool '%s': %w", req.Name, nameProtocolError(err, "tools/call"))
 	}
 
 	// Convert the result format
@@ -1322,7 +1323,7 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 			return res, res.NextCursor, nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("failed to iterate resources from MCP server: %w", err)
+		return nil, fmt.Errorf("failed to iterate resources from MCP server: %w", nameProtocolError(err, "resources/list"))
 	}
 	s.recordListCache(session, cacheInfo)
 
@@ -1377,7 +1378,8 @@ func (s *service) ListResourceTemplates(ctx context.Context) ([]ResourceTemplate
 			return res, res.NextCursor, nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("failed to iterate resource templates from MCP server: %w", err)
+		return nil, fmt.Errorf("failed to iterate resource templates from MCP server: %w",
+			nameProtocolError(err, "resources/templates/list"))
 	}
 	s.recordListCache(session, cacheInfo)
 
@@ -1445,7 +1447,7 @@ func (s *service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 
 	result, err := session.Complete(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("completion/complete failed: %w", err)
+		return nil, fmt.Errorf("completion/complete failed: %w", nameProtocolError(err, "completion/complete"))
 	}
 
 	out := &CompleteResult{
@@ -1494,7 +1496,7 @@ func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceRe
 			return res.InputRequests, res.RequestState, nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read resource '%s': %w", uri, err)
+		return nil, fmt.Errorf("failed to read resource '%s': %w", uri, nameProtocolError(err, "resources/read"))
 	}
 
 	// Convert to compatible format
@@ -1540,7 +1542,7 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 			return res, res.NextCursor, nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("failed to iterate prompts from MCP server: %w", err)
+		return nil, fmt.Errorf("failed to iterate prompts from MCP server: %w", nameProtocolError(err, "prompts/list"))
 	}
 	s.recordListCache(session, cacheInfo)
 
@@ -1628,7 +1630,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 			return res.InputRequests, res.RequestState, nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get prompt '%s': %w", req.Name, err)
+		return nil, fmt.Errorf("failed to get prompt '%s': %w", req.Name, nameProtocolError(err, "prompts/get"))
 	}
 
 	// Preserve the wire content type so prompt consumers render text as text
