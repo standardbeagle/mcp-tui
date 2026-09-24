@@ -55,7 +55,7 @@ See [Client features](/mcp-tui/guides/client-features/).
 | `--elicit-stub-file <path>` | JSON reply file for `elicitation/create`, same shapes as `--elicit-stub` |
 | `--root <name=path>` | Declare a root the server may access (repeatable). Roots are deprecated as of `2026-07-28` (SEP-2577); servers then ask for them via multi round-trip requests, and edits send no `roots/list_changed`. |
 | `--roots-file <path>` | JSON file with a `roots` array of `{name, uri}` entries. Roots are deprecated (SEP-2577). |
-| `--watch-notifications` | Stream server-to-client notifications to stderr |
+| `--watch-notifications` | Stream server-to-client notifications to stderr, task status notifications (`tasks/status`) included |
 
 ### OAuth
 
@@ -96,6 +96,34 @@ mcp-tui [global-flags] tool <list|describe|call> [args]
 | `--no-confirm` | Skip the confirmation prompt for destructive tools. Required for non-TTY callers invoking a tool flagged `destructiveHint:true`. |
 | `--strict-output` | Exit non-zero when the result violates the tool's `outputSchema` |
 | `--strict-errors` | Exit non-zero when the tool returns a result with `isError:true` |
+| `--task` | Call the tool as an MCP task and print the task handle instead of waiting. See [`task`](#task-subcommand). Refused when the server declared no tasks. |
+| `--wait` | With `--task`: poll the task to its end (bounded by `--timeout`) and print its result exactly as a direct call would |
+| `--ttl <ms>` | With `--task`: requested task retention in milliseconds. `2025-11-25` only; refused under the `2026-07-28` extension, which has no client-requested TTL. |
+
+## `task` subcommand
+
+```
+mcp-tui [global-flags] task <support|get|result|list|cancel|update> [args]
+```
+
+MCP tasks let a server answer `tools/call` with a task handle and deliver the
+result later. The negotiated protocol version picks the form: `2025-11-25`
+speaks the experimental tasks feature, `2026-07-28` and later the
+`io.modelcontextprotocol/tasks` extension. Create a task with
+`tool call <tool> --task`; see [Tasks](/mcp-tui/guides/tasks/).
+
+| Command | Method | Forms | Description |
+|---------|--------|-------|-------------|
+| `task support` | | both | The negotiated form and what the server declared |
+| `task get <id>` | `tasks/get` | both | The task's status, status message, times, TTL, poll interval, and pending input requests |
+| `task result <id>` | `tasks/get`, then `tasks/result` (`2025-11-25`) | both | Wait for the task to finish and print its result like `tool call`; input requests on the way are answered with the `--elicit-stub` / `--sampling-stub` handlers |
+| `task list [--cursor <c>]` | `tasks/list` | `2025-11-25` | The server's tasks, one line each, with `nextCursor` when there are more |
+| `task cancel <id>` | `tasks/cancel` | both | `2025-11-25` answers with the cancelled task; the extension only acknowledges, and the task may still finish |
+| `task update <id> --input-responses <json>` | `tasks/update` | extension | Answer the task's input requests by hand, keyed like its `inputRequests` |
+
+All take `--format json`. A method the form lacks, or the server did not
+declare, is refused before anything is sent. A failed task exits 1 with the
+JSON-RPC error it failed with.
 
 ## `resource` subcommand
 

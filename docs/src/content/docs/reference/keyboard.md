@@ -17,6 +17,7 @@ description: Every keyboard binding in MCP-TUI's terminal interface.
 | `Ctrl+↑` / `Ctrl+↓` | Scroll the tool description panel |
 | `r` | Refresh the current tab |
 | `R` | Open the roots editor |
+| `T` | Open the tasks screen |
 | `A` | Re-authenticate (clear cached OAuth state) |
 | `d` | Disconnect and return to the connection screen |
 | `e` | Show schema-error details for the selected tool (Tools tab) |
@@ -26,6 +27,28 @@ description: Every keyboard binding in MCP-TUI's terminal interface.
 | `q` / `Esc` / `Ctrl+C` | Quit |
 
 When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
+
+## Tool screen
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `↓`, `Shift+Tab` / `↑` | Move between fields and buttons |
+| `Enter` | Execute (on the Execute button) |
+| `Ctrl+T` | Toggle task mode: Execute calls the tool as an MCP task and follows it |
+| `c` | Show and copy the equivalent CLI command |
+| `v` | Browse the result's fields |
+| `Esc` / `b` | Back |
+
+## Tasks screen
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` or `k` / `j` | Move within the list |
+| `Enter` | Open the task's detail; in the detail, fetch its result (waits while it runs) |
+| `w` | Fetch the result (detail) |
+| `c` | Cancel the task |
+| `r` | Refresh from the server |
+| `Esc` / `q` | Back to the list, or close |
 
 ## Main screen (disconnected)
 
@@ -68,7 +91,7 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 | Key | Action |
 |-----|--------|
 | `Space` / `p` | Pause / resume the notification stream |
-| `1`–`7` | Toggle a single notification-type filter |
+| `1`–`8` | Toggle a single notification-type filter (`8` = task status) |
 | `0` | Clear all type filters |
 | `+` / `=` | Raise the level threshold |
 | `-` / `_` | Lower the level threshold |

@@ -70,6 +70,7 @@ export default defineConfig({
             { label: 'Transports', slug: 'guides/transports' },
             { label: 'OAuth', slug: 'guides/oauth' },
             { label: 'Client Features', slug: 'guides/client-features' },
+            { label: 'Tasks', slug: 'guides/tasks' },
             { label: 'Configuration', slug: 'guides/configuration' },
             { label: 'Automation & CI', slug: 'guides/automation' },
             { label: 'Conformance Testing', slug: 'guides/testing' },
