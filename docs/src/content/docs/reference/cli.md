@@ -87,7 +87,16 @@ mcp-tui [global-flags] tool <list|describe|call> [args]
 
 - `tool list` — print every tool with its title, description and icons. Flags names that break SEP-986 (1-128 chars of `A-Z a-z 0-9 _ - .`) and warns on stderr about tools the SDK dropped from `tools/list` for invalid `x-mcp-header` annotations (`droppedTools` in JSON).
 - `tool describe <name>` — print the tool's full JSON Schema.
-- `tool call <name> [key=value ...]` — invoke the tool.
+- `tool call <name> [key=value ...]` — invoke the tool. Each value is converted
+  to the type the input schema declares, following `$ref`/`$defs` and
+  `anyOf [T, null]`. A nullable non-string parameter takes the literal `null`;
+  a parameter with no single type (such as `integer|string`) is read as a JSON
+  literal, with a note on stderr; a schema that does not resolve (such as a
+  remote `$ref`) fails the call. When the server needed input first
+  (`2026-07-28` multi round-trip requests), the text output ends with an
+  `Input rounds (SEP-2322)` section and JSON output carries `rounds`. When the
+  result's `_meta` names the server, the output ends with
+  `Served by: <name> <version>` (`server` in JSON).
 
 `tool call` flags:
 
@@ -132,7 +141,8 @@ mcp-tui [global-flags] resource <list|get|templates|complete|watch> [args]
 ```
 
 - `resource list` — list all resources.
-- `resource get <uri>` — read and print a resource (alias: `read`).
+- `resource get <uri>` — read and print a resource (alias: `read`). Like
+  `tool call`, it ends with the input rounds and `Served by` when there are any.
 - `resource templates` — list RFC 6570 URI templates from `resources/templates/list` (alias: `tmpl`).
 - `resource complete <uri-template> <var>=<prefix>` — variable suggestions via `completion/complete` (JSON output).
 - `resource watch <uri> [--count N]` — subscribe and print one line per `notifications/resources/updated` (JSON lines with `--format json`) until Ctrl-C, `--count` updates, or an explicit `--timeout`; a timeout before `--count` updates exits non-zero. Uses a per-URI `subscriptions/listen` stream on 2026-07-28, `resources/subscribe` before; refused when the server lacks `resources.subscribe`.
@@ -145,7 +155,7 @@ mcp-tui [global-flags] prompt <list|get|execute|complete> [args]
 
 - `prompt list` — list all prompts.
 - `prompt get <name>` — render a prompt template.
-- `prompt execute <name> [--arg key=value ...]` — execute a prompt (aliases: `exec`, `run`). `--arg`/`-a` is repeatable.
+- `prompt execute <name> [--arg key=value ...]` — execute a prompt (aliases: `exec`, `run`). `--arg`/`-a` is repeatable. Ends with the input rounds and `Served by` when there are any.
 - `prompt complete <name> <var>=<prefix>` — prompt-argument suggestions via `completion/complete`.
 
 ## `server` subcommand
@@ -154,7 +164,9 @@ mcp-tui [global-flags] prompt <list|get|execute|complete> [args]
 mcp-tui [global-flags] server
 ```
 
-Print MCP server information (name, version, protocol).
+Print MCP server information: name, version, negotiated protocol, the
+server's title, description, website and icons when it declares them,
+its capabilities, and the number of tools, resources and prompts.
 
 ## `capabilities` subcommand
 
@@ -186,7 +198,7 @@ characters of `A-Z a-z 0-9 _ - .`, SEP-986) takes either.
 
 ## `conform` subcommand
 
-Run every protocol scenario plus all verify probes, print a per-scenario
+Run every protocol scenario plus the verify probes (all but `tool-names`), print a per-scenario
 PASS/FAIL summary, and optionally emit a JUnit XML report.
 
 ```
@@ -207,8 +219,11 @@ mcp-tui conform [url|--cmd <cmd>]
 Scenarios: `initialize`, `tools.list`, `tools.call`, `tools.call.isError`,
 `resources.list`, `resources.read`, `resources.templates.list`,
 `prompts.list`, `prompts.get`, `sampling.createMessage`,
-`elicitation.create`, `notifications`, `completion.complete`, plus every
-probe as `verify.<probe-name>`. The stub flags from
+`elicitation.create`, `notifications`, `completion.complete`, plus the
+probes as `verify.<probe-name>`: `verify.cross-origin`, `verify.dns-rebind`,
+`verify.content-type`, `verify.origin-header`, `verify.mcp-method-headers` and
+`verify.seterror-content`. The `tool-names` probe is not part of `conform`; run
+it with `verify --probe tool-names`. The stub flags from
 [Client features](/mcp-tui/guides/client-features/) apply here too.
 
 ## Exit codes
@@ -219,4 +234,18 @@ probe as `verify.<probe-name>`. The stub flags from
 | 1 | Any failure — connection error, invalid usage, tool/protocol error, a failing probe or scenario, or (with `--strict-output`/`--strict-errors`) a tool-layer error |
 
 mcp-tui does not use distinct numeric codes per error class; any error exits 1.
+
+## Error names
+
+When a server answers with an MCP error code, the error text names it before
+the JSON-RPC message, e.g. `RESOURCE_NOT_FOUND: JSON-RPC error -32602 from resources/read`.
+
+| Code | Name |
+|------|------|
+| `-32002` | `RESOURCE_NOT_FOUND` (before 2025-11-25) |
+| `-32602` | `RESOURCE_NOT_FOUND` on `resources/read` (SEP-2164), else `INVALID_PARAMS` |
+| `-32020` | `HEADER_MISMATCH` |
+| `-32021` | `MISSING_REQUIRED_CLIENT_CAPABILITIES` |
+| `-32022` | `UNSUPPORTED_VERSION` |
+| `-32042` | `URL_ELICITATION_REQUIRED`; the text lists each URL with its host and says to open it and retry |
 </content>

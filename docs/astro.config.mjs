@@ -68,6 +68,7 @@ export default defineConfig({
             { label: 'TUI Mode', slug: 'guides/tui' },
             { label: 'CLI Mode', slug: 'guides/cli' },
             { label: 'Transports', slug: 'guides/transports' },
+            { label: 'Protocol 2026-07-28', slug: 'guides/protocol-2026-07-28' },
             { label: 'OAuth', slug: 'guides/oauth' },
             { label: 'Client Features', slug: 'guides/client-features' },
             { label: 'Tasks', slug: 'guides/tasks' },

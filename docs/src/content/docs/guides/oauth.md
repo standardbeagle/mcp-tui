@@ -7,12 +7,17 @@ When an HTTP MCP server responds with `401` and a `WWW-Authenticate` header,
 MCP-TUI delegates to its OAuth handler. Three modes are supported, selected by
 which flags you provide.
 
+OAuth runs on the `http` and `streamable-http` transports. With `--cmd`
+(stdio) the `--oauth-*` flags are an error. With `--transport sse` they are
+accepted but have no effect: the SDK's SSE client has no OAuth hook.
+
 ## Authorization code + PKCE (interactive)
 
 For user-facing auth. Triggered when `--oauth-client-id` is set **without** a
-secret, or when `--oauth-dynamic-registration` is used. MCP-TUI opens a
-loopback redirect listener, sends you through the authorization endpoint, and
-exchanges the code with PKCE (RFC 6749 §4.1, RFC 7636).
+secret, or when `--oauth-client-metadata-url` or `--oauth-dynamic-registration`
+is used. MCP-TUI opens a loopback redirect listener, sends you through the
+authorization endpoint, and exchanges the code with PKCE (RFC 6749 §4.1,
+RFC 7636).
 
 ```bash
 mcp-tui --transport http --url https://api.example.com/mcp \
@@ -27,6 +32,12 @@ Control the loopback redirect URI:
 |------|---------|---------|
 | `--oauth-redirect-host` | `127.0.0.1` | Redirect host: `localhost`, `127.0.0.0/8` or `::1` |
 | `--oauth-redirect-port` | `0` | Redirect port (`0` = ephemeral) |
+
+The redirect listener binds only to a loopback address and serves only
+`GET /callback`. Only the first callback that carries the flow's `state`
+completes the sign-in; any other gets a 400 page and a logged reason. It
+accepts at most 8 connections at once, 16 KiB of headers, and times out reads,
+writes and idle connections after 10s.
 
 ## Client credentials (service-to-service)
 
@@ -184,7 +195,16 @@ In the authorization-code flow, MCP-TUI requests the scopes the server's
 `WWW-Authenticate` challenge names, or else the `scopes_supported` in its
 Protected Resource Metadata. `--oauth-scopes` (a comma- or space-separated
 list) replaces that set. The debug log's `Scopes selected` line shows both
-sets.
+sets. `offline_access` is added on top when the authorization server supports
+it (see [Token cache](#token-cache)).
+
+### Step-up
+
+When the server answers a request with `403` and `insufficient_scope`, MCP-TUI
+signs in again asking for the scopes already granted plus the one the
+challenge names (SEP-2350), so the new token keeps the old scopes. The
+challenged scope is requested even when `--oauth-scopes` is set; the log
+records it with `source=step_up`.
 
 ## Token cache
 
@@ -214,6 +234,16 @@ persistence entirely.
 
 Press `A` on the main screen to clear cached OAuth state; the next outgoing
 request triggers a fresh authorization.
+
+## Following the flow
+
+Every step is logged under the `oauth` component and each auth HTTP exchange
+under `oauth-http`: the mode, the `401` and its challenge, discovery,
+registration, the authorization request, the callback, the token exchange and
+later refreshes. Codes, state and tokens are recorded only as present or
+absent. Run with `--debug` to see them on stderr, or open the debug screen's
+**Auth** tab in the TUI (`Ctrl+D`), which shows just these lines. Every auth
+request times out after 30 seconds.
 
 ## Flag reference
 

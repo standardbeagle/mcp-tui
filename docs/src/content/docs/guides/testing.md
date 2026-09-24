@@ -4,8 +4,8 @@ description: Verify MCP server compliance with behavior probes and the full conf
 ---
 
 MCP-TUI ships two testing subcommands: `verify` runs a small suite of targeted
-behavior probes, and `conform` runs the complete protocol matrix (every probe
-plus every protocol scenario). Both exit non-zero when anything fails, so they
+behavior probes, and `conform` runs the complete protocol matrix (every
+protocol scenario plus every probe except `tool-names`). Both exit non-zero when anything fails, so they
 drop straight into CI.
 
 ## `capabilities` — what did the server negotiate?
@@ -39,9 +39,11 @@ mcp-tui verify --json http://localhost:8000/mcp | jq '.results[]|select(.pass==f
 | `origin-header` | `Origin` enforcement is scoped to POST, not GET/HEAD |
 | `mcp-method-headers` | Server tolerates SEP-2243 `MCP-Method`/`MCP-Name` headers |
 | `seterror-content` | Tool-result errors preserve the `Content` payload (SDK v1.6.0+) |
+| `tool-names` | Every tool name is 1-128 characters of `A-Z a-z 0-9 _ - .` (SEP-986) |
 
-The first five probes require a URL target. `seterror-content` runs against a
-stdio server and takes an optional `--tool` (default `echo`):
+The first five probes require a URL target. `tool-names` takes a URL or a
+stdio `--cmd`. `seterror-content` runs against a stdio server and takes an
+optional `--tool` (default `echo`):
 
 ```bash
 mcp-tui verify --probe seterror-content --cmd npx \
@@ -50,7 +52,7 @@ mcp-tui verify --probe seterror-content --cmd npx \
 
 ## `conform` — the full matrix
 
-`conform` runs every scenario plus all `verify` probes and prints a
+`conform` runs every scenario plus the `verify` probes (all but `tool-names`) and prints a
 per-scenario PASS/FAIL summary. Skipped scenarios (features the server does not
 advertise) count as passing.
 
@@ -64,7 +66,7 @@ Scenarios: `initialize`, `tools.list`, `tools.call`, `tools.call.isError`,
 `resources.list`, `resources.read`, `resources.templates.list`,
 `prompts.list`, `prompts.get`, `sampling.createMessage`,
 `elicitation.create`, `notifications`, `completion.complete`, and every probe
-as `verify.<probe-name>`.
+except `tool-names` as `verify.<probe-name>`.
 
 ### Driving the harder scenarios
 

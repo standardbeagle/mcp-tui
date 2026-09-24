@@ -15,7 +15,8 @@ description: Every keyboard binding in MCP-TUI's terminal interface.
 | `1`–`9` | Quick-select an item by number |
 | `Enter` | Select / activate the item |
 | `Ctrl+↑` / `Ctrl+↓` | Scroll the tool description panel |
-| `r` | Refresh the current tab |
+| `r` | Refresh the current tab; in an open resource viewer, re-read the resource |
+| `s` | Watch / stop watching the selected resource (Resources tab; rows show `[watching]`, then `[updated]`) |
 | `R` | Open the roots editor |
 | `T` | Open the tasks screen |
 | `A` | Re-authenticate (clear cached OAuth state) |
