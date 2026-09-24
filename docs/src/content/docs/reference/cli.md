@@ -63,10 +63,14 @@ See [OAuth](/mcp-tui/guides/oauth/) for the full flow.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--oauth-client-id <id>` | | OAuth client ID (enables OAuth on HTTP transports) |
-| `--oauth-client-secret <secret>` | | Client secret (with `--oauth-client-id`, switches to client-credentials grant) |
-| `--oauth-issuer <url>` | | Issuer the pre-registered client belongs to; the flow fails if the discovered authorization server names another |
+| `--oauth-client-secret <secret>` | | Client secret (with `--oauth-client-id`, switches to client-credentials grant, except with `--oauth-idp-issuer`) |
+| `--oauth-issuer <url>` | | Issuer the pre-registered client belongs to; the flow fails if the discovered authorization server names another. With `--oauth-idp-issuer`: the MCP authorization server the ID-JAG is for (default: discovered from Protected Resource Metadata) |
+| `--oauth-idp-issuer <url>` | | Enterprise IdP issuer URL; selects Enterprise Managed Authorization (SEP-990) |
+| `--oauth-idp-client-id <id>` | | Client ID registered at the enterprise IdP |
+| `--oauth-idp-client-secret <secret>` | | Client secret at the enterprise IdP (confidential IdP client) |
+| `--oauth-idp-scopes <a,b>` | `openid` | Comma- or space-separated scopes for the IdP sign-in; must include `openid` |
 | `--oauth-client-metadata-url <url>` | | HTTPS URL of a Client ID Metadata Document (SEP-991), used as the client ID when the authorization server supports it |
-| `--oauth-scopes <a,b>` | | Comma- or space-separated scopes to request instead of the discovered ones (authorization code only) |
+| `--oauth-scopes <a,b>` | | Comma- or space-separated scopes to request instead of the discovered ones (authorization code), or the MCP scopes for the token exchange (enterprise) |
 | `--oauth-redirect-host <host>` | `127.0.0.1` | Host for the auth-code redirect URI; must be `localhost`, `127.0.0.0/8` or `::1` |
 | `--oauth-redirect-port <port>` | `0` | Port for the redirect URI (`0` = ephemeral) |
 | `--oauth-dynamic-registration` | `false` | Enable RFC 7591 dynamic client registration when client ID is empty |
