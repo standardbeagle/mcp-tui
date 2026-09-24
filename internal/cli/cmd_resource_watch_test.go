@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -42,20 +40,13 @@ func deployServer(subscribable bool) *officialMCP.Server {
 }
 
 // connectHTTPService connects a real mcp.Service to server over streamable
-// HTTP at protocolVersion ("" = latest) and checks what was negotiated. The
-// SDK serves 2026-07-28 only from a stateless handler, and the older
-// protocols' notifications only through a stateful one's GET stream.
+// HTTP at protocolVersion ("" = latest) and checks what was negotiated.
 func connectHTTPService(t *testing.T, server *officialMCP.Server, protocolVersion string) mcp.Service {
 	t.Helper()
-	testutil.RequireLocalListener(t)
-	httpServer := httptest.NewServer(officialMCP.NewStreamableHTTPHandler(
-		func(*http.Request) *officialMCP.Server { return server },
-		&officialMCP.StreamableHTTPOptions{Stateless: protocolVersion == ""}))
-	t.Cleanup(httpServer.Close)
-
+	url := testutil.ServeStreamableHTTP(t, server, protocolVersion)
 	svc := mcp.NewService()
 	if err := svc.Connect(context.Background(), &config.ConnectionConfig{
-		Type: config.TransportStreamableHTTP, URL: httpServer.URL, ProtocolVersion: protocolVersion,
+		Type: config.TransportStreamableHTTP, URL: url, ProtocolVersion: protocolVersion,
 	}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
