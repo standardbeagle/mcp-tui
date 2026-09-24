@@ -17,21 +17,36 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 )
 
-// numDebugTabs is the count of tabs rendered by DebugScreen. Adding a new
-// tab means bumping this constant, the renderTabs labels slice, and the
-// switch in View(). Keeping the count in one place makes left/right key
-// modular arithmetic correct without scattering the magic number everywhere.
-const numDebugTabs = 7
-
 const (
-	tabGeneralLogs   = 0
-	tabMCPProtocol   = 1
-	tabHTTPDebug     = 2
-	tabAuth          = 3
-	tabStatistics    = 4
-	tabCapabilities  = 5
-	tabNotifications = 6
+	tabGeneralLogs = iota
+	tabMCPProtocol
+	tabHTTPDebug
+	tabAuth
+	tabStatistics
+	tabCapabilities
+	tabNotifications
 )
+
+// debugTab names one tab of the DebugScreen.
+type debugTab struct {
+	title string // on the tab bar, before any count
+	item  string // one row of the tab, as "Copied <item> to clipboard" says
+}
+
+// debugTabs is the one list of tabs, indexed by the tab constants. Adding a
+// tab means a constant, an entry here, and a case in View().
+var debugTabs = [...]debugTab{
+	tabGeneralLogs:   {title: "General", item: "general log"},
+	tabMCPProtocol:   {title: "MCP Protocol", item: "MCP message"},
+	tabHTTPDebug:     {title: "HTTP Debug", item: "HTTP debug info"},
+	tabAuth:          {title: "Auth", item: "auth log"},
+	tabStatistics:    {title: "Statistics", item: "statistics"},
+	tabCapabilities:  {title: "Capabilities", item: "capabilities"},
+	tabNotifications: {title: "Notifications", item: "notification"},
+}
+
+// numDebugTabs is the count of tabs, for the left/right key arithmetic.
+const numDebugTabs = len(debugTabs)
 
 // DebugScreen shows debug logs and MCP protocol communication
 type DebugScreen struct {
@@ -539,23 +554,20 @@ func (ds *DebugScreen) View() string {
 
 // renderTabs renders the tab bar
 func (ds *DebugScreen) renderTabs() string {
-	notifLabel := "Notifications"
+	tabs := make([]string, numDebugTabs)
+	for i, tab := range debugTabs {
+		tabs[i] = tab.title
+	}
+	tabs[tabGeneralLogs] += fmt.Sprintf(" (%d)", len(ds.generalLogs))
+	tabs[tabMCPProtocol] += fmt.Sprintf(" (%d)", len(ds.mcpLogs))
+	tabs[tabAuth] += fmt.Sprintf(" (%d)", len(ds.authLogs))
 	if ds.notificationsProvider != nil {
 		if stream := ds.notificationsProvider(); stream != nil {
-			notifLabel = fmt.Sprintf("Notifications (%d)", stream.Len())
+			tabs[tabNotifications] += fmt.Sprintf(" (%d)", stream.Len())
 			if stream.IsPaused() {
-				notifLabel += " ⏸"
+				tabs[tabNotifications] += " ⏸"
 			}
 		}
-	}
-	tabs := []string{
-		fmt.Sprintf("General (%d)", len(ds.generalLogs)),
-		fmt.Sprintf("MCP Protocol (%d)", len(ds.mcpLogs)),
-		"HTTP Debug",
-		fmt.Sprintf("Auth (%d)", len(ds.authLogs)),
-		"Statistics",
-		"Capabilities",
-		notifLabel,
 	}
 
 	var renderedTabs []string
@@ -835,43 +847,41 @@ func (ds *DebugScreen) clearLogsCmd() tea.Cmd {
 // nor writes model state, and Update applies the resulting StatusMsg. Calling
 // SetStatus from inside the command would race with View.
 func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
-	var payload, successMessage string
-
-	// On the notifications tab, prefer the full JSON of the selected entry over
-	// its one-line preview — the JSON is what users want to paste into bug
-	// reports or jq pipelines.
-	if ds.activeTab == tabNotifications {
-		entries := ds.filteredNotificationEntries()
-		if len(entries) == 0 || ds.selectedIndex >= len(entries) {
-			return statusCmd("Nothing to copy", StatusWarning)
-		}
-		js, err := entries[ds.selectedIndex].FormatJSON()
-		if err != nil {
-			return statusCmd(fmt.Sprintf("Format failed: %v", err), StatusError)
-		}
-		payload = js
-		successMessage = "Copied notification JSON to clipboard"
-	} else {
-		currentList := ds.getCurrentList()
-		if len(currentList) == 0 || ds.selectedIndex >= len(currentList) {
-			return statusCmd("Nothing to copy", StatusWarning)
-		}
-		payload = currentList[ds.selectedIndex]
-
-		tabNames := []string{"general log", "MCP message", "HTTP debug info", "statistics", "capabilities", "notification"}
-		tabName := "item"
-		if ds.activeTab < len(tabNames) {
-			tabName = tabNames[ds.activeTab]
-		}
-		successMessage = fmt.Sprintf("Copied %s to clipboard", tabName)
+	payload, successMessage, ok := ds.copySelection()
+	if !ok {
+		return statusCmd(successMessage, StatusWarning)
 	}
-
 	return func() tea.Msg {
 		if err := clipboard.WriteAll(payload); err != nil {
 			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
 		}
 		return StatusMsg{Message: successMessage, Level: StatusSuccess}
 	}
+}
+
+// copySelection returns what copying the selected item puts on the
+// clipboard and the status that reports it; without a payload (ok false),
+// status says why there is nothing to copy.
+func (ds *DebugScreen) copySelection() (payload, status string, ok bool) {
+	// On the notifications tab, prefer the full JSON of the selected entry over
+	// its one-line preview — the JSON is what users want to paste into bug
+	// reports or jq pipelines.
+	if ds.activeTab == tabNotifications {
+		entries := ds.filteredNotificationEntries()
+		if len(entries) == 0 || ds.selectedIndex >= len(entries) {
+			return "", "Nothing to copy", false
+		}
+		js, err := entries[ds.selectedIndex].FormatJSON()
+		if err != nil {
+			return "", fmt.Sprintf("Format failed: %v", err), false
+		}
+		return js, "Copied notification JSON to clipboard", true
+	}
+	currentList := ds.getCurrentList()
+	if len(currentList) == 0 || ds.selectedIndex >= len(currentList) {
+		return "", "Nothing to copy", false
+	}
+	return currentList[ds.selectedIndex], fmt.Sprintf("Copied %s to clipboard", debugTabs[ds.activeTab].item), true
 }
 
 // exportSessionCmd writes the recorded session to disk on a command goroutine
