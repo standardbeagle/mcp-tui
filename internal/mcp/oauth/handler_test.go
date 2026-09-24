@@ -60,6 +60,39 @@ func TestConfig_ModeAndValidate(t *testing.T) {
 			wantMode: ModeAuthorizationCode,
 			wantErr:  "RedirectPort 70000 out of range",
 		},
+		{
+			name:     "auth_code redirect host binds every interface",
+			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "0.0.0.0"},
+			wantMode: ModeAuthorizationCode,
+			wantErr:  `RedirectHost "0.0.0.0" is not a loopback address`,
+		},
+		{
+			name:     "auth_code redirect host on the LAN",
+			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "192.168.1.20"},
+			wantMode: ModeAuthorizationCode,
+			wantErr:  "is not a loopback address",
+		},
+		{
+			name:     "auth_code redirect host is a public name",
+			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "callback.example.com"},
+			wantMode: ModeAuthorizationCode,
+			wantErr:  "is not a loopback address",
+		},
+		{
+			name:     "auth_code redirect host 127.0.0.2",
+			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "127.0.0.2"},
+			wantMode: ModeAuthorizationCode,
+		},
+		{
+			name:     "auth_code redirect host ::1",
+			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "::1"},
+			wantMode: ModeAuthorizationCode,
+		},
+		{
+			name:     "auth_code redirect host localhost",
+			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "localhost"},
+			wantMode: ModeAuthorizationCode,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

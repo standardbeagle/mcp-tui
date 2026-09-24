@@ -24,6 +24,7 @@ package oauth
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 
@@ -94,8 +95,10 @@ type Config struct {
 	// client falls back to the scopes advertised by the resource server.
 	Scopes []string
 
-	// RedirectHost is the host portion of the auth-code redirect URI.
-	// Defaults to "127.0.0.1". Only used in ModeAuthorizationCode.
+	// RedirectHost is the host portion of the auth-code redirect URI and
+	// the address the callback listener binds. Defaults to "127.0.0.1";
+	// Validate rejects anything but a loopback host. Only used in
+	// ModeAuthorizationCode.
 	RedirectHost string
 
 	// RedirectPort is the port for the redirect URI. 0 means pick an
@@ -172,10 +175,24 @@ func (c *Config) Validate() error {
 		if c.RedirectPort < 0 || c.RedirectPort > 65535 {
 			return fmt.Errorf("oauth: RedirectPort %d out of range", c.RedirectPort)
 		}
+		if c.RedirectHost != "" && !isLoopbackHost(c.RedirectHost) {
+			return fmt.Errorf("oauth: RedirectHost %q is not a loopback address (use 127.0.0.1, ::1 or localhost)", c.RedirectHost)
+		}
 	case ModeNone:
 		// Nothing to validate.
 	}
 	return nil
+}
+
+// isLoopbackHost reports whether host names the loopback interface:
+// "localhost" or an address in 127.0.0.0/8 or ::1. The callback listener
+// binds this host, so anything else would expose it beyond this machine.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // preregistered builds an oauthex.ClientCredentials value from the Config
