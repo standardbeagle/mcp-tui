@@ -87,7 +87,7 @@ type Handler struct {
 	stepUp atomic.Bool
 
 	mu       sync.Mutex
-	delegate auth.OAuthHandler
+	delegate tokenSourcer
 	// sdk is the SDK handler that runs Authorize. It is built on first use
 	// and kept across calls: it records the scopes each issuer granted,
 	// which step-up unions with the newly challenged ones. fetcher is the
@@ -477,7 +477,7 @@ func (c *SessionClient) oauth2Config() *oauth2.Config {
 // currentToken returns the token the delegate currently holds, or nil when
 // it cannot produce one (the failure is logged, not returned: the request can
 // still complete with whatever the SDK holds in memory).
-func currentToken(ctx context.Context, delegate auth.OAuthHandler) *oauth2.Token {
+func currentToken(ctx context.Context, delegate tokenSourcer) *oauth2.Token {
 	src, err := delegate.TokenSource(ctx)
 	if err != nil || src == nil {
 		authLog().Warn("No token source after authorization", debug.F("error", redact.Error(err)))
@@ -644,23 +644,20 @@ func logAuthorizationRequired(req *http.Request, resp *http.Response) {
 	authLog().Info("Authorization required", fields...)
 }
 
-// cachedDelegate is a minimal auth.OAuthHandler whose TokenSource is fixed
-// at construction time. It is used only when we hot-load a token from the
-// on-disk cache; if the server later 401s the SDK will skip this delegate
-// and call Authorize() on the parent Handler, which rebuilds a real
-// delegate from scratch.
+// tokenSourcer is the part of auth.OAuthHandler Handler.TokenSource
+// forwards to. Handler.Authorize always runs the SDK handler (sdkHandler),
+// never the delegate, so the delegate need not authorize.
+type tokenSourcer interface {
+	TokenSource(context.Context) (oauth2.TokenSource, error)
+}
+
+// cachedDelegate serves a token hot-loaded from the on-disk cache. When
+// the server rejects it, the SDK calls Handler.Authorize, which replaces
+// this delegate with the SDK handler that ran the flow.
 type cachedDelegate struct {
 	src oauth2.TokenSource
 }
 
 func (c *cachedDelegate) TokenSource(_ context.Context) (oauth2.TokenSource, error) {
 	return c.src, nil
-}
-
-func (c *cachedDelegate) Authorize(_ context.Context, _ *http.Request, _ *http.Response) error {
-	// A cached delegate cannot itself perform the OAuth flow. Returning an
-	// error here causes the transport to fail; the parent Handler's
-	// Authorize() will be called instead because Handler.Authorize replaces
-	// the delegate on each call.
-	return fmt.Errorf("oauth: cached token rejected by server (cache hit but token invalid)")
 }

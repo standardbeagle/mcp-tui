@@ -144,47 +144,6 @@ func mergeClientOptions(base, override *officialMCP.ClientOptions) *officialMCP.
 	return &merged
 }
 
-// DebugSession wraps a ClientSession with enhanced debugging capabilities
-type DebugSession struct {
-	*officialMCP.ClientSession
-	tracer    *EventTracer
-	sessionID string
-}
-
-// NewDebugSession creates a debug-enabled session wrapper
-func NewDebugSession(session *officialMCP.ClientSession, tracer *EventTracer) *DebugSession {
-	sessionID := session.ID()
-	tracer.SetSessionID(sessionID)
-
-	return &DebugSession{
-		ClientSession: session,
-		tracer:        tracer,
-		sessionID:     sessionID,
-	}
-}
-
-// TraceSessionState traces session state changes
-func (ds *DebugSession) TraceSessionState(state string, details map[string]interface{}) {
-	ds.tracer.TraceSessionState(state, details)
-}
-
-// GetEventTracer returns the associated event tracer
-func (ds *DebugSession) GetEventTracer() *EventTracer {
-	return ds.tracer
-}
-
-// GetTracingStatistics returns event tracing statistics for this session
-func (ds *DebugSession) GetTracingStatistics() map[string]interface{} {
-	stats := ds.tracer.GetStatistics()
-	stats["debug_session_id"] = ds.sessionID
-	return stats
-}
-
-// ExportSessionEvents exports all events for this session
-func (ds *DebugSession) ExportSessionEvents() ([]byte, error) {
-	return ds.tracer.ExportEvents()
-}
-
 // TransportDebugger provides transport-specific debugging capabilities
 type TransportDebugger struct {
 	tracer        *EventTracer
