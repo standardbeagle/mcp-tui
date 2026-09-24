@@ -176,7 +176,7 @@ func scalarString(v interface{}) string {
 
 // shellQuote wraps a token in single quotes so spaces and shell metacharacters
 // survive as a single argument. Embedded single quotes are escaped with the
-// standard '\'' idiom. Simple tokens (safe characters only) are returned as-is
+// standard '\” idiom. Simple tokens (safe characters only) are returned as-is
 // to keep the common case readable.
 func shellQuote(s string) string {
 	if s != "" && !strings.ContainsAny(s, " \t\n\"'\\$`&|;<>()*?![]{}#~") {
