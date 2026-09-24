@@ -64,6 +64,11 @@ type Service interface {
 	// Tool operations
 	ListTools(ctx context.Context) ([]Tool, error)
 	CallTool(ctx context.Context, req CallToolRequest) (*CallToolResult, error)
+	// DroppedTools returns the tools the SDK client removed from the most
+	// recent tools/list because their x-mcp-header annotations are invalid
+	// (SEP-2243), with the SDK's reason; nil when it removed none. The SDK
+	// only logs these, so without this the tools silently go missing.
+	DroppedTools() []DroppedTool
 
 	// Resource operations
 	ListResources(ctx context.Context) ([]Resource, error)

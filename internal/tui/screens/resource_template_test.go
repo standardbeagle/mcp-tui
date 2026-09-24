@@ -84,6 +84,7 @@ func (f *fakeCompletionService) GetServerInfo() *mcp.ServerInfo                 
 func (f *fakeCompletionService) SubscribeResource(context.Context, string) error   { return nil }
 func (f *fakeCompletionService) UnsubscribeResource(context.Context, string) error { return nil }
 func (f *fakeCompletionService) ResourceSubscriptions() []string                   { return nil }
+func (f *fakeCompletionService) DroppedTools() []mcp.DroppedTool                   { return nil }
 func (f *fakeCompletionService) ListCache(string) *mcp.ListCacheInfo               { return nil }
 
 func (f *fakeCompletionService) GetCapabilitiesSnapshot() *capabilities.Snapshot {

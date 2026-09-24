@@ -177,6 +177,12 @@ type service struct {
 	// SubscribeResource waits on until the server acknowledges the URI's
 	// subscriptions/listen stream (resolveResourceAcks).
 	resourceAckWaiters map[string]chan struct{}
+
+	// droppedTools are the tools the SDK removed from the most recent
+	// tools/list (dropped_tools.go); droppedInList collects them while a
+	// ListTools is in flight. Reset on every Connect.
+	droppedTools  []DroppedTool
+	droppedInList []DroppedTool
 }
 
 // getNextRequestID returns the next request ID
@@ -711,11 +717,12 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 	// in both the debug and non-debug paths, so build it once here.
 	clientOptions := &officialMCP.ClientOptions{
 		// The SDK's own slog output (jsonrpc2 internal errors, keepalive
-		// failures, dropped invalid tools) joins the debug log as "sdk".
+		// failures, dropped invalid tools) joins the debug log as "sdk";
+		// dropped tools are also kept for DroppedTools.
 		// StreamableClientTransport also has a logger for spec violations,
 		// but v1.8.0 keeps it unexported with no setter, so those Warn lines
 		// stay unobservable until the SDK exports it.
-		Logger: debug.SlogLogger("sdk"),
+		Logger: s.sdkLogger(),
 		// mcp-tui runs the multi round-trip loop itself so every round is
 		// logged; see mrtr.go.
 		MultiRoundTrip: &officialMCP.MultiRoundTripOptions{Disabled: true},
@@ -932,6 +939,7 @@ func (s *service) updateServerInfo() error {
 	s.info.ProtocolVersion = protocolVersion
 	s.listCache = nil
 	s.subscribedResources = nil
+	s.droppedTools = nil
 
 	// Propagate top-level capability flags into the legacy map so callers that
 	// only check info.Capabilities (e.g. mcp-tui server) see something useful.
@@ -1063,6 +1071,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		return nil, fmt.Errorf("no active session available")
 	}
 
+	s.beginToolsList()
 	pages, cacheInfo, err := fetchListPages(ctx, "tools/list",
 		func(ctx context.Context, cursor string) (*officialMCP.ListToolsResult, string, error) {
 			res, err := session.ListTools(ctx, &officialMCP.ListToolsParams{Cursor: cursor})
@@ -1083,6 +1092,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		return nil, fmt.Errorf("failed to iterate tools from MCP server: %w", userError)
 	}
 	s.recordListCache(session, cacheInfo)
+	s.endToolsList(cacheInfo)
 
 	var tools []Tool
 	for _, page := range pages {

@@ -65,6 +65,7 @@ func (v *versionStubService) GetCapabilitiesSnapshot() *capabilities.Snapshot   
 func (v *versionStubService) SubscribeResource(context.Context, string) error   { return nil }
 func (v *versionStubService) UnsubscribeResource(context.Context, string) error { return nil }
 func (v *versionStubService) ResourceSubscriptions() []string                   { return nil }
+func (v *versionStubService) DroppedTools() []mcp.DroppedTool                   { return nil }
 func (v *versionStubService) ListCache(string) *mcp.ListCacheInfo               { return nil }
 func (v *versionStubService) NotificationStream() *notifications.Stream {
 	return notifications.NewStream()
