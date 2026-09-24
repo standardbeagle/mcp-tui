@@ -126,7 +126,14 @@ func (m *Manager) SetDebugEnabled(enabled bool) {
 //
 // sessionOptions is passed to the SDK handshake verbatim and kept for
 // reconnection; nil means SDK defaults.
-func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, transport officialMCP.Transport, contextStrategy transports.ContextStrategy, transportType transports.TransportType, sessionOptions *officialMCP.ClientSessionOptions) error {
+func (m *Manager) Connect(
+	ctx context.Context,
+	client *officialMCP.Client,
+	transport officialMCP.Transport,
+	contextStrategy transports.ContextStrategy,
+	transportType transports.TransportType,
+	sessionOptions *officialMCP.ClientSessionOptions,
+) error {
 	m.mu.Lock()
 
 	// Ensure we're in a valid state to connect. StateReconnecting counts as

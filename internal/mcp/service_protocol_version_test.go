@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )

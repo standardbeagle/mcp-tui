@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )

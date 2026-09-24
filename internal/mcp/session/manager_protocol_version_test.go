@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
 // serverBackedTransport hands out a fresh in-memory connection to the same

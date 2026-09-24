@@ -472,7 +472,8 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// Blocking handshake, performed without the service lock. The session
 	// manager serializes concurrent connects internally.
 	sessionOptions := &officialMCP.ClientSessionOptions{ProtocolVersion: config.ProtocolVersion}
-	if err := sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type, sessionOptions); err != nil {
+	err = sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type, sessionOptions)
+	if err != nil {
 		// A stdio server that dies during startup fails the handshake with an
 		// opaque EOF. Its stderr says what actually went wrong, so prefer that.
 		if diagnoser, ok := transport.(transports.StartupDiagnoser); ok {

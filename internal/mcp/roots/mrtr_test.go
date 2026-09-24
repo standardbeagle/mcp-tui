@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
