@@ -51,4 +51,3 @@ node_modules/
 package-lock.json
 
 # Config files that should not be in npm package
-claude-desktop-config.json
