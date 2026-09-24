@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
@@ -14,15 +13,26 @@ import (
 	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
+// memoryClipboard stands in for the OS clipboard. The real one shells out to
+// xclip/xsel/wl-paste, which blocks indefinitely under WSLg and is absent in
+// CI, so tests must never reach it.
+type memoryClipboard struct {
+	text string
+}
+
+func (c *memoryClipboard) ReadAll() (string, error) { return c.text, nil }
+
+func (c *memoryClipboard) WriteAll(text string) error {
+	c.text = text
+	return nil
+}
+
 func TestPhase3ClipboardFeatures(t *testing.T) {
 	t.Run("copy_tool_result", func(t *testing.T) {
-		// Skip if clipboard not available (CI environment)
-		if err := clipboard.WriteAll("test"); err != nil {
-			t.Skip("Clipboard not available in test environment")
-		}
-
 		tool := mcp.Tool{Name: "test"}
 		ts := NewToolScreen(tool, nil)
+		clip := &memoryClipboard{}
+		ts.clipboard = clip
 
 		// Simulate a result
 		ts.result = &imcp.CallToolResult{
@@ -45,21 +55,10 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 		assert.Equal(t, StatusSuccess, level)
 
 		// Verify clipboard content
-		content, _ := clipboard.ReadAll()
-		assert.Equal(t, "Test result", content)
+		assert.Equal(t, "Test result", clip.text)
 	})
 
 	t.Run("paste_into_field", func(t *testing.T) {
-		// Skip unless the clipboard round-trips. Some environments (WSL, remote
-		// shells) provide a working writer via clip.exe but no reader, so a
-		// successful write alone does not mean paste can be exercised.
-		if err := clipboard.WriteAll("pasted text"); err != nil {
-			t.Skip("Clipboard not available in test environment")
-		}
-		if readBack, err := clipboard.ReadAll(); err != nil || readBack != "pasted text" {
-			t.Skip("Clipboard is write-only in this environment; cannot test paste")
-		}
-
 		tool := mcp.Tool{
 			Name: "test",
 			InputSchema: map[string]interface{}{
@@ -70,6 +69,7 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 			},
 		}
 		ts := NewToolScreen(tool, nil)
+		ts.clipboard = &memoryClipboard{text: "pasted text"}
 		ts.cursor = 0 // Focus on first field
 
 		// Paste with Ctrl+V

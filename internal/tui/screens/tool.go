@@ -49,6 +49,9 @@ type ToolScreen struct {
 	*BaseScreen
 	logger debug.Logger
 
+	// clipboard is the OS clipboard boundary; tests swap in an in-memory one.
+	clipboard clipboardReadWriter
+
 	// Tool info
 	tool       mcp.Tool
 	mcpService mcp.Service
@@ -130,6 +133,7 @@ func NewToolScreen(tool mcp.Tool, service mcp.Service) *ToolScreen {
 	ts := &ToolScreen{
 		BaseScreen: NewBaseScreen("Tool", true),
 		logger:     debug.Component("tool-screen"),
+		clipboard:  systemClipboard{},
 		tool:       tool,
 		mcpService: service,
 	}
@@ -178,11 +182,24 @@ func (ts *ToolScreen) computeResultDisplayHeight(headerH, footerH int) int {
 	return avail
 }
 
+// clipboardReadWriter is the clipboard boundary ToolScreen reads and writes
+// through, so tests never shell out to xclip/xsel (which block under WSLg).
+type clipboardReadWriter interface {
+	ReadAll() (string, error)
+	WriteAll(text string) error
+}
+
+// systemClipboard is the production clipboardReadWriter backed by the OS.
+type systemClipboard struct{}
+
+func (systemClipboard) ReadAll() (string, error)   { return clipboard.ReadAll() }
+func (systemClipboard) WriteAll(text string) error { return clipboard.WriteAll(text) }
+
 // copyToClipboard copies text to the system clipboard, falling back to an
 // OSC52 terminal escape. Both failures are reported: silently returning nil
 // makes callers announce a successful copy that never happened.
 func (ts *ToolScreen) copyToClipboard(text string) error {
-	clipErr := clipboard.WriteAll(text)
+	clipErr := ts.clipboard.WriteAll(text)
 	if clipErr == nil {
 		return nil
 	}
@@ -197,7 +214,7 @@ func (ts *ToolScreen) copyToClipboard(text string) error {
 // readFromClipboard reads text from clipboard using multiple methods
 func (ts *ToolScreen) readFromClipboard() (string, error) {
 	// Try standard clipboard first
-	if text, err := clipboard.ReadAll(); err == nil && text != "" {
+	if text, err := ts.clipboard.ReadAll(); err == nil && text != "" {
 		return text, nil
 	}
 
