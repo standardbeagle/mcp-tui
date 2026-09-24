@@ -16,7 +16,8 @@ import (
 // the entry line and its full JSON.
 func messagesTabText(entries []debug.MCPLogEntry) string {
 	var b strings.Builder
-	for _, e := range entries {
+	for i := range entries {
+		e := &entries[i]
 		b.WriteString(e.String())
 		b.WriteString("\n")
 		b.WriteString(e.GetFormattedJSON())

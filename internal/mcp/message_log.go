@@ -65,7 +65,7 @@ func errorCode(err error) int64 {
 }
 
 // logMessage marshals msg and hands it to log. A message that cannot be
-// marshalled is reported in the debug log instead of silently missing from
+// marshaled is reported in the debug log instead of silently missing from
 // the Messages tab.
 func logMessage(log func(rawMessage string, parsedMessage interface{}), msg map[string]any) {
 	raw, err := json.Marshal(msg)

@@ -15,18 +15,26 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
+// nameField is the one field the "ask" tool's elicitation form requests.
+const nameField = "name"
+
 // askingServer serves two tools that need the user: "ask" elicits a name and
 // "sample" requests an LLM completion. On 2026-07-28 each question travels
 // as an MRTR input request; earlier as a direct server-to-client request.
+//
+// Sampling is deprecated from 2026-07-28 (SEP-2577) but servers may still
+// use it through the deprecation window, so the TUI must still answer it.
+//
+//nolint:staticcheck // SA1019: exercises deprecated-but-live sampling.
 func askingServer() *officialMCP.Server {
-	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "asking-server", Version: "1.0.0"}, nil)
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "asking-server", Version: "2.3.1"}, nil)
 	elicit := &officialMCP.ElicitParams{
 		Message:         "Your name?",
-		RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}},
+		RequestedSchema: json.RawMessage(`{"type":"object","properties":{"` + nameField + `":{"type":"string"}}}`),
 	}
 	sample := &officialMCP.CreateMessageParams{
 		MaxTokens: 16,
-		Messages:  []*officialMCP.SamplingMessage{{Role: "user", Content: &officialMCP.TextContent{Text: "Say hi"}}},
+		Messages:  []*officialMCP.SamplingMessage{{Role: userRole, Content: &officialMCP.TextContent{Text: "Say hi"}}},
 	}
 	text := func(s string) *officialMCP.CallToolResult {
 		return &officialMCP.CallToolResult{Content: []officialMCP.Content{&officialMCP.TextContent{Text: s}}}
@@ -48,15 +56,15 @@ func askingServer() *officialMCP.Server {
 				}
 				res = r
 			case req.Params.InputResponses == nil:
-				return &officialMCP.CallToolResult{InputRequests: officialMCP.InputRequestMap{"name": elicit}}, nil
+				return &officialMCP.CallToolResult{InputRequests: officialMCP.InputRequestMap{nameField: elicit}}, nil
 			default:
-				r, ok := req.Params.InputResponses["name"].(*officialMCP.ElicitResult)
+				r, ok := req.Params.InputResponses[nameField].(*officialMCP.ElicitResult)
 				if !ok {
-					return nil, fmt.Errorf("input response = %T, want *ElicitResult", req.Params.InputResponses["name"])
+					return nil, fmt.Errorf("input response = %T, want *ElicitResult", req.Params.InputResponses[nameField])
 				}
 				res = r
 			}
-			return text(fmt.Sprintf("%s name=%v", res.Action, res.Content["name"])), nil
+			return text(fmt.Sprintf("%s name=%v", res.Action, res.Content[nameField])), nil
 		})
 
 	server.AddTool(&officialMCP.Tool{Name: "sample", InputSchema: schema},
@@ -92,6 +100,8 @@ func askingServer() *officialMCP.Server {
 // for elicitation and sampling. Both must reach the TUI as request messages
 // and the user's answers must reach the server, on the legacy and the MRTR
 // wire protocol alike.
+//
+//nolint:staticcheck // SA1019: answers deprecated-but-live sampling.
 func TestConnectionScreenSessionRoutesInputRequestsToTUI(t *testing.T) {
 	for _, version := range []string{testutil.LegacyProtocolVersion, testutil.MRTRProtocolVersion} {
 		t.Run(version, func(t *testing.T) {
@@ -124,7 +134,7 @@ func TestConnectionScreenSessionRoutesInputRequestsToTUI(t *testing.T) {
 			got := loop.callTool("ask", func(msg tea.Msg) bool {
 				req, ok := msg.(ElicitationRequestMsg)
 				if ok {
-					req.Pending.ResolveAccept(map[string]any{"name": "Ada"})
+					req.Pending.ResolveAccept(map[string]any{nameField: "Ada"})
 				}
 				return ok
 			})

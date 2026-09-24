@@ -27,7 +27,7 @@ func errorNamesServer() *officialMCP.Server {
 	})
 	server.AddReceivingMiddleware(func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
 		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
-			if method == "tools/list" {
+			if method == methodToolsList {
 				return nil, &jsonrpc.Error{Code: -32602, Message: "cursor expired"}
 			}
 			return next(ctx, method, req)

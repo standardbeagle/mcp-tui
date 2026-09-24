@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -18,12 +19,13 @@ import (
 // id of the request for method.
 func messageLogged(entries []debug.MCPLogEntry, direction string, kind debug.MCPMessageType, method string) bool {
 	ids := map[any]bool{}
-	for _, e := range entries {
-		if e.Method == method && e.ID != nil {
+	for i := range entries {
+		if e := &entries[i]; e.Method == method && e.ID != nil {
 			ids[e.ID] = true
 		}
 	}
-	for _, e := range entries {
+	for i := range entries {
+		e := &entries[i]
 		if e.Direction != direction || e.MessageType != kind {
 			continue
 		}
@@ -47,7 +49,7 @@ func TestService_DebugMode_LogsEveryMessageToMessagesTab(t *testing.T) {
 	addTool(server, "confirm_merge", func(ctx context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
 		if _, err := req.Session.Elicit(ctx, &officialMCP.ElicitParams{
 			Message:         "Merge pull request #42 into main?",
-			RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+			RequestedSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		}); err != nil {
 			return nil, err
 		}
@@ -96,10 +98,10 @@ func TestService_DebugMode_LogsEveryMessageToMessagesTab(t *testing.T) {
 		kind      debug.MCPMessageType
 		method    string
 	}{
-		{"→", debug.MCPMessageRequest, "tools/list"},
-		{"←", debug.MCPMessageResponse, "tools/list"},
-		{"→", debug.MCPMessageRequest, "tools/call"},
-		{"←", debug.MCPMessageResponse, "tools/call"},
+		{"→", debug.MCPMessageRequest, methodToolsList},
+		{"←", debug.MCPMessageResponse, methodToolsList},
+		{"→", debug.MCPMessageRequest, methodToolsCall},
+		{"←", debug.MCPMessageResponse, methodToolsCall},
 		{"←", debug.MCPMessageRequest, "elicitation/create"},
 		{"→", debug.MCPMessageResponse, "elicitation/create"},
 		{"←", debug.MCPMessageNotification, "notifications/tools/list_changed"},
