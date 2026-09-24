@@ -78,8 +78,9 @@ func main() {
 		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 	}
 
-	// Execute
-	if err := rootCmd.Execute(); err != nil {
+	// Execute with the signal-canceled context: the handler above swallows
+	// Ctrl-C, so long-running commands (resource watch) must see it here.
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		debug.Error("Application failed", debug.F("error", err))
 		os.Exit(1)
 	}

@@ -1,15 +1,22 @@
 package cli
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 )
 
 // ResourceCommand handles resource-related CLI operations
@@ -41,6 +48,7 @@ func (rc *ResourceCommand) CreateCommand() *cobra.Command {
 	cmd.AddCommand(rc.createGetCommand())
 	cmd.AddCommand(rc.createTemplatesCommand())
 	cmd.AddCommand(rc.createCompleteCommand())
+	cmd.AddCommand(rc.createWatchCommand())
 
 	return cmd
 }
@@ -493,6 +501,156 @@ func (rc *ResourceCommand) runCompleteCommand(cmd *cobra.Command, args []string)
 	}
 	fmt.Println(string(jsonBytes))
 	return nil
+}
+
+// createWatchCommand creates the resource watch command.
+func (rc *ResourceCommand) createWatchCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "watch <resource-uri>",
+		Short: "Subscribe to a resource and print each update",
+		Long: `Subscribe to a resource and print one line per notifications/resources/updated
+until Ctrl-C, --count updates, or --timeout (when given) elapses.
+
+On MCP 2026-07-28 the subscription is a per-URI subscriptions/listen stream
+(SEP-2575); earlier versions use resources/subscribe. Fails at once when the
+server does not declare the resources.subscribe capability.
+
+With --format json each update is one JSON object per line: {"time","uri"}.`,
+		Args:     cobra.ExactArgs(1),
+		PreRunE:  rc.PreRunE,
+		PostRunE: rc.PostRunE,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return rc.runWatchCommand(cmd, args)
+		},
+	}
+	cmd.Flags().Int("count", 0, "Exit after this many updates (0 = until Ctrl-C or --timeout)")
+	return cmd
+}
+
+// resourceUpdateLine is one `resource watch --format json` output line.
+type resourceUpdateLine struct {
+	Time string `json:"time"`
+	URI  string `json:"uri"`
+}
+
+// resourceUpdatePrinter prints each notifications/resources/updated for one
+// URI and closes reachedCount once count updates were printed (never when
+// count is 0). observe runs on the SDK's receiving goroutine.
+type resourceUpdatePrinter struct {
+	uri          string
+	count        int
+	jsonOutput   bool
+	out, errOut  io.Writer
+	reachedCount chan struct{}
+
+	mu       sync.Mutex
+	received int
+}
+
+func (p *resourceUpdatePrinter) observe(e *notifications.Entry) {
+	params, ok := e.Raw.(*officialMCP.ResourceUpdatedNotificationParams)
+	if e.Type != notifications.TypeResourcesUpdated || !ok || params == nil || params.URI != p.uri {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.count > 0 && p.received >= p.count {
+		return
+	}
+	p.received++
+	stamp := e.Time.Format(time.RFC3339Nano)
+	if p.jsonOutput {
+		line, err := json.Marshal(resourceUpdateLine{Time: stamp, URI: params.URI})
+		if err != nil {
+			fmt.Fprintf(p.errOut, "failed to encode update: %v\n", err)
+			return
+		}
+		fmt.Fprintln(p.out, string(line))
+	} else {
+		fmt.Fprintf(p.out, "%s  updated  %s\n", stamp, params.URI)
+	}
+	if p.received == p.count {
+		close(p.reachedCount)
+	}
+}
+
+func (p *resourceUpdatePrinter) receivedCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.received
+}
+
+// watchContext is the context a watch runs under: the command's (canceled
+// by Ctrl-C), bounded by --timeout only when the user gave it explicitly;
+// the default --timeout is for connecting, not for how long to watch.
+func (rc *ResourceCommand) watchContext(cmd *cobra.Command) (context.Context, context.CancelFunc) {
+	if timeoutFlag := cmd.Flags().Lookup("timeout"); timeoutFlag != nil && timeoutFlag.Changed {
+		return context.WithTimeout(cmd.Context(), rc.timeout)
+	}
+	return context.WithCancel(cmd.Context())
+}
+
+// runWatchCommand subscribes to args[0] and prints every update for it.
+// It ends on Ctrl-C, after --count updates, or when an explicitly given
+// --timeout elapses. Reaching --timeout before --count updates is an error,
+// since the expected updates never came.
+func (rc *ResourceCommand) runWatchCommand(cmd *cobra.Command, args []string) error {
+	uri := args[0]
+	if err := rc.ValidateConnection(); err != nil {
+		return rc.HandleError(err, "validate connection")
+	}
+	count, err := cmd.Flags().GetInt("count")
+	if err != nil {
+		return err
+	}
+	if count < 0 {
+		return fmt.Errorf("--count must not be negative, got %d", count)
+	}
+	porcelainMode, err := cmd.Flags().GetBool("porcelain")
+	if err != nil {
+		return err
+	}
+
+	watchCtx, cancelWatch := rc.watchContext(cmd)
+	defer cancelWatch()
+	printer := &resourceUpdatePrinter{
+		uri: uri, count: count, jsonOutput: rc.GetOutputFormat() == OutputFormatJSON,
+		out: cmd.OutOrStdout(), errOut: cmd.ErrOrStderr(), reachedCount: make(chan struct{}),
+	}
+	service := rc.GetService()
+	service.AddNotificationObserver(func(e notifications.Entry) { printer.observe(&e) })
+
+	subscribeCtx, cancelSubscribe := rc.WithContext()
+	err = service.SubscribeResource(subscribeCtx, uri)
+	cancelSubscribe()
+	if err != nil {
+		return rc.HandleError(err, "subscribe to resource")
+	}
+	if !porcelainMode {
+		fmt.Fprintf(cmd.ErrOrStderr(), "👀 Watching %s (Ctrl-C to stop)\n", uri)
+	}
+
+	var watchErr error
+	select {
+	case <-printer.reachedCount:
+	case <-watchCtx.Done():
+		if got := printer.receivedCount(); errors.Is(watchCtx.Err(), context.DeadlineExceeded) && got < count {
+			watchErr = fmt.Errorf("received %d of %d updates for '%s' before --timeout %s", got, count, uri, rc.timeout)
+		}
+	}
+
+	if cmd.Context().Err() != nil {
+		// Ctrl-C reached the whole process group, so a stdio server is
+		// likely exiting too; disconnecting (PostRunE) ends the
+		// subscription either way.
+		return watchErr
+	}
+	unsubscribeCtx, cancelUnsubscribe := rc.WithContext()
+	defer cancelUnsubscribe()
+	if err := service.UnsubscribeResource(unsubscribeCtx, uri); err != nil && watchErr == nil {
+		watchErr = rc.HandleError(err, "unsubscribe from resource")
+	}
+	return watchErr
 }
 
 // displayBinaryContent shows a hex dump of binary content

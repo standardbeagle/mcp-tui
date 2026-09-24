@@ -35,7 +35,7 @@ func TestCreateResourceCommand(t *testing.T) {
 
 	// Check that subcommands are added
 	subcommands := cmd.Commands()
-	expectedSubcommands := []string{"list", "get", "templates", "complete"}
+	expectedSubcommands := []string{"list", "get", "templates", "complete", "watch"}
 
 	if len(subcommands) != len(expectedSubcommands) {
 		t.Errorf("expected %d subcommands, got %d", len(expectedSubcommands), len(subcommands))
