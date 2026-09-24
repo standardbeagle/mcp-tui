@@ -25,9 +25,10 @@ alias "vet" {
     args "vet" "./..."
 }
 
+// Pinned via go run so every machine lints with the same version; no global install.
 alias "lint" {
-    command "golangci-lint"
-    args "run"
+    command "go"
+    args "run" "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2" "run"
 }
 
 alias "build" {

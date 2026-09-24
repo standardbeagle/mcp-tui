@@ -13,6 +13,7 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOMOD=$(GOCMD) mod
 GOFMT=$(GOCMD) fmt
+GOLANGCI_LINT=$(GOCMD) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 
 # Build flags
 LDFLAGS=-ldflags "-X main.version=$(VERSION)"
@@ -63,8 +64,7 @@ coverage:
 # Lint code
 lint:
 	@echo "Running linter..."
-	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && $(GOGET) github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
-	golangci-lint run
+	$(GOLANGCI_LINT) run
 
 # Format code
 fmt:
