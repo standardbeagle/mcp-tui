@@ -14,7 +14,7 @@ import (
 // and runs BuildOAuthConfig for an HTTP connection to serverURL.
 func buildOAuthConfigFromArgs(t *testing.T, serverURL string, args ...string) (*oauth.Config, error) {
 	t.Helper()
-	cmd := &cobra.Command{Use: "mcp-tui"}
+	cmd := &cobra.Command{Use: "oauth-flags"}
 	RegisterOAuthFlags(cmd.Flags())
 	if err := cmd.ParseFlags(args); err != nil {
 		t.Fatalf("parse flags: %v", err)
@@ -85,7 +85,7 @@ func TestBuildOAuthConfig_ClientMetadataURL(t *testing.T) {
 // endpoint from authorization server metadata (or its /token fallback) and
 // has no override, so no flag may pretend to set one.
 func TestRegisterOAuthFlags_NoTokenURLOverride(t *testing.T) {
-	cmd := &cobra.Command{Use: "mcp-tui"}
+	cmd := &cobra.Command{Use: "oauth-flags"}
 	RegisterOAuthFlags(cmd.Flags())
 	if cmd.Flags().Lookup("oauth-token-url") != nil {
 		t.Fatal("--oauth-token-url is registered but nothing applies it")

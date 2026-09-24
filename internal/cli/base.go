@@ -262,21 +262,13 @@ func cloneConnectionConfig(source *config.ConnectionConfig) *config.ConnectionCo
 // processes the same persistent flags before handing the connection config
 // to the screen manager.
 func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (*oauth.Config, error) {
-	clientID, _ := cmd.Flags().GetString("oauth-client-id")
-	clientSecret, _ := cmd.Flags().GetString("oauth-client-secret")
-	clientMetadataURL, _ := cmd.Flags().GetString("oauth-client-metadata-url")
-	issuer, _ := cmd.Flags().GetString("oauth-issuer")
-	acceptUnadvertisedIss, _ := cmd.Flags().GetBool("oauth-accept-unadvertised-iss")
-	scopes, _ := cmd.Flags().GetString("oauth-scopes")
-	redirectHost, _ := cmd.Flags().GetString("oauth-redirect-host")
-	redirectPort, _ := cmd.Flags().GetInt("oauth-redirect-port")
-	dynReg, _ := cmd.Flags().GetBool("oauth-dynamic-registration")
-	cachePath, _ := cmd.Flags().GetString("oauth-cache")
-
+	cfg, enabled, err := oauthConfigFromFlags(cmd.Flags())
+	if err != nil {
+		return nil, err
+	}
 	// No OAuth flags? Bail early so we don't pollute connections that
 	// don't need auth.
-	if clientID == "" && clientSecret == "" && clientMetadataURL == "" && issuer == "" && scopes == "" &&
-		redirectPort == 0 && !dynReg && cachePath == "" {
+	if !enabled {
 		return nil, nil
 	}
 
@@ -289,19 +281,7 @@ func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (
 		return nil, fmt.Errorf("oauth flags require --url")
 	}
 
-	cfg := &oauth.Config{
-		ServerURL:                 connConfig.URL,
-		ClientID:                  clientID,
-		ClientSecret:              clientSecret,
-		ClientMetadataURL:         clientMetadataURL,
-		Issuer:                    issuer,
-		AcceptUnadvertisedIss:     acceptUnadvertisedIss,
-		Scopes:                    oauth.ParseScopes(scopes),
-		RedirectHost:              redirectHost,
-		RedirectPort:              redirectPort,
-		EnableDynamicRegistration: dynReg,
-		CachePath:                 cachePath,
-	}
+	cfg.ServerURL = connConfig.URL
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}

@@ -17,6 +17,7 @@ func newCmdWithConnectionFlags(t *testing.T, args ...string) *cobra.Command {
 	root.PersistentFlags().String("transport", "stdio", "")
 	root.PersistentFlags().String("protocol-version", "", "")
 	root.PersistentFlags().String("server-log-level", "", "")
+	RegisterOAuthFlags(root.PersistentFlags())
 
 	child := &cobra.Command{Use: "child"}
 	root.AddCommand(child)
