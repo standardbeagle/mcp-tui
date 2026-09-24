@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,7 +15,13 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
-const methodHeadersIgnoredLog = "--mcp-method-headers has no effect"
+const (
+	methodHeadersIgnoredLog = "--mcp-method-headers has no effect"
+	routeTool               = "route"
+	methodToolsCall         = "tools/call"
+	// routeSchema binds the region argument to the Mcp-Param-Region header.
+	routeSchema = `{"type":"object","properties":{"region":{"type":"string","x-mcp-header":"Region"}}}`
+)
 
 // headerRecorder records the Mcp-Method header of every POST it serves.
 type headerRecorder struct {
@@ -58,7 +65,7 @@ func TestService_MCPMethodHeaders_FollowNegotiatedProtocol(t *testing.T) {
 	} {
 		t.Run("pin="+tc.pinned, func(t *testing.T) {
 			server := officialMCP.NewServer(&officialMCP.Implementation{Name: "gateway", Version: "4.0.0"}, nil)
-			addTool(server, "route", func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+			addTool(server, routeTool, func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
 				return textResult("routed"), nil
 			})
 			recorder := &headerRecorder{}
@@ -87,5 +94,46 @@ func TestService_MCPMethodHeaders_FollowNegotiatedProtocol(t *testing.T) {
 				t.Errorf("%q logged = %v, want %v:\n%s", methodHeadersIgnoredLog, logged, tc.wantLogged, read())
 			}
 		})
+	}
+}
+
+// TestService_HTTPDebugPane_ShowsSentStandardHeaders: the debug HTTP pane
+// shows the headers the last request actually carried, which on 2026-07-28
+// include the SDK's Mcp-Param-* headers derived from x-mcp-header.
+func TestService_HTTPDebugPane_ShowsSentStandardHeaders(t *testing.T) {
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "gateway", Version: "4.0.0"}, nil)
+	server.AddTool(&officialMCP.Tool{Name: routeTool, InputSchema: json.RawMessage(routeSchema)}, func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+		return textResult("routed"), nil
+	})
+	url := testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, ""))
+	svc := NewService()
+	if err := svc.Connect(context.Background(), &configPkg.ConnectionConfig{
+		Type: configPkg.TransportStreamableHTTP, URL: url,
+	}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Disconnect() })
+	if got := svc.GetServerInfo().ProtocolVersion; got != testutil.MRTRProtocolVersion {
+		t.Fatalf("negotiated %q, want %q", got, testutil.MRTRProtocolVersion)
+	}
+	if _, err := svc.ListTools(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CallTool(context.Background(), CallToolRequest{
+		Name: routeTool, Arguments: map[string]interface{}{"region": "eu-west-1"},
+	}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+
+	info := GetLastHTTPError()
+	if info == nil {
+		t.Fatal("no HTTP exchange recorded")
+	}
+	for name, want := range map[string]string{
+		"Mcp-Method": methodToolsCall, "Mcp-Name": routeTool, "Mcp-Param-Region": "eu-west-1",
+	} {
+		if got := info.RequestHeaders[name]; got != want {
+			t.Errorf("pane %s = %q, want %q (all: %v)", name, got, want, info.RequestHeaders)
+		}
 	}
 }

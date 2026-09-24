@@ -17,18 +17,14 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
-// init registers observers with the transports package so per-request
-// headers (both outbound after SEP-2243 injection and inbound after the
-// server replies) reach the Ctrl+D HTTP tab. The SDK uses a custom
-// http.Client that bypasses the global debugRoundTripper, so without these
-// hooks the debug tab would never see headers from real MCP traffic.
+// init registers the debug HTTP pane's observer of the MCP transport's HTTP
+// trace, which sees every exchange with the headers actually sent (the
+// SDK's SEP-2243 Mcp-* headers, --header values, the injector's) and the
+// response headers. The SDK uses a custom http.Client that bypasses the
+// global debugRoundTripper, so without it the pane would never see real MCP
+// traffic.
 func init() {
-	transports.SetRequestHeaderObserver(func(req *http.Request, mcpMethod, mcpName string) {
-		captureRequestHeaders(req, mcpMethod, mcpName)
-	})
-	transports.SetResponseObserver(func(req *http.Request, resp *http.Response, err error) {
-		captureRoundTrip(req, resp, err)
-	})
+	debug.ObserveHTTPExchanges(transports.HTTPTraceComponent, captureRoundTrip)
 }
 
 // captureRoundTrip records the request + response headers of every HTTP
@@ -54,10 +50,8 @@ func captureRoundTrip(req *http.Request, resp *http.Response, err error) {
 
 	lastHTTPErrorLock.Lock()
 	defer lastHTTPErrorLock.Unlock()
-	// Always reset to a fresh record so the response side reflects the
-	// most recent round-trip; the merge case in captureRequestHeaders only
-	// applies to the brief window between header injection and round-trip
-	// completion. Once we have a response we have a complete picture.
+	// Always reset to a fresh record: the pane shows the most recent
+	// exchange, request and response side together.
 	info := &HTTPErrorInfo{
 		Timestamp:      time.Now(),
 		Method:         req.Method,
@@ -70,34 +64,6 @@ func captureRoundTrip(req *http.Request, resp *http.Response, err error) {
 		info.ResponseBody = "HTTP Request Failed: " + redact.Error(err)
 	}
 	lastHTTPError = info
-}
-
-// captureRequestHeaders snapshots the outgoing request's headers (post
-// SEP-2243 injection) into lastHTTPError so the Ctrl+D HTTP tab surfaces
-// them alongside the existing timing display. It is intentionally additive:
-// it merges into the existing record when the URL matches, otherwise it
-// seeds a minimal record so the values are visible even before a response
-// arrives.
-func captureRequestHeaders(req *http.Request, mcpMethod, mcpName string) {
-	headers := make(map[string]string, len(req.Header))
-	for key, values := range req.Header {
-		headers[key] = strings.Join(values, ", ")
-	}
-
-	lastHTTPErrorLock.Lock()
-	defer lastHTTPErrorLock.Unlock()
-	if lastHTTPError != nil && lastHTTPError.URL == req.URL.String() {
-		// Same in-flight request — merge headers without clobbering the
-		// response side that may have already arrived.
-		lastHTTPError.RequestHeaders = headers
-		return
-	}
-	lastHTTPError = &HTTPErrorInfo{
-		Timestamp:      time.Now(),
-		Method:         req.Method,
-		URL:            req.URL.String(),
-		RequestHeaders: headers,
-	}
 }
 
 var (

@@ -5,43 +5,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"sync/atomic"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 )
-
-// RequestHeaderObserver is invoked by the SEP-2243 method-headers RoundTripper
-// after it injects MCP-Method/MCP-Name on a request. The mcp package
-// registers an observer at startup so the values reach the debug HTTP tab
-// even though our HTTP/SSE clients run on a custom http.Transport that the
-// global debug RoundTripper does not see.
-//
-// The observer must not retain refs to req beyond the call — the body is
-// already drained at this point and the headers map is the SDK's, not a copy.
-type RequestHeaderObserver func(req *http.Request, mcpMethod, mcpName string)
-
-var headerObserver atomic.Value // holds RequestHeaderObserver
-
-// SetRequestHeaderObserver registers a hook that fires once per outgoing
-// JSON-RPC request when SEP-2243 headers are injected. Pass nil to disable.
-func SetRequestHeaderObserver(obs RequestHeaderObserver) {
-	if obs == nil {
-		// Clear by storing a typed nil so Load() still returns the right type.
-		headerObserver.Store((RequestHeaderObserver)(nil))
-		return
-	}
-	headerObserver.Store(obs)
-}
-
-func getRequestHeaderObserver() RequestHeaderObserver {
-	v := headerObserver.Load()
-	if v == nil {
-		return nil
-	}
-	obs, _ := v.(RequestHeaderObserver)
-	return obs
-}
 
 // methodHeadersRoundTripper wraps an http.RoundTripper and injects the
 // SEP-2243 MCP-Method and MCP-Name headers on every JSON-RPC request.
@@ -122,13 +89,6 @@ func (t *methodHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response
 		req.Header.Set("MCP-Name", name)
 	}
 
-	// Notify the optional observer so the debug HTTP tab can surface the
-	// injected headers even when the request goes through a custom transport
-	// (which the global debug RoundTripper does not wrap).
-	if obs := getRequestHeaderObserver(); obs != nil && method != "" {
-		obs(req, method, name)
-	}
-
 	return t.base.RoundTrip(req)
 }
 
@@ -175,21 +135,26 @@ func GetHTTPClientForTransportWithMethodHeaders(transportType TransportType, cus
 	return GetHTTPClientForTransportFull(transportType, customClient, methodHeaders, nil)
 }
 
+// HTTPTraceComponent is the debug component of the MCP transport's HTTP
+// trace; debug.ObserveHTTPExchanges(HTTPTraceComponent, ...) sees every
+// exchange with the headers actually sent.
+const HTTPTraceComponent = "mcp-http"
+
 // GetHTTPClientForTransportFull builds the HTTP client used by the SDK
 // transport, layering wrappers in a deterministic order:
 //
 //  1. base transport from GetHTTPClientForTransport (timeout/keepalive policy)
-//  2. HTTP trace (one redacted debug line per exchange, "mcp-http")
-//  3. response observer (captures full response headers for the debug pane)
-//  4. static headers from --header KEY=VALUE (additive merge)
-//  5. SEP-2243 method headers injector
+//  2. HTTP trace (one redacted debug line per exchange, HTTPTraceComponent,
+//     and the exchange observer the debug HTTP pane reads)
+//  3. static headers from --header KEY=VALUE (additive merge)
+//  4. SEP-2243 method headers injector
 //
 // The order matters: SEP-2243 runs last so its MCP-Method/MCP-Name headers
 // are not stomped by a user-supplied --header MCP-Method=... entry, and the
-// trace and response observer wrap the base so they see the unmodified
-// server response and the final outbound headers. Tracing is always layered
-// in: the custom transport bypasses http.DefaultTransport, so nothing else
-// would see this traffic.
+// trace wraps the base so it sees the final outbound headers (the SDK's own
+// Mcp-* headers included) and the unmodified server response. Tracing is
+// always layered in: the custom transport bypasses http.DefaultTransport, so
+// nothing else would see this traffic.
 func GetHTTPClientForTransportFull(transportType TransportType, customClient *http.Client, methodHeaders bool, staticHeaders map[string]string) *http.Client {
 	client := GetHTTPClientForTransport(transportType, customClient)
 
@@ -200,21 +165,17 @@ func GetHTTPClientForTransportFull(transportType TransportType, customClient *ht
 		base = http.DefaultTransport
 	}
 
-	// Layer 1 (innermost): HTTP trace — times the real network exchange.
-	base = debug.NewHTTPTraceTransport(base, "mcp-http")
+	// Layer 1 (innermost): HTTP trace — times the real network exchange and
+	// reports the headers actually sent.
+	base = debug.NewHTTPTraceTransport(base, HTTPTraceComponent)
 
-	// Layer 2: response observer — captures the actual server response
-	// unmodified by any retry/redirect inner logic.
-	base = newResponseObserverRoundTripper(base)
-
-	// Layer 3: static headers — applied before SEP-2243 so user-supplied
-	// values can be inspected, but the observer still sees the final
-	// merged set on the outbound request.
+	// Layer 2: static headers — applied before SEP-2243 so a user-supplied
+	// MCP-Method cannot override the injected one.
 	if len(staticHeaders) > 0 {
 		base = newStaticHeadersRoundTripper(base, staticHeaders)
 	}
 
-	// Layer 4 (outermost): SEP-2243 method headers — these depend on the
+	// Layer 3 (outermost): SEP-2243 method headers — these depend on the
 	// JSON-RPC body that the SDK has already serialized, so they go last.
 	if methodHeaders {
 		base = newMethodHeadersRoundTripper(base)

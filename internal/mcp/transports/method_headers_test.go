@@ -252,48 +252,6 @@ func TestGetHTTPClientForTransport_FlagOnInjectsHeaders(t *testing.T) {
 	defer resp.Body.Close()
 }
 
-func TestSetRequestHeaderObserver_FiresWithInjectedValues(t *testing.T) {
-	// The observer hook is how the mcp package surfaces SEP-2243 headers in
-	// the debug HTTP tab when requests bypass the global debugRoundTripper.
-	// Reset to nil after the test so other tests don't see the stub.
-	defer SetRequestHeaderObserver(nil)
-
-	type seen struct {
-		method string
-		name   string
-	}
-	got := make(chan seen, 1)
-	SetRequestHeaderObserver(func(req *http.Request, mcpMethod, mcpName string) {
-		got <- seen{method: mcpMethod, name: mcpName}
-	})
-
-	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo"}}`
-	rt := newMethodHeadersRoundTripper(roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader("{}")),
-			Header:     make(http.Header),
-		}, nil
-	}))
-	req := httptest.NewRequest(http.MethodPost, "http://example.test/mcp", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := rt.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip returned error: %v", err)
-	}
-	resp.Body.Close()
-
-	select {
-	case s := <-got:
-		if s.method != "tools/call" || s.name != "echo" {
-			t.Errorf("observer saw method=%q name=%q, want method=%q name=%q",
-				s.method, s.name, "tools/call", "echo")
-		}
-	default:
-		t.Fatal("observer was not invoked")
-	}
-}
-
 func TestGetHTTPClientForTransport_FlagOffOmitsHeaders(t *testing.T) {
 	requireLocalListener(t)
 

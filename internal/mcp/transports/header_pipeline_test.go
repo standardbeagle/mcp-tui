@@ -6,16 +6,15 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 
 // TestHeaderPipeline_FullStackForwardsAndObserves wires the same layered
-// HTTP client that GetHTTPClientForTransportFull builds at runtime — static
-// headers + response observer + SEP-2243 method headers — and confirms the
-// composition reaches the wire and back into the debug surfaces.
-//
-// This guards the cross-cutting concern that the iter-13 method headers
-// path and the iter-14 static headers / response observer paths cooperate
-// rather than overwriting each other.
+// HTTP client that GetHTTPClientForTransportFull builds at runtime — trace +
+// static headers + SEP-2243 method headers — and confirms the composition
+// reaches the wire and back into the trace's exchange observer, which feeds
+// the debug HTTP pane.
 func TestHeaderPipeline_FullStackForwardsAndObserves(t *testing.T) {
 	requireLocalListener(t)
 
@@ -44,8 +43,8 @@ func TestHeaderPipeline_FullStackForwardsAndObserves(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Wire a response observer like the mcp package does at startup.
-	SetResponseObserver(func(req *http.Request, resp *http.Response, err error) {
+	// Wire an exchange observer like the mcp package does at startup.
+	debug.ObserveHTTPExchanges(HTTPTraceComponent, func(req *http.Request, resp *http.Response, err error) {
 		mu.Lock()
 		defer mu.Unlock()
 		responseCalled = true
@@ -54,11 +53,11 @@ func TestHeaderPipeline_FullStackForwardsAndObserves(t *testing.T) {
 			// Snapshot a header value so we know the observer can see the
 			// real http.Response (not just the request).
 			if resp.Header.Get("X-Server-Trace") != "srv-99" {
-				t.Errorf("response observer missed X-Server-Trace header")
+				t.Errorf("exchange observer missed X-Server-Trace header")
 			}
 		}
 	})
-	defer SetResponseObserver(nil)
+	defer debug.ObserveHTTPExchanges(HTTPTraceComponent, nil)
 
 	staticHeaders := map[string]string{
 		"X-Trace-Id":    "trace-pipeline",
@@ -94,14 +93,14 @@ func TestHeaderPipeline_FullStackForwardsAndObserves(t *testing.T) {
 		t.Errorf("server Content-Type: got %q, want %q (existing protocol header must not be stomped)", seenContent, "application/json")
 	}
 	if !responseCalled {
-		t.Error("response observer was never invoked")
+		t.Error("exchange observer was never invoked")
 	}
 	if responseStatus != http.StatusOK {
-		t.Errorf("response observer status: got %d, want %d", responseStatus, http.StatusOK)
+		t.Errorf("exchange observer status: got %d, want %d", responseStatus, http.StatusOK)
 	}
 }
 
-// TestHeaderPipeline_ObserverSeesMethodHeaders verifies that the response
+// TestHeaderPipeline_ObserverSeesMethodHeaders verifies that the exchange
 // observer's snapshot of req.Header includes the SEP-2243 MCP-Method/
 // MCP-Name values injected by the outer RoundTripper. This is the load-
 // bearing assertion for acceptance criterion 5: the debug pane must show
@@ -115,11 +114,11 @@ func TestHeaderPipeline_ObserverSeesMethodHeaders(t *testing.T) {
 	defer srv.Close()
 
 	var observedMethod, observedName string
-	SetResponseObserver(func(req *http.Request, resp *http.Response, err error) {
+	debug.ObserveHTTPExchanges(HTTPTraceComponent, func(req *http.Request, resp *http.Response, err error) {
 		observedMethod = req.Header.Get("MCP-Method")
 		observedName = req.Header.Get("MCP-Name")
 	})
-	defer SetResponseObserver(nil)
+	defer debug.ObserveHTTPExchanges(HTTPTraceComponent, nil)
 
 	client := GetHTTPClientForTransportFull(TransportHTTP, nil, true, nil)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{}}}`
@@ -135,35 +134,6 @@ func TestHeaderPipeline_ObserverSeesMethodHeaders(t *testing.T) {
 	}
 	if observedName != "echo" {
 		t.Errorf("observer MCP-Name: got %q, want %q", observedName, "echo")
-	}
-}
-
-// TestResponseObserver_FiresOnError documents the failure path: when the
-// inner round-trip returns an error (resp == nil), the observer still fires
-// so the debug pane can show what we attempted to send.
-func TestResponseObserver_FiresOnError(t *testing.T) {
-	called := false
-	SetResponseObserver(func(req *http.Request, resp *http.Response, err error) {
-		called = true
-		if resp != nil {
-			t.Errorf("expected nil resp on error, got %v", resp)
-		}
-		if err == nil {
-			t.Error("expected non-nil error")
-		}
-	})
-	defer SetResponseObserver(nil)
-
-	rt := newResponseObserverRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return nil, errFailRoundTrip
-	}))
-	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid/", nil)
-	_, err := rt.RoundTrip(req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !called {
-		t.Error("observer was not called on error")
 	}
 }
 
@@ -185,9 +155,3 @@ func (r *stringReaderImpl) Read(p []byte) (int, error) {
 	r.pos += n
 	return n, nil
 }
-
-var errFailRoundTrip = simpleErr("simulated round-trip failure")
-
-type simpleErr string
-
-func (e simpleErr) Error() string { return string(e) }
