@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"golang.org/x/oauth2"
 )
 
 // secretValue is planted in every sensitive slot; no redacted output may
@@ -263,6 +265,24 @@ func TestError_MasksURLInsideTransportError(t *testing.T) {
 		t.Fatalf("error text leaked: %s", out)
 	}
 	if !strings.Contains(out, "connection refused") || !strings.Contains(out, "fetch:") {
+		t.Errorf("error text lost its cause: %s", out)
+	}
+}
+
+// A token endpoint that answers with a non-standard body makes oauth2 quote
+// the whole body in the error text; tokens in it must not reach the TUI or
+// the log.
+func TestError_MasksTokenEndpointResponseBody(t *testing.T) {
+	resp := &http.Response{Status: "502 Bad Gateway", Header: http.Header{"Content-Type": {"application/json"}}}
+	err := &oauth2.RetrieveError{
+		Response: resp,
+		Body:     []byte(`{"access_token":"` + secretValue + `","refresh_token":"` + secretValue + `"}`),
+	}
+	out := Error(fmt.Errorf("token exchange failed: %w", err))
+	if strings.Contains(out, secretValue) {
+		t.Fatalf("error text leaked: %s", out)
+	}
+	if !strings.Contains(out, "502 Bad Gateway") || !strings.Contains(out, "token exchange failed:") {
 		t.Errorf("error text lost its cause: %s", out)
 	}
 }

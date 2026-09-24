@@ -2681,7 +2681,7 @@ func (ms *MainScreen) renderOAuthStatus() string {
 	label := fmt.Sprintf("OAuth: %s [%s]", st.Mode, st.State)
 	if st.LastError != nil {
 		// Trim long error messages so they don't push the layout around.
-		errMsg := st.LastError.Error()
+		errMsg := st.ErrorText()
 		if len(errMsg) > 80 {
 			errMsg = errMsg[:77] + "..."
 		}

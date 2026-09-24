@@ -23,6 +23,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"golang.org/x/oauth2"
 )
 
 // Mask replaces every redacted value. A single literal keeps it cheap to
@@ -262,12 +264,21 @@ func isNumber(v any) bool {
 
 // Error renders err for a log line with the URL of every *url.Error in its
 // chain masked; transport failures quote the full request URL, query and all.
+// An *oauth2.RetrieveError without a standard error code quotes the token
+// endpoint's whole response body, so that body is masked as well.
 func Error(err error) string {
 	if err == nil {
 		return ""
 	}
 	text := err.Error()
 	for e := err; e != nil; e = errors.Unwrap(e) {
+		if re, ok := e.(*oauth2.RetrieveError); ok && len(re.Body) > 0 {
+			contentType := ""
+			if re.Response != nil {
+				contentType = re.Response.Header.Get("Content-Type")
+			}
+			text = strings.ReplaceAll(text, string(re.Body), Body(contentType, re.Body))
+		}
 		if ue, ok := e.(*url.Error); ok {
 			// url.Error quotes the URL with %q, which escapes some bytes;
 			// replace the escaped form as well as the raw one.

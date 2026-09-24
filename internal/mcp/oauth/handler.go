@@ -58,6 +58,13 @@ type Status struct {
 	LastError error
 }
 
+// ErrorText renders LastError for display with every credential masked;
+// token-endpoint failures can quote the whole response body. Empty when
+// there is no error.
+func (s Status) ErrorText() string {
+	return redact.Error(s.LastError)
+}
+
 // Handler is mcp-tui's OAuth handler. It satisfies auth.OAuthHandler and
 // dispatches to either the SDK's client-credentials or authorization-code
 // implementation based on Config.Mode().

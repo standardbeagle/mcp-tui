@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 )
 
 // TestConfig_ModeAndValidate exercises the mode-inference table and the
@@ -477,5 +479,29 @@ func installAutoApproveFetcher(t *testing.T, h *Handler) {
 			return nil
 		}
 		return f
+	}
+}
+
+// The TUI status line shows the last auth error; a token endpoint that
+// answers with a non-standard body must not put its tokens on screen.
+func TestStatus_ErrorTextMasksTokenEndpointBody(t *testing.T) {
+	const leaked = "at-7c1e0b-must-not-show"
+	st := Status{
+		Mode:  ModeAuthorizationCode,
+		State: StateError,
+		LastError: fmt.Errorf("token exchange failed: %w", &oauth2.RetrieveError{
+			Response: &http.Response{Status: "502 Bad Gateway", Header: http.Header{"Content-Type": {"application/json"}}},
+			Body:     []byte(`{"access_token":"` + leaked + `"}`),
+		}),
+	}
+	got := st.ErrorText()
+	if strings.Contains(got, leaked) {
+		t.Fatalf("ErrorText leaked the token: %s", got)
+	}
+	if !strings.Contains(got, "502 Bad Gateway") {
+		t.Errorf("ErrorText lost the cause: %s", got)
+	}
+	if (Status{}).ErrorText() != "" {
+		t.Error("ErrorText without an error should be empty")
 	}
 }
