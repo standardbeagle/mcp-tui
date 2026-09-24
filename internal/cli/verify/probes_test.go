@@ -381,10 +381,11 @@ func TestRun_UnknownProbe(t *testing.T) {
 }
 
 func TestRunAll_SkipsProbesThatNeedMissingTarget(t *testing.T) {
-	srv := alwaysAcceptServer(t)
-	defer srv.Close()
+	// A real MCP server: tool-names connects to it, which a canned-response
+	// server would stall until the connect timeout.
+	url := toolNamesServer(t, "get_weather")
 
-	results := RunAll(context.Background(), Target{URL: srv.URL})
+	results := RunAll(context.Background(), Target{URL: url})
 	// Every HTTP probe should run; seterror-content should be present
 	// with a Pass=false and a "stdio command target" error.
 	if len(results) != len(AllProbes) {

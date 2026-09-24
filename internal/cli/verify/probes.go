@@ -76,6 +76,7 @@ var AllProbes = []string{
 	"origin-header",
 	"mcp-method-headers",
 	"seterror-content",
+	toolNamesProbe,
 }
 
 // IsHTTPProbe reports whether a probe needs a URL target rather than a
@@ -88,6 +89,25 @@ func IsHTTPProbe(name string) bool {
 	default:
 		return false
 	}
+}
+
+// TargetProblem reports why target cannot run the named probe, or "" when
+// it can: HTTP probes need a URL, seterror-content a stdio command, and
+// tool-names either one.
+func TargetProblem(name string, target *Target) string {
+	switch {
+	case name == toolNamesProbe:
+		if target.URL == "" && target.Command == "" {
+			return "probe requires a URL or stdio command target"
+		}
+	case IsHTTPProbe(name):
+		if target.URL == "" {
+			return "probe requires a URL target"
+		}
+	case target.Command == "":
+		return "probe requires a stdio command target"
+	}
+	return ""
 }
 
 // Run dispatches by name. Unknown names produce a failed ProbeResult
@@ -106,6 +126,8 @@ func Run(ctx context.Context, name string, target Target) ProbeResult {
 		return ProbeMCPMethodHeaders(ctx, target)
 	case "seterror-content":
 		return ProbeSetErrorContent(ctx, target)
+	case toolNamesProbe:
+		return ProbeToolNames(ctx, &target)
 	default:
 		return ProbeResult{
 			Name:  name,
@@ -135,22 +157,12 @@ func RunAll(ctx context.Context, target Target) []ProbeResult {
 		}
 		// Skip stdio probes when target has no Command — caller may not
 		// have wanted them. Same for HTTP probes when URL is empty.
-		if IsHTTPProbe(name) && target.URL == "" {
-			results = append(results, ProbeResult{
-				Name:  name,
-				Pass:  false,
-				Error: "probe requires a URL target",
-				Fix:   "rerun `mcp-tui verify <url>` against the HTTP/streamable-HTTP endpoint",
-			})
-			continue
-		}
-		if !IsHTTPProbe(name) && target.Command == "" {
-			results = append(results, ProbeResult{
-				Name:  name,
-				Pass:  false,
-				Error: "probe requires a stdio command target",
-				Fix:   "rerun `mcp-tui verify --cmd <command> --args <args>` to spawn the server",
-			})
+		if problem := TargetProblem(name, &target); problem != "" {
+			fix := "rerun `mcp-tui verify --cmd <command> --args <args>` to spawn the server"
+			if IsHTTPProbe(name) {
+				fix = "rerun `mcp-tui verify <url>` against the HTTP/streamable-HTTP endpoint"
+			}
+			results = append(results, ProbeResult{Name: name, Pass: false, Error: problem, Fix: fix})
 			continue
 		}
 		results = append(results, Run(ctx, name, target))

@@ -59,6 +59,8 @@ Probes:
   mcp-method-headers   server tolerates SEP-2243 MCP-Method/MCP-Name headers
   seterror-content     tool-result errors preserve the Content payload
                        (SDK v1.6.0+)
+  tool-names           every tool name is 1-128 chars of A-Z a-z 0-9 _ - .
+                       (SEP-986); URL or --cmd target
 
 Examples:
   mcp-tui verify http://localhost:8000/mcp
@@ -113,11 +115,8 @@ func (c *VerifyCommand) RunE(cmd *cobra.Command, args []string) error {
 		// Single-probe path. Validate that the chosen probe matches the
 		// target shape before running so the user gets a clear error
 		// instead of "missing URL" / "missing command" mid-output.
-		if verify.IsHTTPProbe(probeName) && target.URL == "" {
-			return fmt.Errorf("probe %q requires a URL target — supply <url> or --url", probeName)
-		}
-		if !verify.IsHTTPProbe(probeName) && target.Command == "" {
-			return fmt.Errorf("probe %q requires a stdio command — supply --cmd and --args", probeName)
+		if problem := verify.TargetProblem(probeName, &target); problem != "" {
+			return fmt.Errorf("--probe %s: %s — supply <url>/--url or --cmd and --args", probeName, problem)
 		}
 		results = []verify.ProbeResult{verify.Run(ctx, probeName, target)}
 	} else {

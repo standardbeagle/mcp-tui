@@ -151,8 +151,9 @@ mcp-tui verify [url|--cmd <cmd>]
 | `--tool <name>` | (`seterror-content`) Tool to call, default `echo` |
 
 Probes: `cross-origin`, `dns-rebind`, `content-type`, `origin-header`,
-`mcp-method-headers`, `seterror-content`. The first five need a URL target;
-`seterror-content` needs a stdio `--cmd`.
+`mcp-method-headers`, `seterror-content`, `tool-names`. The first five need a URL target;
+`seterror-content` needs a stdio `--cmd`; `tool-names` (every tool name is 1-128
+characters of `A-Z a-z 0-9 _ - .`, SEP-986) takes either.
 
 ## `conform` subcommand
 
