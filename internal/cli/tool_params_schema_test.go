@@ -5,17 +5,22 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 )
 
-func schemaWith(properties map[string]interface{}) map[string]interface{} {
-	return map[string]interface{}{
+func schemaWith(t *testing.T, properties map[string]interface{}) inputschema.Schema {
+	t.Helper()
+	schema, err := inputschema.Parse("test_tool", map[string]interface{}{
 		"type":       "object",
 		"properties": properties,
-	}
+	})
+	require.NoError(t, err)
+	return schema
 }
 
 func TestCoerceToolArgumentUsesDeclaredType(t *testing.T) {
-	schema := schemaWith(map[string]interface{}{
+	schema := schemaWith(t, map[string]interface{}{
 		"pin":     map[string]interface{}{"type": "string"},
 		"count":   map[string]interface{}{"type": "integer"},
 		"ratio":   map[string]interface{}{"type": "number"},
@@ -54,7 +59,7 @@ func TestCoerceToolArgumentUsesDeclaredType(t *testing.T) {
 
 // Conversion failures must be reported, not silently downgraded to a string.
 func TestCoerceToolArgumentFailsFastOnTypeMismatch(t *testing.T) {
-	schema := schemaWith(map[string]interface{}{
+	schema := schemaWith(t, map[string]interface{}{
 		"count":   map[string]interface{}{"type": "integer"},
 		"ratio":   map[string]interface{}{"type": "number"},
 		"enabled": map[string]interface{}{"type": "boolean"},
@@ -79,7 +84,7 @@ func TestCoerceToolArgumentFailsFastOnTypeMismatch(t *testing.T) {
 
 // Without a schema entry the value's own syntax is the only signal available.
 func TestCoerceToolArgumentFallsBackWhenSchemaSilent(t *testing.T) {
-	schema := schemaWith(map[string]interface{}{})
+	schema := schemaWith(t, map[string]interface{}{})
 
 	got, err := coerceToolArgument(schema, "unknown", "42")
 	require.NoError(t, err)
@@ -89,29 +94,23 @@ func TestCoerceToolArgumentFallsBackWhenSchemaSilent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "plain text", got)
 
-	got, err = coerceToolArgument(nil, "anything", "true")
+	got, err = coerceToolArgument(inputschema.Schema{}, "anything", "true")
 	require.NoError(t, err)
 	assert.Equal(t, true, got)
 }
 
-func TestSchemaPropertyTypeHandlesUnions(t *testing.T) {
-	schema := schemaWith(map[string]interface{}{
+// For a nullable non-string parameter "null" sends null; any other value
+// converts as the non-null type.
+func TestCoerceToolArgumentNullableUnion(t *testing.T) {
+	schema := schemaWith(t, map[string]interface{}{
 		"maybe": map[string]interface{}{"type": []interface{}{"null", "integer"}},
-		"plain": map[string]interface{}{"type": "string"},
-		"typed": map[string]interface{}{},
 	})
 
-	declared, ok := schemaPropertyType(schema, "maybe")
-	assert.True(t, ok)
-	assert.Equal(t, "integer", declared, "the first non-null type wins")
+	got, err := coerceToolArgument(schema, "maybe", "null")
+	require.NoError(t, err)
+	assert.Nil(t, got)
 
-	declared, ok = schemaPropertyType(schema, "plain")
-	assert.True(t, ok)
-	assert.Equal(t, "string", declared)
-
-	_, ok = schemaPropertyType(schema, "typed")
-	assert.False(t, ok, "a property without a type is not a known type")
-
-	_, ok = schemaPropertyType(schema, "absent")
-	assert.False(t, ok)
+	got, err = coerceToolArgument(schema, "maybe", "7")
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), got)
 }

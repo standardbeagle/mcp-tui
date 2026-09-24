@@ -12,6 +12,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 )
 
 // ToolCommand handles tool-related CLI operations
@@ -463,9 +464,19 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Convert each argument to the type the tool declares for it.
+	// Convert each argument to the type the tool declares for it. A schema
+	// that does not resolve (a remote $ref, a dangling local one) is
+	// reported rather than treated as permissive.
+	inputSchema, schemaErr := inputschema.Parse(toolName, matchedTool.InputSchema)
+	if schemaErr != nil {
+		return fmt.Errorf("tool %q: %w", toolName, schemaErr)
+	}
+	showNotes := tc.GetOutputFormat() == OutputFormatText && !porcelainMode
 	for _, raw := range rawArgs {
-		parsedValue, err := coerceToolArgument(matchedTool.InputSchema, raw.key, raw.value)
+		if p, ok := inputSchema.Param(raw.key); ok && p.Note != "" && showNotes {
+			fmt.Fprintf(os.Stderr, "ℹ️  Argument %q: %s\n", raw.key, p.Note)
+		}
+		parsedValue, err := coerceToolArgument(inputSchema, raw.key, raw.value)
 		if err != nil {
 			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
