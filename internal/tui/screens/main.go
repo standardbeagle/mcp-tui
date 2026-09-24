@@ -908,6 +908,14 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "T":
+		// Open the MCP tasks overlay: the tasks this session created or the
+		// server listed, with status, progress, result and cancel.
+		tasksScreen := NewTasksScreen(ms.mcpService)
+		return ms, func() tea.Msg {
+			return TransitionMsg{Transition: ScreenTransition{Screen: tasksScreen}}
+		}
+
 	case "A":
 		// Re-authenticate: clear cached OAuth state so the next outgoing
 		// request triggers a fresh Authorize() call. Only meaningful when
@@ -1310,6 +1318,7 @@ func (ms *MainScreen) View() string {
 			"1-9: Quick select",
 			"Enter: Execute",
 			"PgUp/Dn: Page",
+			"T: Tasks",
 			"r: Refresh",
 			"d: Disconnect",
 			"Tab: Switch tabs",

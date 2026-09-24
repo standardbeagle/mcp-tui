@@ -20,6 +20,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
@@ -89,6 +90,13 @@ type ToolScreen struct {
 	// clears it so a subsequent independent execution still triggers a fresh
 	// prompt.
 	confirmBypassed bool
+
+	// MCP task mode (Ctrl+T): Execute calls the tool as a task and follows
+	// it; runningTask is the task being followed, taskUpdates its status
+	// changes and, last, its result.
+	taskMode    bool
+	runningTask *tasks.Task
+	taskUpdates <-chan tea.Msg
 
 	// Result viewing mode
 	viewingResult bool          // Whether we're in result viewing mode
@@ -474,7 +482,20 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return ts.handleKeyMsg(msg)
 
+	case toolTaskStartedMsg:
+		ts.executing = false
+		ts.runningTask, ts.taskUpdates = &msg.task, msg.updates
+		ts.SetStatus(fmt.Sprintf("Task %s started (%s); following it — T on the main screen lists tasks",
+			msg.task.ID, msg.task.Status), StatusInfo)
+		return ts, waitForTaskUpdate(msg.updates)
+
+	case toolTaskProgressMsg:
+		ts.runningTask = &msg.task
+		ts.SetStatus(taskProgressLine(&msg.task), StatusInfo)
+		return ts, waitForTaskUpdate(ts.taskUpdates)
+
 	case toolExecutionCompleteMsg:
+		ts.runningTask, ts.taskUpdates = nil, nil
 		ts.executing = false
 		ts.lastExecution = time.Now()
 		ts.executionCount++
@@ -591,6 +612,88 @@ type toolExecutionCompleteMsg struct {
 // toolSpinnerTickMsg is sent to update the spinner animation
 type toolSpinnerTickMsg struct{}
 
+// toolTaskStartedMsg: a task-mode call created a task; updates delivers
+// its status changes and then a toolExecutionCompleteMsg.
+type toolTaskStartedMsg struct {
+	task    tasks.Task
+	updates <-chan tea.Msg
+}
+
+// toolTaskProgressMsg is a status change of the task being followed.
+type toolTaskProgressMsg struct {
+	task tasks.Task
+}
+
+// BackgroundWork marks the tool screen's reports as BackgroundMsg, so an
+// overlay (an elicitation the call raised, the debug view) cannot swallow
+// them.
+func (toolExecutionCompleteMsg) BackgroundWork() {}
+func (toolTaskStartedMsg) BackgroundWork()       {}
+func (toolTaskProgressMsg) BackgroundWork()      {}
+
+// taskUpdateBuffer holds the status changes a slow screen has not read
+// yet; the last slot is kept for the result, so sending it never blocks.
+const taskUpdateBuffer = 32
+
+func waitForTaskUpdate(updates <-chan tea.Msg) tea.Cmd {
+	if updates == nil {
+		return nil
+	}
+	return func() tea.Msg { return <-updates }
+}
+
+func taskProgressLine(t *tasks.Task) string {
+	line := fmt.Sprintf("Task %s: %s", t.ID, t.Status)
+	if t.StatusMessage != "" {
+		line += " — " + t.StatusMessage
+	}
+	return line
+}
+
+// toggleTaskMode switches task mode, refusing when the server did not
+// declare tasks.
+func (ts *ToolScreen) toggleTaskMode() {
+	if ts.taskMode {
+		ts.taskMode = false
+		ts.SetStatus("Task mode off: Execute calls the tool directly", StatusInfo)
+		return
+	}
+	if ts.mcpService == nil || !ts.mcpService.TaskSupport().Declared {
+		ts.SetStatus("The server did not declare MCP tasks; task mode is unavailable", StatusWarning)
+		return
+	}
+	ts.taskMode = true
+	ts.SetStatus("Task mode on: Execute runs the tool as an MCP task", StatusInfo)
+}
+
+// startTaskCmd calls the tool as a task. A created task is followed in the
+// background until it ends; a direct answer completes at once.
+func (ts *ToolScreen) startTaskCmd(args map[string]interface{}) tea.Cmd {
+	svc, name := ts.mcpService, ts.tool.Name
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		outcome, err := svc.CallToolAsTask(ctx, mcp.CallToolRequest{Name: name, Arguments: args}, nil)
+		if err != nil {
+			return toolExecutionCompleteMsg{Error: err}
+		}
+		if outcome.Task == nil {
+			return toolExecutionCompleteMsg{Result: outcome.Result}
+		}
+		updates := make(chan tea.Msg, taskUpdateBuffer)
+		id := outcome.Task.ID
+		go func() {
+			result, err := svc.AwaitTask(context.Background(), id, func(t tasks.Task) {
+				if len(updates) < taskUpdateBuffer-1 {
+					updates <- toolTaskProgressMsg{task: t}
+				}
+			})
+			updates <- toolExecutionCompleteMsg{Result: result, Error: err}
+		}()
+		return toolTaskStartedMsg{task: *outcome.Task, updates: updates}
+	}
+}
+
 // handleKeyMsg handles keyboard input
 func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Don't process keys while executing
@@ -637,6 +740,8 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Don't pass these to textinput, handle navigation
 		case "shift+tab", "up":
 			// Don't pass these to textinput, handle navigation
+		case "ctrl+t":
+			// Task mode toggle, handled below
 		case "esc":
 			// Don't pass to textinput, handle escape
 		case "ctrl+v":
@@ -768,6 +873,10 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "ctrl+t":
+		ts.toggleTaskMode()
+		return ts, nil
+
 	case "c":
 		// Toggle CLI command display
 		if ts.showCLICommand {
@@ -1001,6 +1110,13 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 	ts.executing = true
 	ts.executionStart = time.Now()
 	ts.showCLICommand = false // Hide CLI command during execution
+	if ts.taskMode {
+		ts.SetStatus("Calling tool as a task...", StatusInfo)
+		return tea.Batch(
+			tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return toolSpinnerTickMsg{} }),
+			ts.startTaskCmd(args),
+		)
+	}
 	ts.SetStatus("Executing tool...", StatusInfo)
 
 	// Start the execution and spinner ticker
@@ -1240,7 +1356,15 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString("  ")
 		builder.WriteString(renderToolBadges(ts.tool))
 	}
+	if ts.taskMode {
+		builder.WriteString("  ")
+		builder.WriteString(ts.selectedStyle.Render("[task mode]"))
+	}
 	builder.WriteString("\n")
+	if ts.runningTask != nil {
+		builder.WriteString(ts.labelStyle.Render(taskProgressLine(ts.runningTask)))
+		builder.WriteString("\n")
+	}
 
 	if ts.tool.Description != "" {
 		builder.WriteString(ts.labelStyle.Render(ts.tool.Description))
@@ -1648,9 +1772,11 @@ func (ts *ToolScreen) renderFooter() string {
 			helpText = "c: CLI command • Ctrl+C: Copy result • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		}
 	} else if ts.cursor < len(ts.fields) {
-		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+L: Debug Log • b: Back • Esc: Back"
+		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+T: Task mode • " +
+			"Ctrl+L: Debug Log • b: Back • Esc: Back"
 	} else if ts.cursor == len(ts.fields) {
-		helpText = "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+L: Debug Log • b: Back • Esc: Back"
+		helpText = "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+T: Task mode • " +
+			"Ctrl+L: Debug Log • b: Back • Esc: Back"
 	} else if ts.cursor == len(ts.fields)+1 {
 		helpText = "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b: Back • Esc: Back"
 	} else {
