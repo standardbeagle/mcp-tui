@@ -1,9 +1,12 @@
 package screens
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
@@ -146,28 +149,36 @@ func TestToolReExecutionIndicators(t *testing.T) {
 	})
 }
 
-// Test that execution minimum display time works
-func TestToolExecutionMinimumDisplayTime(t *testing.T) {
-	t.Run("validate_execution_has_minimum_visibility", func(t *testing.T) {
-		// This test validates the concept but can't test the actual sleep
-		// without mocking time or the MCP service
-		tool := mcp.Tool{
-			Name: "fast-tool",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
-			},
+// instantCallService answers every tool call at once.
+type instantCallService struct{ imcp.Service }
+
+func (instantCallService) CallTool(context.Context, imcp.CallToolRequest) (*imcp.CallToolResult, error) {
+	return &imcp.CallToolResult{Content: []imcp.Content{{Type: "text", Text: "done"}}}, nil
+}
+
+// A fast tool's result is delivered as soon as the call returns: the
+// command running the call used to sleep out a 500ms minimum display time,
+// holding a goroutine and delaying the result for nothing.
+func TestToolExecutionDeliversAFastResultAtOnce(t *testing.T) {
+	ts := NewToolScreen(imcp.Tool{Name: "fast-tool", InputSchema: map[string]interface{}{"type": "object"}},
+		instantCallService{})
+
+	batch, ok := ts.executeTool()().(tea.BatchMsg)
+	if !ok {
+		t.Fatal("executeTool did not batch the call with the spinner")
+	}
+	for _, cmd := range batch {
+		start := time.Now()
+		msg := cmd()
+		if _, ok := msg.(toolExecutionCompleteMsg); !ok {
+			continue
 		}
-
-		ts := NewToolScreen(tool, nil)
-
-		// The executeTool function should ensure minimum visibility
-		cmd := ts.executeTool()
-		assert.NotNil(t, cmd, "Execute tool should return a command")
-
-		// In real usage, even instant tools will show for at least 500ms
-		// This gives users visual feedback that execution happened
-	})
+		if elapsed := time.Since(start); elapsed >= 400*time.Millisecond {
+			t.Fatalf("an instant call took %v to report, want no minimum display delay", elapsed)
+		}
+		return
+	}
+	t.Fatal("no command reported the call's result")
 }
 
 // Test execution counter persistence across multiple executions

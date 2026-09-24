@@ -1133,11 +1133,7 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 		tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 			return toolSpinnerTickMsg{}
 		}),
-		// Tool execution with minimum display time
 		func() tea.Msg {
-			// Record start time to ensure minimum display duration
-			startTime := time.Now()
-
 			ctx, cancel := context.WithTimeout(mcp.WithProgressObserver(context.Background(), observe), 30*time.Second)
 			defer cancel()
 
@@ -1145,12 +1141,6 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 				Name:      ts.tool.Name,
 				Arguments: args,
 			})
-
-			// Ensure execution is visible for at least 500ms
-			elapsed := time.Since(startTime)
-			if elapsed < 500*time.Millisecond {
-				time.Sleep(500*time.Millisecond - elapsed)
-			}
 
 			return toolExecutionCompleteMsg{
 				Result: result,
