@@ -216,13 +216,7 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 
 	// Handle JSON output format
 	if rc.GetOutputFormat() == OutputFormatJSON {
-		outputData := map[string]interface{}{
-			"uri":      resourceURI,
-			"contents": contents,
-			"count":    len(contents),
-		}
-
-		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
+		jsonBytes, err := json.MarshalIndent(resourceReadOutput(resourceURI, result), "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal resource to JSON: %w", err)
 		}
@@ -234,6 +228,7 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 	// Text output format
 	if len(contents) == 0 {
 		fmt.Println("No content available for this resource")
+		writeRoundTrace(os.Stdout, result.Rounds)
 		return nil
 	}
 
@@ -307,7 +302,23 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 		}
 	}
 
+	writeRoundTrace(os.Stdout, result.Rounds)
 	return nil
+}
+
+// resourceReadOutput is the `resource read --format json` document. rounds
+// appears only when the read took input rounds, matching the omitempty
+// rounds field of tool and prompt results.
+func resourceReadOutput(uri string, result *mcp.ReadResourceResult) map[string]interface{} {
+	out := map[string]interface{}{
+		"uri":      uri,
+		"contents": result.Contents,
+		"count":    len(result.Contents),
+	}
+	if len(result.Rounds) > 0 {
+		out["rounds"] = result.Rounds
+	}
+	return out
 }
 
 // createTemplatesCommand creates the resource templates command. Templates

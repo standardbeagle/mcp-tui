@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -166,5 +167,28 @@ func TestService_Results_NoRoundsBeforeMRTR(t *testing.T) {
 		if len(rounds) != 0 {
 			t.Errorf("%s rounds = %+v, want none on 2025-11-25", method, rounds)
 		}
+	}
+}
+
+// TestRoundLines pins the human-readable round trace the CLI and TUI share.
+func TestRoundLines(t *testing.T) {
+	if got := RoundLines(nil); got != nil {
+		t.Errorf("RoundLines(nil) = %q, want nil so callers skip the section", got)
+	}
+	got := RoundLines([]RoundSummary{
+		{Round: 1, Method: "tools/call", HasRequestState: true, DurationMs: 12.34, InputRequests: []InputExchange{
+			{Key: "confirm", Kind: "elicitation", Response: "accept"},
+			{Key: "roots", Kind: "roots", Response: "2 roots"},
+		}},
+		{Round: 2, Method: "tools/call", LoadShedding: true, DurationMs: 0.5, InputRequests: []InputExchange{}},
+	})
+	want := []string{
+		"round 1 · tools/call · 12.3ms · request state: yes",
+		"  confirm: elicitation → accept",
+		"  roots: roots → 2 roots",
+		"round 2 · tools/call · 0.5ms · request state: no · load shedding (retry)",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("RoundLines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

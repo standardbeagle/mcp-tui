@@ -506,7 +506,6 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 	// Display messages
 	if len(result.Messages) == 0 {
 		fmt.Println("No messages returned from prompt execution")
-		return nil
 	}
 
 	for i, message := range result.Messages {
@@ -523,5 +522,6 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 		}
 	}
 
+	writeRoundTrace(os.Stdout, result.Rounds)
 	return nil
 }

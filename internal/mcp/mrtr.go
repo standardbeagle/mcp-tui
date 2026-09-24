@@ -329,3 +329,28 @@ func describeInputResponse(response officialMCP.InputResponse) string {
 		return fmt.Sprintf("%T", response)
 	}
 }
+
+// RoundLines renders a round trace for people, one header line per round
+// and one indented line per input request. nil when there were no rounds,
+// so callers show no section at all.
+func RoundLines(rounds []RoundSummary) []string {
+	if len(rounds) == 0 {
+		return nil
+	}
+	var lines []string
+	for _, r := range rounds {
+		state := "no"
+		if r.HasRequestState {
+			state = "yes"
+		}
+		header := fmt.Sprintf("round %d · %s · %.1fms · request state: %s", r.Round, r.Method, r.DurationMs, state)
+		if r.LoadShedding {
+			header += " · load shedding (retry)"
+		}
+		lines = append(lines, header)
+		for _, x := range r.InputRequests {
+			lines = append(lines, fmt.Sprintf("  %s: %s → %s", x.Key, x.Kind, x.Response))
+		}
+	}
+	return lines
+}
