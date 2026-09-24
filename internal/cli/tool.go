@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -186,12 +187,16 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "✅ Tools retrieved successfully\n\n")
 	}
+	dropped := tc.GetService().DroppedTools()
 
 	// Handle JSON output format
 	if tc.GetOutputFormat() == OutputFormatJSON {
 		outputData := map[string]interface{}{
 			"tools": tools,
 			"count": len(tools),
+		}
+		if len(dropped) > 0 {
+			outputData["droppedTools"] = dropped
 		}
 
 		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
@@ -203,7 +208,9 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Text output format
+	// Text output format. Dropped tools go to stderr in every text mode:
+	// the server offers them, so their absence needs explaining.
+	writeDroppedTools(os.Stderr, dropped)
 	if len(tools) == 0 {
 		fmt.Println("No tools available from this MCP server")
 		return nil
@@ -259,6 +266,22 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	fmt.Println(countStyle.Render(fmt.Sprintf("Total: %d tools", len(tools))))
 
 	return nil
+}
+
+// writeDroppedTools warns about the tools the SDK removed from tools/list,
+// one per line with the SDK's reason. Nothing is written when none were.
+func writeDroppedTools(w io.Writer, dropped []mcp.DroppedTool) {
+	if len(dropped) == 0 {
+		return
+	}
+	noun := "tools"
+	if len(dropped) == 1 {
+		noun = "tool"
+	}
+	fmt.Fprintf(w, "⚠️  %d %s dropped by the SDK from tools/list:\n", len(dropped), noun)
+	for _, d := range dropped {
+		fmt.Fprintf(w, "   - %s\n", d)
+	}
 }
 
 // handleDescribe implements the tool describe functionality
