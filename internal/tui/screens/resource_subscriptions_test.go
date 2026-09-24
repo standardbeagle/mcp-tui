@@ -46,7 +46,7 @@ func mainScreenOn(t *testing.T, server *officialMCP.Server, protocolVersion stri
 	t.Helper()
 	svc := mcp.NewService()
 	if err := svc.Connect(context.Background(), &config.ConnectionConfig{
-		Type: config.TransportStreamableHTTP, URL: testutil.ServeStreamableHTTP(t, server, protocolVersion),
+		Type: config.TransportStreamableHTTP, URL: testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, protocolVersion)),
 		ProtocolVersion: protocolVersion,
 	}); err != nil {
 		t.Fatalf("Connect: %v", err)

@@ -43,7 +43,7 @@ func deployServer(subscribable bool) *officialMCP.Server {
 // HTTP at protocolVersion ("" = latest) and checks what was negotiated.
 func connectHTTPService(t *testing.T, server *officialMCP.Server, protocolVersion string) mcp.Service {
 	t.Helper()
-	url := testutil.ServeStreamableHTTP(t, server, protocolVersion)
+	url := testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, protocolVersion))
 	svc := mcp.NewService()
 	if err := svc.Connect(context.Background(), &config.ConnectionConfig{
 		Type: config.TransportStreamableHTTP, URL: url, ProtocolVersion: protocolVersion,
