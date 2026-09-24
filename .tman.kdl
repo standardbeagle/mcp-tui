@@ -1,0 +1,36 @@
+defaults {
+    stall "30m"
+    max-parallel 2
+    retain "24h"
+    // opt-in ceilings; builds legitimately saturate cores and eat RAM
+    // max-mem 8192
+    // max-cpu 95
+    // max-time "30m"
+}
+
+// Mirrors the CI "test" job: integration tests shell out to npx and pwsh.
+alias "test" {
+    command "go"
+    args "test" "./..." "-timeout" "15m"
+}
+
+// Mirrors the CI "race" job; the concurrency-sensitive code lives under internal/.
+alias "race" {
+    command "go"
+    args "test" "-race" "./internal/..." "-timeout" "20m"
+}
+
+alias "vet" {
+    command "go"
+    args "vet" "./..."
+}
+
+alias "lint" {
+    command "golangci-lint"
+    args "run"
+}
+
+alias "build" {
+    command "go"
+    args "build" "-o" "bin/mcp-tui" "."
+}

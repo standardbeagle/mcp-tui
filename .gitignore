@@ -30,3 +30,12 @@ binaries/
 *.tgz
 # Risk-pipeline telemetry
 .risk-pipeline/
+
+# tman shims and run logs
+/.tman/
+/test
+/test.ps1
+/test.cmd
+/build
+/build.ps1
+/build.cmd
