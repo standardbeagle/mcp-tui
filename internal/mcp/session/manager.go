@@ -253,17 +253,16 @@ func (m *Manager) Connect(
 	return nil
 }
 
-// Disconnect cleanly closes the session with proper resource cleanup
+// Disconnect cleanly closes the session with proper resource cleanup.
+//
+// The manager state is torn down under m.mu, but the session is closed after
+// releasing it: closing waits for in-flight handlers, and a notification
+// handler may call back into the manager (IsConnected from the TUI's status
+// poll), which would deadlock against a held lock.
 func (m *Manager) Disconnect() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	return m.disconnectLocked()
-}
-
-// disconnectLocked performs disconnection with lock already held
-func (m *Manager) disconnectLocked() error {
 	if m.info.State == StateDisconnected || m.info.State == StateClosed {
+		m.mu.Unlock()
 		return nil // Already disconnected
 	}
 
@@ -271,33 +270,28 @@ func (m *Manager) disconnectLocked() error {
 		debug.F("currentState", m.info.State),
 		debug.F("sessionID", m.info.SessionID))
 
-	var lastErr error
-
 	// Cancel connection context. This also aborts an in-flight reconnection
 	// attempt, which observes the state change and stands down.
 	m.stopConnectionLocked()
 
-	// Close session if exists
-	if m.session != nil {
-		if err := m.session.Close(); err != nil {
-			lastErr = fmt.Errorf("failed to close session: %w", err)
-			debug.Error("Session manager: Failed to close session", debug.F("error", err))
-		}
-		m.session = nil
-	}
-
-	// Clean up references
+	session := m.session
+	m.session = nil
 	m.client = nil
 	m.transport = nil
 	m.contextStrategy = nil
-
-	// Update state
 	m.setState(StateClosed)
 	m.info.SessionID = ""
+	m.mu.Unlock()
 
-	debug.Info("Session manager: Disconnection complete",
-		debug.F("finalState", m.info.State))
+	var lastErr error
+	if session != nil {
+		if err := session.Close(); err != nil {
+			lastErr = fmt.Errorf("failed to close session: %w", err)
+			debug.Error("Session manager: Failed to close session", debug.F("error", err))
+		}
+	}
 
+	debug.Info("Session manager: Disconnection complete", debug.F("finalState", StateClosed))
 	return lastErr
 }
 

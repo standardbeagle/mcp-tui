@@ -938,20 +938,25 @@ func serverCapabilitiesToFlagMap(c *officialMCP.ServerCapabilities) map[string]i
 // Disconnect closes the connection
 func (s *service) Disconnect() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// Invalidate any Connect currently blocked in its handshake.
 	s.connectEpoch++
+	sessionManager := s.sessionManager
+	s.mu.Unlock()
 
-	if s.sessionManager == nil {
+	if sessionManager == nil {
 		return nil // Already disconnected
 	}
 
-	// Use session manager to cleanly disconnect
-	if err := s.sessionManager.Disconnect(); err != nil {
+	// Close the session without holding s.mu: closing waits for in-flight
+	// handlers, and the notification path (capture middleware, observers,
+	// the TUI's IsConnected poll) takes s.mu, so holding it here deadlocks.
+	if err := sessionManager.Disconnect(); err != nil {
 		debug.Error("Session manager disconnect failed", debug.F("error", err))
 		// Continue with cleanup even if disconnect failed
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Drop the client reference: after disconnect the SDK client is no longer
 	// valid for AddRoots / RemoveRoots calls (its sessions are torn down).
