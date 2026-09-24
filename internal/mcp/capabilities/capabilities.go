@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 )
 
 // Implementation mirrors officialMCP.Implementation but is JSON-stable for our
@@ -219,7 +221,8 @@ func (s *Snapshot) MarshalJSON() ([]byte, error) {
 //   - samplingTools        — true when the handler also implements WithToolsHandler
 //   - hasElicitation       — true when SetElicitationHandler was called with a non-nil value
 //   - protocolVersion      — the negotiated server-confirmed protocol version
-//   - rootsListChanged     — always true for our client (we always pass roots through SetInitialRoots/AddRoots)
+//   - rootsListChanged     — always true for our client (we always pass roots through SetInitialRoots/AddRoots);
+//     forced false on 2026-07-28, which removed roots/list_changed
 //
 // The SDK's default behavior is to advertise roots:{listChanged:true} unless
 // ClientOptions.Capabilities is explicitly set, which mcp-tui never does.
@@ -236,6 +239,12 @@ func DeriveClientCapabilities(
 	protocolVersion string,
 	rootsListChanged bool,
 ) *officialMCP.ClientCapabilities {
+	// 2026-07-28 removed notifications/roots/list_changed (SEP-2577
+	// deprecates roots; servers ask for them via MRTR input requests), so
+	// the client must not claim to send it.
+	if protocol.IsStateless(protocolVersion) {
+		rootsListChanged = false
+	}
 	caps := &officialMCP.ClientCapabilities{
 		RootsV2: &officialMCP.RootCapabilities{ListChanged: rootsListChanged},
 	}

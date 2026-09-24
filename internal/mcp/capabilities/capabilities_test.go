@@ -267,6 +267,23 @@ func TestDeriveClientCapabilities_DefaultRoots(t *testing.T) {
 	}
 }
 
+// TestDeriveClientCapabilities_StatelessDropsRootsListChanged pins that a
+// 2026-07-28 client does not claim roots listChanged: that protocol removed
+// notifications/roots/list_changed, and servers ask for roots through
+// multi round-trip input requests instead.
+func TestDeriveClientCapabilities_StatelessDropsRootsListChanged(t *testing.T) {
+	caps := DeriveClientCapabilities(false, false, false, "2026-07-28", true)
+	if caps.RootsV2 == nil {
+		t.Fatal("RootsV2 missing; roots stay advertised on 2026-07-28, only listChanged goes")
+	}
+	if caps.RootsV2.ListChanged || caps.Roots.ListChanged {
+		t.Errorf("2026-07-28 roots = %+v / %+v, want listChanged false", caps.RootsV2, caps.Roots)
+	}
+	if legacy := DeriveClientCapabilities(false, false, false, "2025-11-25", true); !legacy.RootsV2.ListChanged {
+		t.Error("2025-11-25 must keep roots listChanged")
+	}
+}
+
 // TestDeriveClientCapabilities_Sampling verifies the SDK rule: setting a
 // sampling handler implies Sampling capability; using the WithToolsHandler
 // flavor implies Sampling.Tools.

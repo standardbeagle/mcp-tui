@@ -40,13 +40,15 @@ type Service interface {
 
 	// AddRoots appends the given roots to the client and (if connected)
 	// fires a roots/list_changed notification so the server can re-fetch.
-	// Safe to call before Connect — the roots are accumulated and seeded
-	// at connect time.
+	// On 2026-07-28, which removed that notification, the roots only update
+	// what the client answers to MRTR roots input requests. Safe to call
+	// before Connect — the roots are accumulated and seeded at connect time.
 	AddRoots(roots ...*officialMCP.Root)
 
 	// RemoveRoots removes roots with the given URIs from the client and
-	// (if connected) fires a roots/list_changed notification. URIs that
-	// do not match any current root are silently ignored.
+	// (if connected, before 2026-07-28) fires a roots/list_changed
+	// notification. URIs that do not match any current root are silently
+	// ignored.
 	RemoveRoots(uris ...string)
 
 	// ListRoots returns a snapshot of the current roots. The slice is a

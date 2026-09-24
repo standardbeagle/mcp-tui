@@ -116,8 +116,13 @@ func TestEndToEnd_RealInitializeResult(t *testing.T) {
 	if snap.ClientInfo == nil || snap.ClientInfo.Name != "mcp-tui" {
 		t.Errorf("ClientInfo = %+v; want name=mcp-tui", snap.ClientInfo)
 	}
-	if snap.ClientCaps == nil || snap.ClientCaps.Roots == nil || !snap.ClientCaps.Roots.ListChanged {
-		t.Errorf("ClientCaps.Roots = %+v; want listChanged=true", snap.ClientCaps)
+	// The SDK's latest protocol is 2026-07-28, which removed
+	// roots/list_changed: roots stay advertised, listChanged does not.
+	if initRes.ProtocolVersion != "2026-07-28" {
+		t.Fatalf("negotiated protocol version = %q, want 2026-07-28", initRes.ProtocolVersion)
+	}
+	if snap.ClientCaps == nil || snap.ClientCaps.Roots == nil || snap.ClientCaps.Roots.ListChanged {
+		t.Errorf("ClientCaps.Roots = %+v; want roots with listChanged=false", snap.ClientCaps)
 	}
 
 	// JSON marshaling — the exact path the `mcp-tui capabilities` subcommand

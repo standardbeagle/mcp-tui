@@ -229,7 +229,7 @@ func (s *service) AddRoots(roots ...*officialMCP.Root) {
 	}
 	s.mu.Lock()
 	s.roots = append(s.roots, roots...)
-	client := s.client
+	client := s.clientForRootsChangeLocked()
 	s.mu.Unlock()
 
 	// Delegate to the SDK client when we have one — that path fires the
@@ -263,12 +263,26 @@ func (s *service) RemoveRoots(uris ...string) {
 		out = append(out, r)
 	}
 	s.roots = out
-	client := s.client
+	client := s.clientForRootsChangeLocked()
 	s.mu.Unlock()
 
 	if client != nil {
 		client.RemoveRoots(uris...)
 	}
+}
+
+// clientForRootsChangeLocked returns the SDK client whose AddRoots and
+// RemoveRoots announce a roots change with roots/list_changed, or nil when
+// there is none to announce to. 2026-07-28 removed that notification: the
+// roots only live in s.roots, which answer the servers' MRTR input requests.
+// Callers hold s.mu.
+func (s *service) clientForRootsChangeLocked() *officialMCP.Client {
+	if s.client != nil && s.info.Connected && protocol.IsStateless(s.info.ProtocolVersion) {
+		debug.Info("Roots updated; list_changed removed; servers request roots via MRTR",
+			debug.F("protocolVersion", s.info.ProtocolVersion), debug.F("roots", len(s.roots)))
+		return nil
+	}
+	return s.client
 }
 
 // ListRoots returns a snapshot copy of the current roots. Callers may mutate
@@ -739,15 +753,23 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 				debug.Info("URL elicitation completed", debug.F("elicitationID", req.Params.ElicitationID))
 			}
 		}
-		clientOptions.Capabilities = capabilities.DeriveClientCapabilities(
-			s.samplingHandler != nil,
-			s.hasSamplingToolsHandler(),
-			true,
-			"2025-11-25",
-			true,
-		)
 		debug.Info("Elicitation handler registered with MCP client")
 	}
+	// Advertise explicit capabilities rather than the SDK defaults: the SDK
+	// claims roots listChanged on every protocol and never adds URL
+	// elicitation. They are derived for the requested version because the
+	// SDK sends one fixed set whatever the server negotiates.
+	var pinned string
+	if s.connectionConfig != nil {
+		pinned = s.connectionConfig.ProtocolVersion
+	}
+	clientOptions.Capabilities = capabilities.DeriveClientCapabilities(
+		s.samplingHandler != nil,
+		s.hasSamplingToolsHandler(),
+		s.elicitationHandler != nil,
+		requestedProtocolVersion(pinned),
+		true,
+	)
 
 	s.clientOptions = clientOptions
 
@@ -876,16 +898,13 @@ func (s *service) updateServerInfo() error {
 		s.info.Capabilities = serverCapabilitiesToFlagMap(initRes.Capabilities)
 	}
 
-	// Build the rich capabilities snapshot. We derive client capabilities
-	// ourselves because the SDK does not expose what it sent on the wire —
-	// the values are computed inside Client.Connect from ClientOptions.
-	clientCaps := capabilities.DeriveClientCapabilities(
-		s.samplingHandler != nil,
-		s.hasSamplingToolsHandler(),
-		s.elicitationHandler != nil,
-		protocolVersion,
-		true, // mcp-tui always advertises roots/listChanged (matches SDK default).
-	)
+	// Build the rich capabilities snapshot from the capabilities createClient
+	// handed the SDK, which sends them unchanged. A session committed without
+	// createClient (tests driving the session manager directly) has none.
+	var clientCaps *officialMCP.ClientCapabilities
+	if s.clientOptions != nil {
+		clientCaps = s.clientOptions.Capabilities
+	}
 	s.capabilitiesSnapshot = capabilities.FromInitializeResult(initRes, s.clientImpl, clientCaps)
 
 	debug.Info("Successfully connected using official MCP Go SDK",
