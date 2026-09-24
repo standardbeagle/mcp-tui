@@ -273,21 +273,21 @@ func awaitTaskResult(
 
 // taskStatusLine is a task's status in one line.
 func taskStatusLine(t *tasks.Task) string {
-	line := fmt.Sprintf("task %s: %s", t.ID, t.Status)
-	if t.StatusMessage != "" {
-		line += " — " + t.StatusMessage
+	return fmt.Sprintf("task %s: %s", t.ID, taskStatusText(t))
+}
+
+// taskStatusText is a task's status and status message.
+func taskStatusText(t *tasks.Task) string {
+	if t.StatusMessage == "" {
+		return string(t.Status)
 	}
-	return line
+	return string(t.Status) + " — " + t.StatusMessage
 }
 
 // writeTask renders a task for people.
 func writeTask(w io.Writer, t *tasks.Task) {
 	fmt.Fprintf(w, "Task:     %s\n", t.ID)
-	status := string(t.Status)
-	if t.StatusMessage != "" {
-		status += " — " + t.StatusMessage
-	}
-	fmt.Fprintf(w, "Status:   %s\n", status)
+	fmt.Fprintf(w, "Status:   %s\n", taskStatusText(t))
 	fmt.Fprintf(w, "Created:  %s\n", t.CreatedAt.Format(time.RFC3339))
 	fmt.Fprintf(w, "Updated:  %s\n", t.LastUpdatedAt.Format(time.RFC3339))
 	ttl := "unlimited"

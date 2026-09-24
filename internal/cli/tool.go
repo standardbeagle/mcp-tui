@@ -635,7 +635,7 @@ func (tc *ToolCommand) callAsTask(ctx context.Context, req mcp.CallToolRequest, 
 			out.document[docTask] = task
 			return printJSON(out.document)
 		}
-		fmt.Printf("Task %s created (%s)\n", task.ID, taskStatusLine(task))
+		fmt.Printf("Task %s created: %s\n", task.ID, taskStatusText(task))
 		fmt.Printf("Poll:   mcp-tui task get %s\n", task.ID)
 		fmt.Printf("Result: mcp-tui task result %s\n", task.ID)
 		return nil
