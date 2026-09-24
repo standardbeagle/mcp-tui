@@ -55,7 +55,7 @@ func notification(t *testing.T, method, params string) *jsonrpc.Request {
 
 // connectInMemory wraps the client end of an in-memory pair and starts a
 // reader standing in for the SDK's, which reports every message it gets.
-func connectInMemory(t *testing.T, link *Link) (rawPeer, <-chan jsonrpc.Message) {
+func connectInMemory(t *testing.T, link *Link) (peer rawPeer, sdkSaw <-chan jsonrpc.Message) {
 	t.Helper()
 	ct, st := officialMCP.NewInMemoryTransports()
 	conn, err := link.WrapTransport(ct).Connect(context.Background())
@@ -68,18 +68,18 @@ func connectInMemory(t *testing.T, link *Link) (rawPeer, <-chan jsonrpc.Message)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sconn.Close() })
-	sdkSaw := make(chan jsonrpc.Message, 16)
+	saw := make(chan jsonrpc.Message, 16)
 	go func() {
 		for {
 			msg, err := conn.Read(context.Background())
 			if err != nil {
-				close(sdkSaw)
+				close(saw)
 				return
 			}
-			sdkSaw <- msg
+			saw <- msg
 		}
 	}()
-	return rawPeer{sconn}, sdkSaw
+	return rawPeer{sconn}, saw
 }
 
 type callOutcome struct {
@@ -105,10 +105,10 @@ func TestLink_CallOverConnection(t *testing.T) {
 	link.OnNotification(func(method string, params json.RawMessage) { notified <- method + " " + string(params) })
 	peer, sdkSaw := connectInMemory(t, link)
 
-	done := callAsync(context.Background(), link, "tasks/get", map[string]string{"taskId": weatherTaskID})
+	done := callAsync(context.Background(), link, methodGet, map[string]string{paramTaskID: weatherTaskID})
 	req := peer.read(t)
 	id, isString := req.ID.Raw().(string)
-	if req.Method != "tasks/get" || !isString || !strings.HasPrefix(id, requestIDPrefix) {
+	if req.Method != methodGet || !isString || !strings.HasPrefix(id, requestIDPrefix) {
 		t.Fatalf("request = %s id %v, want tasks/get under a %q id", req.Method, req.ID.Raw(), requestIDPrefix)
 	}
 	if !strings.Contains(string(req.Params), weatherTaskID) {
@@ -133,7 +133,7 @@ func TestLink_CallOverConnection(t *testing.T) {
 func TestLink_ErrorResponse(t *testing.T) {
 	link := NewLink()
 	peer, _ := connectInMemory(t, link)
-	done := callAsync(context.Background(), link, "tasks/get", map[string]string{"taskId": "expired-report-7"})
+	done := callAsync(context.Background(), link, methodGet, map[string]string{paramTaskID: "expired-report-7"})
 	req := peer.read(t)
 	peer.write(t, &jsonrpc.Response{ID: req.ID, Error: &jsonrpc.Error{Code: -32602, Message: "Failed to retrieve task: Task has expired"}})
 
@@ -150,7 +150,7 @@ func TestLink_CancelSendsCancelledNotification(t *testing.T) {
 	link := NewLink()
 	peer, _ := connectInMemory(t, link)
 	ctx, cancel := context.WithCancel(context.Background())
-	done := callAsync(ctx, link, "tasks/result", map[string]string{"taskId": weatherTaskID})
+	done := callAsync(ctx, link, "tasks/result", map[string]string{paramTaskID: weatherTaskID})
 	req := peer.read(t)
 	cancel()
 
@@ -170,7 +170,7 @@ func TestLink_CancelSendsCancelledNotification(t *testing.T) {
 }
 
 func TestLink_CallBeforeConnectFails(t *testing.T) {
-	if _, err := NewLink().Call(context.Background(), "tasks/get", nil); !errors.Is(err, ErrNotConnected) {
+	if _, err := NewLink().Call(context.Background(), methodGet, nil); !errors.Is(err, ErrNotConnected) {
 		t.Fatalf("err = %v, want ErrNotConnected", err)
 	}
 }
@@ -266,7 +266,7 @@ func TestLink_CallOverStreamableHTTP(t *testing.T) {
 			t.Cleanup(func() { _ = conn.Close() })
 			go func() {
 				for {
-					if _, err := conn.Read(context.Background()); err != nil {
+					if _, readErr := conn.Read(context.Background()); readErr != nil {
 						return
 					}
 				}
@@ -274,7 +274,7 @@ func TestLink_CallOverStreamableHTTP(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(withRoutingName(context.Background(), weatherTaskID), 10*time.Second)
 			defer cancel()
-			res, err := link.Call(ctx, "tasks/get", map[string]string{"taskId": weatherTaskID})
+			res, err := link.Call(ctx, methodGet, map[string]string{paramTaskID: weatherTaskID})
 			if err != nil || string(res) != string(workingTask) {
 				t.Fatalf("Call = %s, %v", res, err)
 			}
