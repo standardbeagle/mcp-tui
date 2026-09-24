@@ -39,3 +39,6 @@ binaries/
 /build
 /build.ps1
 /build.cmd
+
+# Claude Code agent worktrees
+/.claude/worktrees/
