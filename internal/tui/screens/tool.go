@@ -136,8 +136,10 @@ type toolField struct {
 	description string
 	// fieldType is the JSON type the value takes (inputschema.Param.Kind).
 	fieldType inputschema.Kind
-	// nullable: the literal "null" sends null (for non-string types).
+	// nullable: the literal "null" sends null (for non-string types), and
+	// Ctrl+N sets sendNull, which sends null whatever the input holds.
 	nullable bool
+	sendNull bool
 	// itemKind is the type of an array's items; comma-separated input is
 	// only accepted for string (or unknown) items.
 	itemKind inputschema.Kind
@@ -324,6 +326,10 @@ func (ts *ToolScreen) generateCLICommand() string {
 
 	// Add arguments from form fields
 	for _, field := range ts.fields {
+		if field.sendNull {
+			builder.WriteString(fmt.Sprintf(" %s:=null", field.name))
+			continue
+		}
 		value := field.input.Value()
 		if value != "" {
 			// Sanitize: remove newlines from parameter values
@@ -770,6 +776,19 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Don't pass these to textinput, handle navigation
 		case "ctrl+t":
 			// Task mode toggle, handled below
+		case "ctrl+n":
+			// Send null: the only way to say it for a nullable string.
+			if field.nullable {
+				field.sendNull = !field.sendNull
+				field.validationError = ""
+				if field.sendNull {
+					ts.SetStatus(fmt.Sprintf("'%s' will be sent as null", field.name), StatusInfo)
+				} else {
+					ts.validateField(ts.cursor)
+					ts.SetStatus(fmt.Sprintf("'%s' takes its typed value again", field.name), StatusInfo)
+				}
+			}
+			return ts, nil
 		case "esc":
 			// Don't pass to textinput, handle escape
 		case "ctrl+v":
@@ -785,6 +804,10 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ts.SetStatus("Pasted from clipboard", StatusSuccess)
 			return ts, nil
 		default:
+			// A field sent as null takes no typing until Ctrl+N again.
+			if field.sendNull {
+				return ts, nil
+			}
 			// Pass all other keys to the textinput model
 			var cmd tea.Cmd
 			field.input, cmd = field.input.Update(msg)
@@ -1203,7 +1226,7 @@ func (ts *ToolScreen) formArguments() (map[string]interface{}, error) {
 	// are sent as []).
 	for i := range ts.fields {
 		field := &ts.fields[i]
-		if field.required && field.input.Value() == "" && field.fieldType != inputschema.KindArray {
+		if field.required && !field.sendNull && field.input.Value() == "" && field.fieldType != inputschema.KindArray {
 			return nil, fmt.Errorf("required field '%s' is empty", field.name)
 		}
 	}
@@ -1211,6 +1234,10 @@ func (ts *ToolScreen) formArguments() (map[string]interface{}, error) {
 	args := make(map[string]interface{})
 	for i := range ts.fields {
 		field := &ts.fields[i]
+		if field.sendNull {
+			args[field.name] = nil
+			continue
+		}
 		value := field.input.Value()
 		if value == "" {
 			// Include an empty array only when the field is required.
@@ -1323,6 +1350,9 @@ func (ts *ToolScreen) validateField(index int) {
 	field.validationError = ""
 	field.inferredKind = ""
 	value := field.input.Value()
+	if field.sendNull {
+		return
+	}
 
 	// Check required fields
 	if field.required && strings.TrimSpace(value) == "" {
@@ -1499,6 +1529,9 @@ func (ts *ToolScreen) renderHeader() string {
 
 			// Render the textinput model
 			inputView := field.input.View()
+			if field.sendNull {
+				inputView = "null (Ctrl+N to edit)"
+			}
 
 			// Apply styling based on focus and validation
 			if field.validationError != "" && ts.cursor == i {
@@ -1847,6 +1880,9 @@ func (ts *ToolScreen) renderFooter() string {
 	} else if ts.cursor < len(ts.fields) {
 		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+T: Task mode • " +
 			"Ctrl+L: Debug Log • b: Back • Esc: Back"
+		if ts.fields[ts.cursor].nullable {
+			helpText = "Ctrl+N: Null • " + helpText
+		}
 	} else if ts.cursor == len(ts.fields) {
 		helpText = "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+T: Task mode • " +
 			"Ctrl+L: Debug Log • b: Back • Esc: Back"

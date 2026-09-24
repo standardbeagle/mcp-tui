@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/jsonschema-go/jsonschema"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -236,5 +237,43 @@ func TestToolScreen_ValidatesArgumentsAgainstTheWholeSchema(t *testing.T) {
 	ts.setField(t, "path", "/srv/out")
 	if _, err := ts.buildArguments(); err != nil {
 		t.Errorf("valid arguments refused: %v", err)
+	}
+}
+
+// Ctrl+N on a nullable field sends null, which a nullable string has no
+// other way to say ("null" typed into it is text).
+func TestToolScreen_NullToggle(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(`{"type": "object",
+		"properties": {"note": {"type": ["string", "null"]}, "title": {"type": "string"}},
+		"required": ["note"]}`), &schema); err != nil {
+		t.Fatal(err)
+	}
+	ts := NewToolScreen(mcp.Tool{Name: "annotate", InputSchema: schema}, nil)
+	ts.Init()
+	ts.setField(t, "note", "draft")
+	ctrlN := tea.KeyMsg{Type: tea.KeyCtrlN}
+
+	ts.Update(ctrlN) // the cursor starts on note, the first field
+	args, err := ts.buildArguments()
+	if err != nil {
+		t.Fatalf("buildArguments: %v", err)
+	}
+	if v, ok := args["note"]; !ok || v != nil {
+		t.Errorf("note = %#v (present %v), want null", v, ok)
+	}
+	if view := ts.View(); !strings.Contains(view, "null (Ctrl+N to edit)") {
+		t.Errorf("view does not show the field as null:\n%s", view)
+	}
+
+	ts.Update(ctrlN)
+	if args, _ := ts.buildArguments(); args["note"] != "draft" {
+		t.Errorf("after a second Ctrl+N note = %#v, want the typed text back", args["note"])
+	}
+
+	ts.Update(tea.KeyMsg{Type: tea.KeyTab})
+	ts.Update(ctrlN) // title is not nullable
+	if args, _ := ts.buildArguments(); args["title"] != nil {
+		t.Errorf("title = %#v, want Ctrl+N to do nothing on a non-nullable field", args["title"])
 	}
 }
