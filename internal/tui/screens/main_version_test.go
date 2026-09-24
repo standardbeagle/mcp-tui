@@ -62,6 +62,7 @@ func (v *versionStubService) Complete(context.Context, mcp.CompleteRequest) (*mc
 	return nil, nil
 }
 func (v *versionStubService) GetCapabilitiesSnapshot() *capabilities.Snapshot { return nil }
+func (v *versionStubService) ListCache(string) *mcp.ListCacheInfo             { return nil }
 func (v *versionStubService) NotificationStream() *notifications.Stream {
 	return notifications.NewStream()
 }

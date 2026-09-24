@@ -163,6 +163,10 @@ type service struct {
 	// Mutations are guarded by `mu` so concurrent ListTools/CallTool calls
 	// (which the TUI tool screen issues back-to-back) stay race-free.
 	outputSchemaCache map[string]map[string]interface{}
+
+	// listCache holds, per list method, how its most recent list was served
+	// (SEP-2549); see list_cache.go. Reset on every Connect.
+	listCache map[string]*ListCacheInfo
 }
 
 // getNextRequestID returns the next request ID
@@ -782,6 +786,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 	client.AddReceivingMiddleware(s.captureNotificationsMiddleware())
 
 	s.addProtocolMiddleware(client)
+	client.AddSendingMiddleware(wireProbeMiddleware())
 
 	acked := make(chan struct{})
 	var ackOnce sync.Once
@@ -866,6 +871,7 @@ func (s *service) updateServerInfo() error {
 	s.info.Name = serverName
 	s.info.Version = serverVersion
 	s.info.ProtocolVersion = protocolVersion
+	s.listCache = nil
 
 	// Propagate top-level capability flags into the legacy map so callers that
 	// only check info.Capabilities (e.g. mcp-tui server) see something useful.
@@ -1000,21 +1006,32 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 		return nil, fmt.Errorf("no active session available")
 	}
 
-	// Use the natural iterator pattern - automatically handles pagination
+	pages, cacheInfo, err := fetchListPages(ctx, "tools/list",
+		func(ctx context.Context, cursor string) (*officialMCP.ListToolsResult, string, error) {
+			res, err := session.ListTools(ctx, &officialMCP.ListToolsParams{Cursor: cursor})
+			if err != nil {
+				return nil, "", err
+			}
+			return res, res.NextCursor, nil
+		})
+	if err != nil {
+		// Classify and handle the error
+		classified := s.errorHandler.HandleError(ctx, err, "list_tools", map[string]interface{}{
+			"session_id": session.ID(),
+		})
+
+		// Return user-friendly error
+		userError := s.errorHandler.CreateUserFriendlyError(classified)
+		return nil, fmt.Errorf("failed to iterate tools from MCP server: %w", userError)
+	}
+	s.recordListCache(session, cacheInfo)
+
 	var tools []Tool
-	for tool, err := range session.Tools(ctx, nil) {
-		if err != nil {
-			// Classify and handle the error
-			classified := s.errorHandler.HandleError(ctx, err, "list_tools", map[string]interface{}{
-				"session_id": session.ID(),
-			})
-
-			// Return user-friendly error
-			userError := s.errorHandler.CreateUserFriendlyError(classified)
-			return nil, fmt.Errorf("failed to iterate tools from MCP server: %w", userError)
-		}
-
-		if tool != nil {
+	for _, page := range pages {
+		for _, tool := range page.Tools {
+			if tool == nil {
+				continue
+			}
 			convertedTool := s.convertTool(tool)
 			if convertedTool.SchemaError != nil {
 				debug.Warn("Tool has schema error",
@@ -1039,7 +1056,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 	}
 	s.mu.Unlock()
 
-	debug.Info("Listed tools successfully using iterator pattern",
+	debug.Info("Listed tools successfully",
 		debug.F("count", len(tools)))
 
 	return tools, nil
@@ -1271,14 +1288,25 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 		return nil, fmt.Errorf("no active session available")
 	}
 
-	// Use the natural iterator pattern - automatically handles pagination
-	var resources []Resource
-	for resource, err := range session.Resources(ctx, nil) {
-		if err != nil {
-			return nil, fmt.Errorf("failed to iterate resources from MCP server: %w", err)
-		}
+	pages, cacheInfo, err := fetchListPages(ctx, "resources/list",
+		func(ctx context.Context, cursor string) (*officialMCP.ListResourcesResult, string, error) {
+			res, err := session.ListResources(ctx, &officialMCP.ListResourcesParams{Cursor: cursor})
+			if err != nil {
+				return nil, "", err
+			}
+			return res, res.NextCursor, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate resources from MCP server: %w", err)
+	}
+	s.recordListCache(session, cacheInfo)
 
-		if resource != nil {
+	var resources []Resource
+	for _, page := range pages {
+		for _, resource := range page.Resources {
+			if resource == nil {
+				continue
+			}
 			resources = append(resources, Resource{
 				URI:         resource.URI,
 				Name:        resource.Name,
@@ -1290,7 +1318,7 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 		}
 	}
 
-	debug.Info("Listed resources successfully using iterator pattern",
+	debug.Info("Listed resources successfully",
 		debug.F("count", len(resources)))
 
 	return resources, nil
@@ -1315,26 +1343,37 @@ func (s *service) ListResourceTemplates(ctx context.Context) ([]ResourceTemplate
 		return nil, fmt.Errorf("no active session available")
 	}
 
-	// Use the SDK iterator pattern so pagination is handled transparently.
-	var templates []ResourceTemplate
-	for tpl, err := range session.ResourceTemplates(ctx, nil) {
-		if err != nil {
-			return nil, fmt.Errorf("failed to iterate resource templates from MCP server: %w", err)
-		}
-		if tpl == nil {
-			continue
-		}
-		templates = append(templates, ResourceTemplate{
-			URITemplate: tpl.URITemplate,
-			Name:        tpl.Name,
-			Title:       tpl.Title,
-			Description: tpl.Description,
-			MimeType:    tpl.MIMEType,
-			Icons:       append([]officialMCP.Icon(nil), tpl.Icons...),
+	pages, cacheInfo, err := fetchListPages(ctx, "resources/templates/list",
+		func(ctx context.Context, cursor string) (*officialMCP.ListResourceTemplatesResult, string, error) {
+			res, err := session.ListResourceTemplates(ctx, &officialMCP.ListResourceTemplatesParams{Cursor: cursor})
+			if err != nil {
+				return nil, "", err
+			}
+			return res, res.NextCursor, nil
 		})
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate resource templates from MCP server: %w", err)
+	}
+	s.recordListCache(session, cacheInfo)
+
+	var templates []ResourceTemplate
+	for _, page := range pages {
+		for _, tpl := range page.ResourceTemplates {
+			if tpl == nil {
+				continue
+			}
+			templates = append(templates, ResourceTemplate{
+				URITemplate: tpl.URITemplate,
+				Name:        tpl.Name,
+				Title:       tpl.Title,
+				Description: tpl.Description,
+				MimeType:    tpl.MIMEType,
+				Icons:       append([]officialMCP.Icon(nil), tpl.Icons...),
+			})
+		}
 	}
 
-	debug.Info("Listed resource templates successfully using iterator pattern",
+	debug.Info("Listed resource templates successfully",
 		debug.F("count", len(templates)))
 
 	return templates, nil
@@ -1467,14 +1506,25 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 		return nil, fmt.Errorf("no active session available")
 	}
 
-	// Use the natural iterator pattern - automatically handles pagination
-	var prompts []Prompt
-	for prompt, err := range session.Prompts(ctx, nil) {
-		if err != nil {
-			return nil, fmt.Errorf("failed to iterate prompts from MCP server: %w", err)
-		}
+	pages, cacheInfo, err := fetchListPages(ctx, "prompts/list",
+		func(ctx context.Context, cursor string) (*officialMCP.ListPromptsResult, string, error) {
+			res, err := session.ListPrompts(ctx, &officialMCP.ListPromptsParams{Cursor: cursor})
+			if err != nil {
+				return nil, "", err
+			}
+			return res, res.NextCursor, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate prompts from MCP server: %w", err)
+	}
+	s.recordListCache(session, cacheInfo)
 
-		if prompt != nil {
+	var prompts []Prompt
+	for _, page := range pages {
+		for _, prompt := range page.Prompts {
+			if prompt == nil {
+				continue
+			}
 			// Convert PromptArgument slice to map[string]interface{}
 			argumentsMap := make(map[string]interface{})
 			for _, arg := range prompt.Arguments {
@@ -1502,7 +1552,7 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 		}
 	}
 
-	debug.Info("Listed prompts successfully using iterator pattern",
+	debug.Info("Listed prompts successfully",
 		debug.F("count", len(prompts)))
 
 	return prompts, nil

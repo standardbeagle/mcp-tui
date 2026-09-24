@@ -73,6 +73,14 @@ type Service interface {
 	ListResourceTemplates(ctx context.Context) ([]ResourceTemplate, error)
 	ReadResource(ctx context.Context, uri string) (*ReadResourceResult, error)
 
+	// ListCache reports how the most recent list of method ("tools/list",
+	// "prompts/list", "resources/list" or "resources/templates/list") was
+	// served: the server's ttlMs and cacheScope and whether the SDK answered
+	// from its cache (SEP-2549). nil before 2026-07-28 or before the first
+	// list. The SDK cannot be bypassed; only list_changed or reconnecting
+	// forces a fresh fetch.
+	ListCache(method string) *ListCacheInfo
+
 	// Prompt operations
 	ListPrompts(ctx context.Context) ([]Prompt, error)
 	GetPrompt(ctx context.Context, req GetPromptRequest) (*GetPromptResult, error)
