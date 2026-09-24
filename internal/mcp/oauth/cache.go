@@ -16,21 +16,55 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// TokenCache persists OAuth tokens between mcp-tui invocations so the user
-// is not forced through the browser-callback dance every run. Implementations
-// must be safe for concurrent use.
+// TokenCache persists OAuth sessions between mcp-tui invocations so the
+// user is not forced through the browser-callback dance every run.
+// Implementations must be safe for concurrent use.
 //
 // Key is opaque from the cache's perspective; producers should derive it
-// from a stable hash of (server URL, client ID) so different connections
-// don't share tokens.
+// from a stable hash of (server URL, client identity) so different
+// connections don't share tokens.
 type TokenCache interface {
-	Load(key string) (*oauth2.Token, error)
-	Save(key string, token *oauth2.Token) error
+	Load(key string) (*Session, error)
+	Save(key string, session *Session) error
 	Delete(key string) error
 }
 
-// FileTokenCache stores tokens as JSON files under a directory. The cache
-// is intentionally simple: one token per file, no encryption (callers
+// Session is one cached authorization: the token and, when it can be
+// refreshed, the client and token endpoint the refresh must use. Client is
+// nil for client-credentials tokens, which are re-requested rather than
+// refreshed.
+type Session struct {
+	Token  *oauth2.Token  `json:"token"`
+	Client *SessionClient `json:"client,omitempty"`
+}
+
+// SessionClient is what a refresh needs besides the refresh token. Only
+// authorization-code sessions have one, so ClientSecret is set only for a
+// dynamically registered confidential client, whose secret exists nowhere
+// else (a configured secret selects client-credentials, which caches no
+// client). The file is mode 0600 and already holds the refresh token.
+type SessionClient struct {
+	ClientID     string           `json:"client_id"`
+	ClientSecret string           `json:"client_secret,omitempty"`
+	TokenURL     string           `json:"token_url"`
+	AuthStyle    oauth2.AuthStyle `json:"auth_style"`
+	Scopes       []string         `json:"scopes,omitempty"`
+}
+
+// usable reports whether the session can still authorize a request: its
+// access token is unexpired, or it can be refreshed.
+func (s *Session) usable() bool {
+	if s.Token == nil || s.Token.AccessToken == "" {
+		return false
+	}
+	if s.Token.Expiry.IsZero() || s.Token.Expiry.After(time.Now()) {
+		return true
+	}
+	return s.Token.RefreshToken != "" && s.Client != nil && s.Client.TokenURL != ""
+}
+
+// FileTokenCache stores sessions as JSON files under a directory. The cache
+// is intentionally simple: one session per file, no encryption (callers
 // requiring a hardware-backed keychain should plug in a different
 // implementation), file mode 0600.
 //
@@ -105,14 +139,14 @@ func defaultCacheDir() (string, error) {
 }
 
 // cacheKey returns a stable identifier for the cache lookup. Combines the
-// MCP server URL with the client ID so re-running mcp-tui against the same
-// server with a different client ID does not reuse a token that was issued
-// to the wrong client.
+// MCP server URL with the client identity (client ID, client metadata URL)
+// so re-running mcp-tui against the same server as a different client does
+// not reuse a token that was issued to the wrong client.
 func cacheKey(cfg *Config) string {
 	if cfg == nil {
 		return ""
 	}
-	return cfg.ServerURL + "|" + cfg.ClientID + "|" + cfg.Mode().String()
+	return cfg.ServerURL + "|" + cfg.ClientID + "|" + cfg.ClientMetadataURL + "|" + cfg.Mode().String()
 }
 
 // path computes the on-disk file path for a key.
@@ -122,10 +156,11 @@ func (c *FileTokenCache) path(key string) string {
 	return filepath.Join(c.dir, name)
 }
 
-// Load returns the cached token for key, or (nil, nil) when no entry
-// exists. Tokens whose access token has fully expired AND have no refresh
-// token are treated as a miss.
-func (c *FileTokenCache) Load(key string) (*oauth2.Token, error) {
+// Load returns the cached session for key, or (nil, nil) when there is no
+// usable entry: none, a pre-session file (a bare token, written before
+// sessions carried their refresh endpoint), or a token that has expired and
+// cannot be refreshed.
+func (c *FileTokenCache) Load(key string) (*Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -137,27 +172,20 @@ func (c *FileTokenCache) Load(key string) (*oauth2.Token, error) {
 		return nil, fmt.Errorf("oauth: read token cache %s: %w", c.path(key), err)
 	}
 
-	var tok oauth2.Token
-	if err := json.Unmarshal(data, &tok); err != nil {
+	var session Session
+	if err := json.Unmarshal(data, &session); err != nil {
 		return nil, fmt.Errorf("oauth: parse token cache %s: %w", c.path(key), err)
 	}
-
-	// If access token has expired and we have no refresh option, the
-	// caller will only get a 401 and we'd run Authorize anyway. Treat as
-	// a miss so we don't pollute the in-memory delegate with a useless
-	// token source.
-	if tok.AccessToken == "" {
+	if !session.usable() {
 		return nil, nil
 	}
-	if !tok.Expiry.IsZero() && tok.Expiry.Before(time.Now()) && tok.RefreshToken == "" {
-		return nil, nil
-	}
-	return &tok, nil
+	return &session, nil
 }
 
-// Save persists the token to disk with mode 0600.
-func (c *FileTokenCache) Save(key string, token *oauth2.Token) error {
-	if token == nil {
+// Save persists the session to disk with mode 0600, atomically (temp file
+// + rename), so a concurrent reader sees the old session or the new one.
+func (c *FileTokenCache) Save(key string, session *Session) error {
+	if session == nil || session.Token == nil {
 		return c.Delete(key)
 	}
 	c.mu.Lock()
@@ -166,9 +194,9 @@ func (c *FileTokenCache) Save(key string, token *oauth2.Token) error {
 	if err := os.MkdirAll(c.dir, 0o700); err != nil {
 		return fmt.Errorf("oauth: create token cache dir %s: %w", c.dir, err)
 	}
-	data, err := json.MarshalIndent(token, "", "  ")
+	data, err := json.MarshalIndent(session, "", "  ")
 	if err != nil {
-		return fmt.Errorf("oauth: marshal token: %w", err)
+		return fmt.Errorf("oauth: marshal session: %w", err)
 	}
 
 	// Atomic write: temp file in same directory, then rename.
@@ -215,6 +243,6 @@ func (c *FileTokenCache) Delete(key string) error {
 // the user passes --oauth-cache=- to disable persistence.
 type NoopCache struct{}
 
-func (NoopCache) Load(string) (*oauth2.Token, error) { return nil, nil }
-func (NoopCache) Save(string, *oauth2.Token) error   { return nil }
-func (NoopCache) Delete(string) error                { return nil }
+func (NoopCache) Load(string) (*Session, error) { return nil, nil }
+func (NoopCache) Save(string, *Session) error   { return nil }
+func (NoopCache) Delete(string) error           { return nil }

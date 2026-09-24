@@ -25,13 +25,15 @@ func TestFileTokenCache_RoundTrip(t *testing.T) {
 		Expiry:       time.Now().Add(time.Hour),
 	}
 
-	require.NoError(t, c.Save("server-A|client-1|client_credentials", tok))
-	loaded, err := c.Load("server-A|client-1|client_credentials")
+	client := &SessionClient{ClientID: "client-1", TokenURL: "https://auth.example.com/token", AuthStyle: oauth2.AuthStyleInParams}
+	require.NoError(t, c.Save("server-A|client-1|authorization_code", &Session{Token: tok, Client: client}))
+	loaded, err := c.Load("server-A|client-1|authorization_code")
 	require.NoError(t, err)
 	require.NotNil(t, loaded)
-	assert.Equal(t, tok.AccessToken, loaded.AccessToken)
-	assert.Equal(t, tok.RefreshToken, loaded.RefreshToken)
-	assert.Equal(t, tok.TokenType, loaded.TokenType)
+	assert.Equal(t, tok.AccessToken, loaded.Token.AccessToken)
+	assert.Equal(t, tok.RefreshToken, loaded.Token.RefreshToken)
+	assert.Equal(t, tok.TokenType, loaded.Token.TokenType)
+	assert.Equal(t, client, loaded.Client)
 }
 
 // TestFileTokenCache_Miss returns (nil, nil) for unknown keys.
@@ -57,15 +59,16 @@ func TestFileTokenCache_ExpiredNoRefresh(t *testing.T) {
 		TokenType:   "Bearer",
 		Expiry:      time.Now().Add(-time.Hour),
 	}
-	require.NoError(t, c.Save("server-A|client-1|client_credentials", tok))
+	require.NoError(t, c.Save("server-A|client-1|client_credentials", &Session{Token: tok}))
 
 	loaded, err := c.Load("server-A|client-1|client_credentials")
 	require.NoError(t, err)
 	assert.Nil(t, loaded, "expired token without refresh should miss")
 }
 
-// TestFileTokenCache_ExpiredWithRefresh keeps the entry so the oauth2
-// library can refresh it.
+// TestFileTokenCache_ExpiredWithRefresh keeps an entry that carries what a
+// refresh needs (refresh token, client, token endpoint) and drops one that
+// cannot be refreshed.
 func TestFileTokenCache_ExpiredWithRefresh(t *testing.T) {
 	dir := t.TempDir()
 	c, err := NewFileTokenCache(dir)
@@ -77,12 +80,35 @@ func TestFileTokenCache_ExpiredWithRefresh(t *testing.T) {
 		TokenType:    "Bearer",
 		Expiry:       time.Now().Add(-time.Hour),
 	}
-	require.NoError(t, c.Save("server-A|client-1|client_credentials", tok))
+	client := &SessionClient{ClientID: "client-1", TokenURL: "https://auth.example.com/token"}
+	require.NoError(t, c.Save("refreshable", &Session{Token: tok, Client: client}))
+	require.NoError(t, c.Save("no-endpoint", &Session{Token: tok}))
 
-	loaded, err := c.Load("server-A|client-1|client_credentials")
+	loaded, err := c.Load("refreshable")
 	require.NoError(t, err)
 	require.NotNil(t, loaded, "expired token WITH refresh should hit")
-	assert.Equal(t, "refresh-me", loaded.RefreshToken)
+	assert.Equal(t, "refresh-me", loaded.Token.RefreshToken)
+
+	loaded, err = c.Load("no-endpoint")
+	require.NoError(t, err)
+	assert.Nil(t, loaded, "a refresh token without a token endpoint cannot be used")
+}
+
+// TestFileTokenCache_PreSessionFileIsMiss: a file written before sessions
+// (a bare token, no refresh endpoint) is treated as absent, so the next
+// authorization overwrites it.
+func TestFileTokenCache_PreSessionFileIsMiss(t *testing.T) {
+	dir := t.TempDir()
+	c, err := NewFileTokenCache(dir)
+	require.NoError(t, err)
+	fc, ok := c.(*FileTokenCache)
+	require.True(t, ok)
+	require.NoError(t, os.WriteFile(fc.path("legacy"),
+		[]byte(`{"access_token":"at-legacy","token_type":"Bearer","refresh_token":"rt-legacy"}`), 0o600))
+
+	loaded, err := c.Load("legacy")
+	require.NoError(t, err)
+	assert.Nil(t, loaded)
 }
 
 // TestFileTokenCache_Delete removes the file.
@@ -92,7 +118,7 @@ func TestFileTokenCache_Delete(t *testing.T) {
 	require.NoError(t, err)
 
 	tok := &oauth2.Token{AccessToken: "a", Expiry: time.Now().Add(time.Hour)}
-	require.NoError(t, c.Save("k", tok))
+	require.NoError(t, c.Save("k", &Session{Token: tok}))
 
 	require.NoError(t, c.Delete("k"))
 	loaded, _ := c.Load("k")
@@ -109,7 +135,7 @@ func TestFileTokenCache_FileMode(t *testing.T) {
 	c, err := NewFileTokenCache(dir)
 	require.NoError(t, err)
 
-	require.NoError(t, c.Save("k", &oauth2.Token{AccessToken: "x", Expiry: time.Now().Add(time.Hour)}))
+	require.NoError(t, c.Save("k", &Session{Token: &oauth2.Token{AccessToken: "x", Expiry: time.Now().Add(time.Hour)}}))
 
 	// Find the only file in the directory.
 	entries, err := os.ReadDir(dir)
@@ -145,7 +171,7 @@ func TestNoopCache(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, tok)
 
-	require.NoError(t, c.Save("anything", &oauth2.Token{AccessToken: "x"}))
+	require.NoError(t, c.Save("anything", &Session{Token: &oauth2.Token{AccessToken: "x"}}))
 	require.NoError(t, c.Delete("anything"))
 
 	tok, err = c.Load("anything")
@@ -165,4 +191,9 @@ func TestCacheKey(t *testing.T) {
 	d := &Config{ServerURL: "https://x", ClientID: "c1"}
 	// Different mode = different key.
 	assert.NotEqual(t, cacheKey(a), cacheKey(d))
+
+	// A CIMD client is a different client from a DCR one.
+	e := &Config{ServerURL: "https://x", EnableDynamicRegistration: true}
+	f := &Config{ServerURL: "https://x", EnableDynamicRegistration: true, ClientMetadataURL: "https://mcp-tui.standardbeagle.dev/client.json"}
+	assert.NotEqual(t, cacheKey(e), cacheKey(f))
 }

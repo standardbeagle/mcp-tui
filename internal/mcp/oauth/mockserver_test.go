@@ -64,11 +64,13 @@ type mockAuthServer struct {
 	supportCIMD bool
 
 	// recorded token requests (mutex-guarded).
-	mu                     sync.Mutex
-	tokenRequests          []url.Values
-	registerRequests       []json.RawMessage
-	authorizeStates        []string
-	authorizeRequests      []url.Values
+	mu                sync.Mutex
+	tokenRequests     []url.Values
+	registerRequests  []json.RawMessage
+	authorizeStates   []string
+	authorizeRequests []url.Values
+	// expiresIn is the access-token lifetime the token endpoint issues.
+	expiresIn              int
 	issuedAccessToken      string
 	requireSecretOnRefresh bool
 }
@@ -82,6 +84,7 @@ func newMockAuthServer(t *testing.T) *mockAuthServer {
 		clientSecret:      "test-secret",
 		advertisedScopes:  []string{"mcp:read", "mcp:write"},
 		issuedAccessToken: "test_access_token",
+		expiresIn:         3600,
 	}
 
 	authMux := http.NewServeMux()
@@ -203,7 +206,7 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	switch grant {
 	case "client_credentials":
 		// Issue an access token. No refresh in client-credentials.
-		writeToken(w, m.issuedAccessToken, "", 3600)
+		writeToken(w, m.issuedAccessToken, "", m.expiresIn)
 	case "authorization_code":
 		// Validate code (we accept any non-empty code in this mock) and
 		// PKCE verifier (we accept any verifier).
@@ -211,13 +214,13 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
 			return
 		}
-		writeToken(w, m.issuedAccessToken, "test_refresh_token", 3600)
+		writeToken(w, m.issuedAccessToken, "test_refresh_token", m.expiresIn)
 	case "refresh_token":
 		if r.PostForm.Get("refresh_token") == "" {
 			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
 			return
 		}
-		writeToken(w, m.issuedAccessToken+"_refreshed", "test_refresh_token", 3600)
+		writeToken(w, m.issuedAccessToken+"_refreshed", "test_refresh_token", m.expiresIn)
 	default:
 		http.Error(w, `{"error":"unsupported_grant_type"}`, http.StatusBadRequest)
 	}

@@ -243,8 +243,12 @@ func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.R
 	authLog().Info("Authorization succeeded",
 		append([]debug.Field{debug.F("mode", h.cfg.Mode())}, tokenSummary(tok)...)...)
 
-	// Persist the freshly acquired token (best-effort).
-	h.persistToken(tok)
+	// The auth-code token source saves itself (NewTokenSource); the
+	// client-credentials handler has no such hook, and its token is
+	// re-requested rather than refreshed, so only the token is cached.
+	if h.cfg.Mode() == ModeClientCredentials {
+		h.saveSession(nil, tok)
+	}
 	return nil
 }
 
@@ -308,6 +312,13 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 		// asks for offline_access when the AS lists it in scopes_supported.
 		RequestRefreshToken:   true,
 		AcceptUnadvertisedIss: h.cfg.AcceptUnadvertisedIss,
+		// Every token the SDK obtains, and every refresh of it, is written
+		// back to the cache with the client and token endpoint a later run
+		// needs to refresh it.
+		NewTokenSource: func(ctx context.Context, oc *oauth2.Config, tok *oauth2.Token) (oauth2.TokenSource, error) {
+			h.saveSession(oc, tok)
+			return h.newSavingTokenSource(ctx, oc, tok), nil
+		},
 	}
 	if h.cfg.ClientMetadataURL != "" {
 		cfg.ClientIDMetadataDocumentConfig = &auth.ClientIDMetadataDocumentConfig{URL: h.cfg.ClientMetadataURL}
@@ -352,33 +363,77 @@ func (h *Handler) selectScopes(discovered []string) []string {
 	return selected
 }
 
-// tryPopulateFromCache looks up a cached token and, on hit, builds a static
+// tryPopulateFromCache looks up a cached session and, on hit, installs its
 // token source so the very first request goes out with an Authorization
-// header. Refresh-token-bearing tokens are wrapped in a ReuseTokenSource so
-// expiry is handled transparently by the oauth2 library.
+// header. A session that carries its client and token endpoint refreshes
+// an expired access token with its refresh token and writes the new token
+// back; a client-credentials session is replayed until the server 401s.
 func (h *Handler) tryPopulateFromCache() error {
 	if h.cache == nil {
 		return nil
 	}
-	tok, err := h.cache.Load(cacheKey(h.cfg))
+	session, err := h.cache.Load(cacheKey(h.cfg))
 	if err != nil {
 		return err
 	}
-	if tok == nil {
+	if session == nil {
 		authLog().Info("Token cache miss")
 		return nil
 	}
-	authLog().Info("Token cache hit", append(tokenSummary(tok),
-		debug.F("expired", !tok.Expiry.IsZero() && tok.Expiry.Before(time.Now())))...)
+	authLog().Info("Token cache hit", append(tokenSummary(session.Token),
+		debug.F("expired", !session.Token.Expiry.IsZero() && session.Token.Expiry.Before(time.Now())),
+		debug.F("refreshable", session.Client != nil))...)
 
-	src := oauth2.StaticTokenSource(tok)
-	wrappedSrc := oauth2.ReuseTokenSource(tok, src)
+	src := oauth2.StaticTokenSource(session.Token)
+	if session.Client != nil {
+		oc := session.Client.oauth2Config()
+		src = h.newSavingTokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, h.httpClient), oc, session.Token)
+	}
 	h.mu.Lock()
-	h.delegate = &cachedDelegate{src: wrappedSrc}
+	h.delegate = &cachedDelegate{src: src}
 	h.state = StateAuthorized
 	h.lastErr = nil
 	h.mu.Unlock()
 	return nil
+}
+
+// newSavingTokenSource returns oc's refreshing token source for tok, wrapped
+// so each new token it produces is saved to the cache. ctx carries the auth
+// HTTP client and outlives any one request: refreshes happen long after.
+func (h *Handler) newSavingTokenSource(ctx context.Context, oc *oauth2.Config, tok *oauth2.Token) oauth2.TokenSource {
+	s := &savingTokenSource{src: oc.TokenSource(ctx, tok), save: func(t *oauth2.Token) { h.saveSession(oc, t) }}
+	s.last.Store(tok)
+	return s
+}
+
+// savingTokenSource calls save whenever the wrapped source yields a token
+// with a new access token (a refresh). Swap makes the check-and-record
+// atomic, so concurrent callers save a refreshed token once.
+type savingTokenSource struct {
+	src  oauth2.TokenSource
+	save func(*oauth2.Token)
+	last atomic.Pointer[oauth2.Token]
+}
+
+func (s *savingTokenSource) Token() (*oauth2.Token, error) {
+	tok, err := s.src.Token()
+	if err != nil {
+		return nil, err
+	}
+	if prev := s.last.Swap(tok); prev == nil || prev.AccessToken != tok.AccessToken {
+		s.save(tok)
+	}
+	return tok, nil
+}
+
+// oauth2Config rebuilds the refresh configuration of a cached session.
+func (c *SessionClient) oauth2Config() *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     c.ClientID,
+		ClientSecret: c.ClientSecret,
+		Endpoint:     oauth2.Endpoint{TokenURL: c.TokenURL, AuthStyle: c.AuthStyle},
+		Scopes:       c.Scopes,
+	}
 }
 
 // currentToken returns the token the delegate currently holds, or nil when
@@ -398,17 +453,29 @@ func currentToken(ctx context.Context, delegate auth.OAuthHandler) *oauth2.Token
 	return tok
 }
 
-// persistToken writes the token to the cache. Failures are logged but not
-// fatal — the request can still complete with the in-memory token.
-func (h *Handler) persistToken(tok *oauth2.Token) {
+// saveSession writes tok to the cache, with the client and token endpoint
+// from oc when the token can be refreshed (oc nil: client-credentials).
+// Failures are logged, not returned: the request can still complete with
+// the in-memory token.
+func (h *Handler) saveSession(oc *oauth2.Config, tok *oauth2.Token) {
 	if h.cache == nil || tok == nil {
 		return
 	}
-	if err := h.cache.Save(cacheKey(h.cfg), tok); err != nil {
+	session := &Session{Token: tok}
+	if oc != nil {
+		session.Client = &SessionClient{
+			ClientID:     oc.ClientID,
+			ClientSecret: oc.ClientSecret,
+			TokenURL:     oc.Endpoint.TokenURL,
+			AuthStyle:    oc.Endpoint.AuthStyle,
+			Scopes:       oc.Scopes,
+		}
+	}
+	if err := h.cache.Save(cacheKey(h.cfg), session); err != nil {
 		authLog().Warn("Token cache save failed", debug.F("error", redact.Error(err)))
 		return
 	}
-	authLog().Info("Token cached", tokenSummary(tok)...)
+	authLog().Info("Token cached", append(tokenSummary(tok), debug.F("refreshable", session.Client != nil))...)
 }
 
 // tokenSummary describes a token without any of its credential values.

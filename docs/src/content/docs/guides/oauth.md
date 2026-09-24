@@ -121,6 +121,15 @@ Tokens are cached on disk so you are not re-prompted every invocation:
 | macOS | `~/Library/Caches/mcp-tui/oauth` |
 | Windows | `%LOCALAPPDATA%\mcp-tui\oauth` |
 
+Each entry holds the token and, for the authorization-code grant, the client
+ID and token endpoint needed to refresh it. MCP-TUI asks for `offline_access`
+when the authorization server supports it (SEP-2207), so it gets a refresh
+token. When a cached access token has expired, the next run refreshes it
+instead of opening the browser. Every refreshed token is written back to the
+cache atomically. Files are mode `0600`. Entries written by older versions,
+which have no refresh endpoint, are ignored and replaced after the next
+sign-in.
+
 Override with `--oauth-cache <dir>`, or pass `--oauth-cache=-` to disable
 persistence entirely.
 
