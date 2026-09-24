@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -42,6 +43,21 @@ func serverLogMessages(svc *service) []string {
 	return out
 }
 
+// waitForServerLogs blocks until n server log notifications have been
+// captured. The server sends them before its result, but the SDK dispatches
+// notification handlers asynchronously, so CallTool can return first.
+func waitForServerLogs(t *testing.T, logged <-chan struct{}, n int) {
+	t.Helper()
+	timeout := time.After(2 * time.Second)
+	for i := 0; i < n; i++ {
+		select {
+		case <-logged:
+		case <-timeout:
+			t.Fatalf("timed out after %d of %d server log notifications", i, n)
+		}
+	}
+}
+
 func TestServerLogLevel_DeliversServerLogs(t *testing.T) {
 	for _, tc := range []struct {
 		name, pinned, level string
@@ -53,6 +69,12 @@ func TestServerLogLevel_DeliversServerLogs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := NewService().(*service)
+			logged := make(chan struct{}, 8)
+			svc.AddNotificationObserver(func(e notifications.Entry) {
+				if e.Type == notifications.TypeMessage {
+					logged <- struct{}{}
+				}
+			})
 			connectInMemory(t, newLoggingServer(), svc, &configPkg.ConnectionConfig{
 				Type: configPkg.TransportStdio, Command: "noop",
 				ProtocolVersion: tc.pinned, ServerLogLevel: tc.level,
@@ -60,6 +82,7 @@ func TestServerLogLevel_DeliversServerLogs(t *testing.T) {
 			if _, err := svc.CallTool(context.Background(), CallToolRequest{Name: "deploy"}); err != nil {
 				t.Fatalf("CallTool: %v", err)
 			}
+			waitForServerLogs(t, logged, len(tc.want))
 			got := serverLogMessages(svc)
 			if len(got) != len(tc.want) {
 				t.Fatalf("server log notifications = %v, want %d matching %v", got, len(tc.want), tc.want)
