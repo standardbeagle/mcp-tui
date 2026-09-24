@@ -154,7 +154,7 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		connConfig = cloneConnectionConfig(globalConnConfig)
 	} else {
 		// Use the unified parser when the connection comes from flags.
-		parsedArgs := config.ParseArgs(cmd.Flags().Args(), cmdFlag, urlFlag, argsFlag)
+		parsedArgs := config.ParseArgs(cmd.Flags().Args(), SubcommandNames(cmd.Root()), cmdFlag, urlFlag, argsFlag)
 		connConfig = parsedArgs.Connection
 	}
 

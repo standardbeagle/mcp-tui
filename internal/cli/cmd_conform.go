@@ -164,7 +164,7 @@ func (c *ConformCommand) buildConformTarget(cmd *cobra.Command, args []string) (
 		target.URL = urlFlag
 	}
 	if len(args) > 0 && target.URL == "" {
-		parsed := config.ParseArgs(args, cmdFlag, urlFlag, argsFlag)
+		parsed := config.ParseArgs(args, SubcommandNames(cmd.Root()), cmdFlag, urlFlag, argsFlag)
 		if parsed.Connection != nil {
 			switch parsed.Connection.Type {
 			case config.TransportHTTP, config.TransportSSE, config.TransportStreamableHTTP:

@@ -173,7 +173,7 @@ func (c *VerifyCommand) buildTarget(cmd *cobra.Command, args []string) (verify.T
 		// The positional may be either a URL or a "command-line"
 		// connection string per ParseArgs. Use the unified parser so we
 		// honor the same shapes the other CLI commands accept.
-		parsed := config.ParseArgs(args, cmdFlag, urlFlag, argsFlag)
+		parsed := config.ParseArgs(args, SubcommandNames(cmd.Root()), cmdFlag, urlFlag, argsFlag)
 		if parsed.Connection != nil {
 			switch parsed.Connection.Type {
 			case config.TransportHTTP, config.TransportSSE, config.TransportStreamableHTTP:

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"os"
+	"context"
 	"reflect"
 	"testing"
 
@@ -9,14 +9,17 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/config"
 )
 
+// flagBasedArgs connects with flags alone, leaving no connection string.
+var flagBasedArgs = []string{"--cmd=npx", "--args=server,stdio", "capabilities"}
+
 // TestMainFunctionFlow tests the main function's argument handling
 func TestMainFunctionFlow(t *testing.T) {
 	tests := []struct {
-		name           string
-		args           []string
-		expectedConfig *config.ConnectionConfig
-		expectedOsArgs []string
-		description    string
+		name              string
+		args              []string
+		expectedConfig    *config.ConnectionConfig
+		expectedCobraArgs []string
+		description       string
 	}{
 		{
 			name: "natural CLI pattern",
@@ -26,70 +29,53 @@ func TestMainFunctionFlow(t *testing.T) {
 				Command: "npx",
 				Args:    []string{"server", "stdio"},
 			},
-			expectedOsArgs: []string{"mcp-tui", "tool", "list"},
-			description:    "Should extract connection and adjust os.Args for Cobra",
+			expectedCobraArgs: []string{"tool", "list"},
+			description:       "Should extract connection and leave the subcommand for Cobra",
 		},
 		{
-			name:           "TUI mode with connection",
-			args:           []string{"mcp-tui", "npx server stdio"},
-			expectedConfig: nil, // No global config set for TUI mode
-			expectedOsArgs: []string{"mcp-tui", "npx server stdio"},
-			description:    "TUI mode should not modify os.Args",
+			name: "TUI mode with connection",
+			args: []string{"mcp-tui", "npx server stdio"},
+			expectedConfig: &config.ConnectionConfig{
+				Type:    config.TransportStdio,
+				Command: "npx",
+				Args:    []string{"server", "stdio"},
+			},
+			expectedCobraArgs: []string{},
+			description:       "TUI mode hands the connection to the root command",
 		},
 		{
-			name:           "flag-based CLI",
-			args:           []string{"mcp-tui", "--cmd", "npx", "--args", "server", "--args", "stdio", "tool", "list"},
-			expectedConfig: nil, // Flags are parsed later by Cobra
-			expectedOsArgs: []string{"mcp-tui", "--cmd", "npx", "--args", "server", "--args", "stdio", "tool", "list"},
-			description:    "Flag-based usage should pass through unchanged",
+			name:              "flag-based CLI",
+			args:              append([]string{"mcp-tui"}, flagBasedArgs...),
+			expectedConfig:    nil, // Flags are parsed later by Cobra
+			expectedCobraArgs: flagBasedArgs,
+			description:       "Flag-based usage should pass through unchanged",
 		},
 		{
-			name:           "subcommand without connection",
-			args:           []string{"mcp-tui", "tool", "list"},
-			expectedConfig: nil,
-			expectedOsArgs: []string{"mcp-tui", "tool", "list"},
-			description:    "Subcommand alone should pass through",
+			name:              "subcommand without connection",
+			args:              []string{"mcp-tui", "tool", "list"},
+			expectedConfig:    nil,
+			expectedCobraArgs: []string{"tool", "list"},
+			description:       "Subcommand alone should pass through",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save original os.Args
-			oldArgs := os.Args
-			defer func() { os.Args = oldArgs }()
+			originalCfg := cfg
+			cfg = config.Default()
+			defer func() { cfg = originalCfg }()
 
-			// Set test args
-			os.Args = tt.args
+			root := createRootCommand(context.Background())
+			conn, cobraArgs := splitConnectionArg(root, tt.args[1:])
 
-			// Simulate the early parsing logic from main()
-			var detectedConfig *config.ConnectionConfig
-			if len(os.Args) > 1 {
-				parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
-				if parsedArgs.Connection != nil && parsedArgs.SubCommand != "" {
-					detectedConfig = parsedArgs.Connection
-					cli.SetGlobalConnection(detectedConfig)
-
-					// Simulate the os.Args adjustment
-					newArgs := []string{os.Args[0], parsedArgs.SubCommand}
-					newArgs = append(newArgs, parsedArgs.SubCommandArgs...)
-					os.Args = newArgs
-				}
+			if !reflect.DeepEqual(conn, tt.expectedConfig) {
+				t.Errorf("%s\nConnection mismatch:\ngot:  %+v\nwant: %+v",
+					tt.description, conn, tt.expectedConfig)
 			}
 
-			// Verify the connection config
-			if tt.expectedConfig != nil {
-				if detectedConfig == nil {
-					t.Errorf("%s\nExpected connection config, got nil", tt.description)
-				} else if !reflect.DeepEqual(detectedConfig, tt.expectedConfig) {
-					t.Errorf("%s\nConnection mismatch:\ngot:  %+v\nwant: %+v",
-						tt.description, detectedConfig, tt.expectedConfig)
-				}
-			}
-
-			// Verify os.Args adjustment
-			if !reflect.DeepEqual(os.Args, tt.expectedOsArgs) {
-				t.Errorf("%s\nos.Args mismatch:\ngot:  %v\nwant: %v",
-					tt.description, os.Args, tt.expectedOsArgs)
+			if !reflect.DeepEqual(cobraArgs, tt.expectedCobraArgs) {
+				t.Errorf("%s\ncobra args mismatch:\ngot:  %v\nwant: %v",
+					tt.description, cobraArgs, tt.expectedCobraArgs)
 			}
 
 			// Clean up global state

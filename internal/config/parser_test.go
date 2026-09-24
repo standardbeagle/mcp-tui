@@ -259,7 +259,7 @@ func TestParseArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ParseArgs(tt.args, tt.cmdFlag, tt.urlFlag, tt.argsFlag)
+			result := ParseArgs(tt.args, []string{"tool", "resource", "prompt", "server"}, tt.cmdFlag, tt.urlFlag, tt.argsFlag)
 
 			// Compare connections
 			if !reflect.DeepEqual(result.Connection, tt.expected.Connection) {
@@ -277,33 +277,6 @@ func TestParseArgs(t *testing.T) {
 			if !reflect.DeepEqual(result.SubCommandArgs, tt.expected.SubCommandArgs) {
 				t.Errorf("%s\nSubCommandArgs mismatch:\ngot:  %v\nwant: %v",
 					tt.description, result.SubCommandArgs, tt.expected.SubCommandArgs)
-			}
-		})
-	}
-}
-
-func TestIsKnownSubcommand(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-	}{
-		{"tool", true},
-		{"resource", true},
-		{"prompt", true},
-		{"server", true},
-		{"completion", true},
-		{"help", true},
-		{"task", true},
-		{"unknown", false},
-		{"", false},
-		{"Tool", false}, // case sensitive
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := isKnownSubcommand(tt.input)
-			if result != tt.expected {
-				t.Errorf("isKnownSubcommand(%q) = %v, want %v", tt.input, result, tt.expected)
 			}
 		})
 	}

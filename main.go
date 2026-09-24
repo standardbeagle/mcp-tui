@@ -29,23 +29,6 @@ func main() {
 	// Initialize configuration
 	cfg = config.Default()
 
-	// Early parse to check for connection string pattern
-	// This allows: mcp-tui "server command" tool list
-	if len(os.Args) > 1 {
-		// Do a quick pre-parse to see if we have a connection string
-		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
-		if parsedArgs.Connection != nil {
-			globalConnConfig = parsedArgs.Connection
-
-			if parsedArgs.SubCommand != "" {
-				// We have both connection and subcommand
-				// Make it available to CLI commands
-				cli.SetGlobalConnection(globalConnConfig)
-			}
-			// else: TUI mode with connection string
-		}
-	}
-
 	// Set up graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -62,21 +45,11 @@ func main() {
 	// Create root command
 	rootCmd := createRootCommand(ctx)
 
-	// Remove only the positional connection string so Cobra can parse all
-	// remaining persistent flags regardless of whether they appear before or
-	// after the subcommand.
-	if globalConnConfig != nil {
-		parsedArgs := config.ParseArgs(os.Args[1:], "", "", nil)
-
-		if parsedArgs.SubCommand != "" {
-			// CLI mode: make the positional connection available to commands.
-			cli.SetGlobalConnection(globalConnConfig)
-		} else {
-			// TUI mode does not use the CLI package state.
-			cli.SetGlobalConnection(nil)
-		}
-		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
-	}
+	// Early parse for the connection string pattern:
+	//   mcp-tui "server command" tool list
+	var cobraArgs []string
+	globalConnConfig, cobraArgs = splitConnectionArg(rootCmd, os.Args[1:])
+	rootCmd.SetArgs(cobraArgs)
 
 	// Execute with the signal-canceled context: the handler above swallows
 	// Ctrl-C, so long-running commands (resource watch) must see it here.
@@ -84,6 +57,23 @@ func main() {
 		debug.Error("Application failed", debug.F("error", err))
 		os.Exit(1)
 	}
+}
+
+// splitConnectionArg finds a positional connection string in args (the
+// command line without the program name) and returns it with the args left
+// for cobra. Only the connection string is removed, so cobra parses the
+// persistent flags wherever they appear. A subcommand after it (CLI mode)
+// gets the connection through cli.SetGlobalConnection; without one the
+// root command starts the TUI with it.
+func splitConnectionArg(root *cobra.Command, args []string) (conn *config.ConnectionConfig, cobraArgs []string) {
+	parsed := config.ParseArgs(args, cli.SubcommandNames(root), "", "", nil)
+	if parsed.Connection == nil {
+		return nil, args
+	}
+	if parsed.SubCommand != "" {
+		cli.SetGlobalConnection(parsed.Connection)
+	}
+	return parsed.Connection, args[1:]
 }
 
 func createRootCommand(ctx context.Context) *cobra.Command {
@@ -123,7 +113,7 @@ Examples:
 				argsFlag, _ := cmd.Flags().GetStringSlice("args")
 				urlFlag, _ := cmd.Flags().GetString("url")
 
-				parsedArgs := config.ParseArgs(args, cmdFlag, urlFlag, argsFlag)
+				parsedArgs := config.ParseArgs(args, cli.SubcommandNames(cmd), cmdFlag, urlFlag, argsFlag)
 				connectionConfig = parsedArgs.Connection
 			}
 

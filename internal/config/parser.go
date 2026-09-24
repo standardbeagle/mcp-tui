@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -21,14 +22,7 @@ type ParsedArgs struct {
 func ParseConnectionString(connStr string) *ConnectionConfig {
 	// Check if it's a URL
 	if strings.HasPrefix(connStr, "http://") || strings.HasPrefix(connStr, "https://") {
-		transportType := TransportHTTP
-		if strings.Contains(connStr, "/events") || strings.Contains(connStr, "sse") {
-			transportType = TransportSSE
-		}
-		return &ConnectionConfig{
-			Type: transportType,
-			URL:  connStr,
-		}
+		return urlConnection(connStr)
 	}
 
 	// Otherwise it's a command string
@@ -117,42 +111,29 @@ func ParseCommandLine(input string) ([]string, error) {
 //   - mcp-tui "connection string" [subcommand] [args...]
 //   - mcp-tui --cmd command --args arg1,arg2 [subcommand] [args...]
 //   - mcp-tui --url http://... [subcommand] [args...]
-func ParseArgs(args []string, cmdFlag, urlFlag string, argsFlag []string) *ParsedArgs {
-	result := &ParsedArgs{}
-
+//
+// subcommands lists the names the root command registers
+// (cli.SubcommandNames); an arg matching one is never a connection string.
+func ParseArgs(args, subcommands []string, cmdFlag, urlFlag string, argsFlag []string) *ParsedArgs {
+	isSubcommand := func(arg string) bool { return slices.Contains(subcommands, arg) }
 	// First priority: explicit flags
-	if cmdFlag != "" {
-		result.Connection = &ConnectionConfig{
-			Type:    TransportStdio,
-			Command: cmdFlag,
-			Args:    argsFlag,
-		}
-	} else if urlFlag != "" {
-		transportType := TransportHTTP
-		if strings.Contains(urlFlag, "/events") || strings.Contains(urlFlag, "sse") {
-			transportType = TransportSSE
-		}
-		result.Connection = &ConnectionConfig{
-			Type: transportType,
-			URL:  urlFlag,
-		}
-	}
+	result := &ParsedArgs{Connection: connectionFromFlags(cmdFlag, urlFlag, argsFlag)}
 
 	// Check if we need to parse positional connection string
 	argsToProcess := args
 	if result.Connection == nil && len(argsToProcess) > 0 {
 		// Skip if first arg is a subcommand
-		if !isKnownSubcommand(argsToProcess[0]) && !strings.HasPrefix(argsToProcess[0], "-") {
+		if !isSubcommand(argsToProcess[0]) && !strings.HasPrefix(argsToProcess[0], "-") {
 			result.Connection = ParseConnectionString(argsToProcess[0])
 			argsToProcess = argsToProcess[1:] // consume the connection string
 		}
 	} else if result.Connection != nil && len(args) > 0 {
 		// When using flags, we might have a positional arg that's not a connection
 		// Check if first arg looks like a connection string or is a subcommand
-		if isKnownSubcommand(args[0]) ||
-			(len(args) > 1 && isKnownSubcommand(args[1])) {
+		if isSubcommand(args[0]) ||
+			(len(args) > 1 && isSubcommand(args[1])) {
 			// It's likely "some-command tool list" where some-command should be ignored
-			if !isKnownSubcommand(args[0]) && len(args) > 1 {
+			if !isSubcommand(args[0]) && len(args) > 1 {
 				argsToProcess = args[1:] // skip the non-subcommand first arg
 			}
 		}
@@ -162,7 +143,7 @@ func ParseArgs(args []string, cmdFlag, urlFlag string, argsFlag []string) *Parse
 	// permits normal Cobra persistent flags between the connection and command,
 	// e.g. `mcp-tui "server command" --timeout 5s tool list`.
 	for i, arg := range argsToProcess {
-		if isKnownSubcommand(arg) {
+		if isSubcommand(arg) {
 			result.SubCommand = arg
 			result.SubCommandArgs = argsToProcess[i+1:]
 			break
@@ -172,18 +153,24 @@ func ParseArgs(args []string, cmdFlag, urlFlag string, argsFlag []string) *Parse
 	return result
 }
 
-// isKnownSubcommand checks if a string is a known subcommand. Keep this list
-// in sync with the AddCommand calls in main.go — every cobra subcommand the
-// root registers must appear here so the early-parse pattern in main()
-// doesn't mistake the subcommand name for a connection string.
-func isKnownSubcommand(arg string) bool {
-	knownCommands := []string{
-		"tool", "task", "resource", "prompt", "server", "completion", "help", "capabilities", "verify", "conform",
+// connectionFromFlags is the connection --cmd/--args or --url name, --cmd
+// first, or nil when neither was given.
+func connectionFromFlags(cmdFlag, urlFlag string, argsFlag []string) *ConnectionConfig {
+	switch {
+	case cmdFlag != "":
+		return &ConnectionConfig{Type: TransportStdio, Command: cmdFlag, Args: argsFlag}
+	case urlFlag != "":
+		return urlConnection(urlFlag)
 	}
-	for _, cmd := range knownCommands {
-		if arg == cmd {
-			return true
-		}
+	return nil
+}
+
+// urlConnection connects to url over SSE when the URL looks like an SSE
+// endpoint, else over HTTP.
+func urlConnection(url string) *ConnectionConfig {
+	transportType := TransportHTTP
+	if strings.Contains(url, "/events") || strings.Contains(url, "sse") {
+		transportType = TransportSSE
 	}
-	return false
+	return &ConnectionConfig{Type: transportType, URL: url}
 }
