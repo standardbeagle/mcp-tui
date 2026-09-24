@@ -106,11 +106,19 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 			// Set debug mode to get detailed logging
 			service.SetDebugMode(true)
 
-			// Attempt connection
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			// Attempt connection. Each case spawns pwsh, which dominates the
+			// time: measured 0.46s median / 1.4s max idle and 0.76s median /
+			// 2.3s max with the full suite running beside it (-count=10).
+			// 5s left ~2x headroom and timed out under heavier pwsh load,
+			// turning the error under test into a deadline error. 10s matches
+			// TestErrorHandlingRegressionPrevention, which runs the same
+			// failing-server connect.
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
+			start := time.Now()
 			err := service.Connect(ctx, tt.connectionConfig)
+			t.Logf("Connect took %v", time.Since(start))
 
 			if tt.expectConnection {
 				if err != nil {

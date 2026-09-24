@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,24 +16,53 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// buildTestBinary compiles mcp-tui into the test's temp directory and returns an
-// absolute path to it. An absolute path matters: a bare relative name like
+// testBinary is the mcp-tui binary the integration tests run, built once per
+// test process by the first test that needs it and removed by TestMain.
+// Building it per test cost ~2s of CPU each (7-8s uncached) while the rest of
+// the suite ran in parallel packages.
+var testBinary struct {
+	once sync.Once
+	dir  string
+	path string
+	err  error
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if testBinary.dir != "" {
+		if err := os.RemoveAll(testBinary.dir); err != nil {
+			fmt.Fprintf(os.Stderr, "removing test binary dir %s: %v\n", testBinary.dir, err)
+		}
+	}
+	os.Exit(code)
+}
+
+// buildTestBinary returns an absolute path to the mcp-tui binary, compiling it
+// on first use. An absolute path matters: a bare relative name like
 // "mcp-tui-test" is looked up on PATH by os/exec rather than in the working
 // directory, and on Windows the binary needs an .exe suffix.
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
+	testBinary.once.Do(func() {
+		dir, err := os.MkdirTemp("", "mcp-tui-integration-")
+		if err != nil {
+			testBinary.err = err
+			return
+		}
+		testBinary.dir = dir
+		bin := filepath.Join(dir, testutil.ExeName("mcp-tui-test"))
 
-	bin := filepath.Join(t.TempDir(), testutil.ExeName("mcp-tui-test"))
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
-	buildCmd.Dir = "."
-	out, err := buildCmd.CombinedOutput()
-	require.NoError(t, err, "Failed to build mcp-tui binary: %s", out)
-
-	return bin
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "go", "build", "-o", bin, ".").CombinedOutput()
+		if err != nil {
+			testBinary.err = fmt.Errorf("go build: %w: %s", err, out)
+			return
+		}
+		testBinary.path = bin
+	})
+	require.NoError(t, testBinary.err, "Failed to build mcp-tui binary")
+	return testBinary.path
 }
 
 func TestCLIIntegration(t *testing.T) {
@@ -108,11 +140,15 @@ func TestCLIIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// None of these spawn a server: measured 0.17s median / 0.4s max
+			// idle and 0.94s max with the full suite running (-count=10).
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
 			cmd := exec.CommandContext(ctx, bin, tt.args...)
+			start := time.Now()
 			output, err := cmd.CombinedOutput()
+			t.Logf("mcp-tui %v took %v", tt.args, time.Since(start))
 			outputStr := string(output)
 
 			if tt.wantErr {
