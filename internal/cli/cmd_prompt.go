@@ -458,10 +458,12 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 	}
 
 	// Execute the prompt
-	result, err := service.GetPrompt(ctx, mcp.GetPromptRequest{
+	progressCtx, endProgress := callProgress(ctx, pc.GetOutputFormat(), porcelainMode)
+	result, err := service.GetPrompt(progressCtx, mcp.GetPromptRequest{
 		Name:      promptName,
 		Arguments: convertedArgs,
 	})
+	endProgress()
 	if err != nil {
 		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to execute prompt\n")

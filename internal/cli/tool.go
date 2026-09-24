@@ -559,10 +559,12 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Call the tool
-	result, err := tc.GetService().CallTool(ctx, mcp.CallToolRequest{
+	progressCtx, endProgress := callProgress(ctx, tc.GetOutputFormat(), porcelainMode)
+	result, err := tc.GetService().CallTool(progressCtx, mcp.CallToolRequest{
 		Name:      toolName,
 		Arguments: toolArgs,
 	})
+	endProgress()
 	if err != nil {
 		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Tool execution failed\n")
@@ -619,7 +621,9 @@ func (tc *ToolCommand) callAsTask(ctx context.Context, req mcp.CallToolRequest, 
 	if text {
 		fmt.Fprintf(os.Stderr, "🚀 Calling tool as a task...\n")
 	}
-	outcome, err := svc.CallToolAsTask(ctx, req, f.ttlMs)
+	progressCtx, endProgress := callProgress(ctx, out.format, out.porcelain)
+	outcome, err := svc.CallToolAsTask(progressCtx, req, f.ttlMs)
+	endProgress()
 	if err != nil {
 		return tc.HandleError(err, "call tool as a task")
 	}
@@ -643,7 +647,10 @@ func (tc *ToolCommand) callAsTask(ctx context.Context, req mcp.CallToolRequest, 
 	if text {
 		fmt.Fprintf(os.Stderr, "⏳ Task %s created; waiting for it to finish...\n", task.ID)
 	}
-	result, last, err := awaitTaskResult(ctx, svc, task.ID, text)
+	// 2025-11-25 tasks keep reporting progress on the call's token.
+	progressCtx, endProgress = callProgress(ctx, out.format, out.porcelain)
+	result, last, err := awaitTaskResult(progressCtx, svc, task.ID, text)
+	endProgress()
 	if err != nil {
 		return tc.HandleError(err, "wait for task")
 	}

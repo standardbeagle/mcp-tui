@@ -210,7 +210,9 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 	service := rc.GetService()
 
 	// Get the resource content
-	result, err := service.ReadResource(ctx, resourceURI)
+	progressCtx, endProgress := callProgress(ctx, rc.GetOutputFormat(), porcelainMode)
+	result, err := service.ReadResource(progressCtx, resourceURI)
+	endProgress()
 	if err != nil {
 		if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to read resource\n")

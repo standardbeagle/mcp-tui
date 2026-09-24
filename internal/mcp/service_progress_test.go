@@ -370,3 +370,20 @@ func TestService_Progress_ExtensionTaskReleasesItsToken(t *testing.T) {
 		t.Errorf("%d progress tokens still routed after the call returned the task", n)
 	}
 }
+
+// TestProgress_Summary pins the one-line rendering the CLI and TUI share.
+func TestProgress_Summary(t *testing.T) {
+	for _, tc := range []struct {
+		p    Progress
+		want string
+	}{
+		{Progress{Progress: 2, Total: 4, Message: "linking"}, "2/4 (50%) · linking"},
+		{Progress{Progress: 0.25, Total: 1}, "0.25/1 (25%)"},
+		{Progress{Progress: 7, Message: "compiled 7 packages"}, "7 · compiled 7 packages"},
+		{Progress{Progress: 7}, "7"},
+	} {
+		if got := tc.p.Summary(); got != tc.want {
+			t.Errorf("%+v.Summary() = %q, want %q", tc.p, got, tc.want)
+		}
+	}
+}

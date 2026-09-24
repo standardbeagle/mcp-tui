@@ -32,6 +32,19 @@ type Progress struct {
 	Message string  `json:"message,omitempty"`
 }
 
+// Summary renders p on one line: "2/4 (50%) · linking", or "7 · linking"
+// without a total.
+func (p Progress) Summary() string {
+	line := fmt.Sprintf("%g", p.Progress)
+	if p.Total > 0 {
+		line = fmt.Sprintf("%g/%g (%.0f%%)", p.Progress, p.Total, 100*p.Progress/p.Total)
+	}
+	if p.Message != "" {
+		line += " · " + p.Message
+	}
+	return line
+}
+
 type progressObserverKey struct{}
 
 // WithProgressObserver returns ctx carrying fn. CallTool, CallToolAsTask,
@@ -39,6 +52,13 @@ type progressObserverKey struct{}
 // notification the server sends for that call.
 func WithProgressObserver(ctx context.Context, fn func(Progress)) context.Context {
 	return context.WithValue(ctx, progressObserverKey{}, fn)
+}
+
+// ProgressObserver returns the observer WithProgressObserver put in ctx, or
+// nil.
+func ProgressObserver(ctx context.Context) func(Progress) {
+	observe, _ := ctx.Value(progressObserverKey{}).(func(Progress))
+	return observe
 }
 
 // progressCall is the progress subscription of one call.
@@ -55,8 +75,7 @@ type progressCallKey struct{}
 // context carries it to progressTokenMiddleware; the caller must end it
 // with endProgress once the call returns.
 func (s *service) beginProgress(ctx context.Context) (context.Context, *progressCall) {
-	observe, _ := ctx.Value(progressObserverKey{}).(func(Progress))
-	call := &progressCall{observe: observe}
+	call := &progressCall{observe: ProgressObserver(ctx)}
 	return context.WithValue(ctx, progressCallKey{}, call), call
 }
 

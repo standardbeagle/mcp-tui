@@ -296,8 +296,8 @@ func (s *service) keepTaskProgress(form tasks.Form, id string, progress *progres
 // observeTaskProgress hands the progress of task id to the observer in
 // ctx, if the task kept its call's token and ctx carries one.
 func (s *service) observeTaskProgress(ctx context.Context, id string) {
-	observe, ok := ctx.Value(progressObserverKey{}).(func(Progress))
-	if !ok {
+	observe := ProgressObserver(ctx)
+	if observe == nil {
 		return
 	}
 	s.mu.Lock()
