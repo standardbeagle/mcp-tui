@@ -20,40 +20,62 @@ const toolNamesProbe = "tool-names"
 // receive such names; many hosts refuse them. Connects over stdio when the
 // target has a command, else over streamable HTTP.
 func ProbeToolNames(ctx context.Context, t *Target) ProbeResult {
-	const name = toolNamesProbe
+	svc, failed := connectProbeService(ctx, toolNamesProbe, t)
+	if failed != nil {
+		return *failed
+	}
+	defer disconnectProbeService(toolNamesProbe, svc)
+
+	names, err := listToolNames(ctx, svc)
+	if err != nil {
+		return ProbeResult{Name: toolNamesProbe, Pass: false, Error: fmt.Sprintf("tools/list failed: %v", err),
+			Fix: "make tools/list succeed before checking tool names"}
+	}
+	return classifyToolNames(names)
+}
+
+// connectProbeService connects a fresh service to t for the probe name:
+// over stdio when t has a command, else over streamable HTTP. On failure it
+// returns the probe's failed result instead.
+func connectProbeService(ctx context.Context, name string, t *Target) (mcp.Service, *ProbeResult) {
 	cc := &config.ConnectionConfig{Type: config.TransportStreamableHTTP, URL: t.URL}
 	if t.Command != "" {
 		cc = &config.ConnectionConfig{Type: config.TransportStdio, Command: t.Command, Args: t.Args}
 	}
 	if cc.URL == "" && cc.Command == "" {
-		return ProbeResult{Name: name, Pass: false, Error: "missing target", Fix: "supply <url> or --cmd"}
+		return nil, &ProbeResult{Name: name, Pass: false, Error: "missing target", Fix: "supply <url> or --cmd"}
 	}
 
 	svc := mcp.NewService()
 	connectCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := svc.Connect(connectCtx, cc); err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: fmt.Sprintf("connect failed: %v", err),
+		return nil, &ProbeResult{Name: name, Pass: false, Error: fmt.Sprintf("connect failed: %v", err),
 			Fix: "verify the target starts an MCP server (try `mcp-tui <target> tool list` first)"}
 	}
-	defer func() {
-		if err := svc.Disconnect(); err != nil {
-			debug.Warn("tool-names probe: disconnect failed", debug.F("error", err))
-		}
-	}()
+	return svc, nil
+}
 
-	listCtx, listCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer listCancel()
+// disconnectProbeService closes a probe's service, logging a failure.
+func disconnectProbeService(name string, svc mcp.Service) {
+	if err := svc.Disconnect(); err != nil {
+		debug.Warn(name+" probe: disconnect failed", debug.F("error", err))
+	}
+}
+
+// listToolNames lists svc's tools and returns their names in server order.
+func listToolNames(ctx context.Context, svc mcp.Service) ([]string, error) {
+	listCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	tools, err := svc.ListTools(listCtx)
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: fmt.Sprintf("tools/list failed: %v", err),
-			Fix: "make tools/list succeed before checking tool names"}
+		return nil, err
 	}
 	names := make([]string, len(tools))
 	for i, tool := range tools {
 		names[i] = tool.Name
 	}
-	return classifyToolNames(names)
+	return names, nil
 }
 
 // classifyToolNames is the pure pass/fail decision of ProbeToolNames.

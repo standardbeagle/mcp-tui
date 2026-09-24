@@ -80,6 +80,7 @@ var AllProbes = []string{
 	"mcp-method-headers",
 	"seterror-content",
 	toolNamesProbe,
+	listOrderProbe,
 }
 
 // IsHTTPProbe reports whether a probe needs a URL target rather than a
@@ -96,10 +97,10 @@ func IsHTTPProbe(name string) bool {
 
 // TargetProblem reports why target cannot run the named probe, or "" when
 // it can: HTTP probes need a URL, seterror-content a stdio command, and
-// tool-names either one.
+// tool-names and list-order either one.
 func TargetProblem(name string, target *Target) string {
 	switch {
-	case name == toolNamesProbe:
+	case name == toolNamesProbe || name == listOrderProbe:
 		if target.URL == "" && target.Command == "" {
 			return "probe requires a URL or stdio command target"
 		}
@@ -131,6 +132,8 @@ func Run(ctx context.Context, name string, target Target) ProbeResult {
 		return ProbeSetErrorContent(ctx, target)
 	case toolNamesProbe:
 		return ProbeToolNames(ctx, &target)
+	case listOrderProbe:
+		return ProbeListOrder(ctx, &target)
 	default:
 		return ProbeResult{
 			Name:  name,

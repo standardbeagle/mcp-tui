@@ -46,9 +46,10 @@ func (c *VerifyCommand) CreateCommand() *cobra.Command {
 		Long: `Run a small suite of behavior probes against a streamable-HTTP MCP server
 (or, for the seterror-content probe, a stdio MCP server).
 
-Each probe sends a single targeted request and reports PASS or FAIL plus a
-human-readable fix suggestion. The exit code is 0 when all probes pass and 1
-when any fail.
+Each probe sends a single targeted request and reports PASS, WARN or FAIL
+plus a human-readable fix suggestion. WARN marks a SHOULD-level finding and
+does not fail the run. The exit code is 0 when no probe fails and 1 when any
+does.
 
 Probes:
   cross-origin         server rejects POST with foreign Origin (SDK v1.4.1+)
@@ -61,6 +62,8 @@ Probes:
                        (SDK v1.6.0+)
   tool-names           every tool name is 1-128 chars of A-Z a-z 0-9 _ - .
                        (SEP-986); URL or --cmd target
+  list-order           tools/list returns the same order twice (2026-07-28
+                       SHOULD, so WARN not FAIL); URL or --cmd target
 
 Examples:
   mcp-tui verify http://localhost:8000/mcp
@@ -70,7 +73,7 @@ Examples:
       --args "@modelcontextprotocol/server-everything,stdio" --tool failing_tool
 
 Exit codes:
-  0  all probes passed
+  0  no probe failed (warnings allowed)
   1  one or more probes failed (or no probes ran)`,
 		RunE: c.RunE,
 	}
