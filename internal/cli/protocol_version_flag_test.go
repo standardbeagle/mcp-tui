@@ -16,6 +16,7 @@ func newCmdWithConnectionFlags(t *testing.T, args ...string) *cobra.Command {
 	root.PersistentFlags().String("url", "", "")
 	root.PersistentFlags().String("transport", "stdio", "")
 	root.PersistentFlags().String("protocol-version", "", "")
+	root.PersistentFlags().String("server-log-level", "", "")
 
 	child := &cobra.Command{Use: "child"}
 	root.AddCommand(child)
@@ -45,6 +46,30 @@ func TestParseConnectionConfig_ProtocolVersionFlag(t *testing.T) {
 			}
 			if connConfig.ProtocolVersion != tc.want {
 				t.Errorf("ProtocolVersion = %q, want %q", connConfig.ProtocolVersion, tc.want)
+			}
+		})
+	}
+}
+
+// TestParseConnectionConfig_ServerLogLevelFlag verifies --server-log-level
+// lands on the connection config; omitting it asks the server for no logs.
+func TestParseConnectionConfig_ServerLogLevelFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "set", args: []string{"--cmd", "npx", "--server-log-level", "debug"}, want: "debug"},
+		{name: "omitted", args: []string{"--cmd", "npx"}, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewBaseCommand()
+			connConfig, err := c.parseConnectionConfig(newCmdWithConnectionFlags(t, tc.args...))
+			if err != nil {
+				t.Fatalf("parseConnectionConfig: %v", err)
+			}
+			if connConfig.ServerLogLevel != tc.want {
+				t.Errorf("ServerLogLevel = %q, want %q", connConfig.ServerLogLevel, tc.want)
 			}
 		})
 	}

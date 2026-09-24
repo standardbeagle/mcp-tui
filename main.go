@@ -149,6 +149,11 @@ Examples:
 					connectionConfig.ProtocolVersion = protocolVersion
 				}
 
+				// Mirror --server-log-level; the service validates it at Connect.
+				if level, _ := cmd.Flags().GetString("server-log-level"); level != "" {
+					connectionConfig.ServerLogLevel = level
+				}
+
 				// Mirror --mcp-method-headers into the connection config so
 				// the TUI's transport factory enables the SEP-2243 RoundTripper.
 				if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
@@ -193,6 +198,7 @@ Examples:
 	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
 	rootCmd.PersistentFlags().String("transport", "stdio", "Transport type (stdio, sse, http, streamable-http)")
 	rootCmd.PersistentFlags().String("protocol-version", "", "MCP protocol version to request (e.g. 2025-11-25); empty = SDK latest")
+	rootCmd.PersistentFlags().String("server-log-level", "", "Minimum level of server log notifications to request (debug, info, notice, warning, error, critical, alert, emergency); empty = none")
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	// Debug mode always enabled - this is a testing/debug tool
 	cfg.DebugMode = true

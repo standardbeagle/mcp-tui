@@ -190,6 +190,12 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		connConfig.ProtocolVersion = protocolVersion
 	}
 
+	// Mirror --server-log-level; the service validates it at Connect and
+	// delivers it the way the negotiated protocol requires.
+	if level, _ := cmd.Flags().GetString("server-log-level"); level != "" {
+		connConfig.ServerLogLevel = level
+	}
+
 	// Mirror --mcp-method-headers (SEP-2243) into the connection config so
 	// the transport factory wraps the HTTP client with the header injector
 	// at Connect time. STDIO ignores the flag because the SEP only applies

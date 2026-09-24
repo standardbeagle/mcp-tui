@@ -21,6 +21,7 @@ mcp-tui [global-flags] <subcommand> [subcommand-flags] [args]
 | `--url <url>` | | URL for HTTP/SSE transports |
 | `--transport <stdio\|sse\|http\|streamable-http>` | `stdio` | Transport selection |
 | `--protocol-version <version>` | SDK latest | MCP protocol version to request: `2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26`, or `2024-11-05`. The server may negotiate down. Any other value fails before connecting. Pin `2025-11-25` when a server's tools still call the client directly (sampling, elicitation, roots) and fail under `2026-07-28`. |
+| `--server-log-level <level>` | none | Ask the server for `notifications/message` at this level or above: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`. On `2026-07-28` the level travels in every request's `_meta` (`logging/setLevel` no longer exists); on older versions it is sent once with `logging/setLevel` after connecting. Without it servers send no log notifications. |
 | `--timeout <duration>` | `10s` | Connection timeout (e.g. `30s`, `2m`) |
 | `--header KEY=VALUE` | | Add an HTTP header to every request (repeatable; HTTP transports only) |
 | `--mcp-method-headers` | `false` | Inject SEP-2243 `MCP-Method`/`MCP-Name` headers on every JSON-RPC request (HTTP transports only) |
