@@ -243,10 +243,12 @@ func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.R
 	authLog().Info("Authorization succeeded",
 		append([]debug.Field{debug.F("mode", h.cfg.Mode())}, tokenSummary(tok)...)...)
 
-	// The auth-code token source saves itself (NewTokenSource); the
-	// client-credentials handler has no such hook, and its token is
-	// re-requested rather than refreshed, so only the token is cached.
-	if h.cfg.Mode() == ModeClientCredentials {
+	// The auth-code token source saves itself (NewTokenSource). The
+	// client-credentials and enterprise handlers have no such hook, and
+	// their tokens are re-requested rather than refreshed (enterprise re-runs
+	// the IdP flow so its policy applies each time), so only the access
+	// token is cached: never the ID token or ID-JAG, which nothing reuses.
+	if mode := h.cfg.Mode(); mode == ModeClientCredentials || mode == ModeEnterprise {
 		h.saveSession(nil, tok)
 	}
 	return nil
@@ -285,6 +287,8 @@ func (h *Handler) buildSDKHandler() (auth.OAuthHandler, error) {
 		})
 	case ModeAuthorizationCode:
 		return h.buildAuthCodeHandler()
+	case ModeEnterprise:
+		return h.buildEnterpriseHandler()
 	default:
 		return nil, fmt.Errorf("oauth: unsupported mode %s", h.cfg.Mode())
 	}
@@ -294,12 +298,10 @@ func (h *Handler) buildSDKHandler() (auth.OAuthHandler, error) {
 // loopback callback server in production, a stub in tests) and the
 // configured registration paths; h.mu is held.
 func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error) {
-	fetcher := h.fetcherFactory(h.cfg.RedirectHost, h.cfg.RedirectPort)
-	redirectURL := fetcher.RedirectURL()
-	if redirectURL == "" {
-		return nil, fmt.Errorf("oauth: failed to bind callback listener (host=%s, port=%d)", h.cfg.RedirectHost, h.cfg.RedirectPort)
+	fetcher, redirectURL, err := h.bindFetcher()
+	if err != nil {
+		return nil, err
 	}
-	h.fetcher = fetcher
 	cfg := &auth.AuthorizationCodeHandlerConfig{
 		RedirectURL: redirectURL,
 		AuthorizationCodeFetcher: func(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
@@ -340,6 +342,34 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 		debug.F("request_refresh_token", cfg.RequestRefreshToken),
 		debug.F("registration_order", registrationOrder(h.cfg)))
 	return auth.NewAuthorizationCodeHandler(cfg)
+}
+
+// buildEnterpriseHandler wires the SEP-990 flow to the loopback callback
+// server for the IdP sign-in; h.mu is held.
+func (h *Handler) buildEnterpriseHandler() (*enterpriseAuthorizer, error) {
+	fetcher, redirectURL, err := h.bindFetcher()
+	if err != nil {
+		return nil, err
+	}
+	authLog().Info("Enterprise handler ready",
+		debug.F("redirect_url", redirectURL),
+		debug.F("idp_issuer", h.cfg.IdPIssuer),
+		debug.F("mcp_scopes", h.cfg.scopeList()))
+	return &enterpriseAuthorizer{h: h, fetcher: fetcher, redirectURL: redirectURL}, nil
+}
+
+// bindFetcher builds the callback fetcher (the loopback server in
+// production, a stub in tests), binds its redirect URL and records it for
+// Reauthenticate to release; h.mu is held.
+func (h *Handler) bindFetcher() (AuthorizationCodeFetcher, string, error) {
+	fetcher := h.fetcherFactory(h.cfg.RedirectHost, h.cfg.RedirectPort)
+	redirectURL := fetcher.RedirectURL()
+	if redirectURL == "" {
+		return nil, "", fmt.Errorf("oauth: failed to bind callback listener (host=%s, port=%d)",
+			h.cfg.RedirectHost, h.cfg.RedirectPort)
+	}
+	h.fetcher = fetcher
+	return fetcher, redirectURL, nil
 }
 
 // selectScopes is the SDK's ScopeFilter: it picks the scopes to request
@@ -566,7 +596,7 @@ func registrationReason(cfg *Config, path string) string {
 // inputs that decided it.
 func logModeSelected(cfg *Config, cache TokenCache) {
 	_, cacheDisabled := cache.(NoopCache)
-	authLog().Info("OAuth mode selected",
+	fields := []debug.Field{
 		debug.F("mode", cfg.Mode()),
 		debug.F("server_url", redact.URL(cfg.ServerURL)),
 		debug.F("registration_order", registrationOrder(cfg)),
@@ -574,7 +604,12 @@ func logModeSelected(cfg *Config, cache TokenCache) {
 		debug.F("configured_scopes", cfg.scopeList()),
 		debug.F("client_issuer", cfg.Issuer),
 		debug.F("token_cache", cache != nil && !cacheDisabled),
-		debug.F("allow_private_network", cfg.AllowPrivateNetwork))
+		debug.F("allow_private_network", cfg.AllowPrivateNetwork),
+	}
+	if cfg.Mode() == ModeEnterprise {
+		fields = append(fields, enterpriseModeFields(cfg)...)
+	}
+	authLog().Info("OAuth mode selected", fields...)
 	if cfg.AllowPrivateNetwork {
 		authLog().Warn("Auth requests may reach private-network addresses (--oauth-allow-private-network); " +
 			"a server's metadata can then point mcp-tui at internal hosts")

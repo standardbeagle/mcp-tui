@@ -240,26 +240,26 @@ func describeRegistration(
 }
 
 // describeTokenExchange returns the request event (grant, requested scope,
-// how the client authenticated) and the response event (token type, lifetime,
-// granted scope, which tokens were issued).
+// how the client authenticated, and the grant's own parameters) and the
+// response event (token type, lifetime, granted scope, which tokens were
+// issued).
 func describeTokenExchange(req *http.Request, form url.Values, resp *http.Response, body []byte) []authEvent {
 	grant := form.Get("grant_type")
-	message := "Token request"
-	if grant == "refresh_token" {
-		message = "Token refresh"
-	}
-	fields := []debug.Field{
+	extra := grantFields(grant, form)
+	fields := make([]debug.Field, 0, 6+len(extra))
+	fields = append(fields,
 		debug.F("grant_type", grant),
 		debug.F("endpoint", redact.RedactedURL(req.URL)),
 		debug.F("requested_scope", form.Get("scope")),
 		debug.F("resource", form["resource"]),
 		debug.F("client_auth", tokenClientAuth(req, form)),
-		debug.F("has_code_verifier", form.Get("code_verifier") != ""),
-	}
+		debug.F("has_code_verifier", form.Get("code_verifier") != ""))
+	fields = append(fields, extra...)
 
 	result := []debug.Field{debug.F("status", resp.StatusCode), debug.F("grant_type", grant)}
 	var tok struct {
 		TokenType        string          `json:"token_type"`
+		IssuedTokenType  string          `json:"issued_token_type"`
 		ExpiresIn        json.RawMessage `json:"expires_in"`
 		Scope            string          `json:"scope"`
 		AccessToken      string          `json:"access_token"`
@@ -276,11 +276,76 @@ func describeTokenExchange(req *http.Request, form url.Values, resp *http.Respon
 			debug.F("has_access_token", tok.AccessToken != ""),
 			debug.F("has_refresh_token", tok.RefreshToken != ""),
 			debug.F("has_id_token", tok.IDToken != ""))
+		if tok.IssuedTokenType != "" {
+			result = append(result, debug.F("issued_token_type", tok.IssuedTokenType))
+		}
+		if tok.IssuedTokenType == oauthex.TokenTypeIDJAG {
+			result = append(result, jwtFields("id_jag", tok.AccessToken)...)
+		}
 		if tok.Error != "" {
 			result = append(result, debug.F("oauth_error", tok.Error), debug.F("error_description", tok.ErrorDescription))
 		}
 	}
-	return []authEvent{{message, fields}, {"Token response", result}}
+	return []authEvent{{grantMessage(grant), fields}, {"Token response", result}}
+}
+
+// Grants of Enterprise Managed Authorization (SEP-990): RFC 8693 token
+// exchange at the IdP, RFC 7523 JWT bearer at the MCP authorization server.
+const (
+	grantTokenExchange = oauthex.GrantTypeTokenExchange
+	// G101 flags the name; this is a grant type URN, not a credential.
+	grantJWTBearer = "urn:ietf:params:oauth:grant-type:jwt-bearer" //nolint:gosec // grant type URN
+)
+
+func grantMessage(grant string) string {
+	switch grant {
+	case "refresh_token":
+		return "Token refresh"
+	case grantTokenExchange:
+		return "Token exchange"
+	case grantJWTBearer:
+		return "JWT bearer grant"
+	default:
+		return "Token request"
+	}
+}
+
+// grantFields are the parameters specific to a token exchange or JWT bearer
+// request. Tokens appear only as presence flags and, for JWTs, their
+// issuer, audience and expiry.
+func grantFields(grant string, form url.Values) []debug.Field {
+	switch grant {
+	case grantTokenExchange:
+		return []debug.Field{
+			debug.F("audience", form.Get("audience")),
+			debug.F("requested_token_type", form.Get("requested_token_type")),
+			debug.F("subject_token_type", form.Get("subject_token_type")),
+			debug.F("has_subject_token", form.Get("subject_token") != ""),
+			debug.F("has_actor_token", form.Get("actor_token") != ""),
+		}
+	case grantJWTBearer:
+		assertion := form.Get("assertion")
+		return append([]debug.Field{debug.F("has_assertion", assertion != "")}, jwtFields("assertion", assertion)...)
+	default:
+		return nil
+	}
+}
+
+// jwtFields logs a JWT's issuer, audience and expiry under prefix, or why
+// they could not be read. The token itself is never logged.
+func jwtFields(prefix, raw string) []debug.Field {
+	if raw == "" {
+		return nil
+	}
+	claims, err := parseJWTClaims(raw)
+	if err != nil {
+		return []debug.Field{debug.F(prefix+"_claims", "unreadable: "+err.Error())}
+	}
+	return []debug.Field{
+		debug.F(prefix+"_iss", claims.Issuer),
+		debug.F(prefix+"_aud", claims.Audience),
+		debug.F(prefix+"_expiry", claims.Expiry),
+	}
 }
 
 // tokenClientAuth names how the client authenticated to the token endpoint.

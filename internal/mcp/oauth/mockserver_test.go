@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -62,6 +63,11 @@ type mockAuthServer struct {
 	// supportCIMD advertises client_id_metadata_document_supported, so an
 	// https client_id URL is accepted as the client identifier.
 	supportCIMD bool
+
+	// idJAG returns the ID-JAG the enterprise IdP issued; the jwt-bearer
+	// grant accepts only that assertion, and only if it is addressed to
+	// this authorization server. Nil rejects the grant.
+	idJAG func() string
 
 	// recorded token requests (mutex-guarded).
 	mu                sync.Mutex
@@ -139,9 +145,11 @@ func (m *mockAuthServer) handleASM(w http.ResponseWriter, _ *http.Request) {
 		"token_endpoint":                        m.authServer.URL + "/token",
 		"registration_endpoint":                 m.authServer.URL + "/register",
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
-		"grant_types_supported":                 []string{"authorization_code", "client_credentials", "refresh_token"},
-		"response_types_supported":              []string{"code"},
-		"code_challenge_methods_supported":      []string{"S256"},
+		"grant_types_supported": []string{
+			grantAuthCode, grantClientCredentials, "refresh_token", grantJWTBearer,
+		},
+		"response_types_supported":         []string{formCode},
+		"code_challenge_methods_supported": []string{"S256"},
 	}
 	if m.advertiseIss {
 		asm["authorization_response_iss_parameter_supported"] = true
@@ -172,7 +180,7 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Authorization can come via Basic header or form (client_secret_post).
-	clientID := r.PostForm.Get("client_id")
+	clientID := r.PostForm.Get(formClientID)
 	clientSecret := r.PostForm.Get("client_secret")
 	if clientID == "" {
 		if u, p, ok := r.BasicAuth(); ok {
@@ -188,7 +196,7 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	// allowed to omit it; the PKCE code_verifier is the proof of
 	// possession instead.
 	grant := r.PostForm.Get("grant_type")
-	requireSecret := grant == "client_credentials" || (grant == "refresh_token" && m.requireSecretOnRefresh)
+	requireSecret := grant == grantClientCredentials || (grant == "refresh_token" && m.requireSecretOnRefresh)
 	if requireSecret && clientSecret != m.clientSecret {
 		http.Error(w, `{"error":"invalid_client"}`, http.StatusUnauthorized)
 		return
@@ -204,13 +212,13 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	m.mu.Unlock()
 
 	switch grant {
-	case "client_credentials":
+	case grantClientCredentials:
 		// Issue an access token. No refresh in client-credentials.
 		writeToken(w, m.issuedAccessToken, "", m.expiresIn)
-	case "authorization_code":
+	case grantAuthCode:
 		// Validate code (we accept any non-empty code in this mock) and
 		// PKCE verifier (we accept any verifier).
-		if r.PostForm.Get("code") == "" {
+		if r.PostForm.Get(formCode) == "" {
 			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
 			return
 		}
@@ -221,9 +229,34 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeToken(w, m.issuedAccessToken+"_refreshed", "test_refresh_token", m.expiresIn)
+	case grantJWTBearer:
+		m.handleJWTBearer(w, r.PostForm.Get("assertion"))
 	default:
 		http.Error(w, `{"error":"unsupported_grant_type"}`, http.StatusBadRequest)
 	}
+}
+
+// handleJWTBearer redeems an ID-JAG (RFC 7523 + SEP-990): it must be the one
+// the IdP issued, addressed to this authorization server.
+func (m *mockAuthServer) handleJWTBearer(w http.ResponseWriter, assertion string) {
+	if m.idJAG == nil || assertion == "" || assertion != m.idJAG() {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "assertion was not issued by a trusted IdP")
+		return
+	}
+	var claims struct {
+		Aud string `json:"aud"`
+	}
+	parts := strings.Split(assertion, ".")
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || json.Unmarshal(payload, &claims) != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "malformed assertion")
+		return
+	}
+	if claims.Aud != m.authServer.URL {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "ID-JAG audience does not match this authorization server")
+		return
+	}
+	writeToken(w, m.issuedAccessToken, "", m.expiresIn)
 }
 
 func (m *mockAuthServer) handleAuthorize(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +282,7 @@ func (m *mockAuthServer) handleAuthorize(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rq := u.Query()
-	rq.Set("code", "test_auth_code")
+	rq.Set(formCode, "test_auth_code")
 	rq.Set("state", state)
 	if m.advertiseIss || m.sendUnadvertisedIss {
 		iss := m.callbackIss
@@ -277,7 +310,7 @@ func (m *mockAuthServer) handleRegister(w http.ResponseWriter, r *http.Request) 
 	m.mu.Unlock()
 
 	resp := map[string]any{
-		"client_id":                  m.clientID,
+		formClientID:                 m.clientID,
 		"client_secret":              m.clientSecret,
 		"client_id_issued_at":        time.Now().Unix(),
 		"token_endpoint_auth_method": "client_secret_post",
@@ -291,7 +324,7 @@ func writeToken(w http.ResponseWriter, accessToken, refreshToken string, expires
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]any{
 		"access_token": accessToken,
-		"token_type":   "Bearer",
+		"token_type":   tokenTypeBearer,
 		"expires_in":   expiresIn,
 	}
 	if refreshToken != "" {
@@ -352,7 +385,7 @@ func (m *mockAuthServer) issuedSecrets() []string {
 		"test_refresh_token", "test_auth_code", m.clientSecret,
 	}
 	for _, form := range m.tokenRequests {
-		for _, name := range []string{"code_verifier", "code", "client_secret", "refresh_token"} {
+		for _, name := range []string{"code_verifier", formCode, "client_secret", "refresh_token", "assertion"} {
 			if v := form.Get(name); v != "" {
 				secrets = append(secrets, v)
 			}

@@ -135,3 +135,46 @@ func TestBuildOAuthConfig_AllowPrivateNetwork(t *testing.T) {
 		t.Error("AllowPrivateNetwork = false, want true")
 	}
 }
+
+// TestBuildOAuthConfig_Enterprise: --oauth-idp-issuer selects Enterprise
+// Managed Authorization; the IdP client, secret and scopes map through, and
+// --oauth-client-id / --oauth-client-secret name the MCP client.
+func TestBuildOAuthConfig_Enterprise(t *testing.T) {
+	cfg, err := buildOAuthConfigFromArgs(t, "https://mcp.contoso.example/mcp",
+		"--oauth-idp-issuer", "https://login.contoso.example",
+		"--oauth-idp-client-id", "mcp-tui-sso",
+		"--oauth-idp-client-secret", "idp-secret",
+		"--oauth-idp-scopes", "openid email",
+		"--oauth-client-id", "mcp-tui",
+		"--oauth-scopes", "mcp:read")
+	if err != nil {
+		t.Fatalf("BuildOAuthConfig: %v", err)
+	}
+	if cfg.Mode() != oauth.ModeEnterprise {
+		t.Errorf("mode = %s, want enterprise", cfg.Mode())
+	}
+	if cfg.IdPIssuer != "https://login.contoso.example" || cfg.IdPClientID != "mcp-tui-sso" ||
+		cfg.IdPClientSecret != "idp-secret" || strings.Join(cfg.IdPScopes, " ") != "openid email" {
+		t.Errorf("IdP settings not mapped: issuer=%q client=%q secret set=%v scopes=%v",
+			cfg.IdPIssuer, cfg.IdPClientID, cfg.IdPClientSecret != "", cfg.IdPScopes)
+	}
+}
+
+// TestBuildOAuthConfig_EnterpriseRejectsMissingIdPClient fails at flag
+// parsing, not on the first 401.
+func TestBuildOAuthConfig_EnterpriseRejectsMissingIdPClient(t *testing.T) {
+	_, err := buildOAuthConfigFromArgs(t, "https://mcp.contoso.example/mcp",
+		"--oauth-idp-issuer", "https://login.contoso.example", "--oauth-client-id", "mcp-tui")
+	if err == nil || !strings.Contains(err.Error(), "requires IdPClientID") {
+		t.Fatalf("err = %v, want missing IdP client rejection", err)
+	}
+}
+
+// TestBuildOAuthConfig_IdPFlagWithoutIssuer: an IdP flag alone turns OAuth
+// on and is rejected rather than ignored.
+func TestBuildOAuthConfig_IdPFlagWithoutIssuer(t *testing.T) {
+	_, err := buildOAuthConfigFromArgs(t, "https://mcp.contoso.example/mcp", "--oauth-idp-client-id", "mcp-tui-sso")
+	if err == nil || !strings.Contains(err.Error(), "require an IdP issuer") {
+		t.Fatalf("err = %v, want IdP issuer requirement", err)
+	}
+}

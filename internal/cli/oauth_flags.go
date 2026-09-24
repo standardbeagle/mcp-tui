@@ -22,6 +22,11 @@ import (
 //     used. The client identity is resolved in the SDK's order: Client ID
 //     Metadata Document (when the AS supports it), pre-registered client
 //     ID, dynamic registration.
+//   - enterprise managed authorization (SEP-990). Triggered by
+//     --oauth-idp-issuer: OIDC sign-in at the enterprise IdP, token exchange
+//     there for an ID-JAG, JWT bearer grant at the MCP authorization server.
+//     --oauth-client-id/--oauth-client-secret then name the MCP client and
+//     --oauth-issuer the MCP authorization server (else discovered).
 //
 // Endpoints are always discovered (Protected Resource Metadata, then
 // Authorization Server Metadata, then the SDK's /authorize and /token
@@ -33,9 +38,17 @@ import (
 func RegisterOAuthFlags(flags *pflag.FlagSet) {
 	flags.String("oauth-client-id", "", "OAuth client ID (enables OAuth on HTTP transports)")
 	flags.String("oauth-client-secret", "",
-		"OAuth client secret (with --oauth-client-id, switches to client-credentials grant)")
+		"OAuth client secret (with --oauth-client-id, switches to client-credentials grant, "+
+			"except with --oauth-idp-issuer)")
 	flags.String("oauth-issuer", "",
-		"Issuer the pre-registered client belongs to; the flow fails if the discovered authorization server names another")
+		"Issuer the pre-registered client belongs to; the flow fails if the discovered authorization server names another "+
+			"(with --oauth-idp-issuer: the MCP authorization server the ID-JAG is for; default discovered)")
+	flags.String("oauth-idp-issuer", "",
+		"Enterprise IdP issuer URL; selects Enterprise Managed Authorization (SEP-990)")
+	flags.String("oauth-idp-client-id", "", "Client ID registered at the enterprise IdP")
+	flags.String("oauth-idp-client-secret", "", "Client secret at the enterprise IdP (confidential IdP client)")
+	flags.String("oauth-idp-scopes", "",
+		"Comma- or space-separated scopes for the IdP sign-in; must include openid (default: openid)")
 	flags.String("oauth-client-metadata-url", "",
 		"HTTPS URL of a Client ID Metadata Document, used as the client_id when the authorization server "+
 			"supports it (SEP-991)")
@@ -77,6 +90,10 @@ func oauthConfigFromFlags(flags *pflag.FlagSet) (cfg *oauth.Config, enabled bool
 		ClientSecret:              str("oauth-client-secret"),
 		ClientMetadataURL:         str("oauth-client-metadata-url"),
 		Issuer:                    str("oauth-issuer"),
+		IdPIssuer:                 str("oauth-idp-issuer"),
+		IdPClientID:               str("oauth-idp-client-id"),
+		IdPClientSecret:           str("oauth-idp-client-secret"),
+		IdPScopes:                 oauth.ParseScopes(str("oauth-idp-scopes")),
 		AcceptUnadvertisedIss:     boolean("oauth-accept-unadvertised-iss"),
 		AllowPrivateNetwork:       boolean("oauth-allow-private-network"),
 		Scopes:                    oauth.ParseScopes(str("oauth-scopes")),
@@ -89,6 +106,7 @@ func oauthConfigFromFlags(flags *pflag.FlagSet) (cfg *oauth.Config, enabled bool
 		return nil, false, fmt.Errorf("read oauth flags: %w", err)
 	}
 	enabled = cfg.ClientID != "" || cfg.ClientSecret != "" || cfg.ClientMetadataURL != "" || cfg.Issuer != "" ||
-		len(cfg.Scopes) > 0 || cfg.RedirectPort != 0 || cfg.EnableDynamicRegistration || cfg.CachePath != ""
+		len(cfg.Scopes) > 0 || cfg.RedirectPort != 0 || cfg.EnableDynamicRegistration || cfg.CachePath != "" ||
+		cfg.IdPIssuer != "" || cfg.IdPClientID != "" || cfg.IdPClientSecret != "" || len(cfg.IdPScopes) > 0
 	return cfg, enabled, nil
 }

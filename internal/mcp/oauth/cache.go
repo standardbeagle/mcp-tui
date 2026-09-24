@@ -141,12 +141,18 @@ func defaultCacheDir() (string, error) {
 // cacheKey returns a stable identifier for the cache lookup. Combines the
 // MCP server URL with the client identity (client ID, client metadata URL)
 // so re-running mcp-tui against the same server as a different client does
-// not reuse a token that was issued to the wrong client.
+// not reuse a token that was issued to the wrong client. An enterprise
+// token also depends on who signed in where, so the IdP issuer and IdP
+// client join the key (only then, so other modes keep their cached tokens).
 func cacheKey(cfg *Config) string {
 	if cfg == nil {
 		return ""
 	}
-	return cfg.ServerURL + "|" + cfg.ClientID + "|" + cfg.ClientMetadataURL + "|" + cfg.Mode().String()
+	key := cfg.ServerURL + "|" + cfg.ClientID + "|" + cfg.ClientMetadataURL + "|" + cfg.Mode().String()
+	if cfg.IdPIssuer != "" {
+		key += "|" + cfg.IdPIssuer + "|" + cfg.IdPClientID
+	}
+	return key
 }
 
 // path computes the on-disk file path for a key.
