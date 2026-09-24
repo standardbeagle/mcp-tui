@@ -9,6 +9,12 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
+// Composition keywords, named where the walk reports or dispatches on them.
+const (
+	kwAnyOf = "anyOf"
+	kwOneOf = "oneOf"
+)
+
 // defaultBase is the base URI of a schema whose root has no absolute $id.
 // It only anchors relative references; nothing is ever fetched from it.
 var defaultBase = &url.URL{Scheme: "https", Host: "mcp-tui.invalid", Path: "/input-schema.json"}
@@ -78,12 +84,13 @@ func (ix *refIndex) add(s *jsonschema.Schema, parent *url.URL) {
 
 // follow returns the schema s's $ref or $dynamicRef names, or a note on
 // why it does not resolve.
-func (ix *refIndex) follow(s *jsonschema.Schema) (*jsonschema.Schema, string) {
+func (ix *refIndex) follow(s *jsonschema.Schema) (target *jsonschema.Schema, note string) {
 	if s.Ref != "" {
-		target, _, note := ix.resolve(s, s.Ref)
+		target, _, note = ix.resolve(s, s.Ref)
 		return target, note
 	}
-	target, dynamicKey, note := ix.resolve(s, s.DynamicRef)
+	var dynamicKey string
+	target, dynamicKey, note = ix.resolve(s, s.DynamicRef)
 	if target == nil || dynamicKey == "" {
 		return target, note
 	}
@@ -217,9 +224,9 @@ func subschemaList(s *jsonschema.Schema, keyword string) ([]*jsonschema.Schema, 
 	switch keyword {
 	case "allOf":
 		return s.AllOf, true
-	case "anyOf":
+	case kwAnyOf:
 		return s.AnyOf, true
-	case "oneOf":
+	case kwOneOf:
 		return s.OneOf, true
 	case "prefixItems":
 		return s.PrefixItems, true

@@ -542,28 +542,28 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "ℹ️  Argument %q: %s\n", raw.key, p.Note)
 		}
 		var parsedValue interface{}
-		var err error
+		var convErr error
 		if raw.literal {
-			parsedValue, err = jsonLiteralArgument(raw.key, raw.value)
+			parsedValue, convErr = jsonLiteralArgument(raw.key, raw.value)
 		} else {
-			parsedValue, err = coerceToolArgument(inputSchema, raw.key, raw.value)
+			parsedValue, convErr = coerceToolArgument(inputSchema, raw.key, raw.value)
 		}
-		if err != nil {
+		if convErr != nil {
 			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
 			}
-			return err
+			return convErr
 		}
 		toolArgs[raw.key] = parsedValue
 	}
 	// Check the whole schema, including what no key=value argument
 	// expresses (if/then/else, not, patternProperties, nested structure),
 	// before the call goes out.
-	if err := inputSchema.Validate(toolArgs); err != nil {
+	if validateErr := inputSchema.Validate(toolArgs); validateErr != nil {
 		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Arguments do not match the tool's input schema\n")
 		}
-		return fmt.Errorf("tool %q: %w", toolName, err)
+		return fmt.Errorf("tool %q: %w", toolName, validateErr)
 	}
 
 	strictOutput, err := cmd.Flags().GetBool("strict-output")

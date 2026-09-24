@@ -294,8 +294,8 @@ const shipmentSchema = `{"type": "object",
 // fieldNames lists the form's fields, indented by depth.
 func (ts *ToolScreen) fieldNames() []string {
 	names := make([]string, len(ts.fields))
-	for i, f := range ts.fields {
-		names[i] = strings.Repeat(".", f.depth) + f.name
+	for i := range ts.fields {
+		names[i] = strings.Repeat(".", ts.fields[i].depth) + ts.fields[i].name
 	}
 	return names
 }

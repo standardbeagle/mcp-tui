@@ -206,7 +206,7 @@ func TestBuildJUnitReport_PreservesCaseTime(t *testing.T) {
 // A warning is no failure, but CI still sees it in the case's system-out.
 func TestBuildJUnitReport_WarningInSystemOut(t *testing.T) {
 	suite := BuildJUnitReport("mcp-tui.conform", []ScenarioResult{
-		{Name: "verify.list-order", Pass: true, Warn: true, Error: "order changed", Detail: "fix: sort"},
+		{Name: "verify.list-order", Pass: true, Warn: true, Error: orderChanged, Detail: "fix: sort"},
 	})
 	if suite.Failures != 0 || suite.Cases[0].Failure != nil {
 		t.Fatalf("warning counted as failure: %+v", suite)

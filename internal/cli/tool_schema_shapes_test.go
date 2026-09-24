@@ -18,7 +18,7 @@ import (
 // they received, as JSON text.
 func connectEchoServer(t *testing.T, schemas map[string]string) mcp.Service {
 	t.Helper()
-	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "echo", Version: "1.0.0"}, nil)
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "echoer", Version: "1.0.0"}, nil)
 	for name, schema := range schemas {
 		server.AddTool(&officialMCP.Tool{Name: name, InputSchema: json.RawMessage(schema)},
 			func(_ context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
@@ -159,6 +159,9 @@ func TestToolCall_ValidatesArgumentsBeforeSending(t *testing.T) {
 	}
 }
 
+// nullText is the text "null", which key=null sends to a string.
+const nullText = "null"
+
 // key:=<json> sends a JSON literal as is, which is how a nullable string
 // gets null: key=null keeps sending the text "null".
 func TestToolCall_JSONLiteralArgumentSyntax(t *testing.T) {
@@ -179,7 +182,7 @@ func TestToolCall_JSONLiteralArgumentSyntax(t *testing.T) {
 		t.Errorf("sent %#v, want count 5 and two tags", got)
 	}
 
-	if got, _ := echoedArguments(t, svc, "annotate", "note=null"); got["note"] != "null" {
+	if got, _ := echoedArguments(t, svc, "annotate", "note=null"); got["note"] != nullText {
 		t.Errorf(`note=null sent %#v, want the text "null"`, got["note"])
 	}
 	if _, run := echoedArguments(t, svc, "annotate", "note:=not json"); run.err == nil || !strings.Contains(run.err.Error(), "JSON literal") {

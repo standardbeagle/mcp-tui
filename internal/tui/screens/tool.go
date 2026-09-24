@@ -337,22 +337,23 @@ func (ts *ToolScreen) generateCLICommand() string {
 
 	// Add arguments from form fields; an object filled in as a sub-form is
 	// written as the JSON the form builds for it.
-	built, _ := ts.formArguments()
+	// A form that does not convert yet (a half-typed field) has no JSON
+	// for its sub-forms, which are then left out.
+	built, buildErr := ts.formArguments()
 	for _, field := range ts.fields {
 		if field.depth > 0 {
 			continue
 		}
 		if field.expanded {
-			if v, ok := built[field.name]; ok {
-				encoded, err := json.Marshal(v)
-				if err == nil {
-					builder.WriteString(fmt.Sprintf(" %s=\"%s\"", field.name, strings.ReplaceAll(string(encoded), "\"", "\\\"")))
+			if v, ok := built[field.name]; ok && buildErr == nil {
+				if encoded, err := json.Marshal(v); err == nil {
+					fmt.Fprintf(&builder, " %s=%q", field.name, string(encoded))
 				}
 			}
 			continue
 		}
 		if field.sendNull {
-			builder.WriteString(fmt.Sprintf(" %s:=null", field.name))
+			fmt.Fprintf(&builder, " %s:=null", field.name)
 			continue
 		}
 		value := field.input.Value()
@@ -470,7 +471,8 @@ func fieldsFromSchema(schema inputschema.Schema) []toolField {
 // parent (nil for the arguments themselves), depth levels down.
 func fieldsFromParams(params []inputschema.Param, parent []string, depth int) []toolField {
 	fields := make([]toolField, 0, len(params))
-	for _, p := range params {
+	for i := range params {
+		p := &params[i]
 		input := textinput.New()
 		input.CharLimit = 0 // No limit
 		input.Width = 58    // Slightly smaller than the border width
@@ -513,6 +515,9 @@ func fieldsFromParams(params []inputschema.Param, parent []string, depth int) []
 	}
 	return fields
 }
+
+// keyToggleSubForm opens and closes an object field's sub-form.
+const keyToggleSubForm = "ctrl+e"
 
 // toggleSubForm opens the object field at index as a sub-form of its
 // properties, inserted below it, or closes an open one, keeping its fields
@@ -859,7 +864,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Don't pass these to textinput, handle navigation
 		case "ctrl+t":
 			// Task mode toggle, handled below
-		case "ctrl+e":
+		case keyToggleSubForm:
 			if ts.toggleSubForm(ts.cursor) {
 				ts.SetStatus("", StatusInfo)
 			}
@@ -1301,30 +1306,12 @@ func (ts *ToolScreen) buildArguments() (map[string]interface{}, error) {
 // formArguments reads the arguments out of the form or the raw JSON editor.
 func (ts *ToolScreen) formArguments() (map[string]interface{}, error) {
 	if ts.rawJSONMode {
-		args := make(map[string]interface{})
-		rawValue := strings.TrimSpace(ts.rawJSONInput.Value())
-		if rawValue == "" {
-			return args, nil
-		}
-		if err := json.Unmarshal([]byte(rawValue), &args); err != nil {
-			return nil, fmt.Errorf("invalid JSON: %v", err)
-		}
-		return args, nil
+		return ts.rawJSONArguments()
 	}
 
-	// Validate required top-level fields; a sub-form's required fields
-	// matter only when its object is sent, which the schema check judges.
-	// Array fields are allowed to be empty (they are sent as []).
-	for i := range ts.fields {
-		field := &ts.fields[i]
-		if field.depth > 0 || field.expanded {
-			continue
-		}
-		if field.required && !field.sendNull && field.input.Value() == "" && field.fieldType != inputschema.KindArray {
-			return nil, fmt.Errorf("required field '%s' is empty", field.name)
-		}
+	if err := ts.checkRequiredFields(); err != nil {
+		return nil, err
 	}
-
 	args := make(map[string]interface{})
 	for i := range ts.fields {
 		field := &ts.fields[i]
@@ -1359,6 +1346,35 @@ func (ts *ToolScreen) formArguments() (map[string]interface{}, error) {
 	return args, nil
 }
 
+// rawJSONArguments parses the raw JSON editor; empty means no arguments.
+func (ts *ToolScreen) rawJSONArguments() (map[string]interface{}, error) {
+	args := make(map[string]interface{})
+	rawValue := strings.TrimSpace(ts.rawJSONInput.Value())
+	if rawValue == "" {
+		return args, nil
+	}
+	if err := json.Unmarshal([]byte(rawValue), &args); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %v", err)
+	}
+	return args, nil
+}
+
+// checkRequiredFields reports the first empty required top-level field. A
+// sub-form's required fields matter only when its object is sent, which
+// the schema check judges. Array fields may be empty (they are sent as []).
+func (ts *ToolScreen) checkRequiredFields() error {
+	for i := range ts.fields {
+		field := &ts.fields[i]
+		if field.depth > 0 || field.expanded {
+			continue
+		}
+		if field.required && !field.sendNull && field.input.Value() == "" && field.fieldType != inputschema.KindArray {
+			return fmt.Errorf("required field '%s' is empty", field.name)
+		}
+	}
+	return nil
+}
+
 // jsonNullLiteral is what a user types to send null.
 const jsonNullLiteral = "null"
 
@@ -1370,7 +1386,7 @@ func (f *toolField) isNullLiteral(value string) bool {
 
 // unionKind is the type of a KindUnion field that value's syntax picks.
 func (f *toolField) unionKind(value string) (inputschema.Kind, error) {
-	return inputschema.Param{Name: f.name, Union: f.union}.UnionKind(value)
+	return (&inputschema.Param{Name: f.name, Union: f.union}).UnionKind(value)
 }
 
 // convert parses a non-empty field value as the field's type.
@@ -1609,7 +1625,7 @@ func (ts *ToolScreen) renderHeader() string {
 			// Always show field type for clarity
 			typeIndicator := string(field.fieldType)
 			if field.fieldType == inputschema.KindUnion {
-				typeIndicator = inputschema.Param{Union: field.union}.UnionLabel()
+				typeIndicator = (&inputschema.Param{Union: field.union}).UnionLabel()
 				if field.inferredKind != "" {
 					typeIndicator += " → " + string(field.inferredKind)
 				}

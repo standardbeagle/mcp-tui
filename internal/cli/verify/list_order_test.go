@@ -43,9 +43,8 @@ func listOrderServer(t *testing.T, reorder bool) (url string, lists *atomic.Int3
 			n := int(lists.Add(1))
 			if reorder {
 				list := res.(*officialMCP.ListToolsResult)
-				tools := slices.Clone(list.Tools)
-				k := n % len(tools)
-				list.Tools = append(tools[k:], tools[:k]...)
+				k := n % len(list.Tools)
+				list.Tools = slices.Concat(list.Tools[k:], list.Tools[:k])
 			}
 			return res, err
 		}

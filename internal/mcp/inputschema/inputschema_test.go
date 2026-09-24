@@ -389,6 +389,9 @@ func TestParse_RootAlternatives(t *testing.T) {
 	}
 }
 
+// zipField is the nested property the validation and sub-form tests use.
+const zipField = "zip"
+
 // Keywords no form expresses (if/then/else, not, patternProperties) are
 // enforced by validating the arguments against the whole schema.
 func TestSchema_ValidateEnforcesTheWholeSchema(t *testing.T) {
@@ -414,7 +417,7 @@ func TestSchema_ValidateEnforcesTheWholeSchema(t *testing.T) {
 		"then":              {"mode": "file"},
 		"not":               {"forbidden": true},
 		"patternProperties": {"x-retries": "three"},
-		"zip":               {"address": map[string]any{"zip": 12345}},
+		zipField:            {"address": map[string]any{zipField: 12345}},
 	} {
 		if err := s.Validate(args); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("%v: error = %v, want one mentioning %q", args, err, name)
@@ -449,7 +452,7 @@ func TestParse_NestedObjectProperties(t *testing.T) {
 	shipTo, _ := s.Param("ship_to")
 	want := []Param{
 		{Name: "street", Kind: KindString},
-		{Name: "zip", Kind: KindString, Required: true, Description: "Postal code"},
+		{Name: zipField, Kind: KindString, Required: true, Description: "Postal code"},
 	}
 	if !shipTo.Nullable || !reflect.DeepEqual(shipTo.Properties, want) {
 		t.Errorf("ship_to = %+v, want a nullable object with properties %+v", shipTo, want)

@@ -56,8 +56,8 @@ const (
 var unionOrder = []Kind{KindBoolean, KindInteger, KindNumber, KindArray, KindObject, KindString}
 
 var (
-	integerLiteral = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
-	numberLiteral  = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
+	integerLiteral = regexp.MustCompile(`^-?(0|[1-9]\d*)$`)
+	numberLiteral  = regexp.MustCompile(`^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$`)
 )
 
 // Dialect2020 is the JSON Schema dialect MCP assumes when $schema is absent.
@@ -142,7 +142,7 @@ func (s Schema) Validate(args map[string]any) error {
 // syntax strictly fits, trying boolean, integer, number, array, object and
 // string in that order. Strict means a JSON literal: "0123" is not an
 // integer, so an integer|string parameter keeps it as text.
-func (p Param) UnionKind(value string) (Kind, error) {
+func (p *Param) UnionKind(value string) (Kind, error) {
 	trimmed := strings.TrimSpace(value)
 	for _, kind := range p.Union {
 		switch kind {
@@ -171,7 +171,7 @@ func (p Param) UnionKind(value string) (Kind, error) {
 }
 
 // UnionLabel renders a union's alternatives, e.g. "integer|string".
-func (p Param) UnionLabel() string {
+func (p *Param) UnionLabel() string {
 	names := make([]string, len(p.Union))
 	for i, k := range p.Union {
 		names[i] = string(k)
@@ -257,7 +257,7 @@ func rootAlternativesNote(w walker, root *jsonschema.Schema) string {
 	for _, kw := range []struct {
 		name     string
 		branches []*jsonschema.Schema
-	}{{"anyOf", root.AnyOf}, {"oneOf", root.OneOf}} {
+	}{{kwAnyOf, root.AnyOf}, {kwOneOf, root.OneOf}} {
 		for _, b := range kw.branches {
 			branch, note := w.effective(b)
 			if branch == nil {
@@ -292,6 +292,21 @@ func (w walker) param(prop *jsonschema.Schema, depth int) Param {
 		p.Description = target.Description
 	}
 
+	w.setKind(&p, target)
+	if p.Kind == KindArray {
+		p.ItemKind = w.itemKind(target)
+	}
+	if p.Kind == KindObject && depth < maxFormDepth {
+		if object := w.objectBranch(target); object != nil && len(object.Properties) > 0 {
+			p.Properties = w.params(object, depth+1)
+		}
+	}
+	return p
+}
+
+// setKind sets p's Kind, Nullable, Union and Note from the types target
+// admits.
+func (w walker) setKind(p *Param, target *jsonschema.Schema) {
 	types, note := w.types(target)
 	var concrete []string
 	for _, t := range types {
@@ -318,15 +333,6 @@ func (w walker) param(prop *jsonschema.Schema, depth int) Param {
 			}
 		}
 	}
-	if p.Kind == KindArray {
-		p.ItemKind = w.itemKind(target)
-	}
-	if p.Kind == KindObject && depth < maxFormDepth {
-		if object := w.objectBranch(target); object != nil && len(object.Properties) > 0 {
-			p.Properties = w.params(object, depth+1)
-		}
-	}
-	return p
 }
 
 // objectBranch is s itself when it declares properties, else the object
@@ -412,29 +418,28 @@ func (w walker) types(s *jsonschema.Schema) (types []string, note string) {
 // Branches that disagree (a property defined twice, disjoint types, two
 // enums) are not merged; the note names the conflict. Keywords that only
 // constrain values (minimum, pattern, ...) are left to validation.
-func (w walker) effective(s *jsonschema.Schema) (*jsonschema.Schema, string) {
+func (w walker) effective(s *jsonschema.Schema) (target *jsonschema.Schema, note string) {
 	return w.effectiveAt(s, 0)
 }
 
-func (w walker) effectiveAt(s *jsonschema.Schema, depth int) (*jsonschema.Schema, string) {
-	s, note := w.deref(s)
-	if s == nil || len(s.AllOf) == 0 {
-		return s, note
+func (w walker) effectiveAt(s *jsonschema.Schema, depth int) (target *jsonschema.Schema, note string) {
+	if target, note = w.deref(s); target == nil || len(target.AllOf) == 0 {
+		return target, note
 	}
 	if depth == maxRefHops {
 		return nil, fmt.Sprintf("allOf nested deeper than %d (cycle?)", maxRefHops)
 	}
-	merged := *s
+	merged := *target
 	merged.AllOf = nil
-	merged.Properties = maps.Clone(s.Properties)
-	merged.Required = slices.Clone(s.Required)
-	for _, b := range s.AllOf {
-		branch, note := w.effectiveAt(b, depth+1)
+	merged.Properties = maps.Clone(target.Properties)
+	merged.Required = slices.Clone(target.Required)
+	for _, b := range target.AllOf {
+		branch, branchNote := w.effectiveAt(b, depth+1)
 		if branch == nil {
-			return nil, note
+			return nil, branchNote
 		}
-		if note := mergeAllOfBranch(&merged, branch); note != "" {
-			return nil, note
+		if conflict := mergeAllOfBranch(&merged, branch); conflict != "" {
+			return nil, conflict
 		}
 	}
 	return &merged, ""
@@ -442,34 +447,16 @@ func (w walker) effectiveAt(s *jsonschema.Schema, depth int) (*jsonschema.Schema
 
 // mergeAllOfBranch merges one allOf branch into dst, or says why it cannot.
 func mergeAllOfBranch(dst, b *jsonschema.Schema) string {
-	if types := typeSet(b); len(types) > 0 {
-		if have := typeSet(dst); len(have) > 0 {
-			types = slices.DeleteFunc(types, func(t string) bool { return !slices.Contains(have, t) })
-			if len(types) == 0 {
-				return "allOf branches share no type"
-			}
-		}
-		dst.Type, dst.Types = "", nil
-		if len(types) == 1 {
-			dst.Type = types[0]
-		} else {
-			dst.Types = types
-		}
+	if conflict := mergeAllOfTypes(dst, b); conflict != "" {
+		return conflict
 	}
-	for name, prop := range b.Properties {
-		if have, ok := dst.Properties[name]; ok && have != prop {
-			return fmt.Sprintf("allOf branches both define property %q", name)
-		}
-		if dst.Properties == nil {
-			dst.Properties = map[string]*jsonschema.Schema{}
-		}
-		dst.Properties[name] = prop
+	if conflict := mergeAllOfProperties(dst, b); conflict != "" {
+		return conflict
 	}
-	dst.Required = append(dst.Required, b.Required...)
 	for _, kw := range []struct {
 		name     string
 		dst, src *[]*jsonschema.Schema
-	}{{"anyOf", &dst.AnyOf, &b.AnyOf}, {"oneOf", &dst.OneOf, &b.OneOf}} {
+	}{{kwAnyOf, &dst.AnyOf, &b.AnyOf}, {kwOneOf, &dst.OneOf, &b.OneOf}} {
 		if len(*kw.src) > 0 {
 			if len(*kw.dst) > 0 {
 				return "allOf branches both set " + kw.name
@@ -492,6 +479,42 @@ func mergeAllOfBranch(dst, b *jsonschema.Schema) string {
 	if dst.Description == "" {
 		dst.Description = b.Description
 	}
+	return ""
+}
+
+// mergeAllOfTypes intersects b's types into dst's.
+func mergeAllOfTypes(dst, b *jsonschema.Schema) string {
+	types := typeSet(b)
+	if len(types) == 0 {
+		return ""
+	}
+	if have := typeSet(dst); len(have) > 0 {
+		types = slices.DeleteFunc(types, func(t string) bool { return !slices.Contains(have, t) })
+		if len(types) == 0 {
+			return "allOf branches share no type"
+		}
+	}
+	dst.Type, dst.Types = "", nil
+	if len(types) == 1 {
+		dst.Type = types[0]
+	} else {
+		dst.Types = types
+	}
+	return ""
+}
+
+// mergeAllOfProperties joins b's properties and required list into dst's.
+func mergeAllOfProperties(dst, b *jsonschema.Schema) string {
+	for name, prop := range b.Properties {
+		if have, ok := dst.Properties[name]; ok && have != prop {
+			return fmt.Sprintf("allOf branches both define property %q", name)
+		}
+		if dst.Properties == nil {
+			dst.Properties = map[string]*jsonschema.Schema{}
+		}
+		dst.Properties[name] = prop
+	}
+	dst.Required = append(dst.Required, b.Required...)
 	return ""
 }
 

@@ -160,8 +160,7 @@ func (instantCallService) CallTool(context.Context, imcp.CallToolRequest) (*imcp
 // command running the call used to sleep out a 500ms minimum display time,
 // holding a goroutine and delaying the result for nothing.
 func TestToolExecutionDeliversAFastResultAtOnce(t *testing.T) {
-	ts := NewToolScreen(imcp.Tool{Name: "fast-tool", InputSchema: map[string]interface{}{"type": "object"}},
-		instantCallService{})
+	ts := NewToolScreen(imcp.Tool{Name: "fast-tool"}, instantCallService{})
 
 	batch, ok := ts.executeTool()().(tea.BatchMsg)
 	if !ok {

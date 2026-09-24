@@ -348,6 +348,9 @@ func TestCountResults(t *testing.T) {
 	}
 }
 
+// orderChanged is a warning's text in the warn-outcome tests.
+const orderChanged = "order changed"
+
 // A SHOULD-level probe finding stays a pass for the exit code but keeps its
 // warning and fix, so conform shows it as WARN rather than hiding it.
 func TestScenarioFromProbe(t *testing.T) {
@@ -357,8 +360,8 @@ func TestScenarioFromProbe(t *testing.T) {
 	}{
 		{verify.ProbeResult{Pass: true}, ScenarioResult{Pass: true}},
 		{verify.ProbeResult{Pass: false, Error: "boom", Fix: "mend"}, ScenarioResult{Error: "boom", Detail: "fix: mend"}},
-		{verify.ProbeResult{Pass: true, Warn: true, Error: "order changed", Fix: "sort"},
-			ScenarioResult{Pass: true, Warn: true, Error: "order changed", Detail: "fix: sort"}},
+		{verify.ProbeResult{Pass: true, Warn: true, Error: orderChanged, Fix: "sort"},
+			ScenarioResult{Pass: true, Warn: true, Error: orderChanged, Detail: "fix: sort"}},
 	}
 	for _, c := range cases {
 		if got := scenarioFromProbe(c.probe); got != c.want {
