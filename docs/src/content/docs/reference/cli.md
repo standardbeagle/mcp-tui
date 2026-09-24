@@ -50,8 +50,8 @@ See [Client features](/mcp-tui/guides/client-features/).
 | `--sampling-stub <text>` | Auto-reply text for `sampling/createMessage` requests. Sampling is deprecated as of `2026-07-28` (SEP-2577). |
 | `--sampling-stub-file <path>` | JSON reply template for `sampling/createMessage` (can override role/model/stopReason). Sampling is deprecated (SEP-2577). |
 | `--sampling-tool-use <tool:json>` | Auto-reply with a `tool_use` block of the form `<tool_name>:<json args>`. Sampling is deprecated (SEP-2577). |
-| `--elicit-stub <json>` | Auto-reply JSON for `elicitation/create` requests |
-| `--elicit-stub-file <path>` | JSON reply file for `elicitation/create` |
+| `--elicit-stub <json>` | Auto-reply JSON for `elicitation/create` requests. Form mode: the object is the content. URL mode: `{"_action":"accept"}`, `"decline"` or `"cancel"`; the URL, its host and the reply are printed to stderr, and the URL is never opened. |
+| `--elicit-stub-file <path>` | JSON reply file for `elicitation/create`, same shapes as `--elicit-stub` |
 | `--root <name=path>` | Declare a root the server may access (repeatable). Roots are deprecated as of `2026-07-28` (SEP-2577); servers then ask for them via multi round-trip requests, and edits send no `roots/list_changed`. |
 | `--roots-file <path>` | JSON file with a `roots` array of `{name, uri}` entries. Roots are deprecated (SEP-2577). |
 | `--watch-notifications` | Stream server-to-client notifications to stderr |

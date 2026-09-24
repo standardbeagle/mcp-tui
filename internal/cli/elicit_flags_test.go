@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )
 
@@ -106,5 +109,32 @@ func TestSetupService_NoElicitFlags_NoError(t *testing.T) {
 	cmd := newCmdWithElicitFlags()
 	if err := c.setupService(cmd, true); err != nil {
 		t.Fatalf("setupService: %v", err)
+	}
+}
+
+// TestElicitStubHandler_AnnouncesURLElicitation: the stub built from
+// --elicit-stub answers a URL-mode request and tells the user which URL the
+// server wants opened, since nobody sees the request otherwise.
+func TestElicitStubHandler_AnnouncesURLElicitation(t *testing.T) {
+	cmd := newCmdWithElicitFlags()
+	if err := cmd.Root().PersistentFlags().Set("elicit-stub", `{"_action":"decline"}`); err != nil {
+		t.Fatalf("set flag: %v", err)
+	}
+	var stderr bytes.Buffer
+	handler, err := elicitStubHandler(cmd, &stderr)
+	if err != nil {
+		t.Fatalf("elicitStubHandler: %v", err)
+	}
+	res, err := handler.HandleElicit(context.Background(), &officialMCP.ElicitRequest{Params: &officialMCP.ElicitParams{
+		Mode: "url", Message: "Authorize GitHub access", URL: "https://github.com/login/device",
+	}})
+	if err != nil {
+		t.Fatalf("HandleElicit: %v", err)
+	}
+	if res.Action != "decline" {
+		t.Errorf("action = %q, want decline", res.Action)
+	}
+	if !strings.Contains(stderr.String(), "https://github.com/login/device") {
+		t.Errorf("stderr lacks the URL:\n%s", stderr.String())
 	}
 }

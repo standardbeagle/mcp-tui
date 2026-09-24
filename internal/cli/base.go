@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -431,28 +432,42 @@ func (c *BaseCommand) configureSamplingHandler(cmd *cobra.Command) error {
 // the command and registers the corresponding handler on the service. The
 // two flags are mutually exclusive; setting both is a usage error.
 func (c *BaseCommand) configureElicitationHandler(cmd *cobra.Command) error {
+	handler, err := elicitStubHandler(cmd, os.Stderr)
+	if err != nil || handler == nil {
+		return err
+	}
+	c.service.SetElicitationHandler(handler)
+	return nil
+}
+
+// elicitStubHandler builds the handler --elicit-stub / --elicit-stub-file
+// describe, or nil when neither is set. URL-mode requests it answers are
+// announced on stderr (elicitation.AnnounceURL): the stub replies without
+// anyone seeing the request, and the user still has to open the URL.
+func elicitStubHandler(cmd *cobra.Command, stderr io.Writer) (elicitation.Handler, error) {
 	stubJSON, _ := cmd.Flags().GetString("elicit-stub")
 	stubFile, _ := cmd.Flags().GetString("elicit-stub-file")
 
 	if stubJSON != "" && stubFile != "" {
-		return fmt.Errorf("--elicit-stub and --elicit-stub-file are mutually exclusive")
+		return nil, fmt.Errorf("--elicit-stub and --elicit-stub-file are mutually exclusive")
 	}
 
+	var (
+		handler elicitation.Handler
+		err     error
+	)
 	switch {
 	case stubJSON != "":
-		handler, err := elicitation.NewJSONStubHandler(stubJSON)
-		if err != nil {
-			return err
-		}
-		c.service.SetElicitationHandler(handler)
+		handler, err = elicitation.NewJSONStubHandler(stubJSON)
 	case stubFile != "":
-		handler, err := elicitation.NewFileStubHandler(stubFile)
-		if err != nil {
-			return err
-		}
-		c.service.SetElicitationHandler(handler)
+		handler, err = elicitation.NewFileStubHandler(stubFile)
+	default:
+		return nil, nil
 	}
-	return nil
+	if err != nil {
+		return nil, err
+	}
+	return elicitation.AnnounceURL(stderr, handler), nil
 }
 
 // connectToServer establishes connection to the MCP server. The debugMode

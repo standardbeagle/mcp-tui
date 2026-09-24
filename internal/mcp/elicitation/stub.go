@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -137,4 +138,28 @@ func NewFileStubHandler(path string) (Handler, error) {
 	return HandlerFunc(func(_ context.Context, _ *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
 		return &officialMCP.ElicitResult{Action: action, Content: content}, nil
 	}), nil
+}
+
+// AnnounceURL wraps next so every URL-mode elicitation is shown on w before
+// next answers it: the URL notice (URLNotice) and the action next replied
+// with. The CLI stub answers without a person looking, so this is where the
+// user learns which URL the server wants opened. Form-mode requests pass
+// through unannounced.
+func AnnounceURL(w io.Writer, next Handler) Handler {
+	return HandlerFunc(func(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
+		res, err := next.HandleElicit(ctx, req)
+		if req.Params == nil || req.Params.Mode != "url" {
+			return res, err
+		}
+		reply := "failed"
+		if err == nil && res != nil {
+			reply = res.Action
+		}
+		if _, werr := fmt.Fprintf(w,
+			"URL elicitation from server:\n%s\nStub replied %s; open the URL in a browser yourself, mcp-tui never opens it.\n",
+			URLNotice(req.Params.Message, req.Params.URL), reply); werr != nil {
+			return nil, fmt.Errorf("announce URL elicitation: %w", werr)
+		}
+		return res, err
+	})
 }
