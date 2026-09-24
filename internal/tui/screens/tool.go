@@ -1448,6 +1448,13 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 	footerH := lipgloss.Height(footer)
 	availableHeight := ts.computeResultDisplayHeight(headerH, footerH)
 
+	// The round trace sits under the result body; shrink the body so the
+	// trace stays on screen.
+	roundTrace := renderRoundTrace(ts.result.Rounds)
+	if roundTrace != "" {
+		availableHeight = max(resultMinHeight, availableHeight-lipgloss.Height(roundTrace)-1)
+	}
+
 	termWidth := ts.Width()
 	if termWidth == 0 {
 		termWidth = defaultTermWidth
@@ -1546,6 +1553,10 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 		}
 	}
 	builder.WriteString("\n")
+	if roundTrace != "" {
+		builder.WriteString(roundTrace)
+		builder.WriteString("\n")
+	}
 
 	return builder.String()
 }

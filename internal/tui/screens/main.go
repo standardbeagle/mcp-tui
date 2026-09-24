@@ -89,6 +89,7 @@ type MainScreen struct {
 	selectedResource   *mcp.Resource
 	selectedPrompt     *mcp.Prompt
 	resourceContent    []mcp.ResourceContents
+	resourceRounds     []mcp.RoundSummary
 	promptResult       *mcp.GetPromptResult
 	resourceLoading    bool
 	promptLoading      bool
@@ -576,6 +577,7 @@ func (ms *MainScreen) handleResourceContentLoaded(msg ResourceContentLoadedMsg) 
 	} else {
 		ms.selectedResource = msg.Resource
 		ms.resourceContent = msg.Content.Contents
+		ms.resourceRounds = msg.Content.Rounds
 		ms.resourceViewerOpen = true
 	}
 	return ms, nil
@@ -729,6 +731,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ms.resourceViewerOpen = false
 			ms.selectedResource = nil
 			ms.resourceContent = nil
+			ms.resourceRounds = nil
 			return ms, nil
 		}
 		if ms.promptViewerOpen {
@@ -2545,6 +2548,12 @@ func (ms *MainScreen) renderResourceViewer() string {
 		}
 	}
 
+	if trace := renderRoundTrace(ms.resourceRounds); trace != "" {
+		builder.WriteString("\n")
+		builder.WriteString(trace)
+		builder.WriteString("\n")
+	}
+
 	// Instructions
 	builder.WriteString("\n")
 	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
@@ -2633,6 +2642,12 @@ func (ms *MainScreen) renderPromptViewer() string {
 					}
 				}
 			}
+		}
+
+		if trace := renderRoundTrace(ms.promptResult.Rounds); trace != "" {
+			builder.WriteString("\n")
+			builder.WriteString(trace)
+			builder.WriteString("\n")
 		}
 	}
 
