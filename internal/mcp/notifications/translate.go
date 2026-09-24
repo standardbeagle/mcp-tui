@@ -19,7 +19,7 @@ const previewMaxLen = 80
 // message), generate a one-line Preview, and stash the raw params under Raw
 // so the user can copy the full JSON if needed.
 //
-// Returns ("", false) for any method that is not one of the seven captured
+// Returns ("", false) for any method that is not one of the captured
 // notification types — the middleware should drop those silently to avoid
 // polluting the stream with request/response traffic.
 func FromRequest(method string, req officialMCP.Request, now time.Time) (Entry, bool) {
@@ -38,6 +38,17 @@ func FromRequest(method string, req officialMCP.Request, now time.Time) (Entry, 
 		e.Level, e.Preview = describeParams(t, params)
 	}
 	return e, true
+}
+
+// FromTaskStatus builds the Entry for a task status notification. The SDK
+// does not model these, so the caller, which decoded the task, supplies its
+// fields; raw is the notification's params.
+func FromTaskStatus(method, taskID, status, statusMessage string, raw any, now time.Time) Entry {
+	preview := status + " " + taskID
+	if statusMessage != "" {
+		preview += ": " + statusMessage
+	}
+	return Entry{Time: now, Type: TypeTaskStatus, Method: method, Preview: truncate(preview, previewMaxLen), Raw: raw}
 }
 
 // describeParams returns (level, preview) for the given typed params. The

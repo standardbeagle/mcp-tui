@@ -23,6 +23,8 @@ func TestFromMethod(t *testing.T) {
 		{"notifications/tools/list_changed", TypeToolsListChanged, true},
 		{"notifications/prompts/list_changed", TypePromptsListChanged, true},
 		{"notifications/cancelled", TypeCancelled, true},
+		{"notifications/tasks", TypeTaskStatus, true},
+		{"notifications/tasks/status", TypeTaskStatus, true},
 		{"tools/list", "", false},
 		{"", "", false},
 		{"notifications/unknown", "", false},
@@ -36,17 +38,17 @@ func TestFromMethod(t *testing.T) {
 }
 
 // TestAllTypes_LengthAndContents acts as a guard against accidental
-// reordering — the digit keybindings (1-7) depend on AllTypes returning
-// exactly the seven canonical types in display order.
+// reordering — the digit keybindings (1-8) depend on AllTypes returning
+// exactly the eight canonical types in display order.
 func TestAllTypes_LengthAndContents(t *testing.T) {
 	got := AllTypes()
-	if len(got) != 7 {
-		t.Fatalf("AllTypes len = %d; want 7", len(got))
+	if len(got) != 8 {
+		t.Fatalf("AllTypes len = %d; want 8", len(got))
 	}
 	want := []Type{
 		TypeMessage, TypeProgress, TypeResourcesUpdated,
 		TypeResourcesListChanged, TypeToolsListChanged,
-		TypePromptsListChanged, TypeCancelled,
+		TypePromptsListChanged, TypeCancelled, TypeTaskStatus,
 	}
 	for i, w := range want {
 		if got[i] != w {

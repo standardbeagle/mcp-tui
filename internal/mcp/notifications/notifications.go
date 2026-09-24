@@ -1,5 +1,6 @@
-// Package notifications captures and renders the seven server-to-client
-// notifications defined by the MCP spec:
+// Package notifications captures and renders the server-to-client
+// notifications defined by the MCP spec, plus the task status notification
+// of MCP tasks:
 //
 //   - notifications/message               (logging, has level)
 //   - notifications/progress              (progressToken, progress, total)
@@ -8,6 +9,8 @@
 //   - notifications/tools/list_changed
 //   - notifications/prompts/list_changed
 //   - notifications/cancelled             (requestId, reason)
+//   - notifications/tasks                 (2026-07-28 tasks extension)
+//     and notifications/tasks/status      (2025-11-25 experimental tasks)
 //
 // The Stream is a thread-safe ring buffer of Entries. Capture happens via the
 // receiving middleware installed on the SDK Client (see service.go) so we see
@@ -26,7 +29,7 @@ import (
 	"time"
 )
 
-// Type is the canonical short name for one of the seven notification kinds.
+// Type is the canonical short name for one of the eight notification kinds.
 // Stored as a string so it round-trips through JSON cleanly and lets filter
 // flags be expressed as "message,progress" CSV.
 type Type string
@@ -43,9 +46,13 @@ const (
 	TypeToolsListChanged     Type = "tools/listChanged"
 	TypePromptsListChanged   Type = "prompts/listChanged"
 	TypeCancelled            Type = "cancelled"
+	// TypeTaskStatus covers both task status notifications: the tasks
+	// extension's notifications/tasks and 2025-11-25's
+	// notifications/tasks/status.
+	TypeTaskStatus Type = "tasks/status"
 )
 
-// AllTypes returns the seven canonical notification types in display order.
+// AllTypes returns the eight canonical notification types in display order.
 // Useful for filter UI rendering and tests that want to enumerate the set.
 func AllTypes() []Type {
 	return []Type{
@@ -56,6 +63,7 @@ func AllTypes() []Type {
 		TypeToolsListChanged,
 		TypePromptsListChanged,
 		TypeCancelled,
+		TypeTaskStatus,
 	}
 }
 
@@ -80,6 +88,8 @@ func FromMethod(method string) (Type, bool) {
 		return TypePromptsListChanged, true
 	case "notifications/cancelled":
 		return TypeCancelled, true
+	case "notifications/tasks", "notifications/tasks/status":
+		return TypeTaskStatus, true
 	}
 	return "", false
 }

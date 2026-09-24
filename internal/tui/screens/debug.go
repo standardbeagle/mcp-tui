@@ -69,7 +69,7 @@ type DebugScreen struct {
 	notificationsProvider func() *notifications.Stream
 
 	// notificationFilter is applied to the snapshot at render time. Mutated
-	// in place by the toggle keybindings (1-7 toggle a type, 0 clears the
+	// in place by the toggle keybindings (1-8 toggle a type, 0 clears the
 	// type set, +/- adjust the level threshold). Stored on the screen so
 	// the filter survives across refreshes.
 	notificationFilter notifications.Filter
@@ -311,10 +311,10 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ds, nil
 
-	case "1", "2", "3", "4", "5", "6", "7":
+	case "1", "2", "3", "4", "5", "6", "7", "8":
 		// Toggle a single notification type filter. The digit corresponds
 		// to the index in notifications.AllTypes(): 1=message, 2=progress,
-		// ..., 7=cancelled. Pressing the same digit twice removes the
+		// ..., 7=cancelled, 8=tasks/status. Pressing the same digit twice removes the
 		// filter again (toggle semantics).
 		if ds.activeTab == tabNotifications {
 			idx := int(msg.String()[0] - '1')

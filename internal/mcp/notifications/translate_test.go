@@ -203,3 +203,23 @@ func TestTruncate(t *testing.T) {
 		t.Errorf("truncate tiny len = %d; want 2", len(got))
 	}
 }
+
+// A task status notification previews the status, the task and its
+// message, and keeps the full params.
+func TestFromTaskStatus(t *testing.T) {
+	now := time.Date(2026, 7, 28, 10, 50, 0, 0, time.UTC)
+	raw := map[string]any{"taskId": "786512e2", "status": "input_required"}
+	e := FromTaskStatus("notifications/tasks", "786512e2", "input_required", "Please enter your name.", raw, now)
+	if e.Type != TypeTaskStatus || e.Method != "notifications/tasks" || !e.Time.Equal(now) {
+		t.Errorf("entry = %+v", e)
+	}
+	if e.Preview != "input_required 786512e2: Please enter your name." {
+		t.Errorf("preview = %q", e.Preview)
+	}
+	if e.Raw == nil {
+		t.Error("raw params dropped")
+	}
+	if got := FromTaskStatus("notifications/tasks/status", "786512e2", "working", "", raw, now).Preview; got != "working 786512e2" {
+		t.Errorf("preview without a message = %q", got)
+	}
+}
