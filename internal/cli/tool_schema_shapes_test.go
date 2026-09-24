@@ -158,3 +158,31 @@ func TestToolCall_ValidatesArgumentsBeforeSending(t *testing.T) {
 		}
 	}
 }
+
+// key:=<json> sends a JSON literal as is, which is how a nullable string
+// gets null: key=null keeps sending the text "null".
+func TestToolCall_JSONLiteralArgumentSyntax(t *testing.T) {
+	svc := connectEchoServer(t, map[string]string{"annotate": `{"type": "object", "properties": {
+		"note": {"type": ["string", "null"]},
+		"count": {"type": "integer"},
+		"tags": {"type": "array", "items": {"type": "string"}}
+	}}`})
+
+	got, run := echoedArguments(t, svc, "annotate", "note:=null", "count:=5", `tags:=["a","b"]`)
+	if run.err != nil {
+		t.Fatalf("tool call: %v\n%s", run.err, run.stderr)
+	}
+	if v, ok := got["note"]; !ok || v != nil {
+		t.Errorf("note:=null sent %#v (present %v), want null", v, ok)
+	}
+	if got["count"] != float64(5) || len(got["tags"].([]any)) != 2 {
+		t.Errorf("sent %#v, want count 5 and two tags", got)
+	}
+
+	if got, _ := echoedArguments(t, svc, "annotate", "note=null"); got["note"] != "null" {
+		t.Errorf(`note=null sent %#v, want the text "null"`, got["note"])
+	}
+	if _, run := echoedArguments(t, svc, "annotate", "note:=not json"); run.err == nil || !strings.Contains(run.err.Error(), "JSON literal") {
+		t.Errorf("note:=not json error = %v, want a JSON literal error", run.err)
+	}
+}

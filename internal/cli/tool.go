@@ -125,6 +125,13 @@ func (tc *ToolCommand) createCallCommand() *cobra.Command {
 Arguments should be provided as key=value pairs.
 Example: tool call myTool name=John age=30
 
+key=value converts value to the type the tool's input schema declares
+(for a property of several types, the first its syntax fits: boolean,
+integer, number, array, object, string). key:=<json> sends a JSON literal
+as is, e.g. note:=null for a nullable string (note=null sends the text
+"null"). The arguments are checked against the whole input schema before
+the call; a call that breaks it is refused.
+
 When the target tool advertises destructiveHint=true the CLI will warn and
 prompt for confirmation on a TTY; pass --no-confirm to skip the prompt
 (useful for scripts and CI). Non-TTY callers without --no-confirm refuse
@@ -443,9 +450,13 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "🛠️  Preparing to call tool '%s'...\n", toolName)
 	}
 
-	// Split the key=value pairs. Type conversion is deferred until the tool's
-	// input schema is known, below.
-	type rawArg struct{ key, value string }
+	// Split the key=value and key:=<json> pairs. Type conversion is deferred
+	// until the tool's input schema is known, below.
+	type rawArg struct {
+		key, value string
+		// literal: key:=<json>, sent as the JSON value it spells.
+		literal bool
+	}
 	rawArgs := make([]rawArg, 0, len(args)-1)
 
 	if len(args) > 1 && tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -460,7 +471,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("invalid argument format: %s (expected key=value)", arg)
 		}
 
-		key := parts[0]
+		key, literal := strings.CutSuffix(parts[0], ":")
 		value := parts[1]
 
 		// Validate argument for security
@@ -471,7 +482,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("argument validation failed: %w", err)
 		}
 
-		rawArgs = append(rawArgs, rawArg{key: key, value: value})
+		rawArgs = append(rawArgs, rawArg{key: key, value: value, literal: literal})
 	}
 
 	taskMode, err := parseTaskFlags(cmd)
@@ -530,7 +541,13 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		if p, ok := inputSchema.Param(raw.key); ok && p.Note != "" && showNotes {
 			fmt.Fprintf(os.Stderr, "ℹ️  Argument %q: %s\n", raw.key, p.Note)
 		}
-		parsedValue, err := coerceToolArgument(inputSchema, raw.key, raw.value)
+		var parsedValue interface{}
+		var err error
+		if raw.literal {
+			parsedValue, err = jsonLiteralArgument(raw.key, raw.value)
+		} else {
+			parsedValue, err = coerceToolArgument(inputSchema, raw.key, raw.value)
+		}
 		if err != nil {
 			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")

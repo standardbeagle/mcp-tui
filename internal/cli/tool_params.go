@@ -25,7 +25,8 @@ import (
 // the value's own syntax is the only signal available, so it is parsed as
 // JSON with a string fallback. For a
 // nullable non-string parameter the literal "null" sends null; a nullable
-// string keeps "null" as text, since the two cannot be told apart.
+// string keeps "null" as text, since the two cannot be told apart, and
+// takes null as key:=null (jsonLiteralArgument).
 func coerceToolArgument(schema inputschema.Schema, key, value string) (interface{}, error) {
 	param, known := schema.Param(key)
 	if !known || param.Kind == inputschema.KindJSON {
@@ -46,6 +47,17 @@ func coerceToolArgument(schema inputschema.Schema, key, value string) (interface
 		}
 	}
 	return convertToKind(kind, key, value)
+}
+
+// jsonLiteralArgument parses the value of a key:=<json> argument, which is
+// sent as the JSON value it spells whatever the schema declares; the
+// schema check before the call judges it.
+func jsonLiteralArgument(key, value string) (interface{}, error) {
+	var parsed interface{}
+	if err := json.Unmarshal([]byte(value), &parsed); err != nil {
+		return nil, fmt.Errorf("argument %q: %s:= takes a JSON literal, got %q", key, key, value)
+	}
+	return parsed, nil
 }
 
 // convertToKind parses value as a JSON value of kind, naming key in the
