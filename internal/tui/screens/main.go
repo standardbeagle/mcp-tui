@@ -60,6 +60,10 @@ type MainScreen struct {
 	promptCount      int
 	eventCount       int
 
+	// listCacheLabels holds the SEP-2549 cache label of the tools,
+	// resources and prompts tabs, shown in the list header.
+	listCacheLabels [3]string
+
 	// Loading states
 	toolsLoading     bool
 	resourcesLoading bool
@@ -140,6 +144,9 @@ type ToolsLoadedMsg struct {
 	Items       []string // Backward compatible string format
 	ActualCount int
 	Error       error
+	// Cache is how the SDK served each list behind this tab (SEP-2549);
+	// nil entries or an empty slice mean no list caching.
+	Cache []*mcp.ListCacheInfo
 }
 
 // ResourcesLoadedMsg contains loaded resources with full data structure
@@ -152,6 +159,9 @@ type ResourcesLoadedMsg struct {
 	Items       []string // Backward compatible string format
 	ActualCount int
 	Error       error
+	// Cache is how the SDK served each list behind this tab (SEP-2549);
+	// nil entries or an empty slice mean no list caching.
+	Cache []*mcp.ListCacheInfo
 }
 
 // PromptsLoadedMsg contains loaded prompts with full data structure
@@ -160,6 +170,9 @@ type PromptsLoadedMsg struct {
 	Items       []string // Backward compatible string format
 	ActualCount int
 	Error       error
+	// Cache is how the SDK served each list behind this tab (SEP-2549);
+	// nil entries or an empty slice mean no list caching.
+	Cache []*mcp.ListCacheInfo
 }
 
 // EventTickMsg is sent periodically to refresh events
@@ -503,6 +516,7 @@ func (ms *MainScreen) handleConnectionFailure(err error) (tea.Model, tea.Cmd) {
 // handleToolsLoaded handles tools loaded messages
 func (ms *MainScreen) handleToolsLoaded(msg ToolsLoadedMsg) (tea.Model, tea.Cmd) {
 	ms.toolsLoading = false
+	ms.listCacheLabels[0] = listCacheLabel(msg.Cache)
 	if msg.Error != nil {
 		ms.tools = []mcp.Tool{}
 		ms.toolStrings = []string{fmt.Sprintf("Error loading tools: %v", msg.Error)}
@@ -528,6 +542,7 @@ func (ms *MainScreen) handleToolsLoaded(msg ToolsLoadedMsg) (tea.Model, tea.Cmd)
 // handleResourcesLoaded handles resources loaded messages
 func (ms *MainScreen) handleResourcesLoaded(msg ResourcesLoadedMsg) (tea.Model, tea.Cmd) {
 	ms.resourcesLoading = false
+	ms.listCacheLabels[1] = listCacheLabel(msg.Cache)
 	if msg.Error != nil {
 		ms.resourceObjects = []mcp.Resource{}
 		ms.resourceTemplateObjects = nil
@@ -556,6 +571,7 @@ func (ms *MainScreen) handleResourcesLoaded(msg ResourcesLoadedMsg) (tea.Model, 
 // handlePromptsLoaded handles prompts loaded messages
 func (ms *MainScreen) handlePromptsLoaded(msg PromptsLoadedMsg) (tea.Model, tea.Cmd) {
 	ms.promptsLoading = false
+	ms.listCacheLabels[2] = listCacheLabel(msg.Cache)
 	if msg.Error != nil {
 		ms.promptObjects = []mcp.Prompt{}
 		ms.prompts = []string{fmt.Sprintf("Error loading prompts: %v", msg.Error)}
@@ -1200,8 +1216,7 @@ func (ms *MainScreen) View() string {
 	if width == 0 {
 		width = 80
 	}
-	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	builder.WriteString(separatorStyle.Render(strings.Repeat("─", width)))
+	builder.WriteString(ms.renderListHeaderRule(width))
 	builder.WriteString("\n")
 
 	// Current list or split-pane view for tools, resources, prompts, and events
@@ -1218,6 +1233,7 @@ func (ms *MainScreen) View() string {
 	}
 
 	// Bottom separator
+	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	builder.WriteString("\n")
 	builder.WriteString(separatorStyle.Render(strings.Repeat("─", width)))
 	builder.WriteString("\n")
@@ -1785,6 +1801,7 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 			Items:       toolList,
 			ActualCount: actualCount,
 			Error:       nil,
+			Cache:       []*mcp.ListCacheInfo{ms.mcpService.ListCache("tools/list")},
 		}
 	}
 }
@@ -1849,6 +1866,10 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 			Items:       items,
 			ActualCount: actualCount,
 			Error:       nil,
+			Cache: []*mcp.ListCacheInfo{
+				ms.mcpService.ListCache("resources/list"),
+				ms.mcpService.ListCache("resources/templates/list"),
+			},
 		}
 	}
 }
@@ -1948,6 +1969,7 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 			Items:       promptList,
 			ActualCount: actualCount,
 			Error:       nil,
+			Cache:       []*mcp.ListCacheInfo{ms.mcpService.ListCache("prompts/list")},
 		}
 	}
 }

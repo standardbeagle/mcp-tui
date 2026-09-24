@@ -41,6 +41,14 @@ within a tab. Number keys `1`–`9` quick-select an item.
 The **Events** tab streams every server-to-client notification — logging,
 progress, list-changed, resource updates, cancellations — as it arrives.
 
+On protocol `2026-07-28` servers attach a cache lifetime to every list
+(`ttlMs`, `cacheScope`; SEP-2549), and the SDK answers repeat lists from its own
+cache until it expires. The rule under the tabs shows how the current tab's list
+was served, e.g. `cached · ttl 30s · private` or `fetched · ttl 30s · public`;
+the debug log records the same per list. `r` cannot bypass that cache: only a
+`list_changed` notification from the server or reconnecting forces a fresh
+fetch.
+
 ## Execute a tool
 
 The input form is generated from the tool's JSON Schema. Required fields are marked. Type coercion runs automatically — numbers, booleans, and JSON literals are parsed from text.
