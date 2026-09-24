@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // EventType represents different types of MCP events
@@ -294,6 +295,12 @@ func (et *EventTracer) addEvent(eventType EventType, method string, requestID in
 
 	if !et.enabled {
 		return nil
+	}
+
+	// Events carry whole MCP payloads into the log, the TUI and session
+	// exports; mask credential-bearing URLs and _meta entries once, here.
+	if data != nil {
+		data = redact.PayloadMap(data)
 	}
 
 	// Generate event ID

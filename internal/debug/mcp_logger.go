@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // MCPMessageType represents the type of MCP message
@@ -162,17 +164,22 @@ func (ml *MCPLogger) logMessage(direction, rawMessage string, parsedMessage inte
 	entry := MCPLogEntry{
 		Timestamp:  time.Now(),
 		Direction:  direction,
-		RawMessage: rawMessage,
+		RawMessage: redact.Text(rawMessage),
 	}
 
-	// Parse the message to extract structured information
+	// Parse the message to extract structured information. The entry keeps
+	// only the redacted payload: the MCP Messages tab shows it verbatim.
 	if parsedMessage != nil {
-		ml.parseMessage(&entry, parsedMessage)
+		ml.parseMessage(&entry, redact.Payload(parsedMessage))
 	} else {
 		// Try to parse the raw JSON
 		var jsonMsg map[string]interface{}
 		if err := json.Unmarshal([]byte(rawMessage), &jsonMsg); err == nil {
-			ml.parseMessage(&entry, jsonMsg)
+			redacted := redact.PayloadMap(jsonMsg)
+			if raw, err := json.Marshal(redacted); err == nil {
+				entry.RawMessage = string(raw)
+			}
+			ml.parseMessage(&entry, redacted)
 		}
 	}
 
