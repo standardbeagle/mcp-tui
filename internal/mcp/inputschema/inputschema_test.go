@@ -193,3 +193,65 @@ func TestParse_LogsNon2020Dialect(t *testing.T) {
 		}
 	}
 }
+
+// Every same-document $ref form resolves: an $anchor, a pointer through any
+// subschema keyword, a reference relative to an $id, and a $dynamicRef.
+func TestParse_ResolvesEveryLocalRefForm(t *testing.T) {
+	s, err := Parse("t", decode(t, `{
+		"$id": "https://schemas.example.com/tools/deploy.json",
+		"$defs": {
+			"Port": {"$anchor": "port", "type": "integer"},
+			"Pair": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "boolean"}]},
+			"Labels": {"type": "object", "additionalProperties": {"type": "number"}},
+			"Either": {"anyOf": [{"type": "string", "format": "date"}, {"type": "null"}]},
+			"Region": {"$id": "region.json", "type": "string", "$defs": {"Zone": {"type": "integer"}}},
+			"Meta": {"$dynamicAnchor": "meta", "type": "string"},
+			"Count": {"type": "integer"}
+		},
+		"type": "object",
+		"properties": {
+			"port": {"$ref": "#port"},
+			"flag": {"$ref": "#/$defs/Pair/prefixItems/1"},
+			"weight": {"$ref": "#/$defs/Labels/additionalProperties"},
+			"day": {"$ref": "#/$defs/Either/anyOf/0"},
+			"region": {"$ref": "region.json"},
+			"region_abs": {"$ref": "https://schemas.example.com/tools/region.json"},
+			"zone": {"$ref": "region.json#/$defs/Zone"},
+			"meta": {"$dynamicRef": "#meta"},
+			"count": {"$dynamicRef": "#/$defs/Count"}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for name, want := range map[string]Kind{
+		"port": KindInteger, "flag": KindBoolean, "weight": KindNumber, "day": KindString,
+		"region": KindString, "region_abs": KindString, "zone": KindInteger,
+		"meta": KindString, "count": KindInteger,
+	} {
+		got, ok := s.Param(name)
+		if !ok || got.Kind != want || got.Note != "" {
+			t.Errorf("%s = %+v (found %v), want %s with no note", name, got, ok, want)
+		}
+	}
+}
+
+// A $ref resolves against the base URI of the resource it sits in, not the
+// root's: "#/$defs/Mode" inside the resource cfg.json names cfg.json's Mode.
+func TestParse_RefResolvesAgainstItsOwnResource(t *testing.T) {
+	s, err := Parse("t", decode(t, `{
+		"$id": "https://schemas.example.com/root.json",
+		"$defs": {
+			"Mode": {"type": "string"},
+			"Cfg": {"$id": "cfg.json", "$defs": {"Mode": {"type": "boolean"}}, "$ref": "#/$defs/Mode"}
+		},
+		"type": "object",
+		"properties": {"mode": {"$ref": "cfg.json"}}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, _ := s.Param("mode"); got.Kind != KindBoolean {
+		t.Errorf("mode = %+v, want boolean from cfg.json's own $defs", got)
+	}
+}

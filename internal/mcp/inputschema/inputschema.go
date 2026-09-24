@@ -7,7 +7,9 @@
 // $defs behind $ref and spell optional values as anyOf [T, null], so reading
 // only properties.*.type misses most parameters. Parse follows local $refs,
 // collapses T|null unions, and says, per parameter, what it could not
-// express instead of dropping it.
+// express instead of dropping it. A $ref may take any same-document form:
+// a JSON pointer through any subschema keyword, an $anchor, a reference
+// relative to an $id, or a $dynamicRef.
 //
 // Per the spec's $ref rules, a $ref to a network URI is never fetched: Parse
 // fails with ErrRemoteRef.
@@ -116,7 +118,7 @@ func Parse(toolName string, inputSchema map[string]any) (Schema, error) {
 			debug.F("tool", toolName), debug.F("dialect", out.Dialect))
 	}
 
-	w := walker{root: &root}
+	w := walker{refs: newRefIndex(&root)}
 	object, note := w.deref(&root)
 	if object == nil {
 		return Schema{}, fmt.Errorf("input schema: %s", note)
@@ -139,9 +141,9 @@ func refuseRemote(uri *url.URL) (*jsonschema.Schema, error) {
 	return nil, fmt.Errorf("%w: %s", ErrRemoteRef, uri)
 }
 
-// walker follows local $refs within one schema document.
+// walker follows $refs within one schema document.
 type walker struct {
-	root *jsonschema.Schema
+	refs *refIndex
 }
 
 // param describes one property schema.
@@ -251,62 +253,18 @@ func (w walker) types(s *jsonschema.Schema) (types []string, note string) {
 	return dedupe(all), ""
 }
 
-// deref follows s's $ref chain to the schema it names. A nil result comes
-// with a note saying why the chain could not be followed.
+// deref follows s's $ref and $dynamicRef chain to the schema it names. A
+// nil result comes with a note saying why the chain could not be followed.
 func (w walker) deref(s *jsonschema.Schema) (target *jsonschema.Schema, note string) {
-	for hops := 0; s.Ref != ""; hops++ {
+	for hops := 0; s.Ref != "" || s.DynamicRef != ""; hops++ {
 		if hops == maxRefHops {
 			return nil, fmt.Sprintf("$ref chain longer than %d (cycle?)", maxRefHops)
 		}
-		next, ok := w.lookup(s.Ref)
-		if !ok {
-			return nil, fmt.Sprintf("$ref %q is not a JSON pointer into $defs, definitions, properties or items", s.Ref)
+		if s, note = w.refs.follow(s); s == nil {
+			return nil, note
 		}
-		s = next
 	}
 	return s, ""
-}
-
-// lookup resolves a same-document JSON pointer $ref ("#", "#/$defs/X",
-// "#/definitions/X", "#/properties/X", ".../items").
-func (w walker) lookup(ref string) (*jsonschema.Schema, bool) {
-	if !strings.HasPrefix(ref, "#") {
-		return nil, false
-	}
-	pointer := strings.TrimPrefix(ref, "#")
-	s := w.root
-	if pointer == "" {
-		return s, true
-	}
-	if !strings.HasPrefix(pointer, "/") {
-		return nil, false // an anchor, not a pointer
-	}
-	segments := strings.Split(pointer[1:], "/")
-	for i := 0; i < len(segments) && s != nil; i++ {
-		switch unescape(segments[i]) {
-		case "items":
-			s = s.Items
-			continue
-		case "$defs", "definitions", "properties":
-		default:
-			return nil, false
-		}
-		if i+1 == len(segments) {
-			return nil, false
-		}
-		var m map[string]*jsonschema.Schema
-		switch unescape(segments[i]) {
-		case "$defs":
-			m = s.Defs
-		case "definitions":
-			m = s.Definitions
-		default:
-			m = s.Properties
-		}
-		i++
-		s = m[unescape(segments[i])]
-	}
-	return s, s != nil
 }
 
 // unescape decodes one JSON pointer segment (RFC 6901).
