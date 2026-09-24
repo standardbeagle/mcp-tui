@@ -525,11 +525,24 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 	if clientSession := sessionManager.GetSession(); clientSession != nil {
 		handshake.logResult(requestedProtocolVersion(config.ProtocolVersion), clientSession.InitializeResult())
+		logMethodHeadersSuperseded(config, clientSession.InitializeResult())
 		applyServerLogLevel(ctx, clientSession, config.ServerLogLevel)
 		awaitSubscriptionsAck(ctx, clientSession.InitializeResult(), subscriptionsAcked)
 	}
 
 	return s.commitConnection(epoch, sessionManager)
+}
+
+// logMethodHeadersSuperseded explains why --mcp-method-headers does nothing
+// on a 2026-07-28 session: the SDK sends the SEP-2243 standard headers
+// itself there, and the injector stands aside (methodHeadersRoundTripper).
+func logMethodHeadersSuperseded(config *configPkg.ConnectionConfig, res *officialMCP.InitializeResult) {
+	if !config.MCPMethodHeaders || res == nil || !protocol.IsStateless(res.ProtocolVersion) {
+		return
+	}
+	debug.Info("--mcp-method-headers has no effect: the SDK sends the standard Mcp-Method, Mcp-Name "+
+		"and Mcp-Param-* headers itself on this protocol (SEP-2243)",
+		debug.F("protocolVersion", res.ProtocolVersion))
 }
 
 // subscriptionsAckTimeout bounds how long Connect waits for the server to

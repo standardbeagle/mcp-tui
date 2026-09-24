@@ -269,7 +269,9 @@ Examples:
 	// without parsing the body. Off by default to preserve current wire
 	// behavior; STDIO ignores the flag because the headers only exist on
 	// the HTTP transport.
-	rootCmd.PersistentFlags().Bool("mcp-method-headers", false, "Inject SEP-2243 MCP-Method/MCP-Name headers on every JSON-RPC request (HTTP transports only)")
+	rootCmd.PersistentFlags().Bool("mcp-method-headers", false,
+		"Inject SEP-2243 MCP-Method/MCP-Name headers on every JSON-RPC request (HTTP transports only; "+
+			"before MCP 2026-07-28, which sends them itself)")
 
 	// Header forwarding visualization. --header is repeatable and adds the
 	// supplied KEY=VALUE pair to every outgoing HTTP request (additive: an

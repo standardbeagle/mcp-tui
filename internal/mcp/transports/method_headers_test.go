@@ -21,6 +21,13 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 // This keeps each test focused on a single (input body) → (header) assertion.
 func callMethodHeaders(t *testing.T, body string) *http.Request {
 	t.Helper()
+	return callMethodHeadersAs(t, body, nil)
+}
+
+// callMethodHeadersAs is callMethodHeaders for a request that already carries
+// preset headers, as the SDK sets them before our transport runs.
+func callMethodHeadersAs(t *testing.T, body string, preset http.Header) *http.Request {
+	t.Helper()
 
 	var captured *http.Request
 	inner := roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -43,6 +50,9 @@ func callMethodHeaders(t *testing.T, body string) *http.Request {
 	rt := newMethodHeadersRoundTripper(inner)
 	req := httptest.NewRequest(http.MethodPost, "http://example.test/mcp", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	for name, values := range preset {
+		req.Header[name] = values
+	}
 	resp, err := rt.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("RoundTrip returned error: %v", err)
@@ -105,6 +115,41 @@ func TestMethodHeadersRoundTripper_NoNameForListMethods(t *testing.T) {
 	}
 	if got := captured.Header.Get("MCP-Name"); got != "" {
 		t.Errorf("MCP-Name header = %q, want empty", got)
+	}
+}
+
+// TestMethodHeadersRoundTripper_LeavesStandardHeadersToSDKOn20260728: from
+// 2026-07-28 the SDK sets Mcp-Method/Mcp-Name itself, following the spec's
+// rules (no Mcp-Method on notifications, Mcp-Name only for tools/call,
+// prompts/get and resources/read). The injector must not add or overwrite
+// anything there.
+func TestMethodHeadersRoundTripper_LeavesStandardHeadersToSDKOn20260728(t *testing.T) {
+	for _, tc := range []struct{ body, method, name string }{
+		{body: `{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":3,"progress":1}}`},
+		{
+			body:   `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"echo","arguments":{}}}`,
+			method: "tools/call", name: "echo",
+		},
+	} {
+		preset := http.Header{"Mcp-Protocol-Version": {"2026-07-28"}}
+		if tc.method != "" {
+			preset.Set("Mcp-Method", tc.method)
+			preset.Set("Mcp-Name", tc.name)
+		}
+		captured := callMethodHeadersAs(t, tc.body, preset)
+		if got := captured.Header.Values("Mcp-Method"); len(got) != len(preset.Values("Mcp-Method")) ||
+			captured.Header.Get("Mcp-Method") != tc.method {
+			t.Errorf("%s: Mcp-Method = %q, want the SDK's %q untouched", tc.body, got, tc.method)
+		}
+		if got := captured.Header.Get("Mcp-Name"); got != tc.name {
+			t.Errorf("%s: Mcp-Name = %q, want the SDK's %q untouched", tc.body, got, tc.name)
+		}
+	}
+	// Before 2026-07-28 the SDK sets none, so the injector still does.
+	legacy := callMethodHeadersAs(t, `{"jsonrpc":"2.0","method":"notifications/progress","params":{}}`,
+		http.Header{"Mcp-Protocol-Version": {"2025-11-25"}})
+	if got := legacy.Header.Get("Mcp-Method"); got != "notifications/progress" {
+		t.Errorf("2025-11-25: Mcp-Method = %q, want notifications/progress", got)
 	}
 }
 

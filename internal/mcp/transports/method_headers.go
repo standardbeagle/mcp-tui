@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 )
 
 // RequestHeaderObserver is invoked by the SEP-2243 method-headers RoundTripper
@@ -50,7 +51,8 @@ func getRequestHeaderObserver() RequestHeaderObserver {
 // peeking into the JSON body. The headers are advisory: the spec requires
 // servers to ignore unknown ones, and the JSON-RPC envelope remains the
 // authoritative source of method/name. Off by default — wired in only when the
-// caller passes withMethodHeaders=true.
+// caller passes withMethodHeaders=true. It only acts before protocol
+// 2026-07-28; from that version the SDK sends the standard headers.
 //
 // Header values:
 //   - MCP-Method: the JSON-RPC method (e.g. "tools/call", "resources/read").
@@ -86,6 +88,12 @@ func (t *methodHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response
 	// (the standalone listening stream) and DELETE (session teardown) hit this
 	// same RoundTripper and must pass through untouched.
 	if req.Method != http.MethodPost || req.Body == nil {
+		return t.base.RoundTrip(req)
+	}
+	// From 2026-07-28 the SDK sets the standard headers itself, following
+	// rules this injector predates (none on notifications, Mcp-Name only
+	// for tools/call, prompts/get, resources/read); leave them to it.
+	if protocol.IsStateless(req.Header.Get("Mcp-Protocol-Version")) {
 		return t.base.RoundTrip(req)
 	}
 
