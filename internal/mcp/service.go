@@ -748,6 +748,9 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		clientOptions.ElicitationHandler = func(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
 			return ehandler.HandleElicit(ctx, req)
 		}
+		// Fires before 2026-07-28 only: that revision removed the
+		// notification, and the MRTR loop logs URL elicitation instead
+		// (elicitForInput).
 		clientOptions.ElicitationCompleteHandler = func(_ context.Context, req *officialMCP.ElicitationCompleteNotificationRequest) {
 			if req != nil && req.Params != nil {
 				debug.Info("URL elicitation completed", debug.F("elicitationID", req.Params.ElicitationID))

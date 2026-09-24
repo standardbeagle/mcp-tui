@@ -8,6 +8,8 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 
 // elicitForInput mirrors go-sdk v1.8.0 Client.elicit: it checks the mode,
@@ -38,7 +40,14 @@ func (s *service) elicitForInput(
 		if req.Params.URL == "" {
 			return nil, invalidParams("URL must be set for URL elicitation")
 		}
-		return handler(ctx, req)
+		res, err := handler(ctx, req)
+		if err == nil && res != nil {
+			// 2026-07-28 removed notifications/elicitation/complete, so
+			// ElicitationCompleteHandler never fires on this path.
+			debug.Info("URL elicitation answered; no completion notification on 2026-07-28, outcome arrives in the retry",
+				debug.F("elicitationID", req.Params.ElicitationID), debug.F("action", res.Action))
+		}
+		return res, err
 	default:
 		return nil, invalidParams(fmt.Sprintf("unsupported elicitation mode: %q", mode))
 	}
