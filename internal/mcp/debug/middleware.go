@@ -127,9 +127,11 @@ func CreateDebugClient(impl *officialMCP.Implementation, tracer *EventTracer, ex
 	return client
 }
 
-// mergeClientOptions returns base with sampling-related fields from override
-// applied. Progress notification stays on the debug tracer's handler so we do
-// not lose tracing — only the sampling handlers are forwarded from the caller.
+// mergeClientOptions returns override with base's tracing progress handler.
+// Everything else the caller configured (sampling, elicitation, list-changed
+// handlers, capabilities, MRTR options) is forwarded unchanged: dropping a
+// field here disables that feature on every connection, because the service
+// always builds its client through CreateDebugClient.
 func mergeClientOptions(base, override *officialMCP.ClientOptions) *officialMCP.ClientOptions {
 	if base == nil {
 		return override
@@ -137,13 +139,8 @@ func mergeClientOptions(base, override *officialMCP.ClientOptions) *officialMCP.
 	if override == nil {
 		return base
 	}
-	merged := *base
-	if override.CreateMessageHandler != nil {
-		merged.CreateMessageHandler = override.CreateMessageHandler
-	}
-	if override.CreateMessageWithToolsHandler != nil {
-		merged.CreateMessageWithToolsHandler = override.CreateMessageWithToolsHandler
-	}
+	merged := *override
+	merged.ProgressNotificationHandler = base.ProgressNotificationHandler
 	return &merged
 }
 
