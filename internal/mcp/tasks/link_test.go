@@ -197,6 +197,23 @@ func TestLink_CapturesHandshake(t *testing.T) {
 	}
 }
 
+// From 2026-07-28 the handshake is server/discover, whose result lists
+// supportedVersions instead of one protocolVersion.
+func TestLink_CapturesDiscoverHandshake(t *testing.T) {
+	link := NewLink()
+	peer, sdkSaw := connectInMemory(t, link)
+	id, err := jsonrpc.MakeID(float64(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	discover := json.RawMessage(`{"supportedVersions":["2026-07-28","2025-11-25"],"capabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"serverInfo":{"name":"weather","version":"2.1.0"}}`)
+	peer.write(t, &jsonrpc.Response{ID: id, Result: discover})
+	<-sdkSaw
+	if got := string(link.Handshake()); got != string(discover) {
+		t.Errorf("Handshake = %s", got)
+	}
+}
+
 // Over HTTP the SDK connection must stay unwrapped (the streamable client
 // learns its session through an unexported hook), so the link observes
 // response bodies instead, and routes tasks requests with Mcp-Name.

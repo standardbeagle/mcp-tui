@@ -230,14 +230,19 @@ func (l *Link) observeBatch(data []byte) {
 	}
 }
 
-// isHandshakeResult reports whether result is an initialize or
-// server/discover result: the only results carrying both.
+// isHandshakeResult reports whether result is an initialize result
+// (protocolVersion and capabilities) or a server/discover result
+// (supportedVersions and capabilities); no other result carries either pair.
 func isHandshakeResult(result json.RawMessage) bool {
 	var probe struct {
-		ProtocolVersion string          `json:"protocolVersion"`
-		Capabilities    json.RawMessage `json:"capabilities"`
+		ProtocolVersion   string          `json:"protocolVersion"`
+		SupportedVersions []string        `json:"supportedVersions"`
+		Capabilities      json.RawMessage `json:"capabilities"`
 	}
-	return json.Unmarshal(result, &probe) == nil && probe.ProtocolVersion != "" && len(probe.Capabilities) > 0
+	if json.Unmarshal(result, &probe) != nil || len(probe.Capabilities) == 0 {
+		return false
+	}
+	return probe.ProtocolVersion != "" || len(probe.SupportedVersions) > 0
 }
 
 type routingNameKey struct{}
