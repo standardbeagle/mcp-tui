@@ -52,13 +52,16 @@ const maxTracedAuthBody = 256 << 10
 // A nil base gets the standard non-streaming timeout (transports'
 // DefaultHTTPClientConfig): no auth exchange is a long-lived stream, and an
 // unbounded one would hang Authorize, or a refresh, forever.
-func newAuthHTTPClient(base *http.Client) *http.Client {
+//
+// Every dial is refused for a non-public address unless allowPrivateNetwork
+// (see guardedTransport).
+func newAuthHTTPClient(base *http.Client, allowPrivateNetwork bool) *http.Client {
 	if base == nil {
 		base = &http.Client{Timeout: transports.DefaultHTTPClientConfig().Timeout}
 	}
 	client := *base
 	client.Transport = &authTraceTransport{
-		base: debug.NewHTTPTraceTransport(base.Transport, authHTTPComponent),
+		base: debug.NewHTTPTraceTransport(guardedTransport(base.Transport, allowPrivateNetwork), authHTTPComponent),
 	}
 	return &client
 }

@@ -121,7 +121,7 @@ func NewHandler(cfg *Config, httpClient *http.Client, cache TokenCache) (*Handle
 	}
 	h := &Handler{
 		cfg:        cfg,
-		httpClient: newAuthHTTPClient(httpClient),
+		httpClient: newAuthHTTPClient(httpClient, cfg.AllowPrivateNetwork),
 		cache:      cache,
 		state:      StateIdle,
 		fetcherFactory: func(host string, port int) AuthorizationCodeFetcher {
@@ -573,7 +573,12 @@ func logModeSelected(cfg *Config, cache TokenCache) {
 		debug.F("confidential_client", cfg.ClientSecret != ""),
 		debug.F("configured_scopes", cfg.scopeList()),
 		debug.F("client_issuer", cfg.Issuer),
-		debug.F("token_cache", cache != nil && !cacheDisabled))
+		debug.F("token_cache", cache != nil && !cacheDisabled),
+		debug.F("allow_private_network", cfg.AllowPrivateNetwork))
+	if cfg.AllowPrivateNetwork {
+		authLog().Warn("Auth requests may reach private-network addresses (--oauth-allow-private-network); " +
+			"a server's metadata can then point mcp-tui at internal hosts")
+	}
 	if cfg.AcceptUnadvertisedIss {
 		authLog().Warn("Accepting unadvertised RFC 9207 iss (--oauth-accept-unadvertised-iss); " +
 			"meant for testing non-conforming servers only")

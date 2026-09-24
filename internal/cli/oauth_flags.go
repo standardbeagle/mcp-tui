@@ -47,13 +47,17 @@ func RegisterOAuthFlags(flags *pflag.FlagSet) {
 	flags.Bool("oauth-accept-unadvertised-iss", false,
 		"Accept an RFC 9207 iss from an authorization server that does not advertise support "+
 			"(testing non-conforming servers only)")
+	flags.Bool("oauth-allow-private-network", false,
+		"Allow auth requests (discovery, registration, token) to reach private, link-local and CGNAT addresses; "+
+			"loopback is always allowed")
 	flags.String("oauth-cache", "", "Token cache directory ('-' to disable; default: platform cache dir)")
 }
 
 // oauthConfigFromFlags reads the flags RegisterOAuthFlags defined into an
 // oauth.Config without ServerURL. enabled reports whether any flag that
-// turns OAuth on was given; --oauth-redirect-host (which has a default) and
-// --oauth-accept-unadvertised-iss only modify a flow something else enabled.
+// turns OAuth on was given; --oauth-redirect-host (which has a default),
+// --oauth-accept-unadvertised-iss and --oauth-allow-private-network only
+// modify a flow something else enabled.
 func oauthConfigFromFlags(flags *pflag.FlagSet) (cfg *oauth.Config, enabled bool, err error) {
 	var errs []error
 	str := func(name string) string {
@@ -74,6 +78,7 @@ func oauthConfigFromFlags(flags *pflag.FlagSet) (cfg *oauth.Config, enabled bool
 		ClientMetadataURL:         str("oauth-client-metadata-url"),
 		Issuer:                    str("oauth-issuer"),
 		AcceptUnadvertisedIss:     boolean("oauth-accept-unadvertised-iss"),
+		AllowPrivateNetwork:       boolean("oauth-allow-private-network"),
 		Scopes:                    oauth.ParseScopes(str("oauth-scopes")),
 		RedirectHost:              str("oauth-redirect-host"),
 		RedirectPort:              port,

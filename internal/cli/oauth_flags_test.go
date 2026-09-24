@@ -115,3 +115,23 @@ func TestBuildOAuthConfig_AcceptUnadvertisedIss(t *testing.T) {
 		t.Error("AcceptUnadvertisedIss = false, want true")
 	}
 }
+
+// TestBuildOAuthConfig_AllowPrivateNetwork maps the opt-in flag; without it
+// auth requests to private-network addresses are refused.
+func TestBuildOAuthConfig_AllowPrivateNetwork(t *testing.T) {
+	cfg, err := buildOAuthConfigFromArgs(t, "https://mcp.example.com/mcp", "--oauth-client-id", "mcp-tui-desktop")
+	if err != nil {
+		t.Fatalf("BuildOAuthConfig: %v", err)
+	}
+	if cfg.AllowPrivateNetwork {
+		t.Error("AllowPrivateNetwork defaults to true, want false")
+	}
+	cfg, err = buildOAuthConfigFromArgs(t, "https://mcp.example.com/mcp",
+		"--oauth-client-id", "mcp-tui-desktop", "--oauth-allow-private-network")
+	if err != nil {
+		t.Fatalf("BuildOAuthConfig: %v", err)
+	}
+	if !cfg.AllowPrivateNetwork {
+		t.Error("AllowPrivateNetwork = false, want true")
+	}
+}

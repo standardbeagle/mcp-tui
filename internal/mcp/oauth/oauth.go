@@ -93,6 +93,14 @@ type Config struct {
 	// rejects such responses.
 	AcceptUnadvertisedIss bool
 
+	// AllowPrivateNetwork lets auth requests (discovery, registration,
+	// token) dial private, link-local and carrier-grade NAT addresses.
+	// Default false refuses them at dial time, so metadata served by a
+	// remote server cannot aim mcp-tui at internal hosts. Loopback is always
+	// allowed. Literal private IPs in discovered URLs are still refused by
+	// the SDK's own URL check.
+	AllowPrivateNetwork bool
+
 	// Issuer binds the pre-registered client (ClientID) to one
 	// authorization server: the flow fails unless the discovered AS
 	// metadata names this issuer. Empty means no binding.
