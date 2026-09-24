@@ -63,6 +63,10 @@ var (
 // Dialect2020 is the JSON Schema dialect MCP assumes when $schema is absent.
 const Dialect2020 = "https://json-schema.org/draft/2020-12/schema"
 
+// maxFormDepth is how many levels of nested object properties Parse
+// describes below the top-level parameters.
+const maxFormDepth = 4
+
 // maxRefHops bounds a $ref chain so a cyclic or adversarial schema cannot
 // spin the walk (the spec asks for bounds on schema traversal).
 const maxRefHops = 32
@@ -87,6 +91,10 @@ type Param struct {
 	// Union lists a KindUnion parameter's non-null types, in the order
 	// UnionKind tries them.
 	Union []Kind
+	// Properties are an object parameter's own properties, in name order,
+	// for a sub-form; nil when it declares none, or when it sits
+	// maxFormDepth levels down (a recursive schema would never end).
+	Properties []Param
 	// Note says what Parse could not express for this parameter and how the
 	// value is read instead; "" when the parameter is fully represented.
 	Note string
@@ -219,18 +227,26 @@ func Parse(toolName string, inputSchema map[string]any) (Schema, error) {
 		out.Note = note
 		return out, nil
 	}
+	out.Params = w.params(object, 0)
+	return out, nil
+}
+
+// params describes object's properties, in name order. depth is how deep
+// object sits below the root.
+func (w walker) params(object *jsonschema.Schema, depth int) []Param {
 	required := make(map[string]bool, len(object.Required))
 	for _, name := range object.Required {
 		required[name] = true
 	}
+	out := make([]Param, 0, len(object.Properties))
 	for name, prop := range object.Properties {
-		p := w.param(prop)
+		p := w.param(prop, depth)
 		p.Name = name
 		p.Required = required[name]
-		out.Params = append(out.Params, p)
+		out = append(out, p)
 	}
-	sort.Slice(out.Params, func(i, j int) bool { return out.Params[i].Name < out.Params[j].Name })
-	return out, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // rootAlternativesNote names root anyOf/oneOf alternatives that define
@@ -265,7 +281,7 @@ type walker struct {
 }
 
 // param describes one property schema.
-func (w walker) param(prop *jsonschema.Schema) Param {
+func (w walker) param(prop *jsonschema.Schema, depth int) Param {
 	p := Param{Description: prop.Description}
 	target, note := w.effective(prop)
 	if target == nil {
@@ -305,7 +321,26 @@ func (w walker) param(prop *jsonschema.Schema) Param {
 	if p.Kind == KindArray {
 		p.ItemKind = w.itemKind(target)
 	}
+	if p.Kind == KindObject && depth < maxFormDepth {
+		if object := w.objectBranch(target); object != nil && len(object.Properties) > 0 {
+			p.Properties = w.params(object, depth+1)
+		}
+	}
 	return p
+}
+
+// objectBranch is s itself when it declares properties, else the object
+// branch of an anyOf/oneOf union such as [object, null]; nil when none.
+func (w walker) objectBranch(s *jsonschema.Schema) *jsonschema.Schema {
+	if len(s.Properties) > 0 {
+		return s
+	}
+	for _, b := range append(append([]*jsonschema.Schema{}, s.AnyOf...), s.OneOf...) {
+		if branch, _ := w.effective(b); branch != nil && len(branch.Properties) > 0 {
+			return branch
+		}
+	}
+	return nil
 }
 
 // itemKind is the single type of s's array items, looking into the array

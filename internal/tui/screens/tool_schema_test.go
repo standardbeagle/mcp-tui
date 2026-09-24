@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -275,5 +276,98 @@ func TestToolScreen_NullToggle(t *testing.T) {
 	ts.Update(ctrlN) // title is not nullable
 	if args, _ := ts.buildArguments(); args["title"] != nil {
 		t.Errorf("title = %#v, want Ctrl+N to do nothing on a non-nullable field", args["title"])
+	}
+}
+
+// shipmentSchema has an optional object with a nested object inside.
+const shipmentSchema = `{"type": "object",
+	"properties": {
+		"service": {"type": "string"},
+		"ship_to": {"type": "object", "properties": {
+			"street": {"type": "string"},
+			"zip": {"type": "string"},
+			"geo": {"type": "object", "properties": {"lat": {"type": "number"}}}
+		}, "required": ["zip"]}
+	},
+	"required": ["service"]}`
+
+// fieldNames lists the form's fields, indented by depth.
+func (ts *ToolScreen) fieldNames() []string {
+	names := make([]string, len(ts.fields))
+	for i, f := range ts.fields {
+		names[i] = strings.Repeat(".", f.depth) + f.name
+	}
+	return names
+}
+
+// focusField moves the cursor to the named field.
+func (ts *ToolScreen) focusField(t *testing.T, name string) {
+	t.Helper()
+	for i := range ts.fields {
+		if ts.fields[i].name == name {
+			ts.fields[ts.cursor].input.Blur()
+			ts.cursor = i
+			ts.fields[i].input.Focus()
+			return
+		}
+	}
+	t.Fatalf("form has no field %q", name)
+}
+
+// Ctrl+E opens an object field as a sub-form of its properties, nested
+// objects included, and closes it again keeping what was typed.
+func TestToolScreen_NestedObjectSubForm(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(shipmentSchema), &schema); err != nil {
+		t.Fatal(err)
+	}
+	ts := NewToolScreen(mcp.Tool{Name: "ship", InputSchema: schema}, nil)
+	ts.Init()
+	ctrlE := tea.KeyMsg{Type: tea.KeyCtrlE}
+	ts.setField(t, "service", "express")
+
+	if view := ts.View(); !strings.Contains(view, "Ctrl+E: sub-form") {
+		t.Errorf("object field does not offer a sub-form:\n%s", view)
+	}
+	ts.focusField(t, "ship_to")
+	ts.Update(ctrlE)
+	if got := strings.Join(ts.fieldNames(), " "); got != "service ship_to .geo .street .zip" {
+		t.Fatalf("fields after Ctrl+E = %s", got)
+	}
+	ts.setField(t, "street", "1 Main St")
+	ts.setField(t, "zip", "94107")
+	ts.focusField(t, "geo")
+	ts.Update(ctrlE)
+	ts.setField(t, "lat", "37.77")
+
+	args, err := ts.buildArguments()
+	if err != nil {
+		t.Fatalf("buildArguments: %v", err)
+	}
+	want := map[string]any{"street": "1 Main St", "zip": "94107", "geo": map[string]any{"lat": 37.77}}
+	if !reflect.DeepEqual(args["ship_to"], want) {
+		t.Errorf("ship_to = %#v, want %#v", args["ship_to"], want)
+	}
+
+	ts.setField(t, "zip", "")
+	if _, err := ts.buildArguments(); err == nil || !strings.Contains(err.Error(), "zip") {
+		t.Errorf("missing nested required zip: err = %v", err)
+	}
+
+	ts.focusField(t, "ship_to")
+	ts.Update(ctrlE)
+	if got := strings.Join(ts.fieldNames(), " "); got != "service ship_to" {
+		t.Fatalf("fields after closing the sub-form = %s", got)
+	}
+	ts.Update(ctrlE)
+	if got := strings.Join(ts.fieldNames(), " "); got != "service ship_to .geo ..lat .street .zip" {
+		t.Errorf("reopened sub-form = %s, want its fields back as they were", got)
+	}
+
+	for _, name := range []string{"street", "lat"} {
+		ts.setField(t, name, "")
+	}
+	if args, err := ts.buildArguments(); err != nil || args["ship_to"] != nil {
+		t.Errorf("empty optional sub-form sent ship_to = %#v (err %v), want it left out", args["ship_to"], err)
 	}
 }

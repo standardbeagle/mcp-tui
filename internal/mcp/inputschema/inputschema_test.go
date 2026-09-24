@@ -50,7 +50,8 @@ func TestParse_ResolvesLocalRefsAndSimpleUnions(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	for _, want := range []Param{
-		{Name: "assignee", Kind: KindObject, Nullable: true},
+		{Name: "assignee", Kind: KindObject, Nullable: true,
+			Properties: []Param{{Name: "login", Kind: KindString, Required: true}}},
 		{Name: "labels", Kind: KindArray, ItemKind: KindObject, Required: true},
 		{Name: "milestone", Kind: KindInteger, Nullable: true},
 		{Name: "priority", Kind: KindString, Required: true, Description: "How urgent"},
@@ -421,5 +422,49 @@ func TestSchema_ValidateEnforcesTheWholeSchema(t *testing.T) {
 	}
 	if err := (Schema{}).Validate(map[string]any{"any": 1}); err != nil {
 		t.Errorf("an absent schema rejected arguments: %v", err)
+	}
+}
+
+// An object parameter carries its own properties, so a form can offer a
+// sub-form; a recursive schema stops at a fixed depth.
+func TestParse_NestedObjectProperties(t *testing.T) {
+	s, err := Parse("t", decode(t, `{
+		"$defs": {
+			"Address": {"type": "object", "properties": {
+				"street": {"type": "string"},
+				"zip": {"type": "string", "description": "Postal code"}
+			}, "required": ["zip"]},
+			"Node": {"type": "object", "properties": {"name": {"type": "string"}, "child": {"$ref": "#/$defs/Node"}}}
+		},
+		"type": "object",
+		"properties": {
+			"ship_to": {"anyOf": [{"$ref": "#/$defs/Address"}, {"type": "null"}]},
+			"tree": {"$ref": "#/$defs/Node"},
+			"meta": {"type": "object"}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	shipTo, _ := s.Param("ship_to")
+	want := []Param{
+		{Name: "street", Kind: KindString},
+		{Name: "zip", Kind: KindString, Required: true, Description: "Postal code"},
+	}
+	if !shipTo.Nullable || !reflect.DeepEqual(shipTo.Properties, want) {
+		t.Errorf("ship_to = %+v, want a nullable object with properties %+v", shipTo, want)
+	}
+	if meta, _ := s.Param("meta"); meta.Properties != nil {
+		t.Errorf("meta = %+v, want no properties", meta)
+	}
+	depth := 0
+	for p, _ := s.Param("tree"); p.Properties != nil; depth++ {
+		var ok bool
+		if p, ok = (Schema{Params: p.Properties}).Param("child"); !ok {
+			break
+		}
+	}
+	if depth != maxFormDepth {
+		t.Errorf("recursive tree expanded %d levels, want %d", depth, maxFormDepth)
 	}
 }
