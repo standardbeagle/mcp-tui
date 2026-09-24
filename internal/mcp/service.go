@@ -168,6 +168,15 @@ type service struct {
 	// listCache holds, per list method, how its most recent list was served
 	// (SEP-2549); see list_cache.go. Reset on every Connect.
 	listCache map[string]*ListCacheInfo
+
+	// subscribedResources is the set of resource URIs SubscribeResource
+	// subscribed on the current connection; reset on every Connect.
+	subscribedResources map[string]struct{}
+
+	// resourceAckWaiters holds, per URI, the channel a 2026-07-28
+	// SubscribeResource waits on until the server acknowledges the URI's
+	// subscriptions/listen stream (resolveResourceAcks).
+	resourceAckWaiters map[string]chan struct{}
 }
 
 // getNextRequestID returns the next request ID
@@ -716,6 +725,13 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		ResourceListChangedHandler: func(context.Context, *officialMCP.ResourceListChangedRequest) {
 			debug.Debug("Resources list changed")
 		},
+		// Updates for SubscribeResource URIs; captured into the notification
+		// stream by captureNotificationsMiddleware like every notification.
+		ResourceUpdatedHandler: func(_ context.Context, req *officialMCP.ResourceUpdatedNotificationRequest) {
+			if req != nil && req.Params != nil {
+				debug.Info("Subscribed resource updated", debug.F("uri", req.Params.URI))
+			}
+		},
 	}
 	if s.samplingHandler != nil {
 		// Capture the handler so the closure does not race with later
@@ -817,6 +833,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
 			if method == methodSubscriptionsAcknowledged {
 				ackOnce.Do(func() { close(acked) })
+				s.resolveResourceAcks(req)
 			}
 			return next(ctx, method, req)
 		}
@@ -901,6 +918,7 @@ func (s *service) updateServerInfo() error {
 	s.info.Version = serverVersion
 	s.info.ProtocolVersion = protocolVersion
 	s.listCache = nil
+	s.subscribedResources = nil
 
 	// Propagate top-level capability flags into the legacy map so callers that
 	// only check info.Capabilities (e.g. mcp-tui server) see something useful.

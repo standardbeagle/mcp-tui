@@ -61,8 +61,11 @@ func (v *versionStubService) GetPrompt(context.Context, mcp.GetPromptRequest) (*
 func (v *versionStubService) Complete(context.Context, mcp.CompleteRequest) (*mcp.CompleteResult, error) {
 	return nil, nil
 }
-func (v *versionStubService) GetCapabilitiesSnapshot() *capabilities.Snapshot { return nil }
-func (v *versionStubService) ListCache(string) *mcp.ListCacheInfo             { return nil }
+func (v *versionStubService) GetCapabilitiesSnapshot() *capabilities.Snapshot   { return nil }
+func (v *versionStubService) SubscribeResource(context.Context, string) error   { return nil }
+func (v *versionStubService) UnsubscribeResource(context.Context, string) error { return nil }
+func (v *versionStubService) ResourceSubscriptions() []string                   { return nil }
+func (v *versionStubService) ListCache(string) *mcp.ListCacheInfo               { return nil }
 func (v *versionStubService) NotificationStream() *notifications.Stream {
 	return notifications.NewStream()
 }

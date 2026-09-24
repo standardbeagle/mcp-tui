@@ -80,8 +80,11 @@ func (f *fakeCompletionService) Complete(_ context.Context, req mcp.CompleteRequ
 	}
 	return f.completeResult, nil
 }
-func (f *fakeCompletionService) GetServerInfo() *mcp.ServerInfo      { return &mcp.ServerInfo{} }
-func (f *fakeCompletionService) ListCache(string) *mcp.ListCacheInfo { return nil }
+func (f *fakeCompletionService) GetServerInfo() *mcp.ServerInfo                    { return &mcp.ServerInfo{} }
+func (f *fakeCompletionService) SubscribeResource(context.Context, string) error   { return nil }
+func (f *fakeCompletionService) UnsubscribeResource(context.Context, string) error { return nil }
+func (f *fakeCompletionService) ResourceSubscriptions() []string                   { return nil }
+func (f *fakeCompletionService) ListCache(string) *mcp.ListCacheInfo               { return nil }
 
 func (f *fakeCompletionService) GetCapabilitiesSnapshot() *capabilities.Snapshot {
 	return nil

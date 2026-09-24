@@ -75,6 +75,20 @@ type Service interface {
 	ListResourceTemplates(ctx context.Context) ([]ResourceTemplate, error)
 	ReadResource(ctx context.Context, uri string) (*ReadResourceResult, error)
 
+	// SubscribeResource asks the server to notify the client when the
+	// resource at uri changes; each notifications/resources/updated lands in
+	// NotificationStream. On 2026-07-28 this opens a per-URI
+	// subscriptions/listen stream (SEP-2575) and returns once the server
+	// acknowledged it; before, it sends resources/subscribe. Fails with
+	// ErrResourceSubscribeUnsupported when the server did not declare
+	// resources.subscribe.
+	SubscribeResource(ctx context.Context, uri string) error
+	// UnsubscribeResource ends a SubscribeResource subscription; a no-op for
+	// a URI that is not subscribed.
+	UnsubscribeResource(ctx context.Context, uri string) error
+	// ResourceSubscriptions returns the subscribed URIs, sorted.
+	ResourceSubscriptions() []string
+
 	// ListCache reports how the most recent list of method ("tools/list",
 	// "prompts/list", "resources/list" or "resources/templates/list") was
 	// served: the server's ttlMs and cacheScope and whether the SDK answered
