@@ -41,6 +41,14 @@ mcp-tui [global-flags] <subcommand> [subcommand-flags] [args]
 > There is no `--json` global flag. Use `--format json` (or `-f json`). The
 > `verify` subcommand is the one exception — it has its own `--json` flag.
 
+`tool call`, `prompt execute` and `resource get` send a `progressToken` with
+every request, a fresh one for each multi round-trip round. While the call
+runs, the server's latest `notifications/progress` for it is redrawn on one
+stderr line (`⏳ 2/4 (50%) · linking`). The line is drawn only in text
+mode, without `--porcelain`, and only when stderr is a terminal. JSON output
+carries no progress; use `--watch-notifications` to stream every progress
+notification.
+
 ### Client features
 
 These flags let the CLI answer server-initiated requests non-interactively.
@@ -143,6 +151,11 @@ mcp-tui [global-flags] resource <list|get|templates|complete|watch> [args]
 - `resource list` — list all resources.
 - `resource get <uri>` — read and print a resource (alias: `read`). Like
   `tool call`, it ends with the input rounds and `Served by` when there are any.
+  On `2026-07-28` it then prints how the SDK served the read, for example
+  `Cache: cached · ttl 1m0s · private` (`cache` with `ttlMs`, `cacheScope` and
+  `fromCache` in JSON). The SDK answers a repeated read from its TTL cache
+  until the ttl runs out or the server sends `notifications/resources/updated`
+  for the URI.
 - `resource templates` — list RFC 6570 URI templates from `resources/templates/list` (alias: `tmpl`).
 - `resource complete <uri-template> <var>=<prefix>` — variable suggestions via `completion/complete` (JSON output).
 - `resource watch <uri> [--count N]` — subscribe and print one line per `notifications/resources/updated` (JSON lines with `--format json`) until Ctrl-C, `--count` updates, or an explicit `--timeout`; a timeout before `--count` updates exits non-zero. Uses a per-URI `subscriptions/listen` stream on 2026-07-28, `resources/subscribe` before; refused when the server lacks `resources.subscribe`.
