@@ -57,8 +57,10 @@ func WithProgressObserver(ctx context.Context, fn func(Progress)) context.Contex
 // ProgressObserver returns the observer WithProgressObserver put in ctx, or
 // nil.
 func ProgressObserver(ctx context.Context) func(Progress) {
-	observe, _ := ctx.Value(progressObserverKey{}).(func(Progress))
-	return observe
+	if observe, ok := ctx.Value(progressObserverKey{}).(func(Progress)); ok {
+		return observe
+	}
+	return nil
 }
 
 // progressCall is the progress subscription of one call.
@@ -118,8 +120,9 @@ func carriesProgressToken(method string) bool {
 func (s *service) progressTokenMiddleware() officialMCP.Middleware {
 	return func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
 		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
-			call, ok := ctx.Value(progressCallKey{}).(*progressCall)
-			if params, isRequest := req.GetParams().(officialMCP.RequestParams); ok && isRequest && carriesProgressToken(method) {
+			call, inCall := ctx.Value(progressCallKey{}).(*progressCall)
+			params, isRequest := req.GetParams().(officialMCP.RequestParams)
+			if inCall && isRequest && carriesProgressToken(method) {
 				params.SetProgressToken(s.nextProgressToken(call))
 			}
 			return next(ctx, method, req)
@@ -132,7 +135,13 @@ func (s *service) progressTokenMiddleware() officialMCP.Middleware {
 // notification, or one the server made up) is only logged; the
 // notification stream records it either way.
 func (s *service) routeProgress(params *officialMCP.ProgressNotificationParams) {
-	token, _ := params.ProgressToken.(string)
+	token, ok := params.ProgressToken.(string)
+	if !ok {
+		// The service only issues string tokens.
+		debug.Debug("Progress notification for a token mcp-tui never issued",
+			debug.F("progressToken", params.ProgressToken))
+		return
+	}
 	s.mu.Lock()
 	call := s.progressRoutes[token]
 	var observe func(Progress)

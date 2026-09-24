@@ -10,16 +10,20 @@ import (
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 )
 
-const deployLogURI = "file:///var/log/deploy.log"
+const (
+	deployLogURI = "file:///var/log/deploy.log"
+	scopePrivate = "private"
+	scopePublic  = "public"
+)
 
 // cachedDeployLogServer is cachingServer with resources.subscribe declared,
 // so a test can make the server announce the deploy log changed.
 func cachedDeployLogServer() *officialMCP.Server {
-	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "catalog-server", Version: "1.0.0"},
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "deploy-catalog", Version: "1.3.2"},
 		&officialMCP.ServerOptions{
 			SetCacheable: func(_ context.Context, _ officialMCP.Request, c *officialMCP.Cacheable) {
 				c.TTLMs = 60_000
-				c.CacheScope = "private"
+				c.CacheScope = scopePrivate
 			},
 			SubscribeHandler:   func(context.Context, *officialMCP.SubscribeRequest) error { return nil },
 			UnsubscribeHandler: func(context.Context, *officialMCP.UnsubscribeRequest) error { return nil },
@@ -48,10 +52,10 @@ func readDeployLog(t *testing.T, svc *service) *ReadCacheInfo {
 // over the wire while the second is served by the SDK's TTL cache.
 func TestService_ReadResource_ReportsSDKCache(t *testing.T) {
 	svc := NewService().(*service)
-	connectInMemory(t, cachedDeployLogServer(), svc, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"})
+	connectInMemory(t, cachedDeployLogServer(), svc, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: noopCommand})
 	for pass, wantCached := range []bool{false, true} {
 		got := readDeployLog(t, svc)
-		want := ReadCacheInfo{TTLMs: 60_000, CacheScope: "private", FromCache: wantCached}
+		want := ReadCacheInfo{TTLMs: 60_000, CacheScope: scopePrivate, FromCache: wantCached}
 		if got == nil || *got != want {
 			t.Errorf("pass %d: Cache = %+v, want %+v", pass, got, want)
 		}
@@ -63,7 +67,7 @@ func TestService_ReadResource_ReportsSDKCache(t *testing.T) {
 func TestService_ReadResource_NoCacheBeforeSEP2549(t *testing.T) {
 	svc := NewService().(*service)
 	connectInMemory(t, cachedDeployLogServer(), svc, &configPkg.ConnectionConfig{
-		Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: legacyProtocolVersion,
+		Type: configPkg.TransportStdio, Command: noopCommand, ProtocolVersion: legacyProtocolVersion,
 	})
 	for range 2 {
 		if got := readDeployLog(t, svc); got != nil {
@@ -78,7 +82,7 @@ func TestService_ReadResource_NoCacheBeforeSEP2549(t *testing.T) {
 func TestService_ReadResource_UpdatedNotificationRefetches(t *testing.T) {
 	server := cachedDeployLogServer()
 	svc := NewService().(*service)
-	connectInMemory(t, server, svc, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"})
+	connectInMemory(t, server, svc, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: noopCommand})
 
 	// Signal after the SDK handled the update (and so invalidated the URI):
 	// receiving middleware returns only once the handler has run.
@@ -120,8 +124,8 @@ func TestReadCacheInfo_Label(t *testing.T) {
 		info ReadCacheInfo
 		want string
 	}{
-		{ReadCacheInfo{TTLMs: 60_000, CacheScope: "private", FromCache: true}, "cached · ttl 1m0s · private"},
-		{ReadCacheInfo{TTLMs: 30_000, CacheScope: "public"}, "fetched · ttl 30s · public"},
+		{ReadCacheInfo{TTLMs: 60_000, CacheScope: scopePrivate, FromCache: true}, "cached · ttl 1m0s · private"},
+		{ReadCacheInfo{TTLMs: 30_000, CacheScope: scopePublic}, "fetched · ttl 30s · public"},
 	} {
 		if got := tc.info.Label(); got != tc.want {
 			t.Errorf("%+v.Label() = %q, want %q", tc.info, got, tc.want)

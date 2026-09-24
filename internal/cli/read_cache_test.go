@@ -39,7 +39,7 @@ func TestResourceReadOutput_Cache(t *testing.T) {
 	var decoded struct {
 		Cache *mcp.ReadCacheInfo `json:"cache"`
 	}
-	if err := json.Unmarshal(doc, &decoded); err != nil {
+	if err = json.Unmarshal(doc, &decoded); err != nil {
 		t.Fatal(err)
 	}
 	if decoded.Cache == nil || *decoded.Cache != *deployLogRead.Cache {

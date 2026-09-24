@@ -19,6 +19,13 @@ import (
 // reports before answering.
 const progressSteps = 3
 
+const (
+	buildTool        = "build"
+	laneArg          = "lane"
+	methodPromptsGet = "prompts/get"
+	transportHTTP    = "http"
+)
+
 // progressFixture serves a tool, a prompt and a resource that report
 // progressSteps notifications against their request's progressToken. After
 // each notification the handler waits for the test to ack it, so every
@@ -39,25 +46,24 @@ func newProgressFixture() *progressFixture {
 		tokens: make(chan any, 16),
 		acks:   map[string]chan struct{}{"": make(chan struct{}), "a": make(chan struct{}), "b": make(chan struct{})},
 	}
-	f.server.AddTool(&officialMCP.Tool{Name: "build", InputSchema: map[string]any{"type": "object"}},
-		func(ctx context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
-			var args struct{ Lane string }
-			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-				return nil, err
-			}
-			if err := f.report(ctx, req.Session, req.Params.GetProgressToken(), args.Lane, progressSteps); err != nil {
-				return nil, err
-			}
-			return textResult("built " + args.Lane), nil
-		})
-	f.server.AddPrompt(&officialMCP.Prompt{Name: "summarize", Arguments: []*officialMCP.PromptArgument{{Name: "lane"}}},
+	addTool(f.server, buildTool, func(ctx context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+		var args struct{ Lane string }
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if err := f.report(ctx, req.Session, req.Params.GetProgressToken(), args.Lane, progressSteps); err != nil {
+			return nil, err
+		}
+		return textResult("built " + args.Lane), nil
+	})
+	f.server.AddPrompt(&officialMCP.Prompt{Name: "summarize", Arguments: []*officialMCP.PromptArgument{{Name: laneArg}}},
 		func(ctx context.Context, req *officialMCP.GetPromptRequest) (*officialMCP.GetPromptResult, error) {
-			lane := req.Params.Arguments["lane"]
+			lane := req.Params.Arguments[laneArg]
 			if err := f.report(ctx, req.Session, req.Params.GetProgressToken(), lane, progressSteps); err != nil {
 				return nil, err
 			}
 			return &officialMCP.GetPromptResult{Messages: []*officialMCP.PromptMessage{
-				{Role: "user", Content: &officialMCP.TextContent{Text: "summarize " + lane}},
+				{Role: promptUserRole, Content: &officialMCP.TextContent{Text: "summarize " + lane}},
 			}}, nil
 		})
 	f.server.AddResource(&officialMCP.Resource{URI: "test://build.log", Name: "build.log"},
@@ -97,9 +103,9 @@ func (f *progressFixture) report(ctx context.Context, ss *officialMCP.ServerSess
 
 // observeLane attaches an observer to ctx that forwards each progress
 // notification to the returned channel.
-func observeLane(ctx context.Context) (context.Context, <-chan Progress) {
-	observed := make(chan Progress, 16)
-	return WithProgressObserver(ctx, func(p Progress) { observed <- p }), observed
+func observeLane(ctx context.Context) (observing context.Context, observed <-chan Progress) {
+	ch := make(chan Progress, 16)
+	return WithProgressObserver(ctx, func(p Progress) { ch <- p }), ch
 }
 
 // nextProgress waits for the next observed notification and acks it to the
@@ -140,7 +146,7 @@ func activeProgressTokens(svc *service) int {
 func connectProgressService(t *testing.T, server *officialMCP.Server, transport, pinned string) *service {
 	t.Helper()
 	svc := NewService().(*service)
-	if transport == "http" {
+	if transport == transportHTTP {
 		url := testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, pinned))
 		if err := svc.Connect(context.Background(), &configPkg.ConnectionConfig{
 			Type: configPkg.TransportStreamableHTTP, URL: url, ProtocolVersion: pinned,
@@ -151,7 +157,7 @@ func connectProgressService(t *testing.T, server *officialMCP.Server, transport,
 		return svc
 	}
 	connectInMemory(t, server, svc, &configPkg.ConnectionConfig{
-		Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: pinned,
+		Type: configPkg.TransportStdio, Command: noopCommand, ProtocolVersion: pinned,
 	})
 	return svc
 }
@@ -163,15 +169,15 @@ var progressCalls = []struct {
 	lane   string
 	call   func(ctx context.Context, svc *service) error
 }{
-	{"tools/call", "a", func(ctx context.Context, svc *service) error {
-		_, err := svc.CallTool(ctx, CallToolRequest{Name: "build", Arguments: map[string]any{"lane": "a"}})
+	{methodToolsCall, "a", func(ctx context.Context, svc *service) error {
+		_, err := svc.CallTool(ctx, CallToolRequest{Name: buildTool, Arguments: map[string]any{laneArg: "a"}})
 		return err
 	}},
-	{"prompts/get", "a", func(ctx context.Context, svc *service) error {
-		_, err := svc.GetPrompt(ctx, GetPromptRequest{Name: "summarize", Arguments: map[string]any{"lane": "a"}})
+	{methodPromptsGet, "a", func(ctx context.Context, svc *service) error {
+		_, err := svc.GetPrompt(ctx, GetPromptRequest{Name: "summarize", Arguments: map[string]any{laneArg: "a"}})
 		return err
 	}},
-	{"resources/read", "", func(ctx context.Context, svc *service) error {
+	{methodRead, "", func(ctx context.Context, svc *service) error {
 		_, err := svc.ReadResource(ctx, "test://build.log")
 		return err
 	}},
@@ -183,7 +189,7 @@ var progressCalls = []struct {
 // reach the observer of that call while it runs, and that the token is
 // released when the call returns.
 func TestService_Progress_BindsNotificationsToTheCall(t *testing.T) {
-	for _, transport := range []string{"memory", "http"} {
+	for _, transport := range []string{"memory", transportHTTP} {
 		for _, pinned := range []string{"", legacyProtocolVersion} {
 			for _, pc := range progressCalls {
 				t.Run(transport+"/pin="+pinned+"/"+pc.method, func(t *testing.T) {
@@ -233,7 +239,7 @@ func TestService_Progress_ConcurrentCallsDoNotCross(t *testing.T) {
 				ctx, observed := observeLane(context.Background())
 				observers[lane] = observed
 				go func() {
-					_, err := svc.CallTool(ctx, CallToolRequest{Name: "build", Arguments: map[string]any{"lane": lane}})
+					_, err := svc.CallTool(ctx, CallToolRequest{Name: buildTool, Arguments: map[string]any{laneArg: lane}})
 					done <- err
 				}()
 			}
@@ -277,9 +283,7 @@ func TestService_Progress_EachMRTRRoundGetsItsOwnToken(t *testing.T) {
 			return nil, err
 		}
 		if req.Params.InputResponses == nil {
-			return &officialMCP.CallToolResult{InputRequests: officialMCP.InputRequestMap{
-				"workspace": &officialMCP.ListRootsParams{},
-			}}, nil
+			return &officialMCP.CallToolResult{InputRequests: officialMCP.InputRequestMap{"approve": confirmRequest}}, nil
 		}
 		return textResult("released"), nil
 	})
@@ -292,8 +296,8 @@ func TestService_Progress_EachMRTRRoundGetsItsOwnToken(t *testing.T) {
 		done <- err
 	}()
 
-	var sent []any
-	var seen []string
+	sent := make([]any, 0, 2)
+	seen := make([]string, 0, 2)
 	for range 2 {
 		sent = append(sent, f.nextToken(t))
 		seen = append(seen, f.nextProgress(t, observed, "a").Token)

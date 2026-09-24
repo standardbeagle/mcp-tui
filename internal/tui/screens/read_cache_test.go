@@ -12,7 +12,7 @@ import (
 // says how the SDK served the read (SEP-2549): the first read is fetched,
 // re-opening the resource within its ttl is served from the SDK's cache.
 func TestMainScreen_ResourceViewerShowsReadCache(t *testing.T) {
-	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "release-notes", Version: "1.4.0"},
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "changelog-server", Version: "1.4.0"},
 		&officialMCP.ServerOptions{
 			SetCacheable: func(_ context.Context, _ officialMCP.Request, c *officialMCP.Cacheable) {
 				c.TTLMs = 60_000

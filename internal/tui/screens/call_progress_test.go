@@ -12,6 +12,8 @@ import (
 	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
+const contentText = "text"
+
 // TestCallProgressLine pins the progress line under a running call: a bar
 // with the summary when the server gave a total, the summary alone when
 // it did not, nothing before the first notification.
@@ -33,10 +35,7 @@ func TestCallProgressLine(t *testing.T) {
 // the server's progress for the running call, and drops it once the call
 // completes.
 func TestToolScreen_ShowsProgressWhileExecuting(t *testing.T) {
-	ts := NewToolScreen(imcp.Tool{
-		Name:        "build",
-		InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-	}, nil)
+	ts := NewToolScreen(imcp.Tool{Name: "build"}, nil)
 	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	ts.executing = true
 	observe := ts.callProgress.start()
@@ -46,7 +45,7 @@ func TestToolScreen_ShowsProgressWhileExecuting(t *testing.T) {
 		t.Errorf("view while executing lacks the progress line; view=\n%s", view)
 	}
 
-	ts.Update(toolExecutionCompleteMsg{Result: &imcp.CallToolResult{Content: []imcp.Content{{Type: "text", Text: "built"}}}})
+	ts.Update(toolExecutionCompleteMsg{Result: &imcp.CallToolResult{Content: []imcp.Content{{Type: contentText, Text: "built"}}}})
 	if view := ts.View(); strings.Contains(view, "compiling") {
 		t.Errorf("progress line still shown after the call completed; view=\n%s", view)
 	}
@@ -56,7 +55,7 @@ func TestToolScreen_ShowsProgressWhileExecuting(t *testing.T) {
 // or prompt get reports the server's progress in the status line while it
 // runs, and still delivers its result afterwards.
 func TestMainScreen_ShowsProgressWhileReading(t *testing.T) {
-	ms := NewMainScreen(&config.Config{}, &config.ConnectionConfig{Type: config.TransportStdio, Command: "noop"})
+	ms := NewMainScreen(&config.Config{}, &config.ConnectionConfig{Type: config.TransportStdio, Command: "go-build-farm"})
 	ms.connecting, ms.connected = false, true
 	release := make(chan struct{})
 	loaded := ResourceContentLoadedMsg{Error: errors.New("read cancelled by the test")}

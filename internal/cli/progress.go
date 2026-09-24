@@ -22,7 +22,9 @@ func showsCallProgress(format OutputFormat, porcelain, terminal bool) bool {
 
 // callProgress returns ctx set up to draw the call's progress on stderr when
 // showsCallProgress allows it, and the func to run once the call returns.
-func callProgress(ctx context.Context, format OutputFormat, porcelain bool) (context.Context, func()) {
+func callProgress(
+	ctx context.Context, format OutputFormat, porcelain bool,
+) (progressCtx context.Context, finish func()) {
 	if !showsCallProgress(format, porcelain, isatty.IsTerminal(os.Stderr.Fd())) {
 		return ctx, func() {}
 	}
@@ -31,7 +33,7 @@ func callProgress(ctx context.Context, format OutputFormat, porcelain bool) (con
 
 // progressLine attaches a progress observer to ctx that redraws one line of
 // w with the latest notification; the returned func ends that line.
-func progressLine(ctx context.Context, w io.Writer) (context.Context, func()) {
+func progressLine(ctx context.Context, w io.Writer) (progressCtx context.Context, finish func()) {
 	var mu sync.Mutex
 	drawn := false
 	observe := func(p mcp.Progress) {
@@ -40,7 +42,7 @@ func progressLine(ctx context.Context, w io.Writer) (context.Context, func()) {
 		fmt.Fprintf(w, "\r\x1b[K⏳ %s", p.Summary())
 		drawn = true
 	}
-	finish := func() {
+	finish = func() {
 		mu.Lock()
 		defer mu.Unlock()
 		if drawn {
