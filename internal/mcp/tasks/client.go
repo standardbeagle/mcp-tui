@@ -113,7 +113,7 @@ type Client struct {
 	mu       sync.Mutex
 	session  Session
 	waiters  map[string][]chan struct{}
-	onNotify func(method string, t Task, params json.RawMessage)
+	onNotify func(method string, t *Task, params json.RawMessage)
 }
 
 // NewClient returns a client on link, which must not be shared.
@@ -144,7 +144,7 @@ func (c *Client) Tasks() []Task {
 
 // OnTaskNotification installs the hook that receives each task status
 // notification once decoded and tracked.
-func (c *Client) OnTaskNotification(fn func(method string, t Task, params json.RawMessage)) {
+func (c *Client) OnTaskNotification(fn func(method string, t *Task, params json.RawMessage)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.onNotify = fn
@@ -448,7 +448,7 @@ func (c *Client) handleNotification(method string, params json.RawMessage) {
 	waiters := c.waiters[t.ID]
 	c.mu.Unlock()
 	if hook != nil {
-		hook(method, t, params)
+		hook(method, &t, params)
 	}
 	for _, w := range waiters {
 		select {

@@ -404,7 +404,7 @@ func TestClient_NotificationWakesAwait(t *testing.T) {
 		methodListen: func(json.RawMessage) (json.RawMessage, *jsonrpc.Error) { return noReply, nil },
 	})
 	notified := make(chan Task, 1)
-	c.OnTaskNotification(func(_ string, t Task, _ json.RawMessage) { notified <- t })
+	c.OnTaskNotification(func(_ string, t *Task, _ json.RawMessage) { notified <- *t })
 
 	out := make(chan callOutcome, 1)
 	go func() {

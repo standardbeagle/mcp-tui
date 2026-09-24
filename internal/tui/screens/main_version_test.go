@@ -2,6 +2,7 @@ package screens
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 )
 
 // versionStubService is a no-op mcp.Service implementation that returns a
@@ -67,6 +69,26 @@ func (v *versionStubService) UnsubscribeResource(context.Context, string) error 
 func (v *versionStubService) ResourceSubscriptions() []string                   { return nil }
 func (v *versionStubService) DroppedTools() []mcp.DroppedTool                   { return nil }
 func (v *versionStubService) ListCache(string) *mcp.ListCacheInfo               { return nil }
+func (v *versionStubService) TaskSupport() tasks.Support                        { return tasks.Support{Form: tasks.FormNone} }
+func (v *versionStubService) CallToolAsTask(context.Context, mcp.CallToolRequest, *int64) (*mcp.ToolTaskOutcome, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (v *versionStubService) GetTask(context.Context, string) (*tasks.Task, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (v *versionStubService) ListTasks(context.Context, string) (*tasks.Page, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (v *versionStubService) CancelTask(context.Context, string) (*tasks.Task, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (v *versionStubService) UpdateTask(context.Context, string, json.RawMessage) error {
+	return tasks.ErrUnsupported
+}
+func (v *versionStubService) AwaitTask(context.Context, string, func(tasks.Task)) (*mcp.CallToolResult, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (v *versionStubService) KnownTasks() []tasks.Task { return nil }
 func (v *versionStubService) NotificationStream() *notifications.Stream {
 	return notifications.NewStream()
 }

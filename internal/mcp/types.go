@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -11,6 +12,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 )
 
 // Service provides high-level MCP operations
@@ -69,6 +71,30 @@ type Service interface {
 	// (SEP-2243), with the SDK's reason; nil when it removed none. The SDK
 	// only logs these, so without this the tools silently go missing.
 	DroppedTools() []DroppedTool
+
+	// Task operations (MCP tasks: 2025-11-25 experimental, or the
+	// io.modelcontextprotocol/tasks extension from 2026-07-28; see tasks.go).
+	//
+	// TaskSupport reports the negotiated form and what the server declared.
+	TaskSupport() tasks.Support
+	// CallToolAsTask calls a tool as a task and returns the task handle, or
+	// the result when the server answered directly (extension only). ttlMs
+	// requests a retention (2025-11-25 only). Refused with
+	// tasks.ErrUnsupported when the server did not declare tasks.
+	CallToolAsTask(ctx context.Context, req CallToolRequest, ttlMs *int64) (*ToolTaskOutcome, error)
+	// GetTask polls a task (tasks/get).
+	GetTask(ctx context.Context, id string) (*tasks.Task, error)
+	// ListTasks pages through tasks/list (2025-11-25 only).
+	ListTasks(ctx context.Context, cursor string) (*tasks.Page, error)
+	// CancelTask sends tasks/cancel; the extension only acknowledges (nil).
+	CancelTask(ctx context.Context, id string) (*tasks.Task, error)
+	// UpdateTask answers input requests with tasks/update (extension only).
+	UpdateTask(ctx context.Context, id string, inputResponses json.RawMessage) error
+	// AwaitTask polls a task to its end, answering input requests with the
+	// service's handlers, and returns its result as CallTool would.
+	AwaitTask(ctx context.Context, id string, onUpdate func(tasks.Task)) (*CallToolResult, error)
+	// KnownTasks returns every task seen on this service, oldest first.
+	KnownTasks() []tasks.Task
 
 	// Resource operations
 	ListResources(ctx context.Context) ([]Resource, error)

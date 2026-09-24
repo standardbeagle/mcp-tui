@@ -11,6 +11,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 )
 
 // nameProtocolError wraps err in a debug.MCPError named after the MCP error
@@ -19,17 +20,30 @@ import (
 // Errors without a JSON-RPC error, or whose code MCP gives no meaning, come
 // back unchanged. The original error stays reachable through Unwrap.
 func nameProtocolError(err error, method string) error {
+	var wireCode int64
+	var wireData json.RawMessage
 	var wire *jsonrpc.Error
-	if !errors.As(err, &wire) {
+	var taskWire *tasks.RPCError // the error of a request sent by the tasks link
+	switch {
+	case errors.As(err, &wire):
+		wireCode, wireData = wire.Code, wire.Data
+	case errors.As(err, &taskWire):
+		wireCode, wireData = taskWire.Code, taskWire.Data
+	default:
 		return err
 	}
-	code := debug.ProtocolErrorCode(wire.Code, method)
+	code := debug.ProtocolErrorCode(wireCode, method)
 	if code == "" {
 		return err
 	}
-	message := fmt.Sprintf("JSON-RPC error %d from %s", wire.Code, method)
-	if code == debug.ErrorCodeURLElicitationRequired {
-		message += urlElicitationSteps(wire.Data)
+	message := fmt.Sprintf("JSON-RPC error %d from %s", wireCode, method)
+	switch code {
+	case debug.ErrorCodeURLElicitationRequired:
+		message += urlElicitationSteps(wireData)
+	case debug.ErrorCodeMissingClientCapabilities:
+		if requiresTasksExtension(wireData) {
+			message += "; the server runs this only as a task: call it as a task (mcp-tui tool call --task)"
+		}
 	}
 	return debug.WrapError(err, code, message)
 }
@@ -53,4 +67,19 @@ func urlElicitationSteps(data json.RawMessage) string {
 	}
 	b.WriteString("\nOpen the URL in a browser, finish there, then retry the call.")
 	return b.String()
+}
+
+// requiresTasksExtension reports whether a -32021 error's data names the
+// tasks extension among the required capabilities.
+func requiresTasksExtension(data json.RawMessage) bool {
+	var payload struct {
+		RequiredCapabilities struct {
+			Extensions map[string]json.RawMessage `json:"extensions"`
+		} `json:"requiredCapabilities"`
+	}
+	if json.Unmarshal(data, &payload) != nil {
+		return false
+	}
+	_, ok := payload.RequiredCapabilities.Extensions[tasks.ExtensionID]
+	return ok
 }

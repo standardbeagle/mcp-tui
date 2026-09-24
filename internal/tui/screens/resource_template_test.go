@@ -2,6 +2,7 @@ package screens
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 )
 
 // fakeCompletionService is a minimal mcp.Service implementation for the
@@ -86,6 +88,28 @@ func (f *fakeCompletionService) UnsubscribeResource(context.Context, string) err
 func (f *fakeCompletionService) ResourceSubscriptions() []string                   { return nil }
 func (f *fakeCompletionService) DroppedTools() []mcp.DroppedTool                   { return nil }
 func (f *fakeCompletionService) ListCache(string) *mcp.ListCacheInfo               { return nil }
+func (f *fakeCompletionService) TaskSupport() tasks.Support {
+	return tasks.Support{Form: tasks.FormNone}
+}
+func (f *fakeCompletionService) CallToolAsTask(context.Context, mcp.CallToolRequest, *int64) (*mcp.ToolTaskOutcome, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (f *fakeCompletionService) GetTask(context.Context, string) (*tasks.Task, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (f *fakeCompletionService) ListTasks(context.Context, string) (*tasks.Page, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (f *fakeCompletionService) CancelTask(context.Context, string) (*tasks.Task, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (f *fakeCompletionService) UpdateTask(context.Context, string, json.RawMessage) error {
+	return tasks.ErrUnsupported
+}
+func (f *fakeCompletionService) AwaitTask(context.Context, string, func(tasks.Task)) (*mcp.CallToolResult, error) {
+	return nil, tasks.ErrUnsupported
+}
+func (f *fakeCompletionService) KnownTasks() []tasks.Task { return nil }
 
 func (f *fakeCompletionService) GetCapabilitiesSnapshot() *capabilities.Snapshot {
 	return nil

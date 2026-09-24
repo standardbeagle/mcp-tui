@@ -23,6 +23,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	sessionPkg "github.com/standardbeagle/mcp-tui/internal/mcp/session"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
@@ -126,6 +127,14 @@ type service struct {
 	// ListTools is in flight. Reset on every Connect.
 	droppedTools  []DroppedTool
 	droppedInList []DroppedTool
+
+	// taskLink carries the tasks requests the SDK has no methods for, on
+	// the SDK's own connection; tasks speaks the negotiated tasks form over
+	// it (tasks.go). taskTools maps the ID of each task this service created
+	// to its tool, for outputSchema validation of the result.
+	taskLink  *tasks.Link
+	tasks     *tasks.Client
+	taskTools map[string]string
 }
 
 // getNextRequestID returns the next request ID
@@ -315,35 +324,40 @@ func (s *service) captureNotificationsMiddleware() officialMCP.Middleware {
 	return func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
 		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
 			if entry, ok := notifications.FromRequest(method, req, time.Now()); ok {
-				// Capture under the service mutex so AddNotificationObserver
-				// races (rare, but possible during init) cannot drop entries.
-				s.mu.Lock()
-				stream := s.notificationStream
-				observers := make([]func(notifications.Entry), len(s.notificationObservers))
-				copy(observers, s.notificationObservers)
-				s.mu.Unlock()
-				if stream != nil {
-					stream.Append(entry)
-				}
-				for _, obs := range observers {
-					// Recover so a panicking observer does not break the SDK
-					// dispatch path. The cost of one defer per notification is
-					// acceptable — these fire at human-perceptible rates, not
-					// in tight loops.
-					func() {
-						defer func() {
-							if r := recover(); r != nil {
-								debug.Warn("notification observer panicked",
-									debug.F("method", method),
-									debug.F("panic", fmt.Sprintf("%v", r)))
-							}
-						}()
-						obs(entry)
-					}()
-				}
+				s.publishNotification(&entry)
 			}
 			return next(ctx, method, req)
 		}
+	}
+}
+
+// publishNotification appends entry to the notification stream and hands
+// it to every observer.
+func (s *service) publishNotification(entry *notifications.Entry) {
+	// Capture under the service mutex so AddNotificationObserver races
+	// (rare, but possible during init) cannot drop entries.
+	s.mu.Lock()
+	stream := s.notificationStream
+	observers := make([]func(notifications.Entry), len(s.notificationObservers))
+	copy(observers, s.notificationObservers)
+	s.mu.Unlock()
+	if stream != nil {
+		stream.Append(*entry)
+	}
+	for _, obs := range observers {
+		// Recover so a panicking observer does not break the SDK dispatch
+		// path. The cost of one defer per notification is acceptable —
+		// these fire at human-perceptible rates, not in tight loops.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					debug.Warn("notification observer panicked",
+						debug.F("method", entry.Method),
+						debug.F("panic", fmt.Sprintf("%v", r)))
+				}
+			}()
+			obs(*entry)
+		}()
 	}
 }
 
@@ -424,6 +438,8 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		s.mu.Unlock()
 		return fmt.Errorf("failed to create transport: %w", err)
 	}
+	s.initTasks()
+	linkedTransport := s.taskLink.WrapTransport(transport)
 
 	// Snapshot the session manager before releasing the lock; Disconnect may
 	// swap service fields while the handshake is in flight. The epoch lets us
@@ -437,7 +453,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// Blocking handshake, performed without the service lock. The session
 	// manager serializes concurrent connects internally.
 	sessionOptions := &officialMCP.ClientSessionOptions{ProtocolVersion: config.ProtocolVersion}
-	err = sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type, sessionOptions)
+	err = sessionManager.Connect(ctx, client, linkedTransport, contextStrategy, transportConfig.Type, sessionOptions)
 	if err != nil {
 		// A stdio server that dies during startup fails the handshake with an
 		// opaque EOF. Its stderr says what actually went wrong, so prefer that.
@@ -454,6 +470,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		logMethodHeadersSuperseded(config, clientSession.InitializeResult())
 		applyServerLogLevel(ctx, clientSession, config.ServerLogLevel)
 		awaitSubscriptionsAck(ctx, clientSession.InitializeResult(), subscriptionsAcked)
+		s.startTaskSession(clientSession)
 	}
 
 	return s.commitConnection(epoch, sessionManager)
@@ -1211,7 +1228,10 @@ func (s *service) toolResult(
 	// flows) fetch it inline so schema-aware servers still get validated.
 	// Inline lookup failures are non-fatal: we simply skip validation and
 	// log a debug entry.
-	outputSchema := s.lookupOutputSchema(ctx, toolName)
+	var outputSchema map[string]interface{}
+	if toolName != "" { // a task this service did not create has no known tool
+		outputSchema = s.lookupOutputSchema(ctx, toolName)
+	}
 
 	// Run schema validation against the structured content. The SDK exposes
 	// StructuredContent as `any`, so we hand it through verbatim — the
