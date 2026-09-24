@@ -17,6 +17,7 @@ func newCmdWithConnectionFlags(t *testing.T, args ...string) *cobra.Command {
 	root.PersistentFlags().String("transport", "stdio", "")
 	root.PersistentFlags().String("protocol-version", "", "")
 	root.PersistentFlags().String("server-log-level", "", "")
+	root.PersistentFlags().String("traceparent", "", "")
 	RegisterOAuthFlags(root.PersistentFlags())
 
 	child := &cobra.Command{Use: "child"}
@@ -73,5 +74,19 @@ func TestParseConnectionConfig_ServerLogLevelFlag(t *testing.T) {
 				t.Errorf("ServerLogLevel = %q, want %q", connConfig.ServerLogLevel, tc.want)
 			}
 		})
+	}
+}
+
+// TestParseConnectionConfig_TraceparentFlag verifies --traceparent lands on
+// the connection config; the service validates and stamps it (SEP-414).
+func TestParseConnectionConfig_TraceparentFlag(t *testing.T) {
+	const tp = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	c := NewBaseCommand()
+	connConfig, err := c.parseConnectionConfig(newCmdWithConnectionFlags(t, "--cmd", "npx", "--traceparent", tp))
+	if err != nil {
+		t.Fatalf("parseConnectionConfig: %v", err)
+	}
+	if connConfig.Traceparent != tp {
+		t.Errorf("Traceparent = %q, want %q", connConfig.Traceparent, tp)
 	}
 }

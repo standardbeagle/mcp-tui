@@ -155,6 +155,14 @@ Examples:
 					connectionConfig.ServerLogLevel = level
 				}
 
+				// Mirror --traceparent; the service validates it at Connect.
+				traceparent, err := cmd.Flags().GetString("traceparent")
+				if err != nil {
+					debug.Error("Reading --traceparent failed", debug.F("error", err))
+					os.Exit(1)
+				}
+				connectionConfig.Traceparent = traceparent
+
 				// Mirror --mcp-method-headers into the connection config so
 				// the TUI's transport factory enables the SEP-2243 RoundTripper.
 				if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
@@ -203,6 +211,8 @@ Examples:
 	rootCmd.PersistentFlags().String("server-log-level", "",
 		"Minimum server log notification level to request (debug ... emergency); empty = none. "+
 			"Logging is deprecated (SEP-2577)")
+	rootCmd.PersistentFlags().String("traceparent", "",
+		"W3C traceparent to put in every request's _meta (SEP-414), so server spans join your trace")
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	// Debug mode always enabled - this is a testing/debug tool
 	cfg.DebugMode = true

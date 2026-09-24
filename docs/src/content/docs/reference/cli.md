@@ -24,6 +24,7 @@ mcp-tui [global-flags] <subcommand> [subcommand-flags] [args]
 | `--server-log-level <level>` | none | Ask the server for `notifications/message` at this level or above: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`. On `2026-07-28` the level travels in every request's `_meta` (`logging/setLevel` no longer exists); on older versions it is sent once with `logging/setLevel` after connecting. Without it servers send no log notifications. Logging is deprecated as of `2026-07-28` (SEP-2577). |
 | `--timeout <duration>` | `10s` | Connection timeout (e.g. `30s`, `2m`) |
 | `--header KEY=VALUE` | | Add an HTTP header to every request (repeatable; HTTP transports only) |
+| `--traceparent` | `""` | W3C `traceparent` stamped into every request's `_meta` (SEP-414) so server spans join your trace; validated at connect |
 | `--mcp-method-headers` | `false` | Inject SEP-2243 `MCP-Method`/`MCP-Name` headers on every JSON-RPC request (HTTP transports only). No effect on MCP 2026-07-28, where the SDK sends the standard headers itself; mcp-tui logs that at connect |
 | `--version` | | Print version and exit |
 
