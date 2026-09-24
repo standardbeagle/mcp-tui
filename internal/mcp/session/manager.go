@@ -69,8 +69,12 @@ type Manager struct {
 	session         *officialMCP.ClientSession
 	transport       officialMCP.Transport
 	contextStrategy transports.ContextStrategy
-	info            *Info
-	closeFunc       context.CancelFunc
+	// sessionOptions carries the per-connection handshake options (the pinned
+	// protocol version). Reconnection reuses them so a reconnect never
+	// silently renegotiates a different protocol version.
+	sessionOptions *officialMCP.ClientSessionOptions
+	info           *Info
+	closeFunc      context.CancelFunc
 
 	// Configuration
 	maxReconnectAttempts int
@@ -119,7 +123,10 @@ func (m *Manager) SetDebugEnabled(enabled bool) {
 // call. Holding it there would block every reader -- including Disconnect --
 // for the entire duration of the handshake, which for SSE runs on
 // context.Background() and can hang indefinitely, leaving no way to cancel.
-func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, transport officialMCP.Transport, contextStrategy transports.ContextStrategy, transportType transports.TransportType) error {
+//
+// sessionOptions is passed to the SDK handshake verbatim and kept for
+// reconnection; nil means SDK defaults.
+func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, transport officialMCP.Transport, contextStrategy transports.ContextStrategy, transportType transports.TransportType, sessionOptions *officialMCP.ClientSessionOptions) error {
 	m.mu.Lock()
 
 	// Ensure we're in a valid state to connect. StateReconnecting counts as
@@ -143,6 +150,7 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 	m.client = client
 	m.transport = transport
 	m.contextStrategy = contextStrategy
+	m.sessionOptions = sessionOptions
 	m.info.TransportType = transportType
 	m.info.LastError = nil
 	m.info.ReconnectCount = 0
@@ -167,7 +175,7 @@ func (m *Manager) Connect(ctx context.Context, client *officialMCP.Client, trans
 
 	// Attempt connection without holding the lock. Disconnect may run
 	// concurrently; it cancels connectCtx via closeFunc, which aborts this call.
-	session, err := client.Connect(connectCtx, transport, &officialMCP.ClientSessionOptions{})
+	session, err := client.Connect(connectCtx, transport, sessionOptions)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -627,7 +635,7 @@ func (m *Manager) attemptReconnection() {
 			debug.Info("Session manager: Reconnection abandoned (state changed)")
 			return
 		}
-		client, transport, contextStrategy := m.client, m.transport, m.contextStrategy
+		client, transport, contextStrategy, sessionOptions := m.client, m.transport, m.contextStrategy, m.sessionOptions
 		m.info.ReconnectCount = attempt
 
 		if client == nil || transport == nil || contextStrategy == nil {
@@ -648,7 +656,7 @@ func (m *Manager) attemptReconnection() {
 		m.closeFunc = cancel
 		m.mu.Unlock()
 
-		session, err := client.Connect(connectCtx, transport, &officialMCP.ClientSessionOptions{})
+		session, err := client.Connect(connectCtx, transport, sessionOptions)
 
 		m.mu.Lock()
 		if m.info.State != StateReconnecting {

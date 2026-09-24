@@ -10,6 +10,13 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
 
+// legacyProtocolVersion pins the tests below to the last protocol version in
+// which a server may call the client directly (roots/list,
+// sampling/createMessage, elicitation/create) while serving nothing. From
+// 2026-07-28 the SDK rejects those calls and servers must return
+// InputRequests instead (MRTR, SEP-2322); mrtr_test.go covers that path.
+const legacyProtocolVersion = "2025-11-25"
+
 // TestEndToEnd_TextStub spins up an in-memory MCP client/server pair, registers
 // our text-stub handler on the client, has the server send a
 // sampling/createMessage request, and verifies the canned reply round-trips.
@@ -40,7 +47,7 @@ func TestEndToEnd_TextStub(t *testing.T) {
 	}
 	defer ss.Close()
 
-	cs, err := client.Connect(ctx, ct, nil)
+	cs, err := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: legacyProtocolVersion})
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
@@ -97,7 +104,7 @@ func TestEndToEnd_ToolUseStub(t *testing.T) {
 	}
 	defer ss.Close()
 
-	cs, err := client.Connect(ctx, ct, nil)
+	cs, err := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: legacyProtocolVersion})
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
@@ -200,7 +207,7 @@ func TestEndToEnd_ToolUseStub_RoundTripFollowUp(t *testing.T) {
 		t.Fatalf("server connect: %v", err)
 	}
 	defer ss.Close()
-	cs, err := client.Connect(ctx, ct, nil)
+	cs, err := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: legacyProtocolVersion})
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
@@ -285,7 +292,7 @@ func TestEndToEnd_FileStub(t *testing.T) {
 	)
 	ss, _ := server.Connect(ctx, st, nil)
 	defer ss.Close()
-	cs, _ := client.Connect(ctx, ct, nil)
+	cs, _ := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: legacyProtocolVersion})
 	defer cs.Close()
 
 	res, err := ss.CreateMessage(ctx, &officialMCP.CreateMessageParams{

@@ -9,6 +9,13 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// legacyProtocolVersion pins the tests below to the last protocol version in
+// which a server may call the client directly (roots/list,
+// sampling/createMessage, elicitation/create) while serving nothing. From
+// 2026-07-28 the SDK rejects those calls and servers must return
+// InputRequests instead (MRTR, SEP-2322); mrtr_test.go covers that path.
+const legacyProtocolVersion = "2025-11-25"
+
 // TestEndToEnd_ListRoots spins up an in-memory MCP client/server pair, seeds
 // the client with two roots, and confirms the server receives them via
 // roots/list. This is the contract that the CLI flag --root and the TUI
@@ -45,7 +52,7 @@ func TestEndToEnd_ListRoots(t *testing.T) {
 	}
 	defer ss.Close()
 
-	cs, err := client.Connect(ctx, ct, nil)
+	cs, err := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: legacyProtocolVersion})
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
@@ -118,7 +125,7 @@ func TestEndToEnd_RootsListChanged(t *testing.T) {
 	}
 	defer ss.Close()
 
-	cs, err := client.Connect(ctx, ct, nil)
+	cs, err := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: legacyProtocolVersion})
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
@@ -201,7 +208,7 @@ func TestEndToEnd_RemoveNonexistentRootIsSilent(t *testing.T) {
 	}
 	defer ss.Close()
 
-	cs, err := client.Connect(ctx, ct, nil)
+	cs, err := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: legacyProtocolVersion})
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}

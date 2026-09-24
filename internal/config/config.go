@@ -72,6 +72,11 @@ type ConnectionConfig struct {
 	// wire behavior; STDIO transports ignore the flag because the MCP HTTP
 	// transport spec is the only place these headers exist.
 	MCPMethodHeaders bool
+
+	// ProtocolVersion pins the MCP protocol version the client requests at
+	// connect time. Empty means the SDK's latest version. The server may
+	// still negotiate down to an older mutually supported version.
+	ProtocolVersion string
 }
 
 // Validate checks if the configuration is valid

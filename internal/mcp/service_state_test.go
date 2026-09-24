@@ -109,7 +109,7 @@ func TestCommitConnectionRejectsStaleEpoch(t *testing.T) {
 
 	client := officialMCP.NewClient(&officialMCP.Implementation{Name: "c", Version: "1"}, nil)
 	require.NoError(t, sm.Connect(ctx, client, clientTransport,
-		transports.NewContextStrategy(transports.TransportSTDIO), transports.TransportSTDIO))
+		transports.NewContextStrategy(transports.TransportSTDIO), transports.TransportSTDIO, nil))
 	require.True(t, sm.IsConnected())
 
 	svc.mu.Lock()
@@ -139,7 +139,7 @@ func TestCommitConnectionAcceptsCurrentEpoch(t *testing.T) {
 
 	client := officialMCP.NewClient(&officialMCP.Implementation{Name: "c", Version: "1"}, nil)
 	require.NoError(t, sm.Connect(ctx, client, clientTransport,
-		transports.NewContextStrategy(transports.TransportSTDIO), transports.TransportSTDIO))
+		transports.NewContextStrategy(transports.TransportSTDIO), transports.TransportSTDIO, nil))
 
 	svc.mu.Lock()
 	svc.sessionManager = sm

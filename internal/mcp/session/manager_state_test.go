@@ -49,7 +49,7 @@ func TestConnectThenDisconnectStates(t *testing.T) {
 	assert.Equal(t, StateDisconnected, m.state())
 
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 	assert.Equal(t, StateConnected, m.state())
 	assert.True(t, m.IsConnected())
 
@@ -66,10 +66,10 @@ func TestConnectThenDisconnectStates(t *testing.T) {
 func TestConnectRejectedWhileAlreadyConnected(t *testing.T) {
 	m := NewManager()
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	client2, transport2 := newConnectedPair(t)
-	err := m.Connect(context.Background(), client2, transport2, stdioStrategy(), transports.TransportSTDIO)
+	err := m.Connect(context.Background(), client2, transport2, stdioStrategy(), transports.TransportSTDIO, nil)
 	assert.Error(t, err, "a second Connect must be rejected while connected")
 	assert.Equal(t, StateConnected, m.state())
 }
@@ -80,14 +80,14 @@ func TestConnectRejectedWhileAlreadyConnected(t *testing.T) {
 func TestConnectRejectedWhileReconnecting(t *testing.T) {
 	m := NewManager()
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	m.mu.Lock()
 	m.setState(StateReconnecting)
 	m.mu.Unlock()
 
 	client2, transport2 := newConnectedPair(t)
-	err := m.Connect(context.Background(), client2, transport2, stdioStrategy(), transports.TransportSTDIO)
+	err := m.Connect(context.Background(), client2, transport2, stdioStrategy(), transports.TransportSTDIO, nil)
 	assert.Error(t, err, "Connect must be rejected while a reconnection is in flight")
 	assert.Equal(t, StateReconnecting, m.state())
 }
@@ -99,7 +99,7 @@ func TestReconnectionDoesNotResurrectClosedManager(t *testing.T) {
 	m.reconnectDelay = 10 * time.Millisecond
 
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	// Enter reconnection, then close the manager underneath it.
 	m.mu.Lock()
@@ -135,7 +135,7 @@ func TestExhaustedReconnectionEndsFailed(t *testing.T) {
 	m.maxReconnectAttempts = 2
 
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	// Kill the session so the in-memory transport cannot be reconnected.
 	m.mu.Lock()
@@ -182,7 +182,7 @@ func TestReconnectionRetriesThenFailsWithoutClaimingConnected(t *testing.T) {
 	m.maxReconnectAttempts = 3
 
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	failing := &failingTransport{}
 	m.mu.Lock()
@@ -230,7 +230,7 @@ func TestDisconnectAbortsInFlightReconnection(t *testing.T) {
 	m.maxReconnectAttempts = 3
 
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	blocking := &blockingTransport{entered: make(chan struct{})}
 	m.mu.Lock()
@@ -275,7 +275,7 @@ func TestDisconnectAbortsInFlightConnect(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- m.Connect(context.Background(), client, blocking, stdioStrategy(), transports.TransportSTDIO)
+		errCh <- m.Connect(context.Background(), client, blocking, stdioStrategy(), transports.TransportSTDIO, nil)
 	}()
 
 	select {
@@ -308,7 +308,7 @@ func TestDisconnectAbortsInFlightConnect(t *testing.T) {
 func TestConnectResetsReconnectCount(t *testing.T) {
 	m := NewManager()
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	m.mu.Lock()
 	m.info.ReconnectCount = 7
@@ -316,7 +316,7 @@ func TestConnectResetsReconnectCount(t *testing.T) {
 	require.NoError(t, m.Disconnect())
 
 	client2, transport2 := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client2, transport2, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client2, transport2, stdioStrategy(), transports.TransportSTDIO, nil))
 	assert.Equal(t, 0, m.GetInfo().ReconnectCount)
 }
 
@@ -324,7 +324,7 @@ func TestConnectResetsReconnectCount(t *testing.T) {
 func TestNonRecoverableFailureSkipsReconnection(t *testing.T) {
 	m := NewManager()
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	// An authentication error is classified as requiring user intervention.
 	m.handleConnectionFailure(errors.New("authentication failed: invalid api key"))
@@ -348,7 +348,7 @@ func TestReconnectBackoffDoublesAndCaps(t *testing.T) {
 func TestGetSessionOnlyWhenConnected(t *testing.T) {
 	m := NewManager()
 	client, transport := newConnectedPair(t)
-	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO))
+	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 	require.NotNil(t, m.GetSession())
 
 	for _, state := range []State{StateReconnecting, StateFailed, StateClosed, StateDisconnected, StateConnecting} {

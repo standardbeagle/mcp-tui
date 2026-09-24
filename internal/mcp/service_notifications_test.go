@@ -82,7 +82,7 @@ func TestService_NotificationCapture_RoundTrip(t *testing.T) {
 	// Client-side service.
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
-	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
+	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: legacyProtocolVersion}
 	if err := svc.Connect(ctx, connCfg); err != nil {
 		t.Fatalf("svc.Connect: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestService_NotificationObserver_FiresInline(t *testing.T) {
 		mu.Unlock()
 	})
 
-	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
+	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: legacyProtocolVersion}
 	if err := svc.Connect(ctx, connCfg); err != nil {
 		t.Fatalf("svc.Connect: %v", err)
 	}

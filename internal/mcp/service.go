@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -399,6 +401,10 @@ func NewServiceWithConfig(config *UnifiedConfig) Service {
 // and the TUI's IsConnected/health polling -- behind a connect that can take
 // tens of seconds, or hang outright on a misbehaving SSE server.
 func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfig) error {
+	if err := validateProtocolVersion(config.ProtocolVersion); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 
 	// Store connection config for CLI command generation
@@ -459,7 +465,8 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 	// Blocking handshake, performed without the service lock. The session
 	// manager serializes concurrent connects internally.
-	if err := sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type); err != nil {
+	sessionOptions := &officialMCP.ClientSessionOptions{ProtocolVersion: config.ProtocolVersion}
+	if err := sessionManager.Connect(ctx, client, transport, contextStrategy, transportConfig.Type, sessionOptions); err != nil {
 		// A stdio server that dies during startup fails the handshake with an
 		// opaque EOF. Its stderr says what actually went wrong, so prefer that.
 		if diagnoser, ok := transport.(transports.StartupDiagnoser); ok {
@@ -524,6 +531,21 @@ func (s *service) initializeConnection() error {
 	}
 
 	return nil
+}
+
+// validateProtocolVersion accepts the empty string (SDK latest) and any
+// version the SDK can speak. Anything else fails before a transport exists,
+// naming the versions the user can choose from.
+func validateProtocolVersion(version string) error {
+	if version == "" {
+		return nil
+	}
+	supported := officialMCP.SupportedProtocolVersions()
+	if slices.Contains(supported, version) {
+		return nil
+	}
+	return fmt.Errorf("unsupported MCP protocol version %q: supported versions are %s",
+		version, strings.Join(supported, ", "))
 }
 
 // validateConnectionState checks if already connected
@@ -672,32 +694,31 @@ func (s *service) logConnectionDetails(config *configPkg.ConnectionConfig) {
 // We pull both the human-readable summary (Name/Version/ProtocolVersion shown
 // in `mcp-tui server`) and the full negotiated capabilities snapshot (used by
 // the Capabilities debug tab and `mcp-tui capabilities` subcommand) from the
-// SDK's InitializeResult. Falling back to placeholder strings keeps the UI
-// alive when a transport (e.g. an in-memory test pair) skips the handshake.
+// SDK's InitializeResult. The SDK sets it on every successful Connect (from
+// initialize, or from server/discover under 2026-07-28), so a missing one is
+// a broken handshake, not something to paper over with a guessed version.
+// Name/Version placeholders remain because servers may omit serverInfo.
 func (s *service) updateServerInfo() error {
 	clientSession := s.sessionManager.GetSession()
 	if clientSession == nil {
 		return fmt.Errorf("session manager connected but no session available")
 	}
+	initRes := clientSession.InitializeResult()
+	if initRes == nil {
+		return fmt.Errorf("session connected without an initialize result")
+	}
 
-	// Defaults for transports that haven't completed initialize yet.
 	serverName := "Connected Server"
 	serverVersion := "Unknown"
-	protocolVersion := "2024-11-05"
+	protocolVersion := initRes.ProtocolVersion
 	sessionID := clientSession.ID()
 
-	initRes := clientSession.InitializeResult()
-	if initRes != nil {
-		if initRes.ServerInfo != nil {
-			if initRes.ServerInfo.Name != "" {
-				serverName = initRes.ServerInfo.Name
-			}
-			if initRes.ServerInfo.Version != "" {
-				serverVersion = initRes.ServerInfo.Version
-			}
+	if initRes.ServerInfo != nil {
+		if initRes.ServerInfo.Name != "" {
+			serverName = initRes.ServerInfo.Name
 		}
-		if initRes.ProtocolVersion != "" {
-			protocolVersion = initRes.ProtocolVersion
+		if initRes.ServerInfo.Version != "" {
+			serverVersion = initRes.ServerInfo.Version
 		}
 	}
 
@@ -710,7 +731,7 @@ func (s *service) updateServerInfo() error {
 
 	// Propagate top-level capability flags into the legacy map so callers that
 	// only check info.Capabilities (e.g. mcp-tui server) see something useful.
-	if initRes != nil && initRes.Capabilities != nil {
+	if initRes.Capabilities != nil {
 		s.info.Capabilities = serverCapabilitiesToFlagMap(initRes.Capabilities)
 	}
 
