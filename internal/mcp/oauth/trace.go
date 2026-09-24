@@ -25,6 +25,13 @@ const (
 	authHTTPComponent = "oauth-http"
 )
 
+// IsLogComponent reports whether a debug-log component belongs to the auth
+// flow: its structured events or the HTTP trace of its exchanges. The TUI
+// Auth tab shows exactly these entries.
+func IsLogComponent(component string) bool {
+	return component == authLogComponent || component == authHTTPComponent
+}
+
 // maxTracedAuthBody caps how much of an auth request or response body the
 // tracer buffers to describe it. Metadata documents, registrations and token
 // responses are a few KiB; anything larger passes through undescribed.

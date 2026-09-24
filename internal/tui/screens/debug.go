@@ -14,21 +14,23 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 )
 
 // numDebugTabs is the count of tabs rendered by DebugScreen. Adding a new
 // tab means bumping this constant, the renderTabs labels slice, and the
 // switch in View(). Keeping the count in one place makes left/right key
 // modular arithmetic correct without scattering the magic number everywhere.
-const numDebugTabs = 6
+const numDebugTabs = 7
 
 const (
 	tabGeneralLogs   = 0
 	tabMCPProtocol   = 1
 	tabHTTPDebug     = 2
-	tabStatistics    = 3
-	tabCapabilities  = 4
-	tabNotifications = 5
+	tabAuth          = 3
+	tabStatistics    = 4
+	tabCapabilities  = 5
+	tabNotifications = 6
 )
 
 // DebugScreen shows debug logs and MCP protocol communication
@@ -36,13 +38,14 @@ type DebugScreen struct {
 	*BaseScreen
 
 	// UI state
-	activeTab     int // 0=general logs, 1=MCP protocol, 2=HTTP debug, 3=statistics, 4=capabilities
+	activeTab     int // one of the tab* constants
 	selectedIndex int
 	scrollOffset  int
 	showDetail    bool // Show detailed view of selected MCP log
 
 	// Data
 	generalLogs []string
+	authLogs    []string // OAuth flow events and their HTTP trace
 	mcpLogs     []string
 	mcpEntries  []debug.MCPLogEntry // Full MCP log entries for detail view
 	mcpStats    map[string]int
@@ -186,19 +189,13 @@ func (ds *DebugScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ds.handleKeyMsg(msg)
 
 	case debugDataRefreshMsg:
-		ds.generalLogs = msg.GeneralLogs
-		ds.mcpLogs = msg.MCPLogs
-		ds.mcpEntries = msg.MCPEntries
-		ds.mcpStats = msg.MCPStats
+		ds.applyDebugData(msg)
 		return ds, nil
 
 	case debugLogsClearedMsg:
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
-		ds.generalLogs = msg.data.GeneralLogs
-		ds.mcpLogs = msg.data.MCPLogs
-		ds.mcpEntries = msg.data.MCPEntries
-		ds.mcpStats = msg.data.MCPStats
+		ds.applyDebugData(msg.data)
 		return ds, nil
 
 	case StatusMsg:
@@ -212,6 +209,7 @@ func (ds *DebugScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // debugDataRefreshMsg contains refreshed debug data
 type debugDataRefreshMsg struct {
 	GeneralLogs []string
+	AuthLogs    []string
 	MCPLogs     []string
 	MCPEntries  []debug.MCPLogEntry
 	MCPStats    map[string]int
@@ -438,6 +436,8 @@ func (ds *DebugScreen) getCurrentList() []string {
 	switch ds.activeTab {
 	case tabGeneralLogs:
 		return ds.generalLogs
+	case tabAuth:
+		return ds.authLogs
 	case tabMCPProtocol:
 		return ds.mcpLogs
 	case tabHTTPDebug:
@@ -500,6 +500,8 @@ func (ds *DebugScreen) View() string {
 		builder.WriteString(ds.renderLogList("MCP Protocol", ds.mcpLogs))
 	case tabHTTPDebug:
 		builder.WriteString(ds.renderHTTPDebug())
+	case tabAuth:
+		builder.WriteString(ds.renderLogList("Auth", ds.authLogs))
 	case tabStatistics:
 		builder.WriteString(ds.renderStats())
 	case tabCapabilities:
@@ -550,6 +552,7 @@ func (ds *DebugScreen) renderTabs() string {
 		fmt.Sprintf("General (%d)", len(ds.generalLogs)),
 		fmt.Sprintf("MCP Protocol (%d)", len(ds.mcpLogs)),
 		"HTTP Debug",
+		fmt.Sprintf("Auth (%d)", len(ds.authLogs)),
 		"Statistics",
 		"Capabilities",
 		notifLabel,
@@ -759,8 +762,13 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 // refreshData applies freshly collected debug data to the model. It must only
 // be called from Update, on the bubbletea event loop.
 func (ds *DebugScreen) refreshData() {
-	msg := collectDebugData()
+	ds.applyDebugData(collectDebugData())
+}
+
+// applyDebugData installs collected debug data into the model.
+func (ds *DebugScreen) applyDebugData(msg debugDataRefreshMsg) {
 	ds.generalLogs = msg.GeneralLogs
+	ds.authLogs = msg.AuthLogs
 	ds.mcpLogs = msg.MCPLogs
 	ds.mcpEntries = msg.MCPEntries
 	ds.mcpStats = msg.MCPStats
@@ -773,7 +781,15 @@ func collectDebugData() debugDataRefreshMsg {
 
 	// Get general logs
 	if logBuffer := debug.GetLogBuffer(); logBuffer != nil {
-		msg.GeneralLogs = logBuffer.GetEntriesAsStrings()
+		entries := logBuffer.GetEntries()
+		msg.GeneralLogs = make([]string, 0, len(entries))
+		for _, e := range entries {
+			line := e.String()
+			msg.GeneralLogs = append(msg.GeneralLogs, line)
+			if oauth.IsLogComponent(e.Component) {
+				msg.AuthLogs = append(msg.AuthLogs, line)
+			}
+		}
 	}
 
 	// Get MCP protocol logs
