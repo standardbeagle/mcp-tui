@@ -28,6 +28,13 @@ func NewProgressBar(width int) *ProgressBar {
 	}
 }
 
+// HidePercent drops the percentage after the bar, for callers that print
+// their own figures.
+func (p *ProgressBar) HidePercent() *ProgressBar {
+	p.showPercent = false
+	return p
+}
+
 // Render returns the progress bar as a string
 func (p *ProgressBar) Render(percent float64) string {
 	if percent < 0 {

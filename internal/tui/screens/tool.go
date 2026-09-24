@@ -73,6 +73,8 @@ type ToolScreen struct {
 	lastExecution  time.Time // Time of last execution
 	result         *mcp.CallToolResult
 	resultJSON     string // Pretty-printed JSON result
+	// callProgress is the server's progress on the running call.
+	callProgress callProgress
 
 	// CLI command state
 	cliCommand     string // Generated CLI command
@@ -496,6 +498,7 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case toolExecutionCompleteMsg:
 		ts.runningTask, ts.taskUpdates = nil, nil
+		ts.callProgress.clear()
 		ts.executing = false
 		ts.lastExecution = time.Now()
 		ts.executionCount++
@@ -575,8 +578,9 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ts, nil
 
 	case toolSpinnerTickMsg:
-		// Continue spinner animation while executing
-		if ts.executing {
+		// Keep redrawing while the call, or the task it started, runs: the
+		// progress line changes between ticks.
+		if ts.executing || ts.runningTask != nil {
 			return ts, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 				return toolSpinnerTickMsg{}
 			})
@@ -670,8 +674,11 @@ func (ts *ToolScreen) toggleTaskMode() {
 // background until it ends; a direct answer completes at once.
 func (ts *ToolScreen) startTaskCmd(args map[string]interface{}) tea.Cmd {
 	svc, name := ts.mcpService, ts.tool.Name
+	// 2025-11-25 tasks keep reporting progress on the call's token while
+	// AwaitTask follows them.
+	observe := ts.callProgress.start()
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(mcp.WithProgressObserver(context.Background(), observe), 30*time.Second)
 		defer cancel()
 		outcome, err := svc.CallToolAsTask(ctx, mcp.CallToolRequest{Name: name, Arguments: args}, nil)
 		if err != nil {
@@ -683,7 +690,7 @@ func (ts *ToolScreen) startTaskCmd(args map[string]interface{}) tea.Cmd {
 		updates := make(chan tea.Msg, taskUpdateBuffer)
 		id := outcome.Task.ID
 		go func() {
-			result, err := svc.AwaitTask(context.Background(), id, func(t tasks.Task) {
+			result, err := svc.AwaitTask(mcp.WithProgressObserver(context.Background(), observe), id, func(t tasks.Task) {
 				if len(updates) < taskUpdateBuffer-1 {
 					updates <- toolTaskProgressMsg{task: t}
 				}
@@ -1118,6 +1125,7 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 		)
 	}
 	ts.SetStatus("Executing tool...", StatusInfo)
+	observe := ts.callProgress.start()
 
 	// Start the execution and spinner ticker
 	return tea.Batch(
@@ -1130,7 +1138,7 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 			// Record start time to ensure minimum display duration
 			startTime := time.Now()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(mcp.WithProgressObserver(context.Background(), observe), 30*time.Second)
 			defer cancel()
 
 			result, err := ts.mcpService.CallTool(ctx, mcp.CallToolRequest{
@@ -1507,9 +1515,13 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString(components.ProgressMessage("Executing tool...", elapsed, true))
 		builder.WriteString("\n")
 
-		// Show indeterminate progress bar
-		progressBar := components.NewIndeterminateProgress(40)
-		builder.WriteString(progressBar.Render(elapsed))
+		// The server's progress when it reports any, else an
+		// indeterminate bar.
+		if line := ts.callProgress.line(); line != "" {
+			builder.WriteString(line)
+		} else {
+			builder.WriteString(components.NewIndeterminateProgress(40).Render(elapsed))
+		}
 		builder.WriteString("\n")
 
 		// Show timeout warning if taking too long
@@ -1523,6 +1535,9 @@ func (ts *ToolScreen) renderHeader() string {
 			}
 			builder.WriteString("\n")
 		}
+	} else if line := ts.callProgress.line(); ts.runningTask != nil && line != "" {
+		// A 2025-11-25 task reporting progress on its call's token.
+		builder.WriteString(line + "\n")
 	}
 
 	return builder.String()

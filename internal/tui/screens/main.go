@@ -104,6 +104,9 @@ type MainScreen struct {
 	promptLoading      bool
 	resourceLoadStart  time.Time
 	promptLoadStart    time.Time
+	// callProgress is the server's progress on the prompt get or resource
+	// read in flight.
+	callProgress callProgress
 
 	// resourceUpdates records, per resource URI, when the server last
 	// reported it changed; cleared when the resource is read again.
@@ -400,6 +403,13 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinnerTickMsg:
 		return ms.handleSpinnerTick(msg)
 
+	case callProgressMsg:
+		// A prompt get or resource read in flight reported progress.
+		if summary := ms.callProgress.summary(); summary != "" {
+			ms.SetStatus("⏳ "+summary, StatusInfo)
+		}
+		return ms, msg.next
+
 	case SamplingRequestMsg:
 		return ms.handleSamplingRequest(msg)
 
@@ -621,6 +631,7 @@ func (ms *MainScreen) handlePromptsLoaded(msg PromptsLoadedMsg) (tea.Model, tea.
 // handleResourceContentLoaded handles resource content loaded messages
 func (ms *MainScreen) handleResourceContentLoaded(msg ResourceContentLoadedMsg) (tea.Model, tea.Cmd) {
 	ms.resourceLoading = false
+	ms.callProgress.clear()
 	if msg.Error != nil {
 		ms.SetError(fmt.Errorf("failed to load resource content: %w", msg.Error))
 	} else {
@@ -638,6 +649,7 @@ func (ms *MainScreen) handleResourceContentLoaded(msg ResourceContentLoadedMsg) 
 // handlePromptResultLoaded handles prompt result loaded messages
 func (ms *MainScreen) handlePromptResultLoaded(msg PromptResultLoadedMsg) (tea.Model, tea.Cmd) {
 	ms.promptLoading = false
+	ms.callProgress.clear()
 	if msg.Error != nil {
 		ms.SetError(fmt.Errorf("failed to load prompt result: %w", msg.Error))
 	} else {
@@ -1126,9 +1138,8 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 			ms.promptLoading = true
 			ms.promptLoadStart = time.Now()
 			ms.SetStatus(components.MCPOperationProgress("prompt", promptName, time.Duration(0)), StatusInfo)
-
-			return ms, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			return ms, ms.callProgress.await(func(ctx context.Context) tea.Msg {
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
 
 				// Execute prompt with no arguments to get the details
@@ -1141,7 +1152,7 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 					Result: result,
 					Error:  err,
 				}
-			}
+			})
 		}
 
 	case 3: // Events
@@ -1159,8 +1170,8 @@ func (ms *MainScreen) readResource(resource *mcp.Resource) tea.Cmd {
 	ms.resourceLoading = true
 	ms.resourceLoadStart = time.Now()
 	ms.SetStatus(components.MCPOperationProgress("resource", resource.URI, time.Duration(0)), StatusInfo)
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	return ms.callProgress.await(func(ctx context.Context) tea.Msg {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 
 		content, err := ms.mcpService.ReadResource(ctx, resource.URI)
@@ -1169,7 +1180,7 @@ func (ms *MainScreen) readResource(resource *mcp.Resource) tea.Cmd {
 			Content:  content,
 			Error:    err,
 		}
-	}
+	})
 }
 
 // refreshCurrentTab refreshes the current tab's data
