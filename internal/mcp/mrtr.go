@@ -17,15 +17,15 @@ import (
 // Multi round-trip requests (SEP-2322, protocol 2026-07-28): a server that
 // needs sampling, elicitation or roots while serving tools/call, prompts/get
 // or resources/read returns InputRequests instead of calling the client; the
-// client fulfils them and retries the call with InputResponses and the
+// client fulfills them and retries the call with InputResponses and the
 // server's RequestState.
 //
 // The SDK can drive this loop itself, but it does so inside a client
 // middleware that wraps every middleware mcp-tui can add, so no round is
 // observable. mcp-tui therefore disables it (ClientOptions.MultiRoundTrip)
-// and runs the loop here, logging every round. The loop and fulfilment
+// and runs the loop here, logging every round. The loop and fulfillment
 // mirror go-sdk v1.8.0 mcp/mrtr.go and client.go (createMessage, elicit,
-// listRoots) exactly; service_mrtr_parity_test.go pins that behaviour and
+// listRoots) exactly; service_mrtr_parity_test.go pins that behavior and
 // TestMRTR_SDKVersionReviewed forces a review when the SDK moves.
 
 // Round limits, identical to go-sdk v1.8.0 maxMultiRoundTripRetries and
@@ -39,13 +39,17 @@ const (
 // and request state carried from the previous round (nil and "" on the
 // first) and returns the server's input requests (nil for a final result)
 // and new request state.
-type sendRound func(ctx context.Context, responses officialMCP.InputResponseMap, state string) (officialMCP.InputRequestMap, string, error)
+type sendRound func(
+	ctx context.Context, responses officialMCP.InputResponseMap, state string,
+) (officialMCP.InputRequestMap, string, error)
 
 // runInputRounds drives a multi round-trip call until the server returns a
 // final result, fulfilling each round's input requests with the handlers
 // registered on the client. method and target (tool/prompt name or resource
 // URI) only label the log lines.
-func (s *service) runInputRounds(ctx context.Context, session *officialMCP.ClientSession, method, target string, send sendRound) error {
+func (s *service) runInputRounds(
+	ctx context.Context, session *officialMCP.ClientSession, method, target string, send sendRound,
+) error {
 	var (
 		responses    officialMCP.InputResponseMap
 		state        string
@@ -79,7 +83,7 @@ func (s *service) runInputRounds(ctx context.Context, session *officialMCP.Clien
 		if round >= maxInputRounds {
 			return fmt.Errorf("multi-round-trip: exceeded maximum retries (%d)", maxInputRounds)
 		}
-		responses, err = s.fulfilInputRequests(ctx, session, method, round, requests)
+		responses, err = s.fulfillInputRequests(ctx, session, method, round, requests)
 		if err != nil {
 			return err
 		}
@@ -87,15 +91,18 @@ func (s *service) runInputRounds(ctx context.Context, session *officialMCP.Clien
 	}
 }
 
-// fulfilInputRequests answers every input request of one round concurrently,
+// fulfillInputRequests answers every input request of one round concurrently,
 // as the SDK does.
-func (s *service) fulfilInputRequests(ctx context.Context, session *officialMCP.ClientSession, method string, round int, requests officialMCP.InputRequestMap) (officialMCP.InputResponseMap, error) {
+func (s *service) fulfillInputRequests(
+	ctx context.Context, session *officialMCP.ClientSession, method string, round int,
+	requests officialMCP.InputRequestMap,
+) (officialMCP.InputResponseMap, error) {
 	g, gctx := errgroup.WithContext(ctx)
 	var mu sync.Mutex
 	responses := make(officialMCP.InputResponseMap, len(requests))
 	for key, request := range requests {
 		g.Go(func() error {
-			response, err := s.fulfilInputRequest(gctx, session, request)
+			response, err := s.fulfillInputRequest(gctx, session, request)
 			if err != nil {
 				debug.Warn("MRTR input failed",
 					debug.F("method", method), debug.F("round", round), debug.F("key", key),
@@ -117,13 +124,17 @@ func (s *service) fulfilInputRequests(ctx context.Context, session *officialMCP.
 	return responses, nil
 }
 
-// fulfilInputRequest mirrors go-sdk fulfillInputRequest.
-func (s *service) fulfilInputRequest(ctx context.Context, session *officialMCP.ClientSession, request officialMCP.InputRequest) (officialMCP.InputResponse, error) {
+// fulfillInputRequest mirrors go-sdk fulfillInputRequest.
+func (s *service) fulfillInputRequest(
+	ctx context.Context, session *officialMCP.ClientSession, request officialMCP.InputRequest,
+) (officialMCP.InputResponse, error) {
 	switch p := request.(type) {
 	case *officialMCP.ElicitParams:
 		return s.elicitForInput(ctx, &officialMCP.ElicitRequest{Session: session, Params: p})
 	case *officialMCP.CreateMessageParams:
-		return s.createMessageForInput(ctx, &officialMCP.CreateMessageWithToolsRequest{Session: session, Params: createMessageParamsToWithTools(p)})
+		return s.createMessageForInput(ctx, &officialMCP.CreateMessageWithToolsRequest{
+			Session: session, Params: createMessageParamsToWithTools(p),
+		})
 	case *officialMCP.CreateMessageWithToolsParams:
 		return s.createMessageForInput(ctx, &officialMCP.CreateMessageWithToolsRequest{Session: session, Params: p})
 	case *officialMCP.ListRootsParams:
@@ -139,7 +150,9 @@ const codeUnsupportedMethod = -31001
 
 // createMessageForInput mirrors go-sdk Client.createMessage, calling the
 // handlers createClient registered in ClientOptions.
-func (s *service) createMessageForInput(ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error) {
+func (s *service) createMessageForInput(
+	ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest,
+) (*officialMCP.CreateMessageWithToolsResult, error) {
 	opts := s.inputHandlers()
 	if opts.CreateMessageWithToolsHandler != nil {
 		return opts.CreateMessageWithToolsHandler(ctx, req)
@@ -187,7 +200,7 @@ func (s *service) inputHandlers() *officialMCP.ClientOptions {
 
 // createMessageParamsToWithTools mirrors go-sdk createMessageParamsToWithTools.
 func createMessageParamsToWithTools(p *officialMCP.CreateMessageParams) *officialMCP.CreateMessageWithToolsParams {
-	var msgs []*officialMCP.SamplingMessageV2
+	msgs := make([]*officialMCP.SamplingMessageV2, 0, len(p.Messages))
 	for _, m := range p.Messages {
 		msgs = append(msgs, &officialMCP.SamplingMessageV2{Content: []officialMCP.Content{m.Content}, Role: m.Role})
 	}
@@ -206,10 +219,11 @@ func createMessageParamsToWithTools(p *officialMCP.CreateMessageParams) *officia
 
 // createMessageParamsToBase mirrors go-sdk CreateMessageWithToolsParams.toBase.
 func createMessageParamsToBase(p *officialMCP.CreateMessageWithToolsParams) (*officialMCP.CreateMessageParams, error) {
-	var msgs []*officialMCP.SamplingMessage
+	msgs := make([]*officialMCP.SamplingMessage, 0, len(p.Messages))
 	for _, m := range p.Messages {
 		if len(m.Content) > 1 {
-			return nil, fmt.Errorf("message has %d content blocks; use CreateMessageWithToolsHandler to support multiple content", len(m.Content))
+			return nil, fmt.Errorf("message has %d content blocks; "+
+				"use CreateMessageWithToolsHandler to support multiple content", len(m.Content))
 		}
 		var content officialMCP.Content
 		if len(m.Content) > 0 {
@@ -269,7 +283,7 @@ func describeInputRequests(requests officialMCP.InputRequestMap) []string {
 	return out
 }
 
-// describeInputResponse summarises what the client answered, without the
+// describeInputResponse summarizes what the client answered, without the
 // answer's content: elicitation action, sampling stop reason and content
 // kinds, or the number of roots.
 func describeInputResponse(response officialMCP.InputResponse) string {

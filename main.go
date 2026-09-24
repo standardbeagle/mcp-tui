@@ -198,7 +198,8 @@ Examples:
 	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
 	rootCmd.PersistentFlags().String("transport", "stdio", "Transport type (stdio, sse, http, streamable-http)")
 	rootCmd.PersistentFlags().String("protocol-version", "", "MCP protocol version to request (e.g. 2025-11-25); empty = SDK latest")
-	rootCmd.PersistentFlags().String("server-log-level", "", "Minimum level of server log notifications to request (debug, info, notice, warning, error, critical, alert, emergency); empty = none")
+	rootCmd.PersistentFlags().String("server-log-level", "",
+		"Minimum server log notification level to request (debug ... emergency); empty = none")
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	// Debug mode always enabled - this is a testing/debug tool
 	cfg.DebugMode = true

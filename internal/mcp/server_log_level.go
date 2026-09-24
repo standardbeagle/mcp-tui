@@ -28,7 +28,7 @@ import (
 // request's _meta on 2026-07-28 by a sending middleware.
 
 // mcpLoggingLevels are the syslog-style levels MCP defines, lowest first.
-var mcpLoggingLevels = []string{"debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"}
+var mcpLoggingLevels = strings.Fields("debug info notice warning error critical alert emergency")
 
 func validateServerLogLevel(level string) error {
 	if level == "" || slices.Contains(mcpLoggingLevels, level) {
@@ -80,14 +80,16 @@ func applyServerLogLevel(ctx context.Context, session *officialMCP.ClientSession
 	}
 	res := session.InitializeResult()
 	if res != nil && res.ProtocolVersion >= statelessProtocolVersion {
-		debug.Info("Server log level requested per request", debug.F("level", level), debug.F("via", "_meta "+officialMCP.MetaKeyLogLevel))
+		debug.Info("Server log level requested per request",
+			debug.F("level", level), debug.F("via", "_meta "+officialMCP.MetaKeyLogLevel))
 		return
 	}
 	if res != nil && (res.Capabilities == nil || res.Capabilities.Logging == nil) {
 		debug.Warn("Server does not advertise logging; not sending logging/setLevel", debug.F("level", level))
 		return
 	}
-	if err := session.SetLoggingLevel(ctx, &officialMCP.SetLoggingLevelParams{Level: officialMCP.LoggingLevel(level)}); err != nil {
+	params := &officialMCP.SetLoggingLevelParams{Level: officialMCP.LoggingLevel(level)}
+	if err := session.SetLoggingLevel(ctx, params); err != nil {
 		debug.Warn("Server rejected logging/setLevel", debug.F("level", level), debug.F("error", err))
 		return
 	}

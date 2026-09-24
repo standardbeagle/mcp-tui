@@ -9,7 +9,7 @@
 // it renders. Adding a name here therefore changes every surface at once.
 //
 // Redaction fails closed: input that cannot be parsed (a malformed URL,
-// truncated JSON, a body of an unknown content type) is summarised, never
+// truncated JSON, a body of an unknown content type) is summarized, never
 // echoed.
 package redact
 
@@ -187,7 +187,7 @@ func maskJSON(v any) any {
 // Body masks a request or response body according to its Content-Type. JSON,
 // form and event-stream bodies are rendered with credentials masked; an
 // untyped body is rendered only when it is valid JSON. Anything else is
-// summarised, because an unknown format cannot be scanned for credentials.
+// summarized, because an unknown format cannot be scanned for credentials.
 func Body(contentType string, body []byte) string {
 	if len(body) == 0 {
 		return ""

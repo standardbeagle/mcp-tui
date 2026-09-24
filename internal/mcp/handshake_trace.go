@@ -118,7 +118,10 @@ func discoverRequestedVersion(req officialMCP.Request) string {
 	if !ok || p == nil {
 		return ""
 	}
-	v, _ := p.Meta[officialMCP.MetaKeyProtocolVersion].(string)
+	v, ok := p.Meta[officialMCP.MetaKeyProtocolVersion].(string)
+	if !ok {
+		return ""
+	}
 	return v
 }
 

@@ -22,7 +22,7 @@ func TestHTTPTraceTransport_LogsOneRedactedLinePerExchange(t *testing.T) {
 	defer stop()
 
 	client := &http.Client{Transport: NewHTTPTraceTransport(http.DefaultTransport, "oauth-http")}
-	req, err := http.NewRequest(http.MethodPost, srv.URL+"/mcp?state=st-5c2e90&tenant=acme", nil)
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/mcp?state=st-5c2e90&tenant=acme", http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,15 +60,16 @@ func TestHTTPTraceTransport_LogsTransportFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := ln.Addr().String()
-	if err := ln.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := ln.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	read, stop := Capture(LogLevelDebug)
 	defer stop()
 
 	client := &http.Client{Transport: NewHTTPTraceTransport(http.DefaultTransport, "mcp-http")}
-	_, err = client.Get("http://" + addr + "/cb?code=ac-e4410b")
+	resp, err := client.Get("http://" + addr + "/cb?code=ac-e4410b")
 	if err == nil {
+		_ = resp.Body.Close()
 		t.Fatal("expected a connection error")
 	}
 

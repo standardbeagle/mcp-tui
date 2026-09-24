@@ -189,13 +189,13 @@ func (ds *DebugScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ds.handleKeyMsg(msg)
 
 	case debugDataRefreshMsg:
-		ds.applyDebugData(msg)
+		ds.applyDebugData(&msg)
 		return ds, nil
 
 	case debugLogsClearedMsg:
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
-		ds.applyDebugData(msg.data)
+		ds.applyDebugData(&msg.data)
 		return ds, nil
 
 	case StatusMsg:
@@ -762,11 +762,12 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 // refreshData applies freshly collected debug data to the model. It must only
 // be called from Update, on the bubbletea event loop.
 func (ds *DebugScreen) refreshData() {
-	ds.applyDebugData(collectDebugData())
+	data := collectDebugData()
+	ds.applyDebugData(&data)
 }
 
 // applyDebugData installs collected debug data into the model.
-func (ds *DebugScreen) applyDebugData(msg debugDataRefreshMsg) {
+func (ds *DebugScreen) applyDebugData(msg *debugDataRefreshMsg) {
 	ds.generalLogs = msg.GeneralLogs
 	ds.authLogs = msg.AuthLogs
 	ds.mcpLogs = msg.MCPLogs

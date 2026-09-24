@@ -217,7 +217,8 @@ func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.R
 	h.mu.Unlock()
 
 	tok := currentToken(ctx, delegate)
-	authLog().Info("Authorization succeeded", append([]debug.Field{debug.F("mode", h.cfg.Mode())}, tokenSummary(tok)...)...)
+	authLog().Info("Authorization succeeded",
+		append([]debug.Field{debug.F("mode", h.cfg.Mode())}, tokenSummary(tok)...)...)
 
 	// Persist the freshly acquired token (best-effort).
 	h.persistToken(tok)
@@ -345,9 +346,12 @@ func (h *Handler) persistToken(tok *oauth2.Token) {
 // tokenSummary describes a token without any of its credential values.
 func tokenSummary(tok *oauth2.Token) []debug.Field {
 	if tok == nil {
-		return []debug.Field{debug.F("token", "none")}
+		return []debug.Field{debug.F("token", noneValue)}
 	}
-	scope, _ := tok.Extra("scope").(string)
+	scope, ok := tok.Extra("scope").(string)
+	if !ok {
+		scope = ""
+	}
 	return []debug.Field{
 		debug.F("token_type", tok.Type()),
 		debug.F("expiry", tok.Expiry),
@@ -364,7 +368,7 @@ func registrationPath(cfg *Config) string {
 	case cfg.EnableDynamicRegistration:
 		return "dynamic"
 	default:
-		return "none"
+		return noneValue
 	}
 }
 

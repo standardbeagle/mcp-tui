@@ -117,7 +117,7 @@ type service struct {
 	subscriptionsAcked chan struct{}
 
 	// clientOptions are the options the current client was built with. The
-	// multi round-trip loop (mrtr.go) fulfils input requests with the same
+	// multi round-trip loop (mrtr.go) fulfills input requests with the same
 	// handlers the SDK would call.
 	clientOptions *officialMCP.ClientOptions
 
@@ -416,10 +416,7 @@ func NewServiceWithConfig(config *UnifiedConfig) Service {
 // and the TUI's IsConnected/health polling -- behind a connect that can take
 // tens of seconds, or hang outright on a misbehaving SSE server.
 func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfig) error {
-	if err := validateProtocolVersion(config.ProtocolVersion); err != nil {
-		return err
-	}
-	if err := validateServerLogLevel(config.ServerLogLevel); err != nil {
+	if err := validateConnectionConfig(config); err != nil {
 		return err
 	}
 
@@ -609,6 +606,16 @@ func (s *service) initializeConnection() error {
 	return nil
 }
 
+// validateConnectionConfig rejects settings the SDK cannot honor before any
+// transport exists, so CLI and TUI fail the same way without spawning a
+// server.
+func validateConnectionConfig(config *configPkg.ConnectionConfig) error {
+	if err := validateProtocolVersion(config.ProtocolVersion); err != nil {
+		return err
+	}
+	return validateServerLogLevel(config.ServerLogLevel)
+}
+
 // validateProtocolVersion accepts the empty string (SDK latest) and any
 // version the SDK can speak. Anything else fails before a transport exists,
 // naming the versions the user can choose from.
@@ -631,6 +638,17 @@ func requestedProtocolVersion(pinned string) string {
 		return pinned
 	}
 	return officialMCP.SupportedProtocolVersions()[0]
+}
+
+// addProtocolMiddleware installs the sending middleware that records the
+// protocol-version handshake and, when a server log level is configured,
+// stamps it into every 2026-07-28 request.
+func (s *service) addProtocolMiddleware(client *officialMCP.Client) {
+	s.handshake = newHandshakeTrace()
+	client.AddSendingMiddleware(s.handshake.middleware())
+	if s.connectionConfig != nil && s.connectionConfig.ServerLogLevel != "" {
+		client.AddSendingMiddleware(serverLogLevelMiddleware(s.connectionConfig.ServerLogLevel))
+	}
 }
 
 // validateConnectionState checks if already connected
@@ -763,11 +781,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 	}
 	client.AddReceivingMiddleware(s.captureNotificationsMiddleware())
 
-	s.handshake = newHandshakeTrace()
-	client.AddSendingMiddleware(s.handshake.middleware())
-	if s.connectionConfig != nil && s.connectionConfig.ServerLogLevel != "" {
-		client.AddSendingMiddleware(serverLogLevelMiddleware(s.connectionConfig.ServerLogLevel))
-	}
+	s.addProtocolMiddleware(client)
 
 	acked := make(chan struct{})
 	var ackOnce sync.Once
@@ -1142,7 +1156,9 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 	// Call the tool, answering any input requests the server returns.
 	var result *officialMCP.CallToolResult
 	err := s.runInputRounds(ctx, session, "tools/call", req.Name,
-		func(ctx context.Context, responses officialMCP.InputResponseMap, state string) (officialMCP.InputRequestMap, string, error) {
+		func(
+			ctx context.Context, responses officialMCP.InputResponseMap, state string,
+		) (officialMCP.InputRequestMap, string, error) {
 			round := *params
 			round.InputResponses, round.RequestState = responses, state
 			res, err := session.CallTool(ctx, &round)
@@ -1395,7 +1411,9 @@ func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceConte
 
 	var result *officialMCP.ReadResourceResult
 	err := s.runInputRounds(ctx, session, "resources/read", uri,
-		func(ctx context.Context, responses officialMCP.InputResponseMap, state string) (officialMCP.InputRequestMap, string, error) {
+		func(
+			ctx context.Context, responses officialMCP.InputResponseMap, state string,
+		) (officialMCP.InputRequestMap, string, error) {
 			round := *params
 			round.InputResponses, round.RequestState = responses, state
 			res, err := session.ReadResource(ctx, &round)
@@ -1516,7 +1534,9 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 
 	var result *officialMCP.GetPromptResult
 	err := s.runInputRounds(ctx, session, "prompts/get", req.Name,
-		func(ctx context.Context, responses officialMCP.InputResponseMap, state string) (officialMCP.InputRequestMap, string, error) {
+		func(
+			ctx context.Context, responses officialMCP.InputResponseMap, state string,
+		) (officialMCP.InputRequestMap, string, error) {
 			round := *params
 			round.InputResponses, round.RequestState = responses, state
 			res, err := session.GetPrompt(ctx, &round)

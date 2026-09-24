@@ -207,7 +207,7 @@ func (l *logger) start() {
 					close(entry.flushed)
 					continue
 				}
-				l.writeLog(entry)
+				l.writeLog(&entry)
 			case <-l.done:
 				// Drain any remaining log entries
 				for {
@@ -217,7 +217,7 @@ func (l *logger) start() {
 							close(entry.flushed)
 							continue
 						}
-						l.writeLog(entry)
+						l.writeLog(&entry)
 					default:
 						return
 					}
@@ -261,7 +261,7 @@ func (l *logger) Flush() {
 }
 
 // writeLog writes a log entry to the output
-func (l *logger) writeLog(entry logEntry) {
+func (l *logger) writeLog(entry *logEntry) {
 	logLine := l.buildLogLine(entry)
 
 	// Write to output - this is now safe as only one goroutine writes
@@ -276,7 +276,7 @@ func (l *logger) writeLog(entry logEntry) {
 }
 
 // buildLogLine builds the formatted log line
-func (l *logger) buildLogLine(entry logEntry) string {
+func (l *logger) buildLogLine(entry *logEntry) string {
 	var builder strings.Builder
 
 	l.writeTimestamp(&builder, entry.timestamp)
@@ -347,7 +347,7 @@ func extractFilename(filePath string) string {
 }
 
 // addToLogBuffer adds the log entry to the TUI log buffer
-func (l *logger) addToLogBuffer(entry logEntry) {
+func (l *logger) addToLogBuffer(entry *logEntry) {
 	if logBuffer := GetLogBuffer(); logBuffer != nil {
 		logBuffer.Add(entry.level, entry.component, entry.msg, entry.fields)
 	}
@@ -366,7 +366,7 @@ func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 
 	// Combine base fields and additional fields. Every value passes through
 	// the redact package here, so no log path can emit a credential that it
-	// labelled by its protocol name (access_token, Authorization, ...).
+	// labeled by its protocol name (access_token, Authorization, ...).
 	allFields := make([]Field, 0, len(baseFields)+len(fields))
 	for _, f := range baseFields {
 		allFields = append(allFields, Field{Key: f.Key, Value: redact.FieldValue(f.Key, f.Value)})

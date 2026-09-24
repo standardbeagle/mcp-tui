@@ -2,6 +2,7 @@ package debug
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/standardbeagle/mcp-tui/internal/redact"
@@ -42,7 +43,11 @@ func (h *slogHandler) Handle(_ context.Context, r slog.Record) error {
 		fields = appendSlogAttr(fields, h.prefix, a)
 		return true
 	})
-	Component(h.component).(*logger).log(logLevelFromSlog(r.Level), r.Message, fields...)
+	l, ok := Component(h.component).(*logger)
+	if !ok {
+		return fmt.Errorf("debug: component logger is %T, not the built-in logger", Component(h.component))
+	}
+	l.log(logLevelFromSlog(r.Level), r.Message, fields...)
 	return nil
 }
 

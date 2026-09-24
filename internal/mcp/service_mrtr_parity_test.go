@@ -13,7 +13,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 )
 
-// These tests pin the multi round-trip (SEP-2322) behaviour mcp-tui must
+// These tests pin the multi round-trip (SEP-2322) behavior mcp-tui must
 // keep whichever layer drives the retry loop: the round limits, load
 // shedding, the prompt and resource paths, and the SDK's elicitation schema
 // checks. They were written against the SDK's own loop and must pass
@@ -204,7 +204,7 @@ func TestMRTR_AppliesElicitationSchemaDefaults(t *testing.T) {
 }
 
 // mirroredSDKVersion is the go-sdk release whose multi round-trip loop and
-// input fulfilment mrtr.go and mrtr_elicit.go copy.
+// input fulfillment mrtr.go and mrtr_elicit.go copy.
 const mirroredSDKVersion = "v1.8.0"
 
 // TestMRTR_SDKVersionReviewed fails when go-sdk moves, so whoever upgrades

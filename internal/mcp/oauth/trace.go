@@ -20,6 +20,10 @@ import (
 // trace of the same exchanges).
 func authLog() debug.Logger { return debug.Component(authLogComponent) }
 
+// noneValue marks an absent endpoint, token, registration or client
+// authentication method in log fields.
+const noneValue = "none"
+
 const (
 	authLogComponent  = "oauth"
 	authHTTPComponent = "oauth-http"
@@ -59,17 +63,18 @@ type authTraceTransport struct {
 }
 
 func (t *authTraceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	reqBody, err := peekBody(&req.Body)
+	reqBody, body, err := peekBody(req.Body)
 	if err != nil {
 		return nil, err
 	}
+	req.Body = body
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		return resp, err
 	}
 	var respBody []byte
 	if !isEventStream(resp.Header.Get("Content-Type")) {
-		respBody, err = peekBody(&resp.Body)
+		respBody, resp.Body, err = peekBody(resp.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -84,27 +89,25 @@ func (t *authTraceTransport) RoundTrip(req *http.Request) (*http.Response, error
 	return resp, nil
 }
 
-// peekBody reads up to maxTracedAuthBody bytes of *body and puts an
-// equivalent reader back. It returns nil when the body is absent or larger
-// than the cap (the oversize body is still forwarded intact).
-func peekBody(body *io.ReadCloser) ([]byte, error) {
-	if *body == nil || *body == http.NoBody {
-		return nil, nil
+// peekBody reads up to maxTracedAuthBody bytes of body and returns them with
+// an equivalent body to forward in its place. The bytes are nil when the body
+// is absent or larger than the cap (the oversize body is still forwarded
+// intact).
+func peekBody(body io.ReadCloser) ([]byte, io.ReadCloser, error) {
+	if body == nil || body == http.NoBody {
+		return nil, body, nil
 	}
-	orig := *body
-	head, err := io.ReadAll(io.LimitReader(orig, maxTracedAuthBody+1))
+	head, err := io.ReadAll(io.LimitReader(body, maxTracedAuthBody+1))
 	if err != nil {
-		return nil, err
+		return nil, body, err
 	}
 	if len(head) > maxTracedAuthBody {
-		*body = readCloser{io.MultiReader(bytes.NewReader(head), orig), orig}
-		return nil, nil
+		return nil, readCloser{io.MultiReader(bytes.NewReader(head), body), body}, nil
 	}
-	if err := orig.Close(); err != nil {
-		return nil, err
+	if err := body.Close(); err != nil {
+		return nil, body, err
 	}
-	*body = io.NopCloser(bytes.NewReader(head))
-	return head, nil
+	return head, io.NopCloser(bytes.NewReader(head)), nil
 }
 
 type readCloser struct {
@@ -113,8 +116,7 @@ type readCloser struct {
 }
 
 func isEventStream(contentType string) bool {
-	mediaType, _, _ := mime.ParseMediaType(contentType)
-	return mediaType == "text/event-stream"
+	return mediaType(contentType) == "text/event-stream"
 }
 
 // authEvent is one structured log line describing an auth step.
@@ -150,7 +152,7 @@ func describeAuthExchange(req *http.Request, reqBody []byte, resp *http.Response
 	case "application/json":
 		var reg oauthex.ClientRegistrationMetadata
 		if json.Unmarshal(reqBody, &reg) == nil && len(reg.RedirectURIs) > 0 {
-			return []authEvent{describeRegistration(req, reg, resp, respBody)}
+			return []authEvent{describeRegistration(req, &reg, resp, respBody)}
 		}
 	case "application/x-www-form-urlencoded":
 		form, err := url.ParseQuery(string(reqBody))
@@ -162,7 +164,8 @@ func describeAuthExchange(req *http.Request, reqBody []byte, resp *http.Response
 }
 
 func describePRM(req *http.Request, resp *http.Response, body []byte) authEvent {
-	fields := []debug.Field{debug.F("url", redact.RedactedURL(req.URL)), debug.F("status", resp.StatusCode)}
+	fields := make([]debug.Field, 0, 7)
+	fields = append(fields, debug.F("url", redact.RedactedURL(req.URL)), debug.F("status", resp.StatusCode))
 	var prm oauthex.ProtectedResourceMetadata
 	if resp.StatusCode != http.StatusOK || json.Unmarshal(body, &prm) != nil {
 		return authEvent{"Protected resource metadata not available", fields}
@@ -176,14 +179,15 @@ func describePRM(req *http.Request, resp *http.Response, body []byte) authEvent 
 }
 
 func describeASM(req *http.Request, resp *http.Response, body []byte) authEvent {
-	fields := []debug.Field{debug.F("url", redact.RedactedURL(req.URL)), debug.F("status", resp.StatusCode)}
+	fields := make([]debug.Field, 0, 12)
+	fields = append(fields, debug.F("url", redact.RedactedURL(req.URL)), debug.F("status", resp.StatusCode))
 	var asm oauthex.AuthServerMeta
 	if resp.StatusCode != http.StatusOK || json.Unmarshal(body, &asm) != nil {
 		return authEvent{"Authorization server metadata not available", fields}
 	}
 	registration := asm.RegistrationEndpoint
 	if registration == "" {
-		registration = "none"
+		registration = noneValue
 	}
 	return authEvent{"Authorization server metadata discovered", append(fields,
 		debug.F("issuer", asm.Issuer),
@@ -198,7 +202,9 @@ func describeASM(req *http.Request, resp *http.Response, body []byte) authEvent 
 		debug.F("client_id_metadata_document_supported", asm.ClientIDMetadataDocumentSupported))}
 }
 
-func describeRegistration(req *http.Request, reg oauthex.ClientRegistrationMetadata, resp *http.Response, body []byte) authEvent {
+func describeRegistration(
+	req *http.Request, reg *oauthex.ClientRegistrationMetadata, resp *http.Response, body []byte,
+) authEvent {
 	fields := []debug.Field{
 		debug.F("status", resp.StatusCode),
 		debug.F("endpoint", redact.RedactedURL(req.URL)),
@@ -279,11 +285,16 @@ func tokenClientAuth(req *http.Request, form url.Values) string {
 	case form.Get("client_assertion") != "":
 		return "private_key_jwt"
 	default:
-		return "none"
+		return noneValue
 	}
 }
 
+// mediaType returns the media type of a Content-Type header, or "" when the
+// header is absent or malformed (such a body is then left undescribed).
 func mediaType(contentType string) string {
-	mt, _, _ := mime.ParseMediaType(contentType)
+	mt, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return ""
+	}
 	return mt
 }
