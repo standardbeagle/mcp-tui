@@ -1191,7 +1191,15 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		return nil, fmt.Errorf("failed to call tool '%s': %w", req.Name, nameProtocolError(err, "tools/call"))
 	}
 
-	// Convert the result format
+	return s.toolResult(ctx, req.Name, result, rounds), nil
+}
+
+// toolResult converts the SDK's result of a call to toolName for callers,
+// validating its structured content against the tool's outputSchema. rounds
+// is the call's multi round-trip trace.
+func (s *service) toolResult(
+	ctx context.Context, toolName string, result *officialMCP.CallToolResult, rounds []RoundSummary,
+) *CallToolResult {
 	var content []Content
 	for _, c := range result.Content {
 		content = append(content, convertContent(c))
@@ -1203,7 +1211,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 	// flows) fetch it inline so schema-aware servers still get validated.
 	// Inline lookup failures are non-fatal: we simply skip validation and
 	// log a debug entry.
-	outputSchema := s.lookupOutputSchema(ctx, req.Name)
+	outputSchema := s.lookupOutputSchema(ctx, toolName)
 
 	// Run schema validation against the structured content. The SDK exposes
 	// StructuredContent as `any`, so we hand it through verbatim — the
@@ -1213,12 +1221,12 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 	violations := outputvalidation.Validate(outputSchema, result.StructuredContent)
 	if len(violations) > 0 {
 		debug.Warn("Tool result violates outputSchema",
-			debug.F("tool", req.Name),
+			debug.F("tool", toolName),
 			debug.F("violations", len(violations)))
 	}
 
 	debug.Info("Called tool successfully",
-		debug.F("tool", req.Name),
+		debug.F("tool", toolName),
 		debug.F("isError", result.IsError),
 		debug.F("contentCount", len(content)),
 		debug.F("hasStructured", result.StructuredContent != nil),
@@ -1231,7 +1239,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		OutputViolations:  violations,
 		Rounds:            rounds,
 		Server:            respondingServer(result.Meta),
-	}, nil
+	}
 }
 
 // lookupOutputSchema returns the cached outputSchema for the named tool,
