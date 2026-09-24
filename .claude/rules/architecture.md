@@ -35,6 +35,17 @@ No active migrations. Document ongoing migrations here.
 
 Known gaps: none open for this listener. The concurrent-connection cap is enforced in `ConnState` (close on `StateNew`), so a connection past the cap is accepted by the kernel before it is closed.
 
+### Outbound auth requests (SSRF guard)
+
+Discovery, registration and token endpoints come from documents the MCP server controls, so every auth request goes through one client, `newAuthHTTPClient` (`internal/mcp/oauth/trace.go`), built once per `oauth.NewHandler` and handed to every SDK handler and to cached-session refresh. Its transport (`guardedTransport`, `internal/mcp/oauth/dialguard.go`) refuses at dial time — on the resolved address, via `net.Dialer.Control` — any private (RFC 1918 / ULA), link-local (incl. `169.254.169.254`), CGNAT, multicast or unspecified address; loopback is always allowed. The ranges mirror go-sdk `internal/util.IsPrivateOrReserved`, which oauthex applies only when handed a bare `*http.Transport` — never the case once the tracing wrapper is in place, which is why mcp-tui re-applies it.
+
+`--oauth-allow-private-network` (`Config.AllowPrivateNetwork`, default false) lifts the refusal; each allowed dial is logged as a warning with its address class.
+
+Known gaps:
+- With an HTTP proxy configured (`HTTPS_PROXY` etc.) the guard is off, as in the SDK: the dialer only sees the proxy's address. Logged as a warning at handler construction; the proxy is then the only control.
+- A caller-supplied `*http.Client` whose transport dials for itself (non-`*http.Transport`, or `DialContext`/`DialTLSContext` set) is used unguarded, logged as a warning. Production passes `nil`, so only tests hit this.
+- The flag cannot admit a literal private IP in a discovered URL: the SDK's own URL check (`checkHTTPSOrLoopback`) still rejects it. Only hostnames that resolve into private ranges are admitted.
+
 ## Side Effect Isolation
 
 All side effects (I/O, network, database, filesystem) must be isolated at system boundaries:

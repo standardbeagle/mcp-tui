@@ -103,6 +103,23 @@ When a server publishes no authorization server metadata, the MCP SDK falls
 back to `/authorize`, `/token` and `/register` on the authorization server's
 origin. There is no flag to override the token endpoint.
 
+### Private-network endpoints
+
+The endpoints MCP-TUI talks to during sign-in come from metadata the MCP
+server publishes, so a hostile or misconfigured server could point them at
+hosts inside your network. MCP-TUI refuses any auth request whose address
+resolves to a private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
+`fc00::/7`), link-local (including the `169.254.169.254` cloud metadata
+address), carrier-grade NAT (`100.64.0.0/10`), multicast or unspecified
+address. Loopback is always allowed, so a local authorization server works.
+
+If your authorization server lives on a private network, pass
+`--oauth-allow-private-network`. Each request it lets through is logged as a
+warning with the address and its class. The flag covers hostnames that
+resolve to private addresses; a literal private IP in a discovered URL is
+still rejected by the MCP SDK. With an HTTP proxy configured the check is off,
+because every connection goes to the proxy.
+
 ## Scopes
 
 In the authorization-code flow, MCP-TUI requests the scopes the server's
@@ -151,5 +168,6 @@ request triggers a fresh authorization.
 | `--oauth-redirect-port` | `0` | Auth-code redirect port (`0` = ephemeral) |
 | `--oauth-dynamic-registration` | `false` | RFC 7591 dynamic registration when client ID is empty |
 | `--oauth-accept-unadvertised-iss` | `false` | Accept `iss` from an AS that does not advertise RFC 9207 support (testing only) |
+| `--oauth-allow-private-network` | `false` | Allow auth requests to private-network addresses |
 | `--oauth-cache` | platform cache dir | Token cache directory (`-` disables) |
 </content>

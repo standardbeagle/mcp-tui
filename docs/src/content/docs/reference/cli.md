@@ -71,6 +71,7 @@ See [OAuth](/mcp-tui/guides/oauth/) for the full flow.
 | `--oauth-redirect-port <port>` | `0` | Port for the redirect URI (`0` = ephemeral) |
 | `--oauth-dynamic-registration` | `false` | Enable RFC 7591 dynamic client registration when client ID is empty |
 | `--oauth-accept-unadvertised-iss` | `false` | Accept an RFC 9207 `iss` from an authorization server that does not advertise support (testing non-conforming servers only; logged as a warning) |
+| `--oauth-allow-private-network` | `false` | Let auth requests reach private, link-local and CGNAT addresses (loopback is always allowed; each allowed request is logged as a warning) |
 | `--oauth-cache <dir>` | platform cache dir | Token cache directory (`-` to disable persistence) |
 
 ## `tool` subcommand
