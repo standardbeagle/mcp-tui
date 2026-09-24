@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/standardbeagle/mcp-tui/internal/redact"
@@ -293,19 +294,23 @@ func (ml *MCPLogger) GetStats() map[string]int {
 }
 
 // Global MCP logger instance
-var globalMCPLogger *MCPLogger
+// globalMCPLogger is created on first use; concurrent connections log to
+// it from their own goroutines, so it is swapped atomically.
+var globalMCPLogger atomic.Pointer[MCPLogger]
 
 // InitMCPLogger initializes the global MCP logger
 func InitMCPLogger(maxSize int) {
-	globalMCPLogger = NewMCPLogger(maxSize)
+	globalMCPLogger.Store(NewMCPLogger(maxSize))
 }
 
-// GetMCPLogger returns the global MCP logger
+// GetMCPLogger returns the global MCP logger, creating it with the default
+// size on first use. Concurrent first calls all get the same logger.
 func GetMCPLogger() *MCPLogger {
-	if globalMCPLogger == nil {
-		InitMCPLogger(1000) // Default size
+	if l := globalMCPLogger.Load(); l != nil {
+		return l
 	}
-	return globalMCPLogger
+	globalMCPLogger.CompareAndSwap(nil, NewMCPLogger(1000)) // Default size
+	return globalMCPLogger.Load()
 }
 
 // LogMCPOutgoing logs an outgoing MCP message

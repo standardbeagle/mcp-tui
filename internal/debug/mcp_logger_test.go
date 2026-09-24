@@ -3,6 +3,7 @@ package debug
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -25,5 +26,30 @@ func TestMCPLogger_RedactsURLsInPayloads(t *testing.T) {
 	}
 	if !strings.Contains(ml.GetEntries()[0].RawMessage, `"state":"draft"`) {
 		t.Errorf("ordinary argument state was masked: %s", ml.GetEntries()[0].RawMessage)
+	}
+}
+
+// Connections first log to the Messages tab concurrently; they must all get
+// the same logger, without a data race on its lazy creation.
+func TestGetMCPLogger_ConcurrentFirstUse(t *testing.T) {
+	prev := globalMCPLogger.Swap(nil)
+	t.Cleanup(func() { globalMCPLogger.Store(prev) })
+
+	const callers = 16
+	got := make(chan *MCPLogger, callers)
+	var start sync.WaitGroup
+	start.Add(1)
+	for range callers {
+		go func() {
+			start.Wait()
+			got <- GetMCPLogger()
+		}()
+	}
+	start.Done()
+	first := <-got
+	for range callers - 1 {
+		if l := <-got; l != first {
+			t.Fatal("concurrent first calls created different loggers; messages logged to the others are lost")
+		}
 	}
 }
