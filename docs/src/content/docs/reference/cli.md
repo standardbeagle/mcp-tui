@@ -85,7 +85,7 @@ See [OAuth](/mcp-tui/guides/oauth/) for the full flow.
 mcp-tui [global-flags] tool <list|describe|call> [args]
 ```
 
-- `tool list` — print every tool with its title and description.
+- `tool list` — print every tool with its title, description and icons. Flags names that break SEP-986 (1-128 chars of `A-Z a-z 0-9 _ - .`) and warns on stderr about tools the SDK dropped from `tools/list` for invalid `x-mcp-header` annotations (`droppedTools` in JSON).
 - `tool describe <name>` — print the tool's full JSON Schema.
 - `tool call <name> [key=value ...]` — invoke the tool.
 
