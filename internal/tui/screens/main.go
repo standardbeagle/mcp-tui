@@ -1850,7 +1850,8 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 				if description == "" {
 					description = "No description"
 				}
-				toolList = append(toolList, fmt.Sprintf("%s%s - %s", iconMarker(len(tool.Icons)), tool.DisplayName(), description))
+				toolList = append(toolList, fmt.Sprintf("%s%s%s - %s",
+					toolNameMarker(tool.Name), iconMarker(len(tool.Icons)), tool.DisplayName(), description))
 			}
 		}
 
@@ -1967,6 +1968,14 @@ func buildResourceListItems(
 		}
 	}
 	return out, len(resources) + len(templates)
+}
+
+// toolNameMarker flags a tool whose name breaks SEP-986.
+func toolNameMarker(name string) string {
+	if mcp.ToolNameProblem(name) != "" {
+		return "⚠ "
+	}
+	return ""
 }
 
 func iconMarker(count int) string {
@@ -2266,7 +2275,7 @@ func (ms *MainScreen) renderToolList() string {
 		}
 
 		// Use DisplayName so server-supplied titles render in the list.
-		displayName := iconMarker(len(tool.Icons)) + tool.DisplayName()
+		displayName := toolNameMarker(tool.Name) + iconMarker(len(tool.Icons)) + tool.DisplayName()
 
 		if i == selectedIdx {
 			line := fmt.Sprintf("%2d. %s%s%s", i+1, displayName, badges, warningIndicator)
@@ -2311,6 +2320,10 @@ func (ms *MainScreen) renderToolDetail() string {
 	if tool.DisplayName() != tool.Name {
 		nameLineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 		contentBuilder.WriteString(nameLineStyle.Render("Name: " + tool.Name))
+		contentBuilder.WriteString("\n")
+	}
+	if problem := mcp.ToolNameProblem(tool.Name); problem != "" {
+		contentBuilder.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("⚠ " + problem))
 		contentBuilder.WriteString("\n")
 	}
 	contentBuilder.WriteString(renderIcons(tool.Icons))

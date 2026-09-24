@@ -255,6 +255,9 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 			header = header + " " + badges
 		}
 		fmt.Println(header)
+		if problem := mcp.ToolNameProblem(tool.Name); problem != "" {
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).MarginLeft(2).Render("⚠ " + problem))
+		}
 
 		// Description on next line, indented
 		if tool.Description != "" {
