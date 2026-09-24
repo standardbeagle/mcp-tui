@@ -1057,8 +1057,6 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 		return ms, nil
 	}
 
-	selectedItem := currentList[selectedIdx]
-
 	switch ms.activeTab {
 	case 0: // Tools
 		if selectedIdx >= len(ms.tools) {
@@ -1101,11 +1099,10 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 		}
 
 	case 2: // Prompts
-		// Extract prompt name from the display string (format: "name - description")
-		parts := strings.SplitN(selectedItem, " - ", 2)
-		if len(parts) > 0 && selectedIdx < len(ms.promptObjects) {
-			promptName := parts[0]
+		// Get the prompt by name; the row shows its title and icon marker.
+		if selectedIdx < len(ms.promptObjects) {
 			prompt := ms.promptObjects[selectedIdx]
+			promptName := prompt.Name
 
 			// Load prompt details (execute with no arguments to get basic info)
 			ms.promptLoading = true
