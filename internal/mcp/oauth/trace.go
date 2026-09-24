@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
@@ -47,9 +48,13 @@ const maxTracedAuthBody = 256 << 10
 // refresh). The SDK runs discovery, registration and token exchange inside
 // Authorize and refreshes inside its token source, all through this client,
 // so this is the one hook that sees every step the SDK does not expose.
+//
+// A nil base gets the standard non-streaming timeout (transports'
+// DefaultHTTPClientConfig): no auth exchange is a long-lived stream, and an
+// unbounded one would hang Authorize, or a refresh, forever.
 func newAuthHTTPClient(base *http.Client) *http.Client {
 	if base == nil {
-		base = http.DefaultClient
+		base = &http.Client{Timeout: transports.DefaultHTTPClientConfig().Timeout}
 	}
 	client := *base
 	client.Transport = &authTraceTransport{

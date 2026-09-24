@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestDescribeAuthExchange_TokenGrants covers the grants the end-to-end flows
@@ -65,5 +66,17 @@ func TestDescribeAuthExchange_TokenGrants(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestNewAuthHTTPClient_Timeout: without a caller client, auth requests
+// (discovery, registration, token, refresh) are bounded like every other
+// non-streaming HTTP client in mcp-tui; a caller's client keeps its own.
+func TestNewAuthHTTPClient_Timeout(t *testing.T) {
+	if got := newAuthHTTPClient(nil).Timeout; got != 30*time.Second {
+		t.Errorf("default auth client timeout = %v, want 30s", got)
+	}
+	if got := newAuthHTTPClient(&http.Client{Timeout: 5 * time.Second}).Timeout; got != 5*time.Second {
+		t.Errorf("caller client timeout = %v, want 5s", got)
 	}
 }

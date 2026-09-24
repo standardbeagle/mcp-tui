@@ -93,8 +93,8 @@ type AuthorizationCodeFetcher interface {
 // (auth.OAuthHandler is an interface; we want to confirm we implement it.)
 type handler = Handler
 
-// NewHandler builds a Handler. httpClient may be nil, in which case
-// http.DefaultClient is used; either way the handler works on a copy whose
+// NewHandler builds a Handler. httpClient may be nil, in which case a client
+// with the standard 30s timeout is used; either way the handler works on a copy whose
 // transport traces every auth exchange (see newAuthHTTPClient). cache may be
 // nil to disable persistence.
 func NewHandler(cfg *Config, httpClient *http.Client, cache TokenCache) (*Handler, error) {
