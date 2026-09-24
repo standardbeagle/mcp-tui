@@ -55,6 +55,7 @@ func urlSignInServer() *officialMCP.Server {
 // elicitation on 2026-07-28, which removed notifications/elicitation/complete:
 // the server reports the outcome in its answer to the retried call. Earlier
 // protocols still expect that notification, so the line must not appear.
+// The line names no elicitationId, a field 2026-07-28 removed.
 func TestService_URLElicitation_OutcomeInRetry(t *testing.T) {
 	for _, tc := range []struct {
 		pinned  string
@@ -82,6 +83,11 @@ func TestService_URLElicitation_OutcomeInRetry(t *testing.T) {
 			}
 			if logged := strings.Contains(read(), retryOutcomeLog); logged != tc.wantLog {
 				t.Errorf("%q logged = %v, want %v:\n%s", retryOutcomeLog, logged, tc.wantLog, read())
+			}
+			// 2026-07-28 removed elicitationId: the line must not carry an
+			// always-empty field for it.
+			if line := logLineContaining(read(), retryOutcomeLog); strings.Contains(line, "elicitationID") {
+				t.Errorf("%q line carries an elicitationID, which 2026-07-28 removed: %s", retryOutcomeLog, line)
 			}
 		})
 	}

@@ -44,9 +44,10 @@ func (s *service) elicitForInput(
 		res, err := handler(ctx, req)
 		if err == nil && res != nil {
 			// 2026-07-28 removed notifications/elicitation/complete, so
-			// ElicitationCompleteHandler never fires on this path.
+			// ElicitationCompleteHandler never fires on this path. It also
+			// removed elicitationId, so the line names none.
 			debug.Info("URL elicitation answered; no completion notification on 2026-07-28, outcome arrives in the retry",
-				debug.F("elicitationID", req.Params.ElicitationID), debug.F("action", res.Action))
+				debug.F("action", res.Action))
 		}
 		return res, err
 	default:
