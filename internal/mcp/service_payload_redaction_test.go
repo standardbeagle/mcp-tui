@@ -12,11 +12,24 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 )
 
+// messagesTabText renders the MCP Messages log the way the TUI shows it:
+// the entry line and its full JSON.
+func messagesTabText(entries []debug.MCPLogEntry) string {
+	var b strings.Builder
+	for _, e := range entries {
+		b.WriteString(e.String())
+		b.WriteString("\n")
+		b.WriteString(e.GetFormattedJSON())
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // TestService_DebugTrace_RedactsURLsInPayloads: with --debug every MCP
-// request and result is traced into the log, the TUI log buffer and the
-// session export. A URL inside a payload (an elicitation's device-code URL,
-// a callback URL in a tool result) keeps its sensitive query parameters out
-// of all three, while an ordinary tool argument that happens to be named
+// request and result is traced into the log, the TUI log buffer, the
+// session export and the MCP Messages tab. A URL inside a payload (an
+// elicitation's device-code URL, a callback URL in a tool result) keeps its
+// sensitive query parameters out of all four, while an ordinary tool argument that happens to be named
 // "state" stays readable: payloads are not masked by key name.
 func TestService_DebugTrace_RedactsURLsInPayloads(t *testing.T) {
 	const (
@@ -64,6 +77,7 @@ func TestService_DebugTrace_RedactsURLsInPayloads(t *testing.T) {
 			}
 
 			debug.GetLogBuffer().Clear()
+			debug.GetMCPLogger().Clear()
 			read, stop := debug.Capture(debug.LogLevelDebug)
 			res, err := svc.CallTool(context.Background(), CallToolRequest{
 				Name: "sign_in", Arguments: map[string]interface{}{"state": stateArg},
@@ -84,6 +98,7 @@ func TestService_DebugTrace_RedactsURLsInPayloads(t *testing.T) {
 				"log":        read(),
 				"TUI buffer": strings.Join(debug.GetLogBuffer().GetEntriesAsStrings(), "\n"),
 				"export":     string(exported),
+				"messages":   messagesTabText(debug.GetMCPLogger().GetEntries()),
 			}
 			for name, text := range surfaces {
 				for _, secret := range []string{deviceCode, callbackCode} {

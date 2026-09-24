@@ -27,63 +27,6 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
-// Helper functions for MCP logging
-
-// createBaseMessage creates a base JSON-RPC message
-func createBaseMessage(method string, id interface{}) map[string]interface{} {
-	return map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      id,
-		"method":  method,
-	}
-}
-
-// logMCPRequest logs an MCP request
-func logMCPRequest(method string, params interface{}, id interface{}) {
-	msg := createBaseMessage(method, id)
-	if params != nil {
-		msg["params"] = params
-	}
-	msgJSON, _ := json.Marshal(msg)
-	debug.LogMCPOutgoing(string(msgJSON), nil)
-}
-
-// logMCPResponse logs an MCP response
-func logMCPResponse(result interface{}, id interface{}) {
-	msg := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      id,
-		"result":  result,
-	}
-	msgJSON, _ := json.Marshal(msg)
-	debug.LogMCPIncoming(string(msgJSON), nil)
-}
-
-// logMCPError logs an MCP error
-func logMCPError(code int, message string, id interface{}) {
-	msg := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      id,
-		"error": map[string]interface{}{
-			"code":    code,
-			"message": message,
-		},
-	}
-	msgJSON, _ := json.Marshal(msg)
-	debug.LogMCPIncoming(string(msgJSON), nil)
-}
-
-// logMCPNotification logs an MCP notification
-func logMCPNotification(method string, params interface{}) {
-	msg := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  method,
-		"params":  params,
-	}
-	msgJSON, _ := json.Marshal(msg)
-	debug.LogMCPIncoming(string(msgJSON), nil)
-}
-
 // service implements the Service interface using the official MCP Go SDK
 type service struct {
 	info      *ServerInfo
@@ -357,29 +300,6 @@ func (s *service) SetDebugMode(debug bool) {
 	// Enable session manager debug tracing
 	if s.sessionManager != nil {
 		s.sessionManager.SetDebugEnabled(debug)
-	}
-}
-
-// createLoggingMiddleware creates middleware for automatic MCP request/response logging
-func (s *service) createLoggingMiddleware() officialMCP.Middleware {
-	return func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
-		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
-			// Log outgoing request
-			reqID := s.getNextRequestID()
-			logMCPRequest(method, req, reqID)
-
-			// Call the next handler
-			result, err := next(ctx, method, req)
-
-			// Log response or error
-			if err != nil {
-				logMCPError(-32603, err.Error(), reqID)
-			} else {
-				logMCPResponse(result, reqID)
-			}
-
-			return result, err
-		}
 	}
 }
 
@@ -834,9 +754,12 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		client = officialMCP.NewClient(impl, clientOptions)
 	}
 
-	// Add logging middleware for automatic request/response logging (if not using debug client)
-	if s.debugMode && s.sessionManager.GetEventTracer() == nil {
-		client.AddSendingMiddleware(s.createLoggingMiddleware())
+	// Record every message in the MCP Messages log alongside the event
+	// tracer: the TUI's Messages tab reads the log, the tracer feeds the
+	// session export.
+	if s.debugMode {
+		client.AddSendingMiddleware(s.messageLogMiddleware(true))
+		client.AddReceivingMiddleware(s.messageLogMiddleware(false))
 	}
 
 	// Install the notification capture middleware on the receiving side.
