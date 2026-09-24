@@ -20,3 +20,13 @@ func writeRoundTrace(w io.Writer, rounds []mcp.RoundSummary) {
 		fmt.Fprintln(w, "  "+line)
 	}
 }
+
+// writeRespondingServer names the server that produced a result, from its
+// _meta serverInfo (2026-07-28). It writes nothing when the result does not
+// say.
+func writeRespondingServer(w io.Writer, server *mcp.RespondingServer) {
+	if server == nil {
+		return
+	}
+	fmt.Fprintln(w, "\nServed by: "+server.String())
+}

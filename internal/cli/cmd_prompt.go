@@ -524,5 +524,6 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 	}
 
 	writeRoundTrace(os.Stdout, result.Rounds)
+	writeRespondingServer(os.Stdout, result.Server)
 	return nil
 }

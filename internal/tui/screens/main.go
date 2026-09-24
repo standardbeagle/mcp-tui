@@ -98,6 +98,7 @@ type MainScreen struct {
 	selectedPrompt     *mcp.Prompt
 	resourceContent    []mcp.ResourceContents
 	resourceRounds     []mcp.RoundSummary
+	resourceServer     *mcp.RespondingServer
 	promptResult       *mcp.GetPromptResult
 	resourceLoading    bool
 	promptLoading      bool
@@ -620,6 +621,7 @@ func (ms *MainScreen) handleResourceContentLoaded(msg ResourceContentLoadedMsg) 
 		ms.selectedResource = msg.Resource
 		ms.resourceContent = msg.Content.Contents
 		ms.resourceRounds = msg.Content.Rounds
+		ms.resourceServer = msg.Content.Server
 		ms.resourceViewerOpen = true
 		delete(ms.resourceUpdates, msg.Resource.URI)
 		ms.refreshResourceRows()
@@ -776,6 +778,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ms.selectedResource = nil
 			ms.resourceContent = nil
 			ms.resourceRounds = nil
+			ms.resourceServer = nil
 			return ms, nil
 		}
 		if ms.promptViewerOpen {
@@ -2669,7 +2672,7 @@ func (ms *MainScreen) renderResourceViewer() string {
 		}
 	}
 
-	if trace := renderRoundTrace(ms.resourceRounds); trace != "" {
+	if trace := renderResultTrailer(ms.resourceRounds, ms.resourceServer); trace != "" {
 		builder.WriteString("\n")
 		builder.WriteString(trace)
 		builder.WriteString("\n")
@@ -2772,7 +2775,7 @@ func (ms *MainScreen) renderPromptViewer() string {
 			}
 		}
 
-		if trace := renderRoundTrace(ms.promptResult.Rounds); trace != "" {
+		if trace := renderResultTrailer(ms.promptResult.Rounds, ms.promptResult.Server); trace != "" {
 			builder.WriteString("\n")
 			builder.WriteString(trace)
 			builder.WriteString("\n")

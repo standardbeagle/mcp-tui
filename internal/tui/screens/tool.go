@@ -1482,7 +1482,7 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 
 	// The round trace sits under the result body; shrink the body so the
 	// trace stays on screen.
-	roundTrace := renderRoundTrace(ts.result.Rounds)
+	roundTrace := renderResultTrailer(ts.result.Rounds, ts.result.Server)
 	if roundTrace != "" {
 		availableHeight = max(resultMinHeight, availableHeight-lipgloss.Height(roundTrace)-1)
 	}

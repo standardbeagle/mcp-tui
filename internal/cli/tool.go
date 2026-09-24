@@ -601,6 +601,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	}
 
 	writeRoundTrace(os.Stdout, result.Rounds)
+	writeRespondingServer(os.Stdout, result.Server)
 
 	// Surface outputSchema violations after the result body so users see
 	// the actual response first, then the validation report. We always

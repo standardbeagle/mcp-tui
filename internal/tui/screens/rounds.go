@@ -26,3 +26,17 @@ func renderRoundTrace(rounds []mcp.RoundSummary) string {
 	}
 	return b.String()
 }
+
+// renderResultTrailer renders what follows a result body: its input rounds
+// and the server that produced it (_meta serverInfo, 2026-07-28). Empty when
+// there is neither.
+func renderResultTrailer(rounds []mcp.RoundSummary, server *mcp.RespondingServer) string {
+	parts := make([]string, 0, 2)
+	if trace := renderRoundTrace(rounds); trace != "" {
+		parts = append(parts, trace)
+	}
+	if server != nil {
+		parts = append(parts, lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Render("Served by: "+server.String()))
+	}
+	return strings.Join(parts, "\n")
+}

@@ -15,7 +15,7 @@ func TestServerCommand_ShowsServerIdentity(t *testing.T) {
 	for _, pinned := range []string{"", testutil.LegacyProtocolVersion} {
 		t.Run("pin="+pinned, func(t *testing.T) {
 			server := officialMCP.NewServer(&officialMCP.Implementation{
-				Name: "billing", Version: "3.2.0", Title: "Billing API",
+				Name: billingApp, Version: "3.2.0", Title: "Billing API",
 				Description: "Invoices, refunds and payout reports",
 				WebsiteURL:  "https://billing.example.com/docs",
 				Icons:       []officialMCP.Icon{{Source: "https://billing.example.com/logo.svg", MIMEType: "image/svg+xml"}},
