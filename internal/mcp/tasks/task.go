@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -126,6 +127,23 @@ func (t *Task) PollInterval() time.Duration {
 		return DefaultPollInterval
 	}
 	return time.Duration(*t.PollIntervalMs) * time.Millisecond
+}
+
+// InputRequestKeys lists the task's outstanding input requests as sorted
+// "key (method)" entries.
+func (t *Task) InputRequestKeys() ([]string, error) {
+	var requests map[string]struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(t.InputRequests, &requests); err != nil {
+		return nil, fmt.Errorf("decoding inputRequests: %w", err)
+	}
+	keys := make([]string, 0, len(requests))
+	for key, r := range requests {
+		keys = append(keys, key+" ("+r.Method+")")
+	}
+	sort.Strings(keys)
+	return keys, nil
 }
 
 // Fingerprint is a short, stable stand-in for a task ID in logs. A server

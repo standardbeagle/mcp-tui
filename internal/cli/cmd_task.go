@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -300,7 +299,11 @@ func writeTask(w io.Writer, t *tasks.Task) {
 		fmt.Fprintf(w, "Poll:     every %dms\n", *t.PollIntervalMs)
 	}
 	if len(t.InputRequests) > 0 {
-		fmt.Fprintf(w, "Input:    %s\n", describeInputRequests(t.InputRequests))
+		keys, err := t.InputRequestKeys()
+		if err != nil {
+			keys = []string{err.Error()}
+		}
+		fmt.Fprintf(w, "Input:    %s\n", strings.Join(keys, ", "))
 		fmt.Fprintf(w, "Answer:   mcp-tui task result %s (answers with the --elicit-stub/--sampling-stub handlers)\n",
 			t.ID)
 	}
@@ -310,20 +313,4 @@ func writeTask(w io.Writer, t *tasks.Task) {
 	if t.Status == tasks.StatusCompleted || t.Status == tasks.StatusFailed {
 		fmt.Fprintf(w, "Result:   mcp-tui task result %s\n", t.ID)
 	}
-}
-
-// describeInputRequests lists an inputRequests object as "key (method)".
-func describeInputRequests(raw json.RawMessage) string {
-	var requests map[string]struct {
-		Method string `json:"method"`
-	}
-	if err := json.Unmarshal(raw, &requests); err != nil {
-		return "unreadable inputRequests: " + err.Error()
-	}
-	parts := make([]string, 0, len(requests))
-	for key, r := range requests {
-		parts = append(parts, key+" ("+r.Method+")")
-	}
-	sort.Strings(parts)
-	return strings.Join(parts, ", ")
 }

@@ -241,3 +241,16 @@ func TestFingerprint(t *testing.T) {
 		t.Errorf("Fingerprint(%q) = %q", id, fp)
 	}
 }
+
+func TestInputRequestKeys(t *testing.T) {
+	task := Task{InputRequests: json.RawMessage(`{
+		"name":{"method":"elicitation/create","params":{"message":"Please enter your name."}},
+		"draft":{"method":"sampling/createMessage","params":{"maxTokens":200}}}`)}
+	got, err := task.InputRequestKeys()
+	if err != nil || len(got) != 2 || got[0] != "draft (sampling/createMessage)" || got[1] != "name (elicitation/create)" {
+		t.Errorf("InputRequestKeys = %v, %v", got, err)
+	}
+	if _, err := (&Task{InputRequests: json.RawMessage(`["name"]`)}).InputRequestKeys(); err == nil {
+		t.Error("a non-object inputRequests decoded")
+	}
+}
