@@ -6,42 +6,6 @@ import (
 	"strings"
 )
 
-// MCPError represents a detailed MCP error with context
-type MCPError struct {
-	Method      string
-	OriginalErr error
-	RawRequest  string
-	RawResponse string
-	Details     map[string]interface{}
-}
-
-func (e *MCPError) Error() string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("MCP Error in %s: %v\n", e.Method, e.OriginalErr))
-
-	if e.RawRequest != "" {
-		sb.WriteString("\nRequest:\n")
-		sb.WriteString(e.RawRequest)
-		sb.WriteString("\n")
-	}
-
-	if e.RawResponse != "" {
-		sb.WriteString("\nRaw Response:\n")
-		sb.WriteString(e.RawResponse)
-		sb.WriteString("\n")
-	}
-
-	if len(e.Details) > 0 {
-		sb.WriteString("\nAdditional Details:\n")
-		for k, v := range e.Details {
-			sb.WriteString(fmt.Sprintf("  %s: %v\n", k, v))
-		}
-	}
-
-	return sb.String()
-}
-
 // tryPrettyPrintJSON attempts to pretty-print JSON for better readability
 func tryPrettyPrintJSON(data string) string {
 	var obj interface{}
