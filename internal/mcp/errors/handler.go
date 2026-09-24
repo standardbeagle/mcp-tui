@@ -297,16 +297,33 @@ func (eh *ErrorHandler) ResetStatistics() {
 	}
 }
 
+// userFriendlyError is the error CreateUserFriendlyError returns: its text
+// is the classification's explanation, the underlying error and the recovery
+// suggestions, and it unwraps to the ClassifiedError, whose Unwrap reaches
+// the original error. errors.As / errors.Is therefore still find what the
+// failure carried (a *jsonrpc.Error, a named *debug.MCPError, a net error).
+type userFriendlyError struct {
+	message    string
+	classified *ClassifiedError
+}
+
+func (e *userFriendlyError) Error() string { return e.message }
+
+func (e *userFriendlyError) Unwrap() error { return e.classified }
+
 // CreateUserFriendlyError creates a user-friendly error message with recovery suggestions
 func (eh *ErrorHandler) CreateUserFriendlyError(classified *ClassifiedError) error {
 	if classified == nil {
 		return nil
 	}
 
-	var message string
-
-	// Main error message
-	message = classified.Message
+	// Main error message: the classification's explanation, followed by
+	// the underlying error unless the explanation already quotes it -- the
+	// explanation alone hides what the server actually said.
+	message := classified.Message
+	if cause := classified.Cause; cause != nil && !strings.Contains(message, cause.Error()) {
+		message += ": " + cause.Error()
+	}
 
 	// Add recovery suggestions
 	actions := eh.classifier.GetRecoveryActions(classified)
@@ -329,7 +346,7 @@ func (eh *ErrorHandler) CreateUserFriendlyError(classified *ClassifiedError) err
 		}
 	}
 
-	return fmt.Errorf("%s", message)
+	return &userFriendlyError{message: message, classified: classified}
 }
 
 // FormatErrorForJSON formats a classified error for JSON serialization

@@ -14,7 +14,8 @@ import (
 )
 
 // errorNamesServer serves one resource whose handler answers with the
-// pre-SEP-2164 resource-not-found code, -32002.
+// pre-SEP-2164 resource-not-found code, -32002, and rejects every
+// tools/list as invalid params (a server that dislikes the cursor).
 func errorNamesServer() *officialMCP.Server {
 	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "archive-server", Version: "1.0.0"}, nil)
 	server.AddResource(&officialMCP.Resource{URI: "file:///archive/2019.tar", Name: "2019.tar"},
@@ -23,6 +24,14 @@ func errorNamesServer() *officialMCP.Server {
 		})
 	addTool(server, "deploy", func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
 		return textResult("deployed"), nil
+	})
+	server.AddReceivingMiddleware(func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
+		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
+			if method == "tools/list" {
+				return nil, &jsonrpc.Error{Code: -32602, Message: "cursor expired"}
+			}
+			return next(ctx, method, req)
+		}
 	})
 	return server
 }
@@ -55,6 +64,10 @@ func TestService_Errors_CarryProtocolNames(t *testing.T) {
 				}, debug.ErrorCodeResourceNotFound, "-32002"},
 				{"unknown tool (-32602)", func() error {
 					_, err := svc.CallTool(ctx, CallToolRequest{Name: "rollback"})
+					return err
+				}, debug.ErrorCodeInvalidParams, "-32602"},
+				{"tool list rejected (-32602)", func() error {
+					_, err := svc.ListTools(ctx)
 					return err
 				}, debug.ErrorCodeInvalidParams, "-32602"},
 			} {
