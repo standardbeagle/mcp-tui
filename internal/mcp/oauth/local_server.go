@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -121,40 +122,39 @@ func (f *LocalServerFetcher) Fetch(ctx context.Context, args *auth.Authorization
 		f.mu.Unlock()
 	}
 
-	type result struct {
-		res *auth.AuthorizationResult
-		err error
+	expectedState, err := authorizationState(args.URL)
+	if err != nil {
+		return nil, err
 	}
-	resultCh := make(chan result, 1)
 
+	// resultCh has one slot and exactly one sender: the first callback
+	// that carries this flow's state wins the CompareAndSwap, every other
+	// request is answered and dropped. No handler ever blocks on the
+	// channel, so Shutdown cannot wait on a stuck handler.
+	resultCh := make(chan callbackResult, 1)
+	var accepted atomic.Bool
 	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /callback", func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		logCallbackReceived(query)
-		oauthErr := query.Get("error")
-		if oauthErr != "" {
-			desc := query.Get("error_description")
-			writeCallbackPage(w, false, fmt.Sprintf("Authorization failed: %s — %s", oauthErr, desc))
-			resultCh <- result{err: fmt.Errorf("oauth: authorization error %q: %s", oauthErr, desc)}
+		if query.Get("state") != expectedState {
+			rejectCallback(w, "state_mismatch")
 			return
 		}
-		code := query.Get("code")
-		state := query.Get("state")
-		if code == "" {
-			writeCallbackPage(w, false, "Authorization response missing 'code' parameter")
-			resultCh <- result{err: fmt.Errorf("oauth: callback missing code parameter")}
+		if !accepted.CompareAndSwap(false, true) {
+			rejectCallback(w, "already_completed")
 			return
 		}
-		writeCallbackPage(w, true, "Authorization complete. You may close this window.")
-		// iss (RFC 9207) goes to the SDK, which checks it against the
-		// discovered issuer: required when the AS advertises support.
-		resultCh <- result{res: &auth.AuthorizationResult{Code: code, State: state, Iss: query.Get("iss")}}
+		res := parseCallback(query)
+		if res.err != nil {
+			writeCallbackPage(w, false, res.page)
+		} else {
+			writeCallbackPage(w, true, "Authorization complete. You may close this window.")
+		}
+		resultCh <- res
 	})
 
-	srv := &http.Server{
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := newCallbackServer(mux)
 
 	// Serve in the background; Shutdown() returns when the request
 	// completes or ctx is cancelled.
@@ -175,21 +175,109 @@ func (f *LocalServerFetcher) Fetch(ctx context.Context, args *auth.Authorization
 
 	select {
 	case <-ctx.Done():
-		_ = srv.Shutdown(context.Background())
-		<-serveErr
+		shutdownCallbackServer(srv, serveErr)
 		if browserErr != nil {
 			return nil, fmt.Errorf("oauth: %w (browser open failed: %v)", ctx.Err(), browserErr)
 		}
 		return nil, ctx.Err()
 	case res := <-resultCh:
-		// Drain the server. Use a fresh context so Shutdown is not racing
-		// the cancellation that triggered shutdown elsewhere.
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = srv.Shutdown(shutdownCtx)
-		cancel()
-		<-serveErr
+		shutdownCallbackServer(srv, serveErr)
 		return res.res, res.err
 	}
+}
+
+// Callback listener caps. A redirect is one small GET; everything here is
+// generous for that and tight for anything else.
+const (
+	callbackMaxHeaderBytes = 16 << 10
+	callbackReadTimeout    = 10 * time.Second
+	callbackWriteTimeout   = 10 * time.Second
+	callbackIdleTimeout    = 10 * time.Second
+	callbackMaxConns       = 8
+	callbackShutdownWait   = 5 * time.Second
+)
+
+// newCallbackServer builds the loopback callback server with its caps:
+// header size, read/write/idle timeouts and a concurrent-connection limit
+// (connections past callbackMaxConns are closed on arrival).
+func newCallbackServer(handler http.Handler) *http.Server {
+	var conns atomic.Int32
+	return &http.Server{
+		Handler:           handler,
+		MaxHeaderBytes:    callbackMaxHeaderBytes,
+		ReadHeaderTimeout: callbackReadTimeout,
+		ReadTimeout:       callbackReadTimeout,
+		WriteTimeout:      callbackWriteTimeout,
+		IdleTimeout:       callbackIdleTimeout,
+		ConnState: func(c net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				if conns.Add(1) > callbackMaxConns {
+					_ = c.Close()
+				}
+			case http.StateClosed, http.StateHijacked:
+				conns.Add(-1)
+			}
+		},
+	}
+}
+
+// shutdownCallbackServer drains the server within callbackShutdownWait and
+// waits for Serve to return. A fresh context keeps Shutdown from racing the
+// cancellation that may have ended the flow.
+func shutdownCallbackServer(srv *http.Server, serveErr <-chan error) {
+	ctx, cancel := context.WithTimeout(context.Background(), callbackShutdownWait)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		authLog().Warn("Callback server shutdown incomplete", debug.F("error", redact.Error(err)))
+	}
+	<-serveErr
+}
+
+// callbackResult is the outcome of the accepted callback; page is the text
+// shown to the user when err is set.
+type callbackResult struct {
+	res  *auth.AuthorizationResult
+	err  error
+	page string
+}
+
+// parseCallback turns the accepted redirect's query into the fetch result.
+// iss (RFC 9207) goes to the SDK, which checks it against the discovered
+// issuer: required when the AS advertises support.
+func parseCallback(query url.Values) callbackResult {
+	if oauthErr := query.Get("error"); oauthErr != "" {
+		desc := query.Get("error_description")
+		return callbackResult{
+			err:  fmt.Errorf("oauth: authorization error %q: %s", oauthErr, desc),
+			page: fmt.Sprintf("Authorization failed: %s — %s", oauthErr, desc),
+		}
+	}
+	code := query.Get("code")
+	if code == "" {
+		return callbackResult{
+			err:  fmt.Errorf("oauth: callback missing code parameter"),
+			page: "Authorization response missing 'code' parameter",
+		}
+	}
+	return callbackResult{res: &auth.AuthorizationResult{Code: code, State: query.Get("state"), Iss: query.Get("iss")}}
+}
+
+// rejectCallback answers a callback that cannot complete this flow and
+// records why. The request's parameters stay out of the log.
+func rejectCallback(w http.ResponseWriter, reason string) {
+	authLog().Warn("Authorization callback ignored", debug.F("reason", reason))
+	writeCallbackPage(w, false, "This sign-in response does not belong to the pending authorization.")
+}
+
+// authorizationState extracts the state the authorization URL carries; only
+// a callback echoing it may complete the flow.
+func authorizationState(authURL string) (string, error) {
+	u, err := url.Parse(authURL)
+	if err != nil {
+		return "", fmt.Errorf("oauth: invalid authorization URL: %s", redact.Error(err))
+	}
+	return u.Query().Get("state"), nil
 }
 
 // writeCallbackPage writes a tiny HTML page acknowledging the redirect.
