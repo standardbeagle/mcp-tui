@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 
@@ -79,6 +81,9 @@ type Schema struct {
 	Params []Param
 	// Dialect is the schema's $schema, "" when absent (2020-12).
 	Dialect string
+	// Note says what Parse could not express about the root object (and so
+	// why Params may be incomplete); "" when the root is fully represented.
+	Note string
 }
 
 // Param returns the parameter called name.
@@ -119,9 +124,14 @@ func Parse(toolName string, inputSchema map[string]any) (Schema, error) {
 	}
 
 	w := walker{refs: newRefIndex(&root)}
-	object, note := w.deref(&root)
+	object, note := w.effective(&root)
 	if object == nil {
-		return Schema{}, fmt.Errorf("input schema: %s", note)
+		out.Note = note
+		return out, nil
+	}
+	if note := rootAlternativesNote(w, object); note != "" {
+		out.Note = note
+		return out, nil
 	}
 	required := make(map[string]bool, len(object.Required))
 	for _, name := range object.Required {
@@ -137,6 +147,28 @@ func Parse(toolName string, inputSchema map[string]any) (Schema, error) {
 	return out, nil
 }
 
+// rootAlternativesNote names root anyOf/oneOf alternatives that define
+// properties of their own: no single form holds them. Alternatives that
+// only constrain the root's properties (which are required) leave the form
+// intact.
+func rootAlternativesNote(w walker, root *jsonschema.Schema) string {
+	for _, kw := range []struct {
+		name     string
+		branches []*jsonschema.Schema
+	}{{"anyOf", root.AnyOf}, {"oneOf", root.OneOf}} {
+		for _, b := range kw.branches {
+			branch, note := w.effective(b)
+			if branch == nil {
+				return "root " + kw.name + ": " + note
+			}
+			if len(branch.Properties) > 0 {
+				return "root " + kw.name + " alternatives define their own properties"
+			}
+		}
+	}
+	return ""
+}
+
 func refuseRemote(uri *url.URL) (*jsonschema.Schema, error) {
 	return nil, fmt.Errorf("%w: %s", ErrRemoteRef, uri)
 }
@@ -149,7 +181,7 @@ type walker struct {
 // param describes one property schema.
 func (w walker) param(prop *jsonschema.Schema) Param {
 	p := Param{Description: prop.Description}
-	target, note := w.deref(prop)
+	target, note := w.effective(prop)
 	if target == nil {
 		p.Kind, p.Note = KindJSON, note+"; value is read as JSON"
 		return p
@@ -194,14 +226,14 @@ func (w walker) itemKind(s *jsonschema.Schema) Kind {
 		if items != nil {
 			break
 		}
-		if branch, _ := w.deref(b); branch != nil && branch.Type == string(KindArray) {
+		if branch, _ := w.effective(b); branch != nil && branch.Type == string(KindArray) {
 			items = branch.Items
 		}
 	}
 	if items == nil {
 		return ""
 	}
-	target, _ := w.deref(items)
+	target, _ := w.effective(items)
 	if target == nil {
 		return ""
 	}
@@ -234,7 +266,7 @@ func (w walker) types(s *jsonschema.Schema) (types []string, note string) {
 	}
 	var all []string
 	for _, b := range branches {
-		target, note := w.deref(b)
+		target, note := w.effective(b)
 		if target == nil {
 			return nil, note
 		}
@@ -247,10 +279,104 @@ func (w walker) types(s *jsonschema.Schema) (types []string, note string) {
 		}
 		all = append(all, ts...)
 	}
-	if len(s.AllOf) > 0 && len(all) == 0 {
-		return nil, "allOf is not expanded"
-	}
 	return dedupe(all), ""
+}
+
+// effective is s with its $refs followed and its allOf merged: the
+// branches' properties and required lists join, their types intersect,
+// and an enum, anyOf, oneOf, items or description one branch sets applies.
+// Branches that disagree (a property defined twice, disjoint types, two
+// enums) are not merged; the note names the conflict. Keywords that only
+// constrain values (minimum, pattern, ...) are left to validation.
+func (w walker) effective(s *jsonschema.Schema) (*jsonschema.Schema, string) {
+	return w.effectiveAt(s, 0)
+}
+
+func (w walker) effectiveAt(s *jsonschema.Schema, depth int) (*jsonschema.Schema, string) {
+	s, note := w.deref(s)
+	if s == nil || len(s.AllOf) == 0 {
+		return s, note
+	}
+	if depth == maxRefHops {
+		return nil, fmt.Sprintf("allOf nested deeper than %d (cycle?)", maxRefHops)
+	}
+	merged := *s
+	merged.AllOf = nil
+	merged.Properties = maps.Clone(s.Properties)
+	merged.Required = slices.Clone(s.Required)
+	for _, b := range s.AllOf {
+		branch, note := w.effectiveAt(b, depth+1)
+		if branch == nil {
+			return nil, note
+		}
+		if note := mergeAllOfBranch(&merged, branch); note != "" {
+			return nil, note
+		}
+	}
+	return &merged, ""
+}
+
+// mergeAllOfBranch merges one allOf branch into dst, or says why it cannot.
+func mergeAllOfBranch(dst, b *jsonschema.Schema) string {
+	if types := typeSet(b); len(types) > 0 {
+		if have := typeSet(dst); len(have) > 0 {
+			types = slices.DeleteFunc(types, func(t string) bool { return !slices.Contains(have, t) })
+			if len(types) == 0 {
+				return "allOf branches share no type"
+			}
+		}
+		dst.Type, dst.Types = "", nil
+		if len(types) == 1 {
+			dst.Type = types[0]
+		} else {
+			dst.Types = types
+		}
+	}
+	for name, prop := range b.Properties {
+		if have, ok := dst.Properties[name]; ok && have != prop {
+			return fmt.Sprintf("allOf branches both define property %q", name)
+		}
+		if dst.Properties == nil {
+			dst.Properties = map[string]*jsonschema.Schema{}
+		}
+		dst.Properties[name] = prop
+	}
+	dst.Required = append(dst.Required, b.Required...)
+	for _, kw := range []struct {
+		name     string
+		dst, src *[]*jsonschema.Schema
+	}{{"anyOf", &dst.AnyOf, &b.AnyOf}, {"oneOf", &dst.OneOf, &b.OneOf}} {
+		if len(*kw.src) > 0 {
+			if len(*kw.dst) > 0 {
+				return "allOf branches both set " + kw.name
+			}
+			*kw.dst = *kw.src
+		}
+	}
+	if len(b.Enum) > 0 {
+		if len(dst.Enum) > 0 {
+			return "allOf branches both set enum"
+		}
+		dst.Enum = b.Enum
+	}
+	if b.Items != nil {
+		if dst.Items != nil && dst.Items != b.Items {
+			return "allOf branches both set items"
+		}
+		dst.Items = b.Items
+	}
+	if dst.Description == "" {
+		dst.Description = b.Description
+	}
+	return ""
+}
+
+// typeSet is the types s declares with type, as a fresh slice.
+func typeSet(s *jsonschema.Schema) []string {
+	if s.Type != "" {
+		return []string{s.Type}
+	}
+	return slices.Clone(s.Types)
 }
 
 // deref follows s's $ref and $dynamicRef chain to the schema it names. A

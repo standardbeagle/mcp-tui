@@ -100,6 +100,10 @@ type ToolScreen struct {
 	runningTask *tasks.Task
 	taskUpdates <-chan tea.Msg
 
+	// schemaNote says why the input schema's root is not shown as a form
+	// (the raw JSON editor is used instead).
+	schemaNote string
+
 	// Result viewing mode
 	viewingResult bool          // Whether we're in result viewing mode
 	resultFields  []resultField // Parsed JSON fields
@@ -392,13 +396,18 @@ func (ts *ToolScreen) parseSchema() {
 	ts.rawJSONMode = false
 
 	// A schema that does not resolve (remote $ref, dangling local $ref,
-	// invalid keyword) falls back to raw JSON with the reason shown in the
-	// schema error banner, rather than a form missing the parameter.
+	// invalid keyword), or whose root the form cannot express, falls back
+	// to raw JSON with the reason shown in a banner, rather than a form
+	// missing the parameter.
 	if !ts.tool.HasSchemaError() {
 		schema, err := inputschema.Parse(ts.tool.Name, ts.tool.InputSchema)
-		if err != nil {
+		switch {
+		case err != nil:
 			ts.tool.SchemaError = &mcp.SchemaError{Message: err.Error()}
-		} else {
+		case schema.Note != "":
+			// A form built from part of the root would mislead.
+			ts.schemaNote = schema.Note
+		default:
 			ts.fields = fieldsFromSchema(schema)
 			return
 		}
@@ -1384,6 +1393,12 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString(warningStyle.Render("⚠ Schema Error - Raw JSON Mode"))
 		builder.WriteString("\n")
 		builder.WriteString(errorMsgStyle.Render(ts.tool.SchemaError.Message))
+		builder.WriteString("\n\n")
+	}
+	if ts.schemaNote != "" {
+		builder.WriteString(ts.labelStyle.Render("ℹ Input schema not shown as a form - Raw JSON Mode"))
+		builder.WriteString("\n")
+		builder.WriteString(ts.labelStyle.Render(ts.schemaNote))
 		builder.WriteString("\n\n")
 	}
 

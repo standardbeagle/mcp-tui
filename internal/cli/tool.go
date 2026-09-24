@@ -523,6 +523,9 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("tool %q: %w", toolName, schemaErr)
 	}
 	showNotes := tc.GetOutputFormat() == OutputFormatText && !porcelainMode
+	if inputSchema.Note != "" && showNotes {
+		fmt.Fprintf(os.Stderr, "ℹ️  Input schema: %s; values are read as JSON\n", inputSchema.Note)
+	}
 	for _, raw := range rawArgs {
 		if p, ok := inputSchema.Param(raw.key); ok && p.Note != "" && showNotes {
 			fmt.Fprintf(os.Stderr, "ℹ️  Argument %q: %s\n", raw.key, p.Note)

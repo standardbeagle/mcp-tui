@@ -255,3 +255,94 @@ func TestParse_RefResolvesAgainstItsOwnResource(t *testing.T) {
 		t.Errorf("mode = %+v, want boolean from cfg.json's own $defs", got)
 	}
 }
+
+// allOf is merged: its branches' properties and required lists join, and a
+// branch's type or enum applies (Pydantic wraps a described $ref in a
+// one-branch allOf).
+func TestParse_MergesAllOf(t *testing.T) {
+	s, err := Parse("t", decode(t, `{
+		"$defs": {
+			"Priority": {"type": "string", "enum": ["low", "high"]},
+			"Base": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+		},
+		"allOf": [
+			{"$ref": "#/$defs/Base"},
+			{"type": "object", "properties": {
+				"priority": {"allOf": [{"$ref": "#/$defs/Priority"}], "description": "How urgent"},
+				"size": {"allOf": [{"type": ["integer", "string"]}, {"type": "integer", "minimum": 1}]}
+			}, "required": ["priority"]}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if s.Note != "" {
+		t.Errorf("Note = %q, want none", s.Note)
+	}
+	for _, want := range []Param{
+		{Name: "name", Kind: KindString, Required: true},
+		{Name: "priority", Kind: KindString, Required: true, Description: "How urgent"},
+		{Name: "size", Kind: KindInteger},
+	} {
+		if got, ok := s.Param(want.Name); !ok || got != want {
+			t.Errorf("param %q = %+v (found %v), want %+v", want.Name, got, ok, want)
+		}
+	}
+}
+
+// Branches that disagree are named, not merged: a property defined twice,
+// or types with nothing in common.
+func TestParse_AllOfConflictIsNoted(t *testing.T) {
+	s, err := Parse("t", decode(t, `{"type": "object", "properties": {
+		"target": {"allOf": [
+			{"type": "object", "properties": {"id": {"type": "string"}}},
+			{"type": "object", "properties": {"id": {"type": "integer"}}}
+		]},
+		"count": {"allOf": [{"type": "integer"}, {"type": "string"}]}
+	}}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, _ := s.Param("target"); got.Kind != KindJSON || !strings.Contains(got.Note, `allOf branches both define property "id"`) {
+		t.Errorf("target = %+v, want JSON kind naming the doubly defined property", got)
+	}
+	if got, _ := s.Param("count"); got.Kind != KindJSON || !strings.Contains(got.Note, "allOf branches share no type") {
+		t.Errorf("count = %+v, want JSON kind naming the type conflict", got)
+	}
+
+	root, err := Parse("t", decode(t, `{"allOf": [
+		{"type": "object", "properties": {"id": {"type": "string"}}},
+		{"type": "object", "properties": {"id": {"type": "integer"}}}
+	]}`))
+	if err != nil {
+		t.Fatalf("Parse root: %v", err)
+	}
+	if len(root.Params) != 0 || !strings.Contains(root.Note, `allOf branches both define property "id"`) {
+		t.Errorf("root conflict = %+v, want no params and a note", root)
+	}
+}
+
+// Root alternatives that bring their own properties cannot be one form;
+// alternatives that only constrain the root's properties can.
+func TestParse_RootAlternatives(t *testing.T) {
+	s, err := Parse("t", decode(t, `{"type": "object", "oneOf": [
+		{"properties": {"path": {"type": "string"}}, "required": ["path"]},
+		{"properties": {"url": {"type": "string"}}, "required": ["url"]}
+	]}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !strings.Contains(s.Note, "oneOf alternatives define their own properties") {
+		t.Errorf("Note = %q, want the alternatives named", s.Note)
+	}
+
+	s, err = Parse("t", decode(t, `{"type": "object",
+		"properties": {"path": {"type": "string"}, "url": {"type": "string"}},
+		"anyOf": [{"required": ["path"]}, {"required": ["url"]}]}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if s.Note != "" || len(s.Params) != 2 {
+		t.Errorf("constraint-only alternatives = %+v, want both params and no note", s)
+	}
+}

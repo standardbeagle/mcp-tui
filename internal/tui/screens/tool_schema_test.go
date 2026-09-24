@@ -167,3 +167,23 @@ func TestToolScreen_RemoteRefShowsSchemaError(t *testing.T) {
 		t.Errorf("view does not name the remote $ref:\n%s", view)
 	}
 }
+
+// A root the parser cannot express opens the raw JSON editor with the
+// reason shown: a form built from part of the schema would mislead.
+func TestToolScreen_RootSchemaNoteOpensRawJSON(t *testing.T) {
+	var schema map[string]any
+	root := `{"allOf": [
+		{"type": "object", "properties": {"id": {"type": "string"}}},
+		{"type": "object", "properties": {"id": {"type": "integer"}}}
+	]}`
+	if err := json.Unmarshal([]byte(root), &schema); err != nil {
+		t.Fatal(err)
+	}
+	ts := NewToolScreen(mcp.Tool{Name: "tag", InputSchema: schema}, nil)
+	if !ts.rawJSONMode {
+		t.Fatal("root schema note did not switch the form to raw JSON")
+	}
+	if view := ts.View(); !strings.Contains(view, `allOf branches both define property "id"`) {
+		t.Errorf("view does not show the root schema note:\n%s", view)
+	}
+}
