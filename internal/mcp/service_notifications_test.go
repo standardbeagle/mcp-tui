@@ -11,6 +11,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // TestService_NotificationStream_LazyInit exercises the contract that
@@ -256,5 +257,89 @@ func TestService_NotificationStream_PauseAffectsCapture(t *testing.T) {
 
 	if got := stream.Len(); got != 2 {
 		t.Errorf("len = %d; want 2 (paused append should drop)", got)
+	}
+}
+
+// TestService_ListChangedNotifications_OnMRTRProtocol covers tools, prompts
+// and resources list_changed on 2026-07-28. There the server no longer
+// broadcasts them on the session: it sends them only down a
+// subscriptions/listen stream that opted in (SEP-2575), and the SDK client
+// opens that stream at connect only for the list_changed kinds it has a
+// handler for. The service must therefore register those handlers, or the
+// notification panel and --watch-notifications go silent on the new
+// protocol.
+func TestService_ListChangedNotifications_OnMRTRProtocol(t *testing.T) {
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "test-server", Version: "0.0.0"}, nil)
+	server.AddTool(&officialMCP.Tool{Name: "deploy", InputSchema: &jsonschema.Schema{Type: "object"}}, func(_ context.Context, _ *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+		return &officialMCP.CallToolResult{}, nil
+	})
+	server.AddPrompt(&officialMCP.Prompt{Name: "release_notes"}, func(_ context.Context, _ *officialMCP.GetPromptRequest) (*officialMCP.GetPromptResult, error) {
+		return &officialMCP.GetPromptResult{}, nil
+	})
+	server.AddResource(&officialMCP.Resource{URI: "file:///srv/app/config.yaml"}, func(_ context.Context, _ *officialMCP.ReadResourceRequest) (*officialMCP.ReadResourceResult, error) {
+		return &officialMCP.ReadResourceResult{}, nil
+	})
+
+	svc := NewService().(*service)
+	connectInMemory(t, server, svc, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"})
+	if got := svc.GetServerInfo().ProtocolVersion; got != testutil.MRTRProtocolVersion {
+		t.Fatalf("negotiated protocol version = %q, want %q", got, testutil.MRTRProtocolVersion)
+	}
+
+	server.RemoveTools("deploy")
+	server.RemovePrompts("release_notes")
+	server.RemoveResources("file:///srv/app/config.yaml")
+
+	want := map[notifications.Type]bool{
+		notifications.TypeToolsListChanged:     false,
+		notifications.TypePromptsListChanged:   false,
+		notifications.TypeResourcesListChanged: false,
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, e := range svc.NotificationStream().Snapshot() {
+			if _, tracked := want[e.Type]; tracked {
+				want[e.Type] = true
+			}
+		}
+		if want[notifications.TypeToolsListChanged] && want[notifications.TypePromptsListChanged] && want[notifications.TypeResourcesListChanged] {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for tp, seen := range want {
+		if !seen {
+			t.Errorf("did not capture %q within timeout on protocol %s", tp, testutil.MRTRProtocolVersion)
+		}
+	}
+}
+
+// TestOpensListChangedStream pins the condition under which Connect waits
+// for a subscriptions/listen acknowledgement. It must match the SDK's own
+// decision to open the stream, or Connect either stalls for the full timeout
+// on servers that never get a stream, or skips the wait and races.
+func TestOpensListChangedStream(t *testing.T) {
+	listChanged := &officialMCP.ServerCapabilities{Tools: &officialMCP.ToolCapabilities{ListChanged: true}}
+	for _, tc := range []struct {
+		name string
+		res  *officialMCP.InitializeResult
+		want bool
+	}{
+		{"no session result", nil, false},
+		{"legacy protocol", &officialMCP.InitializeResult{ProtocolVersion: "2025-11-25", Capabilities: listChanged}, false},
+		{"stateless, tools listChanged", &officialMCP.InitializeResult{ProtocolVersion: "2026-07-28", Capabilities: listChanged}, true},
+		{"stateless, prompts listChanged", &officialMCP.InitializeResult{ProtocolVersion: "2026-07-28",
+			Capabilities: &officialMCP.ServerCapabilities{Prompts: &officialMCP.PromptCapabilities{ListChanged: true}}}, true},
+		{"stateless, resources listChanged", &officialMCP.InitializeResult{ProtocolVersion: "2026-07-28",
+			Capabilities: &officialMCP.ServerCapabilities{Resources: &officialMCP.ResourceCapabilities{ListChanged: true}}}, true},
+		{"stateless, tools without listChanged", &officialMCP.InitializeResult{ProtocolVersion: "2026-07-28",
+			Capabilities: &officialMCP.ServerCapabilities{Tools: &officialMCP.ToolCapabilities{}}}, false},
+		{"stateless, no capabilities", &officialMCP.InitializeResult{ProtocolVersion: "2026-07-28"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := opensListChangedStream(tc.res); got != tc.want {
+				t.Errorf("opensListChangedStream = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

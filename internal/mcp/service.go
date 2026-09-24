@@ -110,6 +110,11 @@ type service struct {
 	roots  []*officialMCP.Root
 	client *officialMCP.Client // captured at createClient so post-connect AddRoots/RemoveRoots can reach it
 
+	// subscriptionsAcked is closed when the current client receives its first
+	// notifications/subscriptions/acknowledged. Created per client in
+	// createClient; Connect waits on it (see awaitSubscriptionsAck).
+	subscriptionsAcked chan struct{}
+
 	// oauthHandler is non-nil when the connection config carried an
 	// *oauth.Config and Connect successfully built a handler. Exposed via
 	// GetOAuthHandler() so the TUI status indicator can read state and
@@ -460,6 +465,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// swap service fields while the handshake is in flight. The epoch lets us
 	// detect that afterwards.
 	sessionManager := s.sessionManager
+	subscriptionsAcked := s.subscriptionsAcked
 	epoch := s.connectEpoch
 	s.mu.Unlock()
 
@@ -477,7 +483,60 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		return fmt.Errorf("failed to connect to MCP server: %w", err)
 	}
 
+	if clientSession := sessionManager.GetSession(); clientSession != nil {
+		awaitSubscriptionsAck(ctx, clientSession.InitializeResult(), subscriptionsAcked)
+	}
+
 	return s.commitConnection(epoch, sessionManager)
+}
+
+// statelessProtocolVersion is the first protocol version (SEP-2575) in which
+// list_changed notifications travel only on a subscriptions/listen stream.
+const statelessProtocolVersion = "2026-07-28"
+
+// subscriptionsAckTimeout bounds how long Connect waits for the server to
+// acknowledge the list_changed subscription.
+const subscriptionsAckTimeout = 5 * time.Second
+
+const methodSubscriptionsAcknowledged = "notifications/subscriptions/acknowledged"
+
+// opensListChangedStream reports whether the SDK opened a subscriptions/listen
+// stream during Connect. It mirrors the SDK's own condition: a 2026-07-28+
+// session whose server advertises listChanged for a kind the client has a
+// handler for (createClient registers all three).
+func opensListChangedStream(res *officialMCP.InitializeResult) bool {
+	if res == nil || res.ProtocolVersion < statelessProtocolVersion || res.Capabilities == nil {
+		return false
+	}
+	c := res.Capabilities
+	return (c.Tools != nil && c.Tools.ListChanged) ||
+		(c.Prompts != nil && c.Prompts.ListChanged) ||
+		(c.Resources != nil && c.Resources.ListChanged)
+}
+
+// awaitSubscriptionsAck blocks until the server acknowledges the list_changed
+// subscription the SDK opened during Connect. The SDK sends
+// subscriptions/listen without waiting for it, and the server only notifies
+// subscriptions it has registered, so a tool/prompt/resource change landing
+// in that window would be lost for good. A missing acknowledgement is a
+// server spec violation; it is logged, not fatal, so the session stays usable
+// for everything but list_changed.
+func awaitSubscriptionsAck(ctx context.Context, res *officialMCP.InitializeResult, acked <-chan struct{}) {
+	if !opensListChangedStream(res) {
+		return
+	}
+	timer := time.NewTimer(subscriptionsAckTimeout)
+	defer timer.Stop()
+	select {
+	case <-acked:
+		debug.Debug("Server acknowledged list_changed subscription")
+	case <-timer.C:
+		debug.Warn("Server did not acknowledge subscriptions/listen; list_changed notifications may be missing",
+			debug.F("timeout", subscriptionsAckTimeout))
+	case <-ctx.Done():
+		debug.Warn("Connect context ended before subscriptions/listen was acknowledged",
+			debug.F("error", ctx.Err()))
+	}
 }
 
 // commitConnection publishes a completed handshake, unless a Disconnect landed
@@ -576,6 +635,19 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 				debug.F("progressToken", req.Params.ProgressToken),
 				debug.F("progress", req.Params.Progress))
 		},
+		// On 2026-07-28 the server sends list_changed only down a
+		// subscriptions/listen stream, which the SDK opens at connect solely
+		// for the kinds that have a handler here. Capture itself happens in
+		// captureNotificationsMiddleware; these handlers exist to opt in.
+		ToolListChangedHandler: func(context.Context, *officialMCP.ToolListChangedRequest) {
+			debug.Debug("Tools list changed")
+		},
+		PromptListChangedHandler: func(context.Context, *officialMCP.PromptListChangedRequest) {
+			debug.Debug("Prompts list changed")
+		},
+		ResourceListChangedHandler: func(context.Context, *officialMCP.ResourceListChangedRequest) {
+			debug.Debug("Resources list changed")
+		},
 	}
 	if s.samplingHandler != nil {
 		// Capture the handler so the closure does not race with later
@@ -653,6 +725,18 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		s.notificationStream = notifications.NewStream()
 	}
 	client.AddReceivingMiddleware(s.captureNotificationsMiddleware())
+
+	acked := make(chan struct{})
+	var ackOnce sync.Once
+	client.AddReceivingMiddleware(func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
+		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
+			if method == methodSubscriptionsAcknowledged {
+				ackOnce.Do(func() { close(acked) })
+			}
+			return next(ctx, method, req)
+		}
+	})
+	s.subscriptionsAcked = acked
 
 	// Seed the client with any roots configured before connect. AddRoots is
 	// safe to call before Connect — the SDK accumulates them into its

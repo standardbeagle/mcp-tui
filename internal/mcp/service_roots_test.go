@@ -9,6 +9,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // TestService_SetInitialRoots_RoundTrip verifies the full
@@ -190,4 +191,49 @@ func (f *fakeTransportFactory) ValidateConfig(_ *transports.TransportConfig) err
 
 func (f *fakeTransportFactory) GetSupportedTypes() []transports.TransportType {
 	return []transports.TransportType{transports.TransportSTDIO}
+}
+
+// TestService_AddRoots_OnMRTRProtocol_ListChangedIsAdvisoryOnly records what
+// go-sdk v1.8.0 actually does with roots/list_changed on 2026-07-28, where
+// the spec removed it:
+//
+//   - the client still sends it (Client.AddRoots -> changeAndNotify, without
+//     the per-request _meta that marks new-protocol traffic), and the SDK
+//     server, seeing no _meta, dispatches it like a legacy notification;
+//   - but the server cannot follow up, because ServerSession.ListRoots is a
+//     server-initiated request and is refused on this protocol.
+//
+// So the notification is advisory at best; servers must ask for roots with a
+// ListRootsParams input request (roots/mrtr_test.go). If a future SDK stops
+// sending it, the first assertion flips and this test should be updated.
+func TestService_AddRoots_OnMRTRProtocol_ListChangedIsAdvisoryOnly(t *testing.T) {
+	listRootsErr := make(chan error, 1)
+	server := officialMCP.NewServer(
+		&officialMCP.Implementation{Name: "test-server", Version: "0.0.0"},
+		&officialMCP.ServerOptions{
+			RootsListChangedHandler: func(ctx context.Context, req *officialMCP.RootsListChangedRequest) {
+				_, err := req.Session.ListRoots(ctx, nil)
+				select {
+				case listRootsErr <- err:
+				default:
+				}
+			},
+		},
+	)
+	svc := NewService().(*service)
+	connectInMemory(t, server, svc, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"})
+	if got := svc.GetServerInfo().ProtocolVersion; got != testutil.MRTRProtocolVersion {
+		t.Fatalf("negotiated protocol version = %q, want %q", got, testutil.MRTRProtocolVersion)
+	}
+
+	svc.AddRoots(&officialMCP.Root{Name: "repo", URI: "file:///home/dev/mcp-tui"})
+
+	select {
+	case err := <-listRootsErr:
+		if err == nil {
+			t.Error("ss.ListRoots succeeded on 2026-07-28; server-initiated requests should be refused")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("roots/list_changed did not reach the server on 2026-07-28")
+	}
 }
