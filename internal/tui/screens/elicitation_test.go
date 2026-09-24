@@ -378,3 +378,84 @@ func TestElicitationScreen_SubmitRequiredMissingShowsError(t *testing.T) {
 	// have a hook to assert that, but the absence of a panic and the
 	// presence of the error text is sufficient signal for this test.
 }
+
+// The const values of titledColorSchema's options.
+const (
+	colorRed   = "#FF0000"
+	colorGreen = "#00FF00"
+	colorBlue  = "#0000FF"
+)
+
+// titledOption is one {"const","title"} entry of a titled enum.
+func titledOption(value, title string) map[string]any {
+	return map[string]any{"const": value, "title": title}
+}
+
+// titledColorSchema is the SEP-1330 titled enum example from the MCP spec:
+// the user reads the titles, the server receives the const values.
+func titledColorSchema() map[string]any {
+	colors := []any{titledOption(colorRed, "Red"), titledOption(colorGreen, "Green"), titledOption(colorBlue, "Blue")}
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"primary": map[string]any{"type": "string", "oneOf": colors, "default": colorRed},
+			"palette": map[string]any{
+				"type": "array", "minItems": 1, "maxItems": 2,
+				"items": map[string]any{"anyOf": colors},
+			},
+		},
+		"required": []any{"palette", "primary"},
+	}
+}
+
+// TestElicitationScreen_TitledEnumShowsTitlesSubmitsConsts: titled options
+// render by title, and the accepted content carries the const values.
+func TestElicitationScreen_TitledEnumShowsTitlesSubmitsConsts(t *testing.T) {
+	s := NewElicitationScreen(pendingForSchemaSync("Pick colors", titledColorSchema()))
+	s.UpdateSize(120, 24)
+
+	view := s.View()
+	for _, title := range []string{"Red", "Green", "Blue"} {
+		if !strings.Contains(view, title) {
+			t.Errorf("view lacks option title %q:\n%s", title, view)
+		}
+	}
+	if strings.Contains(view, colorGreen) {
+		t.Errorf("view shows const %s instead of its title:\n%s", colorGreen, view)
+	}
+
+	// Fields sort as palette, primary. Select Green in palette, then move
+	// primary from its Red default to Blue.
+	_, _ = s.Update(tea.KeyMsg{Type: tea.KeyRight})
+	_, _ = s.Update(tea.KeyMsg{Type: tea.KeySpace})
+	_, _ = s.Update(tea.KeyMsg{Type: tea.KeyTab})
+	_, _ = s.Update(tea.KeyMsg{Type: tea.KeyRight})
+	_, _ = s.Update(tea.KeyMsg{Type: tea.KeyRight})
+
+	content, err := s.collectContent()
+	if err != nil {
+		t.Fatalf("collectContent: %v", err)
+	}
+	if got := content["primary"]; got != colorBlue {
+		t.Errorf("primary = %v, want %s", got, colorBlue)
+	}
+	if got, ok := content["palette"].([]string); !ok || len(got) != 1 || got[0] != colorGreen {
+		t.Errorf("palette = %#v, want [%s]", content["palette"], colorGreen)
+	}
+}
+
+// TestElicitationScreen_MultiSelectEnforcesItemBounds: a selection outside
+// minItems..maxItems stays in the form with an error instead of reaching a
+// server that would reject it.
+func TestElicitationScreen_MultiSelectEnforcesItemBounds(t *testing.T) {
+	s := NewElicitationScreen(pendingForSchemaSync("Pick colors", titledColorSchema()))
+	s.UpdateSize(120, 24)
+
+	for i := 0; i < 3; i++ {
+		_, _ = s.Update(tea.KeyMsg{Type: tea.KeySpace})
+		_, _ = s.Update(tea.KeyMsg{Type: tea.KeyRight})
+	}
+	if _, err := s.collectContent(); err == nil || !strings.Contains(err.Error(), "at most 2") {
+		t.Errorf("three of maxItems 2 selected: err = %v, want an 'at most 2' error", err)
+	}
+}

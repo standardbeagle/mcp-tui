@@ -422,6 +422,17 @@ func (s *ElicitationScreen) collectContent() (map[string]any, error) {
 			if len(selected) == 0 && f.Required {
 				return nil, fmt.Errorf("field %q is required (select at least one)", displayLabel(f))
 			}
+			if len(selected) == 0 && f.MinItems > 0 {
+				// Optional and empty: omit rather than send an array the
+				// schema's minItems rejects.
+				continue
+			}
+			if len(selected) < f.MinItems {
+				return nil, fmt.Errorf("field %q: select at least %d", displayLabel(f), f.MinItems)
+			}
+			if f.MaxItems > 0 && len(selected) > f.MaxItems {
+				return nil, fmt.Errorf("field %q: select at most %d", displayLabel(f), f.MaxItems)
+			}
 			content[f.Name] = selected
 		case elicitation.FieldUnknown:
 			// Unsupported field: skip silently. The TUI hint already tells

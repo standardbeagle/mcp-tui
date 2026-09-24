@@ -14,11 +14,26 @@ import (
 // them with the handlers in ClientOptions and retries the call.
 const MRTRProtocolVersion = "2026-07-28"
 
+// LegacyProtocolVersion is the last MCP protocol version in which a server
+// calls the client directly (elicitation/create, sampling/createMessage,
+// roots/list) while serving a request.
+const LegacyProtocolVersion = "2025-11-25"
+
 // ConnectMRTR connects client to server over an in-memory transport pair at
 // MRTRProtocolVersion. It fails the test if the session negotiated anything
 // else, so a test using it proves it ran on the MRTR wire protocol. Both ends
 // are closed on test cleanup.
 func ConnectMRTR(t *testing.T, client *officialMCP.Client, server *officialMCP.Server) *officialMCP.ClientSession {
+	t.Helper()
+	return ConnectAt(t, client, server, MRTRProtocolVersion)
+}
+
+// ConnectAt connects client to server over an in-memory transport pair at
+// protocolVersion and fails the test if the session negotiated anything
+// else. Both ends are closed on test cleanup.
+func ConnectAt(
+	t *testing.T, client *officialMCP.Client, server *officialMCP.Server, protocolVersion string,
+) *officialMCP.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	ct, st := officialMCP.NewInMemoryTransports()
@@ -27,13 +42,13 @@ func ConnectMRTR(t *testing.T, client *officialMCP.Client, server *officialMCP.S
 		t.Fatalf("server connect: %v", err)
 	}
 	t.Cleanup(func() { _ = ss.Close() })
-	cs, err := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: MRTRProtocolVersion})
+	cs, err := client.Connect(ctx, ct, &officialMCP.ClientSessionOptions{ProtocolVersion: protocolVersion})
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
 	t.Cleanup(func() { _ = cs.Close() })
-	if got := cs.InitializeResult().ProtocolVersion; got != MRTRProtocolVersion {
-		t.Fatalf("negotiated protocol version = %q, want %q", got, MRTRProtocolVersion)
+	if got := cs.InitializeResult().ProtocolVersion; got != protocolVersion {
+		t.Fatalf("negotiated protocol version = %q, want %q", got, protocolVersion)
 	}
 	return cs
 }
