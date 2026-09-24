@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
@@ -72,5 +73,70 @@ func TestService_SDKLogsReachDebugLogger(t *testing.T) {
 	out := logs()
 	if !strings.Contains(out, "[sdk] excluding tool from tools/list") || !strings.Contains(out, "tool=export_report") {
 		t.Errorf("SDK log line missing from debug output:\n%s", out)
+	}
+}
+
+// TestService_Connect_LogsProtocolNegotiation records, for each handshake
+// path the SDK can take, what was requested, what the server supports, what
+// was agreed and whether the client fell back from server/discover to
+// initialize.
+func TestService_Connect_LogsProtocolNegotiation(t *testing.T) {
+	latest := officialMCP.SupportedProtocolVersions()[0]
+	rejectDiscover := func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
+		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
+			if method == "server/discover" {
+				return nil, &jsonrpc.Error{Code: jsonrpc.CodeMethodNotFound, Message: "method not found"}
+			}
+			return next(ctx, method, req)
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		pinned string
+		reject bool
+		want   []string
+	}{
+		{
+			name: "discover",
+			want: []string{
+				"Protocol version negotiated", "requested=" + latest, "negotiated=" + latest,
+				"handshake=server/discover", "fell_back_to_initialize=false", "server_supported_versions=[",
+			},
+		},
+		{
+			name:   "initialize",
+			pinned: "2025-11-25",
+			want: []string{
+				"Protocol version negotiated", "requested=2025-11-25", "negotiated=2025-11-25",
+				"handshake=initialize", "fell_back_to_initialize=false",
+			},
+		},
+		{
+			name:   "fallback",
+			reject: true,
+			want: []string{
+				"Protocol version negotiated", "requested=" + latest, "negotiated=2025-11-25",
+				"handshake=initialize", "fell_back_to_initialize=true", "discover_error=",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureLogs(t)
+			server := officialMCP.NewServer(&officialMCP.Implementation{Name: "test-server", Version: "0.0.0"}, nil)
+			if tc.reject {
+				server.AddReceivingMiddleware(rejectDiscover)
+			}
+			svc := NewService().(*service)
+			connectInMemory(t, server, svc, &configPkg.ConnectionConfig{
+				Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: tc.pinned,
+			})
+
+			out := logs()
+			for _, w := range tc.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("negotiation log missing %q:\n%s", w, out)
+				}
+			}
+		})
 	}
 }

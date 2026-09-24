@@ -116,6 +116,10 @@ type service struct {
 	// createClient; Connect waits on it (see awaitSubscriptionsAck).
 	subscriptionsAcked chan struct{}
 
+	// handshake records the protocol-version negotiation of the current
+	// client; created per client in createClient and logged by Connect.
+	handshake *handshakeTrace
+
 	// oauthHandler is non-nil when the connection config carried an
 	// *oauth.Config and Connect successfully built a handler. Exposed via
 	// GetOAuthHandler() so the TUI status indicator can read state and
@@ -467,6 +471,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// detect that afterwards.
 	sessionManager := s.sessionManager
 	subscriptionsAcked := s.subscriptionsAcked
+	handshake := s.handshake
 	epoch := s.connectEpoch
 	s.mu.Unlock()
 
@@ -486,6 +491,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	}
 
 	if clientSession := sessionManager.GetSession(); clientSession != nil {
+		handshake.logResult(requestedProtocolVersion(config.ProtocolVersion), clientSession.InitializeResult())
 		awaitSubscriptionsAck(ctx, clientSession.InitializeResult(), subscriptionsAcked)
 	}
 
@@ -607,6 +613,15 @@ func validateProtocolVersion(version string) error {
 	}
 	return fmt.Errorf("unsupported MCP protocol version %q: supported versions are %s",
 		version, strings.Join(supported, ", "))
+}
+
+// requestedProtocolVersion is the version the SDK asks for: the pin, or the
+// SDK's latest when none is set.
+func requestedProtocolVersion(pinned string) string {
+	if pinned != "" {
+		return pinned
+	}
+	return officialMCP.SupportedProtocolVersions()[0]
 }
 
 // validateConnectionState checks if already connected
@@ -733,6 +748,9 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		s.notificationStream = notifications.NewStream()
 	}
 	client.AddReceivingMiddleware(s.captureNotificationsMiddleware())
+
+	s.handshake = newHandshakeTrace()
+	client.AddSendingMiddleware(s.handshake.middleware())
 
 	acked := make(chan struct{})
 	var ackOnce sync.Once
