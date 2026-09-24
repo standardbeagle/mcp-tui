@@ -100,6 +100,15 @@ type MainScreen struct {
 	resourceLoadStart  time.Time
 	promptLoadStart    time.Time
 
+	// resourceUpdates records, per resource URI, when the server last
+	// reported it changed; cleared when the resource is read again.
+	resourceUpdates map[string]time.Time
+	// resourceUpdateFeed carries resource updates from the service's
+	// notification observer to the bubbletea loop; resourceFeedStopped
+	// ends the wait on it (startResourceUpdateFeed).
+	resourceUpdateFeed  chan ResourceUpdatedMsg
+	resourceFeedStopped chan struct{}
+
 	// Connection status
 	connectionStatus string
 	connecting       bool
@@ -218,6 +227,8 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 		connectionStatus:             "Connecting...",
 		connecting:                   true,
 		resourceTemplateSectionStart: -1,
+		resourceUpdateFeed:           make(chan ResourceUpdatedMsg, resourceUpdateBuffer),
+		resourceFeedStopped:          make(chan struct{}),
 	}
 
 	// Initialize components
@@ -327,6 +338,7 @@ func (ms *MainScreen) Init() tea.Cmd {
 		func() tea.Msg { return ConnectionStartedMsg{} },
 		ms.connectToServer(),
 		ms.tickEvents(), // Start periodic event refresh
+		ms.startResourceUpdateFeed(),
 	)
 }
 
@@ -380,6 +392,12 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ElicitationRequestMsg:
 		return ms.handleElicitationRequest(msg)
+
+	case ResourceUpdatedMsg:
+		return ms.handleResourceUpdated(msg)
+
+	case resourceSubscriptionChangedMsg:
+		return ms.handleResourceSubscriptionChanged(msg)
 	}
 
 	return ms, nil
@@ -554,6 +572,7 @@ func (ms *MainScreen) handleResourcesLoaded(msg ResourcesLoadedMsg) (tea.Model, 
 		ms.resourceTemplateObjects = msg.Templates
 		ms.resources = msg.Items
 		ms.resourceCount = msg.ActualCount
+		ms.refreshResourceRows()
 		// Compute where the templates section starts in the display list.
 		// -1 means no templates were rendered; otherwise it is the index of
 		// the section header row, so the first selectable template row is
@@ -595,6 +614,8 @@ func (ms *MainScreen) handleResourceContentLoaded(msg ResourceContentLoadedMsg) 
 		ms.resourceContent = msg.Content.Contents
 		ms.resourceRounds = msg.Content.Rounds
 		ms.resourceViewerOpen = true
+		delete(ms.resourceUpdates, msg.Resource.URI)
+		ms.refreshResourceRows()
 	}
 	return ms, nil
 }
@@ -820,8 +841,21 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ms.handleItemSelection()
 
 	case "r":
-		// Refresh current tab
+		// In the resource viewer, re-read the open resource (after an
+		// update); elsewhere refresh the current tab.
+		if ms.resourceViewerOpen && ms.selectedResource != nil {
+			cmd := ms.readResource(ms.selectedResource)
+			return ms, cmd
+		}
 		return ms, ms.refreshCurrentTab()
+
+	case "s":
+		// Subscribe to / unsubscribe from the selected resource.
+		if ms.activeTab == 1 && !ms.resourceViewerOpen {
+			cmd := ms.toggleResourceSubscription()
+			return ms, cmd
+		}
+		return ms, nil
 
 	case "ctrl+l", "ctrl+d", "f12":
 		// Show debug logs. Wire the snapshot provider so the Capabilities
@@ -876,6 +910,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ms.logger.Info("User requested disconnect")
 
 		// Disconnect from the MCP server
+		ms.stopResourceUpdateFeed()
 		if err := ms.mcpService.Disconnect(); err != nil {
 			ms.logger.Error("Failed to disconnect cleanly", debug.F("error", err))
 			// Continue with transition even if disconnect fails
@@ -1263,6 +1298,17 @@ func (ms *MainScreen) View() string {
 			"d: Disconnect",
 			"Tab: Switch tabs",
 			"Ctrl+D/F12: Debug Log",
+			"Ctrl+E: Export session",
+			"q: Quit",
+		}
+	case ms.activeTab == 1 && ms.resourceCount > 0:
+		helpItems = []string{
+			"Tab/↑↓: Navigate",
+			"Enter: Read",
+			"s: Watch/unwatch",
+			"r: Refresh",
+			"d: Disconnect",
+			"Ctrl+L: Debug",
 			"Ctrl+E: Export session",
 			"q: Quit",
 		}
@@ -1860,7 +1906,7 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 			templates = nil
 		}
 
-		items, actualCount := buildResourceListItems(resources, templates)
+		items, actualCount := buildResourceListItems(resources, templates, nil)
 
 		return ResourcesLoadedMsg{
 			Resources:   resources,
@@ -1876,7 +1922,8 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 	}
 }
 
-// buildResourceListItems renders the concrete resources followed by a
+// buildResourceListItems renders the concrete resources, each prefixed by
+// its marks entry (subscribedMark, updatedMark), followed by a
 // "Templates" section header and one row per URI template. The header is
 // only emitted when at least one template exists so servers without
 // templates produce the same single-section list as before.
@@ -1884,7 +1931,9 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 // actualCount is the sum of selectable rows (resources + templates,
 // excluding the header). When both lists are empty we surface a friendly
 // placeholder line and report zero — the existing "no items" UX path.
-func buildResourceListItems(resources []mcp.Resource, templates []mcp.ResourceTemplate) ([]string, int) {
+func buildResourceListItems(
+	resources []mcp.Resource, templates []mcp.ResourceTemplate, marks map[string]string,
+) (items []string, actualCount int) {
 	if len(resources) == 0 && len(templates) == 0 {
 		return []string{"This MCP server doesn't provide any resources"}, 0
 	}
@@ -1894,7 +1943,7 @@ func buildResourceListItems(resources []mcp.Resource, templates []mcp.ResourceTe
 		if desc == "" {
 			desc = "No description"
 		}
-		out = append(out, fmt.Sprintf("%s%s - %s", iconMarker(len(r.Icons)), r.DisplayName(), desc))
+		out = append(out, fmt.Sprintf("%s%s%s - %s", marks[r.URI], iconMarker(len(r.Icons)), r.DisplayName(), desc))
 	}
 	if len(templates) > 0 {
 		out = append(out, "── Templates ──")
@@ -2578,10 +2627,16 @@ func (ms *MainScreen) renderResourceViewer() string {
 		builder.WriteString("\n")
 	}
 
+	if notice := ms.resourceUpdateNotice(); notice != "" {
+		builder.WriteString("\n")
+		builder.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")).Render(notice))
+		builder.WriteString("\n")
+	}
+
 	// Instructions
 	builder.WriteString("\n")
 	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
-	builder.WriteString(instructionStyle.Render("Press 'q' or Escape to go back to list"))
+	builder.WriteString(instructionStyle.Render("Press 'r' to reload, 'q' or Escape to go back to list"))
 
 	return builder.String()
 }

@@ -328,7 +328,7 @@ func TestBuildResourceListItems_TemplatesSection(t *testing.T) {
 		{URITemplate: "posts://{postId}"},
 	}
 
-	items, count := buildResourceListItems(resources, templates)
+	items, count := buildResourceListItems(resources, templates, nil)
 
 	if count != 3 {
 		t.Errorf("count = %d, want 3", count)
@@ -352,7 +352,7 @@ func TestBuildResourceListItems_TemplatesSection(t *testing.T) {
 // resources or templates still render a single explanatory line so the list
 // pane never looks broken.
 func TestBuildResourceListItems_EmptyShowsPlaceholder(t *testing.T) {
-	items, count := buildResourceListItems(nil, nil)
+	items, count := buildResourceListItems(nil, nil, nil)
 	if count != 0 {
 		t.Errorf("count = %d, want 0", count)
 	}
@@ -372,7 +372,7 @@ func TestBuildResourceListItems_OnlyTemplates(t *testing.T) {
 	templates := []mcp.ResourceTemplate{
 		{URITemplate: "u://{a}", Description: "thing"},
 	}
-	items, count := buildResourceListItems(nil, templates)
+	items, count := buildResourceListItems(nil, templates, nil)
 
 	if count != 1 {
 		t.Errorf("count = %d, want 1", count)

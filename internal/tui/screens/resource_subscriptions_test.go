@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -97,5 +98,101 @@ func TestMainScreen_EnterReadsResourceByURI(t *testing.T) {
 	}
 	if view := ms.View(); !strings.Contains(view, "depth=42") {
 		t.Errorf("viewer lacks the resource text:\n%s", view)
+	}
+}
+
+// currentResourceRow returns the rendered list row of the queue resource.
+func currentResourceRow(t *testing.T, ms *MainScreen) string {
+	t.Helper()
+	for _, row := range ms.resources {
+		if strings.Contains(row, queueDepthName) {
+			return row
+		}
+	}
+	t.Fatalf("no row for %s in %v", queueDepthName, ms.resources)
+	return ""
+}
+
+// TestMainScreen_ResourceSubscription_MarksAndRereadsUpdates walks the
+// whole flow on both protocols: 's' subscribes and marks the row, an update
+// from the server marks it updated (and the open viewer offers a reload),
+// Enter or 'r' re-reads the new content, and 's' again unsubscribes.
+func TestMainScreen_ResourceSubscription_MarksAndRereadsUpdates(t *testing.T) {
+	for _, pinned := range []string{"", testutil.LegacyProtocolVersion} {
+		t.Run("pin="+pinned, func(t *testing.T) {
+			depth := "42"
+			server := queueServer(true, &depth)
+			ms, svc := mainScreenOn(t, server, pinned)
+			nextUpdate := ms.startResourceUpdateFeed()
+			serverUpdates := func(newDepth string) {
+				t.Helper()
+				depth = newDepth
+				if err := server.ResourceUpdated(context.Background(),
+					&officialMCP.ResourceUpdatedNotificationParams{URI: queueDepthURI}); err != nil {
+					t.Fatal(err)
+				}
+				delivered := make(chan tea.Msg, 1)
+				go func() { delivered <- nextUpdate() }()
+				select {
+				case msg := <-delivered:
+					_, nextUpdate = ms.Update(msg)
+				case <-time.After(2 * time.Second):
+					t.Fatal("no ResourceUpdatedMsg after the server's update")
+				}
+			}
+
+			runCmd(t, ms, pressKey(ms, "s"))
+			if err := ms.LastError(); err != nil {
+				t.Fatalf("subscribe: %v", err)
+			}
+			if row := currentResourceRow(t, ms); !strings.HasPrefix(row, subscribedMark) {
+				t.Errorf("subscribed row %q lacks %q", row, subscribedMark)
+			}
+
+			serverUpdates("57")
+			if row := currentResourceRow(t, ms); !strings.HasPrefix(row, updatedMark) {
+				t.Errorf("updated row %q lacks %q", row, updatedMark)
+			}
+
+			runCmd(t, ms, pressKey(ms, "enter"))
+			if view := ms.View(); !strings.Contains(view, "depth=57") {
+				t.Errorf("viewer does not show the updated content:\n%s", view)
+			}
+			if row := currentResourceRow(t, ms); !strings.HasPrefix(row, subscribedMark) {
+				t.Errorf("row %q still marked updated after reading", row)
+			}
+
+			serverUpdates("63")
+			if view := ms.View(); !strings.Contains(view, "press r to reload") {
+				t.Errorf("open viewer does not offer a reload after an update:\n%s", view)
+			}
+			runCmd(t, ms, pressKey(ms, "r"))
+			if view := ms.View(); !strings.Contains(view, "depth=63") || strings.Contains(view, "press r to reload") {
+				t.Errorf("'r' did not re-read the resource:\n%s", view)
+			}
+
+			pressKey(ms, "esc")
+			runCmd(t, ms, pressKey(ms, "s"))
+			if row := currentResourceRow(t, ms); strings.HasPrefix(row, subscribedMark) || strings.HasPrefix(row, updatedMark) {
+				t.Errorf("row %q still marked after unsubscribing", row)
+			}
+			if got := svc.ResourceSubscriptions(); len(got) != 0 {
+				t.Errorf("service still subscribed: %v", got)
+			}
+		})
+	}
+}
+
+// TestMainScreen_ResourceSubscription_ServerWithoutSubscribe: 's' on a
+// server without resources.subscribe reports why and marks nothing.
+func TestMainScreen_ResourceSubscription_ServerWithoutSubscribe(t *testing.T) {
+	depth := "42"
+	ms, _ := mainScreenOn(t, queueServer(false, &depth), "")
+	runCmd(t, ms, pressKey(ms, "s"))
+	if err := ms.LastError(); err == nil || !strings.Contains(err.Error(), "resources.subscribe") {
+		t.Errorf("error = %v, want the missing resources.subscribe named", err)
+	}
+	if row := currentResourceRow(t, ms); strings.HasPrefix(row, subscribedMark) {
+		t.Errorf("row %q marked subscribed", row)
 	}
 }
