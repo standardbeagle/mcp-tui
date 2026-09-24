@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -27,11 +29,13 @@ func (c *ServerCommand) CreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Show MCP server information",
-		Long: `Show information about the connected MCP server including:
-- Server name and version
-- Protocol version
-- Supported capabilities
-- Available tools, resources, and prompts counts`,
+		Long: `Show information about the connected MCP server:
+- Server name, version and declared identity (title, description, website, icons)
+- Negotiated protocol version
+- The names of the capabilities the server declared, without their settings
+  (see 'mcp-tui capabilities' for the full declaration)
+- How many tools, resources and prompts it offers, naming them when there
+  are five or fewer`,
 		PreRunE: c.PreRunE,
 		RunE:    c.RunE,
 	}
@@ -70,8 +74,8 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	if len(info.Capabilities) == 0 {
 		fmt.Printf("  None reported\n")
 	} else {
-		for key, value := range info.Capabilities {
-			if value != nil {
+		for _, key := range slices.Sorted(maps.Keys(info.Capabilities)) {
+			if info.Capabilities[key] != nil {
 				fmt.Printf("  %s: supported\n", key)
 			}
 		}
