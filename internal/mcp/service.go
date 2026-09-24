@@ -1518,14 +1518,18 @@ func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceRe
 	ctx, progress := s.beginProgress(ctx)
 	defer s.endProgress(progress)
 
+	// The SDK checks its read cache before any middleware runs, so a final
+	// round that sent nothing was served from the cache (list_cache.go).
 	var result *officialMCP.ReadResourceResult
+	var probe *wireProbe
 	rounds, err := s.runInputRounds(ctx, session, "resources/read", uri,
 		func(
 			ctx context.Context, responses officialMCP.InputResponseMap, state string,
 		) (officialMCP.InputRequestMap, string, error) {
 			round := *params
 			round.InputResponses, round.RequestState = responses, state
-			res, err := session.ReadResource(ctx, &round)
+			probe = &wireProbe{}
+			res, err := session.ReadResource(context.WithValue(ctx, wireProbeKey{}, probe), &round)
 			if err != nil {
 				return nil, "", err
 			}
@@ -1549,11 +1553,17 @@ func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceRe
 		}
 	}
 
-	debug.Info("Read resource successfully",
-		debug.F("uri", uri),
-		debug.F("contentsCount", len(contents)))
+	cache := readCacheInfo(session, result, probe)
+	fields := []debug.Field{debug.F("uri", uri), debug.F("contentsCount", len(contents))}
+	if cache != nil {
+		fields = append(fields, debug.F("from_cache", cache.FromCache), debug.F("ttl_ms", cache.TTLMs),
+			debug.F("cache_scope", cache.CacheScope))
+	}
+	debug.Info("Read resource successfully", fields...)
 
-	return &ReadResourceResult{Contents: contents, Rounds: rounds, Server: respondingServer(result.Meta)}, nil
+	return &ReadResourceResult{
+		Contents: contents, Rounds: rounds, Server: respondingServer(result.Meta), Cache: cache,
+	}, nil
 }
 
 // ListPrompts returns available prompts using the official SDK's natural iterator pattern

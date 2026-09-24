@@ -49,7 +49,12 @@ func (c ListCacheInfo) Label() string {
 	case c.CachedPages > 0:
 		state = fmt.Sprintf("partly cached (%d/%d pages)", c.CachedPages, c.Pages)
 	}
-	return fmt.Sprintf("%s · ttl %s · %s", state, time.Duration(c.TTLMs)*time.Millisecond, c.CacheScope)
+	return cacheLabel(state, c.TTLMs, c.CacheScope)
+}
+
+// cacheLabel renders how a cacheable result was served.
+func cacheLabel(state string, ttlMs int, scope string) string {
+	return fmt.Sprintf("%s · ttl %s · %s", state, time.Duration(ttlMs)*time.Millisecond, scope)
 }
 
 func (c *ListCacheInfo) addPage(ttlMs int, scope string, cached bool) {
@@ -62,6 +67,39 @@ func (c *ListCacheInfo) addPage(ttlMs int, scope string, cached bool) {
 	c.Pages++
 	if cached {
 		c.CachedPages++
+	}
+}
+
+// ReadCacheInfo describes how a resources/read was served (SEP-2549).
+type ReadCacheInfo struct {
+	TTLMs      int    `json:"ttlMs"`
+	CacheScope string `json:"cacheScope"`
+	// FromCache reports that the SDK answered from its cache without
+	// sending the request.
+	FromCache bool `json:"fromCache"`
+}
+
+// Label renders the info for the resource detail, e.g. "cached · ttl 30s ·
+// public".
+func (c ReadCacheInfo) Label() string {
+	state := "fetched"
+	if c.FromCache {
+		state = "cached"
+	}
+	return cacheLabel(state, c.TTLMs, c.CacheScope)
+}
+
+// readCacheInfo describes how the SDK served a read whose final round sent
+// probe's count of requests; nil for sessions older than 2026-07-28, which
+// have no read cache.
+func readCacheInfo(
+	session *officialMCP.ClientSession, result *officialMCP.ReadResourceResult, probe *wireProbe,
+) *ReadCacheInfo {
+	if res := session.InitializeResult(); res == nil || !protocol.IsStateless(res.ProtocolVersion) {
+		return nil
+	}
+	return &ReadCacheInfo{
+		TTLMs: result.GetTTLMs(), CacheScope: result.GetCacheScope(), FromCache: probe.sent.Load() == 0,
 	}
 }
 

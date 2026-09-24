@@ -539,6 +539,9 @@ type ReadResourceResult struct {
 	Rounds []RoundSummary `json:"rounds,omitempty"`
 	// Server: see CallToolResult.Server.
 	Server *RespondingServer `json:"server,omitempty"`
+	// Cache is how the read was served: ttlMs, cacheScope and whether the
+	// SDK answered from its TTL cache (SEP-2549). nil before 2026-07-28.
+	Cache *ReadCacheInfo `json:"cache,omitempty"`
 }
 
 // RoundSummary describes one input-required round of a multi round-trip
