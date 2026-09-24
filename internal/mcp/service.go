@@ -756,17 +756,11 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 
 	s.clientOptions = clientOptions
 
-	// Create client with enhanced debugging capabilities
+	// Debug mode traces every event. initializeConnection has built the
+	// session manager, and NewManager always gives it an event tracer.
 	var client *officialMCP.Client
-	if s.debugMode && s.sessionManager != nil {
-		// Use debug client with event tracing
-		eventTracer := s.sessionManager.GetEventTracer()
-		if eventTracer != nil {
-			client = mcpDebug.CreateDebugClient(impl, eventTracer, clientOptions)
-		} else {
-			// Fallback to regular client (still picks up sampling handler).
-			client = officialMCP.NewClient(impl, clientOptions)
-		}
+	if s.debugMode {
+		client = mcpDebug.CreateDebugClient(impl, s.sessionManager.GetEventTracer(), clientOptions)
 	} else {
 		client = officialMCP.NewClient(impl, clientOptions)
 	}
