@@ -61,3 +61,16 @@ func TestHealthCheckSkipsPingWhenStateless(t *testing.T) {
 	assert.Equal(t, int32(0), pings.Load(), "health check must not ping on 2026-07-28")
 	assert.Equal(t, StateConnected, m.state(), "a stateless session must stay connected")
 }
+
+// A 2026-07-28 session has no session ID (SEP-2575); the manager reports it
+// as stateless instead of an empty ID that reads like a missing value.
+func TestSessionIDLabelsStatelessSessions(t *testing.T) {
+	stateless := NewManager()
+	connectCountingPings(t, stateless, "")
+	assert.Equal(t, "stateless (2026-07-28)", stateless.GetConnectionHealth()["session_id"])
+
+	legacy := NewManager()
+	connectCountingPings(t, legacy, "2025-11-25")
+	_, hasID := legacy.GetConnectionHealth()["session_id"]
+	assert.False(t, hasID, "an in-memory 2025-11-25 session has no session ID to report")
+}

@@ -21,7 +21,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/outputvalidation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
-	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
+	sessionPkg "github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
@@ -95,7 +95,7 @@ type service struct {
 	connectEpoch       uint64
 	debugMode          bool
 	transportFactory   transports.TransportFactory
-	sessionManager     *session.Manager
+	sessionManager     *sessionPkg.Manager
 	errorHandler       *errors.ErrorHandler
 	config             *UnifiedConfig              // Add unified configuration
 	connectionConfig   *configPkg.ConnectionConfig // Store connection config for CLI generation
@@ -510,7 +510,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 // statelessProtocolVersion is the first protocol version (SEP-2575) in which
 // list_changed notifications travel only on a subscriptions/listen stream.
-const statelessProtocolVersion = session.StatelessProtocolVersion
+const statelessProtocolVersion = sessionPkg.StatelessProtocolVersion
 
 // subscriptionsAckTimeout bounds how long Connect waits for the server to
 // acknowledge the list_changed subscription.
@@ -565,7 +565,7 @@ func awaitSubscriptionsAck(ctx context.Context, res *officialMCP.InitializeResul
 // itself disconnected and has already dropped its client reference. The epoch
 // detects that and closes the orphaned session instead of leaking the server
 // process.
-func (s *service) commitConnection(epoch uint64, sessionManager *session.Manager) error {
+func (s *service) commitConnection(epoch uint64, sessionManager *sessionPkg.Manager) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -584,7 +584,7 @@ func (s *service) commitConnection(epoch uint64, sessionManager *session.Manager
 func (s *service) initializeConnection() error {
 	// Initialize session manager if not already done
 	if s.sessionManager == nil {
-		s.sessionManager = session.NewManager()
+		s.sessionManager = sessionPkg.NewManager()
 
 		// Configure session manager based on unified config
 		if s.config != nil {
@@ -854,7 +854,7 @@ func (s *service) updateServerInfo() error {
 	serverName := "Connected Server"
 	serverVersion := "Unknown"
 	protocolVersion := initRes.ProtocolVersion
-	sessionID := clientSession.ID()
+	sessionID := sessionPkg.SessionLabel(clientSession)
 
 	if initRes.ServerInfo != nil {
 		if initRes.ServerInfo.Name != "" {
@@ -1017,7 +1017,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 	if err != nil {
 		// Classify and handle the error
 		classified := s.errorHandler.HandleError(ctx, err, "list_tools", map[string]interface{}{
-			"session_id": session.ID(),
+			"session_id": sessionPkg.SessionLabel(session),
 		})
 
 		// Return user-friendly error

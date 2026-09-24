@@ -27,6 +27,23 @@ func IsStateless(protocolVersion string) bool {
 	return protocolVersion >= StatelessProtocolVersion
 }
 
+// StatelessSessionLabel stands in for the session ID of a
+// StatelessProtocolVersion session, which has none.
+const StatelessSessionLabel = "stateless (" + StatelessProtocolVersion + ")"
+
+// SessionLabel identifies cs for display and logs: its transport session ID,
+// or StatelessSessionLabel on 2026-07-28 and later. Older transports without
+// session IDs (stdio, in-memory) yield "".
+func SessionLabel(cs *officialMCP.ClientSession) string {
+	if id := cs.ID(); id != "" {
+		return id
+	}
+	if res := cs.InitializeResult(); res != nil && IsStateless(res.ProtocolVersion) {
+		return StatelessSessionLabel
+	}
+	return ""
+}
+
 // maxReconnectDelay caps the exponential backoff between reconnection attempts.
 const maxReconnectDelay = 30 * time.Second
 
@@ -238,7 +255,7 @@ func (m *Manager) Connect(
 	m.session = session
 	m.setState(StateConnected)
 	m.info.ConnectedAt = time.Now()
-	m.info.SessionID = session.ID()
+	m.info.SessionID = SessionLabel(session)
 
 	// Trace successful connection
 	if transportDebugger != nil {
@@ -555,7 +572,7 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 	}
 
 	debug.Debug("Session manager: Health check passed",
-		debug.F("sessionID", session.ID()),
+		debug.F("sessionID", SessionLabel(session)),
 		debug.F("sessionState", state),
 		debug.F("transport", transportType))
 }
@@ -737,7 +754,7 @@ func (m *Manager) attemptReconnection() {
 		m.session = session
 		m.setState(StateConnected)
 		m.info.ConnectedAt = time.Now()
-		m.info.SessionID = session.ID()
+		m.info.SessionID = SessionLabel(session)
 		m.info.LastError = nil
 		m.info.ReconnectCount = attempt
 		requiresMonitor := contextStrategy.RequiresLongLivedConnection()
@@ -745,7 +762,7 @@ func (m *Manager) attemptReconnection() {
 
 		debug.Info("Session manager: Reconnection successful",
 			debug.F("attempt", attempt),
-			debug.F("newSessionID", session.ID()))
+			debug.F("newSessionID", SessionLabel(session)))
 
 		if requiresMonitor {
 			go m.startHealthMonitoring(connectCtx)
