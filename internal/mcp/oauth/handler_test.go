@@ -387,6 +387,13 @@ func TestLocalServerFetcher_Fetch_OAuthError(t *testing.T) {
 // URL, getting a 401, and calling Authorize on the handler.
 func driveClientCredentials(t *testing.T, h *Handler, srv *mockAuthServer) {
 	t.Helper()
+	req, resp := unauthorizedExchange(srv)
+	require.NoError(t, h.Authorize(context.Background(), req, resp))
+}
+
+// unauthorizedExchange builds the request and the 401 + WWW-Authenticate
+// response the SDK transport hands to Authorize on first contact.
+func unauthorizedExchange(srv *mockAuthServer) (*http.Request, *http.Response) {
 	req, _ := http.NewRequest(http.MethodGet, srv.ResourceURL(), nil)
 	resp := &http.Response{
 		StatusCode: http.StatusUnauthorized,
@@ -396,7 +403,7 @@ func driveClientCredentials(t *testing.T, h *Handler, srv *mockAuthServer) {
 	}
 	resp.Header.Set("WWW-Authenticate",
 		`Bearer resource_metadata="`+srv.resourceServer.URL+`/.well-known/oauth-protected-resource/mcp", scope="mcp:read"`)
-	require.NoError(t, h.Authorize(context.Background(), req, resp))
+	return req, resp
 }
 
 // driveAuthCode reuses driveClientCredentials — Handler.Authorize dispatches

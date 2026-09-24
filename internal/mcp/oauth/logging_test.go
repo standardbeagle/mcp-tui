@@ -1,10 +1,12 @@
 package oauth
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
@@ -114,4 +116,50 @@ func TestClientCredentialsFlow_LogsWithoutSecrets(t *testing.T) {
 		"[oauth] Token request grant_type=client_credentials",
 		"[oauth] Token response status=200",
 	)
+}
+
+// TestAuthorizationCodeFlow_IssParameter covers RFC 9207: an AS that
+// advertises authorization_response_iss_parameter_supported sends iss on the
+// redirect, and the SDK refuses the response unless the callback hands it on.
+func TestAuthorizationCodeFlow_IssParameter(t *testing.T) {
+	logs := captureAuthLogs(t)
+	srv := newMockAuthServer(t)
+	srv.advertiseIss = true
+
+	h, err := NewHandler(&Config{ServerURL: srv.ResourceURL(), ClientID: srv.clientID, CachePath: "-"},
+		http.DefaultClient, NoopCache{})
+	require.NoError(t, err)
+	installAutoApproveFetcher(t, h)
+	driveAuthCode(t, h, srv)
+	require.Equal(t, StateAuthorized, h.Status().State, "flow failed: %v", h.Status().LastError)
+
+	out := logs()
+	assertNoSecrets(t, out, srv.issuedSecrets())
+	assertLogged(t, out,
+		"iss_parameter_supported=true",
+		"[oauth] Authorization callback received has_code=true has_state=true has_iss=true",
+		"[oauth] Authorization succeeded")
+}
+
+// TestAuthorizationCodeFlow_IssMismatchRejected is the mix-up defence: an iss
+// naming a different issuer fails the flow before the code is redeemed.
+func TestAuthorizationCodeFlow_IssMismatchRejected(t *testing.T) {
+	logs := captureAuthLogs(t)
+	srv := newMockAuthServer(t)
+	srv.advertiseIss = true
+	srv.callbackIss = "https://evil.example"
+
+	h, err := NewHandler(&Config{ServerURL: srv.ResourceURL(), ClientID: srv.clientID, CachePath: "-"},
+		http.DefaultClient, NoopCache{})
+	require.NoError(t, err)
+	installAutoApproveFetcher(t, h)
+	req, resp := unauthorizedExchange(srv)
+	err = h.Authorize(context.Background(), req, resp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match expected issuer")
+	assert.Equal(t, 0, srv.tokenRequestCount(), "code must not be redeemed after an issuer mismatch")
+
+	out := logs()
+	assertNoSecrets(t, out, srv.issuedSecrets())
+	assertLogged(t, out, "[oauth] Authorization failed")
 }

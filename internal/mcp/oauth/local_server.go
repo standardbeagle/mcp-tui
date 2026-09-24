@@ -146,7 +146,9 @@ func (f *LocalServerFetcher) Fetch(ctx context.Context, args *auth.Authorization
 			return
 		}
 		writeCallbackPage(w, true, "Authorization complete. You may close this window.")
-		resultCh <- result{res: &auth.AuthorizationResult{Code: code, State: state}}
+		// iss (RFC 9207) goes to the SDK, which checks it against the
+		// discovered issuer: required when the AS advertises support.
+		resultCh <- result{res: &auth.AuthorizationResult{Code: code, State: state, Iss: query.Get("iss")}}
 	})
 
 	srv := &http.Server{

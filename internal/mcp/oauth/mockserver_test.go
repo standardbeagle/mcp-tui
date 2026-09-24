@@ -46,6 +46,13 @@ type mockAuthServer struct {
 	// allow DCR test to register dynamically.
 	allowDCR bool
 
+	// advertiseIss makes the AS metadata advertise RFC 9207
+	// authorization_response_iss_parameter_supported and the /authorize
+	// redirect carry iss. callbackIss overrides the iss value sent (to
+	// simulate a mix-up attack); empty means the real issuer.
+	advertiseIss bool
+	callbackIss  string
+
 	// recorded token requests (mutex-guarded).
 	mu                     sync.Mutex
 	tokenRequests          []url.Values
@@ -121,6 +128,9 @@ func (m *mockAuthServer) handleASM(w http.ResponseWriter, _ *http.Request) {
 		"grant_types_supported":                 []string{"authorization_code", "client_credentials", "refresh_token"},
 		"response_types_supported":              []string{"code"},
 		"code_challenge_methods_supported":      []string{"S256"},
+	}
+	if m.advertiseIss {
+		asm["authorization_response_iss_parameter_supported"] = true
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(asm)
@@ -220,6 +230,13 @@ func (m *mockAuthServer) handleAuthorize(w http.ResponseWriter, r *http.Request)
 	rq := u.Query()
 	rq.Set("code", "test_auth_code")
 	rq.Set("state", state)
+	if m.advertiseIss {
+		iss := m.callbackIss
+		if iss == "" {
+			iss = m.authServer.URL
+		}
+		rq.Set("iss", iss)
+	}
 	u.RawQuery = rq.Encode()
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
