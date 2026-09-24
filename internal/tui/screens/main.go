@@ -1052,28 +1052,11 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Concrete resource branch — unchanged behaviour.
-		parts := strings.SplitN(selectedItem, " - ", 2)
-		if len(parts) > 0 && selectedIdx < len(ms.resourceObjects) {
-			resourceURI := parts[0]
+		// Concrete resource row: read it by URI (the row shows its name).
+		if selectedIdx < len(ms.resourceObjects) {
 			resource := ms.resourceObjects[selectedIdx]
-
-			// Load resource content
-			ms.resourceLoading = true
-			ms.resourceLoadStart = time.Now()
-			ms.SetStatus(components.MCPOperationProgress("resource", resourceURI, time.Duration(0)), StatusInfo)
-
-			return ms, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-
-				content, err := ms.mcpService.ReadResource(ctx, resourceURI)
-				return ResourceContentLoadedMsg{
-					Resource: &resource,
-					Content:  content,
-					Error:    err,
-				}
-			}
+			cmd := ms.readResource(&resource)
+			return ms, cmd
 		}
 
 	case 2: // Prompts
@@ -1112,6 +1095,25 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 	}
 
 	return ms, nil
+}
+
+// readResource starts reading resource by its URI; the viewer opens when
+// the ResourceContentLoadedMsg arrives.
+func (ms *MainScreen) readResource(resource *mcp.Resource) tea.Cmd {
+	ms.resourceLoading = true
+	ms.resourceLoadStart = time.Now()
+	ms.SetStatus(components.MCPOperationProgress("resource", resource.URI, time.Duration(0)), StatusInfo)
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		content, err := ms.mcpService.ReadResource(ctx, resource.URI)
+		return ResourceContentLoadedMsg{
+			Resource: resource,
+			Content:  content,
+			Error:    err,
+		}
+	}
 }
 
 // refreshCurrentTab refreshes the current tab's data
