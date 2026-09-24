@@ -9,6 +9,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 )
 
 // List caching (SEP-2549, protocol 2026-07-28): list results carry ttlMs and
@@ -113,7 +114,7 @@ func fetchListPages[R officialMCP.CacheableResult](
 // logs it. Sessions older than 2026-07-28 have no list caching, so their
 // state is recorded as nil.
 func (s *service) recordListCache(session *officialMCP.ClientSession, info *ListCacheInfo) {
-	if res := session.InitializeResult(); res == nil || res.ProtocolVersion < statelessProtocolVersion {
+	if res := session.InitializeResult(); res == nil || !protocol.IsStateless(res.ProtocolVersion) {
 		s.mu.Lock()
 		delete(s.listCache, info.Method)
 		s.mu.Unlock()

@@ -10,6 +10,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 )
 
 // How a client asks a server for log notifications changed in 2026-07-28
@@ -79,7 +80,7 @@ func applyServerLogLevel(ctx context.Context, session *officialMCP.ClientSession
 		return
 	}
 	res := session.InitializeResult()
-	if res != nil && res.ProtocolVersion >= statelessProtocolVersion {
+	if res != nil && protocol.IsStateless(res.ProtocolVersion) {
 		debug.Info("Server log level requested per request",
 			debug.F("level", level), debug.F("via", "_meta "+officialMCP.MetaKeyLogLevel))
 		return

@@ -20,6 +20,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/outputvalidation"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	sessionPkg "github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
@@ -508,10 +509,6 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	return s.commitConnection(epoch, sessionManager)
 }
 
-// statelessProtocolVersion is the first protocol version (SEP-2575) in which
-// list_changed notifications travel only on a subscriptions/listen stream.
-const statelessProtocolVersion = sessionPkg.StatelessProtocolVersion
-
 // subscriptionsAckTimeout bounds how long Connect waits for the server to
 // acknowledge the list_changed subscription.
 const subscriptionsAckTimeout = 5 * time.Second
@@ -523,7 +520,7 @@ const methodSubscriptionsAcknowledged = "notifications/subscriptions/acknowledge
 // session whose server advertises listChanged for a kind the client has a
 // handler for (createClient registers all three).
 func opensListChangedStream(res *officialMCP.InitializeResult) bool {
-	if res == nil || res.ProtocolVersion < statelessProtocolVersion || res.Capabilities == nil {
+	if res == nil || !protocol.IsStateless(res.ProtocolVersion) || res.Capabilities == nil {
 		return false
 	}
 	c := res.Capabilities

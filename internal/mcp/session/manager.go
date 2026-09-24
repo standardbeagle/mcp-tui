@@ -10,6 +10,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
@@ -17,19 +18,9 @@ import (
 // cannot stall the monitoring goroutine until the next tick.
 const healthCheckTimeout = 5 * time.Second
 
-// StatelessProtocolVersion is the first MCP protocol version without
-// sessions (SEP-2575): no initialize handshake, no session ID and no ping.
-const StatelessProtocolVersion = "2026-07-28"
-
-// IsStateless reports whether protocolVersion is StatelessProtocolVersion
-// or later.
-func IsStateless(protocolVersion string) bool {
-	return protocolVersion >= StatelessProtocolVersion
-}
-
-// StatelessSessionLabel stands in for the session ID of a
-// StatelessProtocolVersion session, which has none.
-const StatelessSessionLabel = "stateless (" + StatelessProtocolVersion + ")"
+// StatelessSessionLabel stands in for the session ID of a 2026-07-28 or
+// later session, which has none.
+const StatelessSessionLabel = "stateless (" + protocol.StatelessVersion + ")"
 
 // SessionLabel identifies cs for display and logs: its transport session ID,
 // or StatelessSessionLabel on 2026-07-28 and later. Older transports without
@@ -38,7 +29,7 @@ func SessionLabel(cs *officialMCP.ClientSession) string {
 	if id := cs.ID(); id != "" {
 		return id
 	}
-	if res := cs.InitializeResult(); res != nil && IsStateless(res.ProtocolVersion) {
+	if res := cs.InitializeResult(); res != nil && protocol.IsStateless(res.ProtocolVersion) {
 		return StatelessSessionLabel
 	}
 	return ""
@@ -549,7 +540,7 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 	// request succeeds or fails on its own. Any other request would be a
 	// poor stand-in: the list methods are answered from the SDK's cache
 	// without touching the wire, and server/discover is not exposed.
-	if res := session.InitializeResult(); res != nil && IsStateless(res.ProtocolVersion) {
+	if res := session.InitializeResult(); res != nil && protocol.IsStateless(res.ProtocolVersion) {
 		debug.Debug("Session manager: Health check skipped; ping was removed in 2026-07-28 (SEP-2575)",
 			debug.F("protocolVersion", res.ProtocolVersion))
 		return
