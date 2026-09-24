@@ -419,6 +419,9 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	if err := validateProtocolVersion(config.ProtocolVersion); err != nil {
 		return err
 	}
+	if err := validateServerLogLevel(config.ServerLogLevel); err != nil {
+		return err
+	}
 
 	s.mu.Lock()
 
@@ -497,6 +500,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 	if clientSession := sessionManager.GetSession(); clientSession != nil {
 		handshake.logResult(requestedProtocolVersion(config.ProtocolVersion), clientSession.InitializeResult())
+		applyServerLogLevel(ctx, clientSession, config.ServerLogLevel)
 		awaitSubscriptionsAck(ctx, clientSession.InitializeResult(), subscriptionsAcked)
 	}
 
@@ -761,6 +765,9 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 
 	s.handshake = newHandshakeTrace()
 	client.AddSendingMiddleware(s.handshake.middleware())
+	if s.connectionConfig != nil && s.connectionConfig.ServerLogLevel != "" {
+		client.AddSendingMiddleware(serverLogLevelMiddleware(s.connectionConfig.ServerLogLevel))
+	}
 
 	acked := make(chan struct{})
 	var ackOnce sync.Once

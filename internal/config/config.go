@@ -77,6 +77,13 @@ type ConnectionConfig struct {
 	// connect time. Empty means the SDK's latest version. The server may
 	// still negotiate down to an older mutually supported version.
 	ProtocolVersion string
+
+	// ServerLogLevel is the minimum MCP logging level (debug ... emergency)
+	// at which the server should send notifications/message. Empty asks for
+	// nothing, and servers send no log notifications. On 2026-07-28 the
+	// level travels in every request's _meta; on older protocols it is set
+	// once with logging/setLevel after connect.
+	ServerLogLevel string
 }
 
 // Validate checks if the configuration is valid
