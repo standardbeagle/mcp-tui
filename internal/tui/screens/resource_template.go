@@ -31,7 +31,7 @@ type resourceTemplateCompletionsMsg struct {
 // identical to selecting a concrete resource.
 type resourceTemplateReadMsg struct {
 	resource *mcp.Resource
-	contents []mcp.ResourceContents
+	contents *mcp.ReadResourceResult
 	err      error
 }
 

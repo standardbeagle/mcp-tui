@@ -63,10 +63,10 @@ func (f *fakeCompletionService) ListResources(context.Context) ([]mcp.Resource, 
 func (f *fakeCompletionService) ListResourceTemplates(context.Context) ([]mcp.ResourceTemplate, error) {
 	return nil, nil
 }
-func (f *fakeCompletionService) ReadResource(_ context.Context, uri string) ([]mcp.ResourceContents, error) {
+func (f *fakeCompletionService) ReadResource(_ context.Context, uri string) (*mcp.ReadResourceResult, error) {
 	f.readCalls++
 	f.readURI = uri
-	return f.readContents, f.readErr
+	return &mcp.ReadResourceResult{Contents: f.readContents}, f.readErr
 }
 func (f *fakeCompletionService) ListPrompts(context.Context) ([]mcp.Prompt, error) { return nil, nil }
 func (f *fakeCompletionService) GetPrompt(context.Context, mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
@@ -97,7 +97,7 @@ func (f *fakeCompletionService) ResetErrorStatistics()                          
 func (f *fakeCompletionService) GetTracingStatistics() map[string]interface{}      { return nil }
 func (f *fakeCompletionService) GetRecentEvents(int) interface{}                   { return nil }
 func (f *fakeCompletionService) ExportEvents() ([]byte, error)                     { return nil, nil }
-func (f *fakeCompletionService) ExportReplayScript() (string, error)                { return "", nil }
+func (f *fakeCompletionService) ExportReplayScript() (string, error)               { return "", nil }
 func (f *fakeCompletionService) ClearEvents()                                      {}
 func (f *fakeCompletionService) GetConfiguration() map[string]interface{}          { return nil }
 func (f *fakeCompletionService) UpdateConfiguration(map[string]interface{}) error  { return nil }

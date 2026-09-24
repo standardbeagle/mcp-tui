@@ -167,7 +167,7 @@ type EventTickMsg struct{}
 // ResourceContentLoadedMsg contains loaded resource content
 type ResourceContentLoadedMsg struct {
 	Resource *mcp.Resource
-	Content  []mcp.ResourceContents
+	Content  *mcp.ReadResourceResult
 	Error    error
 }
 
@@ -575,7 +575,7 @@ func (ms *MainScreen) handleResourceContentLoaded(msg ResourceContentLoadedMsg) 
 		ms.SetError(fmt.Errorf("failed to load resource content: %w", msg.Error))
 	} else {
 		ms.selectedResource = msg.Resource
-		ms.resourceContent = msg.Content
+		ms.resourceContent = msg.Content.Contents
 		ms.resourceViewerOpen = true
 	}
 	return ms, nil

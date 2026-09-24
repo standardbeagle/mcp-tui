@@ -1160,7 +1160,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 
 	// Call the tool, answering any input requests the server returns.
 	var result *officialMCP.CallToolResult
-	err := s.runInputRounds(ctx, session, "tools/call", req.Name,
+	rounds, err := s.runInputRounds(ctx, session, "tools/call", req.Name,
 		func(
 			ctx context.Context, responses officialMCP.InputResponseMap, state string,
 		) (officialMCP.InputRequestMap, string, error) {
@@ -1215,6 +1215,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		IsError:           result.IsError,
 		StructuredContent: result.StructuredContent,
 		OutputViolations:  violations,
+		Rounds:            rounds,
 	}, nil
 }
 
@@ -1397,7 +1398,7 @@ func (s *service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 }
 
 // ReadResource reads a resource
-func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceContents, error) {
+func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceResult, error) {
 	if !s.IsConnected() {
 		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
 	}
@@ -1415,7 +1416,7 @@ func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceConte
 	}
 
 	var result *officialMCP.ReadResourceResult
-	err := s.runInputRounds(ctx, session, "resources/read", uri,
+	rounds, err := s.runInputRounds(ctx, session, "resources/read", uri,
 		func(
 			ctx context.Context, responses officialMCP.InputResponseMap, state string,
 		) (officialMCP.InputRequestMap, string, error) {
@@ -1449,7 +1450,7 @@ func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceConte
 		debug.F("uri", uri),
 		debug.F("contentsCount", len(contents)))
 
-	return contents, nil
+	return &ReadResourceResult{Contents: contents, Rounds: rounds}, nil
 }
 
 // ListPrompts returns available prompts using the official SDK's natural iterator pattern
@@ -1538,7 +1539,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 	}
 
 	var result *officialMCP.GetPromptResult
-	err := s.runInputRounds(ctx, session, "prompts/get", req.Name,
+	rounds, err := s.runInputRounds(ctx, session, "prompts/get", req.Name,
 		func(
 			ctx context.Context, responses officialMCP.InputResponseMap, state string,
 		) (officialMCP.InputRequestMap, string, error) {
@@ -1574,6 +1575,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 	return &GetPromptResult{
 		Description: result.Description,
 		Messages:    messages,
+		Rounds:      rounds,
 	}, nil
 }
 

@@ -142,12 +142,12 @@ func TestMRTR_GetPromptAndReadResourceFulfilInputs(t *testing.T) {
 	if len(prompt.Messages) != 1 || len(prompt.Messages[0].Content) != 1 || !strings.Contains(prompt.Messages[0].Content[0].Text, "file:///home/dev/mcp-tui") {
 		t.Errorf("prompt = %+v, want notes for the workspace root", prompt.Messages)
 	}
-	contents, err := svc.ReadResource(context.Background(), "release://changelog")
+	resource, err := svc.ReadResource(context.Background(), "release://changelog")
 	if err != nil {
 		t.Fatalf("ReadResource: %v", err)
 	}
-	if len(contents) != 1 || contents[0].Text != "changes in file:///home/dev/mcp-tui" {
-		t.Errorf("resource = %+v, want changes for the workspace root", contents)
+	if contents := resource.Contents; len(contents) != 1 || contents[0].Text != "changes in file:///home/dev/mcp-tui" {
+		t.Errorf("resource = %+v, want changes for the workspace root", resource.Contents)
 	}
 }
 

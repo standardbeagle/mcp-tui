@@ -71,7 +71,7 @@ type Service interface {
 	// — callers should render an empty section rather than treating absence
 	// as a failure.
 	ListResourceTemplates(ctx context.Context) ([]ResourceTemplate, error)
-	ReadResource(ctx context.Context, uri string) ([]ResourceContents, error)
+	ReadResource(ctx context.Context, uri string) (*ReadResourceResult, error)
 
 	// Prompt operations
 	ListPrompts(ctx context.Context) ([]Prompt, error)
@@ -451,6 +451,9 @@ type CallToolResult struct {
 	// surface (TUI banner, CLI stderr warning, --strict-output exit code)
 	// reads the same authoritative slice.
 	OutputViolations []string `json:"outputViolations,omitempty"`
+	// Rounds lists the input rounds of a multi round-trip call (SEP-2322,
+	// protocol 2026-07-28); empty when the server answered on the first try.
+	Rounds []RoundSummary `json:"rounds,omitempty"`
 }
 
 // GetPromptRequest represents a prompt request
@@ -463,6 +466,45 @@ type GetPromptRequest struct {
 type GetPromptResult struct {
 	Description string          `json:"description,omitempty"`
 	Messages    []PromptMessage `json:"messages"`
+	// Rounds lists the input rounds of a multi round-trip call; see
+	// CallToolResult.Rounds.
+	Rounds []RoundSummary `json:"rounds,omitempty"`
+}
+
+// ReadResourceResult is the outcome of resources/read.
+type ReadResourceResult struct {
+	Contents []ResourceContents `json:"contents"`
+	// Rounds lists the input rounds of a multi round-trip call; see
+	// CallToolResult.Rounds.
+	Rounds []RoundSummary `json:"rounds,omitempty"`
+}
+
+// RoundSummary describes one input-required round of a multi round-trip
+// call (SEP-2322): what the server asked for and how the client answered,
+// without the answers' content.
+type RoundSummary struct {
+	Round  int    `json:"round"`
+	Method string `json:"method"`
+	// InputRequests holds one exchange per server input request, sorted by key.
+	InputRequests []InputExchange `json:"inputRequests"`
+	// HasRequestState reports whether the server handed back opaque state
+	// for the client to echo on the retry.
+	HasRequestState bool `json:"hasRequestState"`
+	// LoadShedding marks a round with no input requests: the server asked
+	// the client to simply retry.
+	LoadShedding bool `json:"loadShedding,omitempty"`
+	// DurationMs spans the server's input-required reply and the client's
+	// fulfillment of every request in it.
+	DurationMs float64 `json:"durationMs"`
+}
+
+// InputExchange is one input request of a round and the shape of the
+// client's answer: elicitation action, sampling stop reason and content
+// kinds, or the number of roots.
+type InputExchange struct {
+	Key      string `json:"key"`
+	Kind     string `json:"kind"`
+	Response string `json:"response"`
 }
 
 // ServerInfo holds server information

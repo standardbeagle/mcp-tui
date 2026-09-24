@@ -463,11 +463,11 @@ func (r *Runner) scenarioResourcesRead(ctx context.Context) ScenarioResult {
 	if len(resources) == 0 {
 		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: server has no resources"}
 	}
-	contents, err := svc.ReadResource(ctx, resources[0].URI)
+	result, err := svc.ReadResource(ctx, resources[0].URI)
 	if err != nil {
 		return failResult(fmt.Sprintf("ReadResource(%q) failed: %v", resources[0].URI, err), "")
 	}
-	return ScenarioResult{Pass: true, Detail: fmt.Sprintf("read %d content blocks from %s", len(contents), resources[0].URI)}
+	return ScenarioResult{Pass: true, Detail: fmt.Sprintf("read %d content blocks from %s", len(result.Contents), resources[0].URI)}
 }
 
 // scenarioResourceTemplates drives resources/templates/list. Empty is allowed.

@@ -51,7 +51,7 @@ func (v *versionStubService) ListResources(context.Context) ([]mcp.Resource, err
 func (v *versionStubService) ListResourceTemplates(context.Context) ([]mcp.ResourceTemplate, error) {
 	return nil, nil
 }
-func (v *versionStubService) ReadResource(context.Context, string) ([]mcp.ResourceContents, error) {
+func (v *versionStubService) ReadResource(context.Context, string) (*mcp.ReadResourceResult, error) {
 	return nil, nil
 }
 func (v *versionStubService) ListPrompts(context.Context) ([]mcp.Prompt, error) { return nil, nil }
@@ -75,7 +75,7 @@ func (v *versionStubService) ResetErrorStatistics()                             
 func (v *versionStubService) GetTracingStatistics() map[string]interface{}      { return nil }
 func (v *versionStubService) GetRecentEvents(int) interface{}                   { return nil }
 func (v *versionStubService) ExportEvents() ([]byte, error)                     { return nil, nil }
-func (v *versionStubService) ExportReplayScript() (string, error)                { return "", nil }
+func (v *versionStubService) ExportReplayScript() (string, error)               { return "", nil }
 func (v *versionStubService) ClearEvents()                                      {}
 func (v *versionStubService) GetConfiguration() map[string]interface{}          { return nil }
 func (v *versionStubService) UpdateConfiguration(map[string]interface{}) error {

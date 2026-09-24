@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -45,27 +46,30 @@ type sendRound func(
 
 // runInputRounds drives a multi round-trip call until the server returns a
 // final result, fulfilling each round's input requests with the handlers
-// registered on the client. method and target (tool/prompt name or resource
-// URI) only label the log lines.
+// registered on the client, and returns a summary of every input round (nil
+// when the server answered on the first try). method and target (tool/prompt
+// name or resource URI) only label the log lines.
 func (s *service) runInputRounds(
 	ctx context.Context, session *officialMCP.ClientSession, method, target string, send sendRound,
-) error {
+) ([]RoundSummary, error) {
 	var (
 		responses    officialMCP.InputResponseMap
 		state        string
 		loadShedding int
+		rounds       []RoundSummary
 	)
 	for round := 1; ; round++ {
+		started := time.Now()
 		requests, nextState, err := send(ctx, responses, state)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if requests == nil {
 			if round > 1 {
 				debug.Info("MRTR complete",
 					debug.F("method", method), debug.F("target", target), debug.F("rounds", round))
 			}
-			return nil
+			return rounds, nil
 		}
 		debug.Info("MRTR input required",
 			debug.F("method", method),
@@ -78,17 +82,40 @@ func (s *service) runInputRounds(
 			loadShedding++
 		}
 		if loadShedding >= maxLoadSheddingRounds {
-			return fmt.Errorf("multi-round-trip: exceeded maximum load-shedding retries (%d)", maxLoadSheddingRounds)
+			return nil, fmt.Errorf("multi-round-trip: exceeded maximum load-shedding retries (%d)", maxLoadSheddingRounds)
 		}
 		if round >= maxInputRounds {
-			return fmt.Errorf("multi-round-trip: exceeded maximum retries (%d)", maxInputRounds)
+			return nil, fmt.Errorf("multi-round-trip: exceeded maximum retries (%d)", maxInputRounds)
 		}
 		responses, err = s.fulfillInputRequests(ctx, session, method, round, requests)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		state = nextState
+		rounds = append(rounds, RoundSummary{
+			Round:           round,
+			Method:          method,
+			InputRequests:   inputExchanges(requests, responses),
+			HasRequestState: nextState != "",
+			LoadShedding:    len(requests) == 0,
+			DurationMs:      float64(time.Since(started).Microseconds()) / 1000,
+		})
 	}
+}
+
+// inputExchanges pairs each input request with the shape of its answer,
+// sorted by key.
+func inputExchanges(requests officialMCP.InputRequestMap, responses officialMCP.InputResponseMap) []InputExchange {
+	out := make([]InputExchange, 0, len(requests))
+	for key, request := range requests {
+		out = append(out, InputExchange{
+			Key:      key,
+			Kind:     inputRequestKind(request),
+			Response: describeInputResponse(responses[key]),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
 }
 
 // fulfillInputRequests answers every input request of one round concurrently,
