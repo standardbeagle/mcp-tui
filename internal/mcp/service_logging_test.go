@@ -140,3 +140,43 @@ func TestService_Connect_LogsProtocolNegotiation(t *testing.T) {
 		})
 	}
 }
+
+// TestMRTR_LogsEveryRound shows each multi round-trip round: the method and
+// target, the round number, the input request keys with their kind, whether
+// the server sent requestState, and what the client answered with.
+func TestMRTR_LogsEveryRound(t *testing.T) {
+	logs := captureLogs(t)
+	server := newMRTRServer()
+	addTool(server, "plan_release", func(_ context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+		if req.Params.InputResponses == nil {
+			return &officialMCP.CallToolResult{RequestState: "plan-1", InputRequests: officialMCP.InputRequestMap{
+				"notes": &officialMCP.CreateMessageParams{MaxTokens: 64, Messages: []*officialMCP.SamplingMessage{
+					{Role: "user", Content: &officialMCP.TextContent{Text: "Summarise the release"}},
+				}},
+				"confirm":   &officialMCP.ElicitParams{Message: "Tag the release?", RequestedSchema: map[string]any{"type": "object"}},
+				"workspace": &officialMCP.ListRootsParams{},
+			}}, nil
+		}
+		return textResult("planned"), nil
+	})
+	svc := connectMRTRService(t, server)
+
+	if _, err := svc.CallTool(context.Background(), CallToolRequest{Name: "plan_release"}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+
+	out := logs()
+	for _, want := range []string{
+		"MRTR input required method=tools/call target=plan_release round=1",
+		"input_requests=[confirm:elicitation notes:sampling workspace:roots]",
+		"has_request_state=true",
+		"MRTR input fulfilled method=tools/call round=1 key=confirm kind=elicitation response=accept",
+		"MRTR input fulfilled method=tools/call round=1 key=notes kind=sampling response=",
+		"MRTR input fulfilled method=tools/call round=1 key=workspace kind=roots response=1 roots",
+		"MRTR complete method=tools/call target=plan_release rounds=2",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("MRTR log missing %q", want)
+		}
+	}
+}

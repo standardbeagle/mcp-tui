@@ -116,6 +116,11 @@ type service struct {
 	// createClient; Connect waits on it (see awaitSubscriptionsAck).
 	subscriptionsAcked chan struct{}
 
+	// clientOptions are the options the current client was built with. The
+	// multi round-trip loop (mrtr.go) fulfils input requests with the same
+	// handlers the SDK would call.
+	clientOptions *officialMCP.ClientOptions
+
 	// handshake records the protocol-version negotiation of the current
 	// client; created per client in createClient and logged by Connect.
 	handshake *handshakeTrace
@@ -652,6 +657,9 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		// but v1.8.0 keeps it unexported with no setter, so those Warn lines
 		// stay unobservable until the SDK exports it.
 		Logger: debug.SlogLogger("sdk"),
+		// mcp-tui runs the multi round-trip loop itself so every round is
+		// logged; see mrtr.go.
+		MultiRoundTrip: &officialMCP.MultiRoundTripOptions{Disabled: true},
 		// Add progress notification handler for long-running operations
 		ProgressNotificationHandler: func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
 			debug.Info("Progress notification",
@@ -717,6 +725,8 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		)
 		debug.Info("Elicitation handler registered with MCP client")
 	}
+
+	s.clientOptions = clientOptions
 
 	// Create client with enhanced debugging capabilities
 	var client *officialMCP.Client
@@ -1122,8 +1132,19 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		Arguments: req.Arguments,
 	}
 
-	// Call the tool
-	result, err := session.CallTool(ctx, params)
+	// Call the tool, answering any input requests the server returns.
+	var result *officialMCP.CallToolResult
+	err := s.runInputRounds(ctx, session, "tools/call", req.Name,
+		func(ctx context.Context, responses officialMCP.InputResponseMap, state string) (officialMCP.InputRequestMap, string, error) {
+			round := *params
+			round.InputResponses, round.RequestState = responses, state
+			res, err := session.CallTool(ctx, &round)
+			if err != nil {
+				return nil, "", err
+			}
+			result = res
+			return res.InputRequests, res.RequestState, nil
+		})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call tool '%s': %w", req.Name, err)
 	}
@@ -1365,7 +1386,18 @@ func (s *service) ReadResource(ctx context.Context, uri string) ([]ResourceConte
 		URI: uri,
 	}
 
-	result, err := session.ReadResource(ctx, params)
+	var result *officialMCP.ReadResourceResult
+	err := s.runInputRounds(ctx, session, "resources/read", uri,
+		func(ctx context.Context, responses officialMCP.InputResponseMap, state string) (officialMCP.InputRequestMap, string, error) {
+			round := *params
+			round.InputResponses, round.RequestState = responses, state
+			res, err := session.ReadResource(ctx, &round)
+			if err != nil {
+				return nil, "", err
+			}
+			result = res
+			return res.InputRequests, res.RequestState, nil
+		})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read resource '%s': %w", uri, err)
 	}
@@ -1475,7 +1507,18 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 		Arguments: arguments,
 	}
 
-	result, err := session.GetPrompt(ctx, params)
+	var result *officialMCP.GetPromptResult
+	err := s.runInputRounds(ctx, session, "prompts/get", req.Name,
+		func(ctx context.Context, responses officialMCP.InputResponseMap, state string) (officialMCP.InputRequestMap, string, error) {
+			round := *params
+			round.InputResponses, round.RequestState = responses, state
+			res, err := session.GetPrompt(ctx, &round)
+			if err != nil {
+				return nil, "", err
+			}
+			result = res
+			return res.InputRequests, res.RequestState, nil
+		})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get prompt '%s': %w", req.Name, err)
 	}

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -200,4 +201,30 @@ func TestMRTR_AppliesElicitationSchemaDefaults(t *testing.T) {
 	if got := res.Content[0].Text; got != "v2.4.0 notify=yes" {
 		t.Errorf("result = %q, want the default applied", got)
 	}
+}
+
+// mirroredSDKVersion is the go-sdk release whose multi round-trip loop and
+// input fulfilment mrtr.go and mrtr_elicit.go copy.
+const mirroredSDKVersion = "v1.8.0"
+
+// TestMRTR_SDKVersionReviewed fails when go-sdk moves, so whoever upgrades
+// it re-reads the SDK's mrtr.go and Client.elicit/createMessage/listRoots,
+// ports any change, and then bumps mirroredSDKVersion.
+func TestMRTR_SDKVersionReviewed(t *testing.T) {
+	// Test binaries carry no dependency build info, so read the module file.
+	goMod, err := os.ReadFile("../../go.mod")
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	for _, line := range strings.Split(string(goMod), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "github.com/modelcontextprotocol/go-sdk" {
+			if fields[1] != mirroredSDKVersion {
+				t.Fatalf("go-sdk is %s but mrtr.go mirrors %s: review the SDK's multi round-trip code, port changes, bump mirroredSDKVersion",
+					fields[1], mirroredSDKVersion)
+			}
+			return
+		}
+	}
+	t.Fatal("go-sdk requirement not found in go.mod")
 }
