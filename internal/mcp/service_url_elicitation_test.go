@@ -12,7 +12,21 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 )
 
-const retryOutcomeLog = "outcome arrives in the retry"
+const (
+	retryOutcomeLog   = "outcome arrives in the retry"
+	urlElicitationLog = "URL elicitation requested"
+)
+
+// logLineContaining returns the first line of logs containing marker, or ""
+// when none does.
+func logLineContaining(logs, marker string) string {
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, marker) {
+			return line
+		}
+	}
+	return ""
+}
 
 // urlSignInServer serves a "sign_in" tool that sends the user to a URL
 // before answering: on 2026-07-28 as an MRTR input request, earlier as a
@@ -68,6 +82,63 @@ func TestService_URLElicitation_OutcomeInRetry(t *testing.T) {
 			}
 			if logged := strings.Contains(read(), retryOutcomeLog); logged != tc.wantLog {
 				t.Errorf("%q logged = %v, want %v:\n%s", retryOutcomeLog, logged, tc.wantLog, read())
+			}
+		})
+	}
+}
+
+// TestService_URLElicitation_LogsRedactedURL: every URL elicitation is
+// logged with its URL, sensitive query parameters masked, on both
+// protocols; the elicitationId appears only where the protocol still has
+// it (2025-11-25; 2026-07-28 removed the field).
+func TestService_URLElicitation_LogsRedactedURL(t *testing.T) {
+	const codeURL = "https://sso.example.com/device?code=WDJB-MJHT"
+	for _, tc := range []struct {
+		pinned string
+		wantID bool
+	}{
+		{pinned: "", wantID: false},
+		{pinned: "2025-11-25", wantID: true},
+	} {
+		t.Run("pin="+tc.pinned, func(t *testing.T) {
+			server := officialMCP.NewServer(&officialMCP.Implementation{Name: "sso-server", Version: "1.0.0"}, nil)
+			addTool(server, "sign_in", func(ctx context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+				ask := &officialMCP.ElicitParams{Mode: "url", Message: "Sign in to continue", URL: codeURL}
+				if ip := req.Session.InitializeParams(); ip != nil && ip.ProtocolVersion < "2026-07-28" {
+					ask.ElicitationID = "login-7"
+					if _, err := req.Session.Elicit(ctx, ask); err != nil {
+						return nil, err
+					}
+					return textResult("signed in"), nil
+				}
+				if req.Params.InputResponses == nil {
+					return &officialMCP.CallToolResult{InputRequests: officialMCP.InputRequestMap{"login": ask}}, nil
+				}
+				return textResult("signed in"), nil
+			})
+			svc := NewService().(*service)
+			stub, err := elicitation.NewJSONStubHandler(`{"_action":"accept"}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			svc.SetElicitationHandler(stub)
+			connectInMemory(t, server, svc, &configPkg.ConnectionConfig{
+				Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: tc.pinned,
+			})
+
+			read, stop := debug.Capture(debug.LogLevelInfo)
+			callText(t, svc, "sign_in")
+			stop()
+			logs := read()
+			line := logLineContaining(logs, urlElicitationLog)
+			if !strings.Contains(line, "https://sso.example.com/device?code=") {
+				t.Errorf("%q line lacks the URL:\n%s", urlElicitationLog, logs)
+			}
+			if strings.Contains(line, "WDJB-MJHT") {
+				t.Errorf("%q line leaks the device code: %s", urlElicitationLog, line)
+			}
+			if got := strings.Contains(line, "login-7"); got != tc.wantID {
+				t.Errorf("elicitationId logged = %v, want %v:\n%s", got, tc.wantID, logs)
 			}
 		})
 	}

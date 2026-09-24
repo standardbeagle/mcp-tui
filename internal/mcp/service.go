@@ -746,6 +746,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		// causes the SDK to advertise the elicitation capability automatically.
 		ehandler := s.elicitationHandler
 		clientOptions.ElicitationHandler = func(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
+			logURLElicitation(req)
 			return ehandler.HandleElicit(ctx, req)
 		}
 		// Fires before 2026-07-28 only: that revision removed the

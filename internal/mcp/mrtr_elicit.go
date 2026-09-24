@@ -10,6 +10,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // elicitForInput mirrors go-sdk v1.8.0 Client.elicit: it checks the mode,
@@ -84,6 +85,21 @@ func elicitForm(
 		return nil, invalidParams(fmt.Sprintf("failed to apply schema defaults to elicitation result: %v", err))
 	}
 	return res, nil
+}
+
+// logURLElicitation records a URL-mode elicitation before it reaches the
+// handler: the URL with sensitive query parameters masked (redact.URL), and
+// the elicitationId where the protocol still carries one (2025-11-25;
+// 2026-07-28 removed it). Both wire paths reach the handler through here.
+func logURLElicitation(req *officialMCP.ElicitRequest) {
+	if req == nil || req.Params == nil || req.Params.Mode != "url" {
+		return
+	}
+	fields := []debug.Field{debug.F("url", redact.URL(req.Params.URL))}
+	if req.Params.ElicitationID != "" {
+		fields = append(fields, debug.F("elicitationID", req.Params.ElicitationID))
+	}
+	debug.Info("URL elicitation requested", fields...)
 }
 
 func invalidParams(message string) *jsonrpc.Error {
