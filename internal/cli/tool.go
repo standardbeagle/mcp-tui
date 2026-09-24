@@ -539,13 +539,34 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		return tc.HandleError(err, "call tool")
 	}
 
+	strictOutput, _ := cmd.Flags().GetBool("strict-output")
+	strictErrors, _ := cmd.Flags().GetBool("strict-errors")
+	return printToolResult(resultOutput{
+		format: tc.GetOutputFormat(), porcelain: porcelainMode,
+		strictOutput: strictOutput, strictErrors: strictErrors,
+		document: map[string]interface{}{"tool": toolName, "arguments": toolArgs},
+	}, result)
+}
+
+// resultOutput is how to print a tool result: the output format, whether
+// progress messages are off, the strict-mode exit policies, and the fields
+// of the JSON document besides "result".
+type resultOutput struct {
+	format       OutputFormat
+	porcelain    bool
+	strictOutput bool
+	strictErrors bool
+	document     map[string]interface{}
+}
+
+// printToolResult writes a tool's result as `tool call` does: one JSON
+// document, or the content on stdout with warnings on stderr, then applies
+// --strict-output and --strict-errors.
+func printToolResult(out resultOutput, result *mcp.CallToolResult) error {
 	// Handle JSON output format
-	if tc.GetOutputFormat() == OutputFormatJSON {
-		outputData := map[string]interface{}{
-			"tool":      toolName,
-			"arguments": toolArgs,
-			"result":    result,
-		}
+	if out.format == OutputFormatJSON {
+		outputData := out.document
+		outputData["result"] = result
 
 		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
 		if err != nil {
@@ -557,7 +578,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Text output format
-	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+	if out.format == OutputFormatText && !out.porcelain {
 		fmt.Fprintf(os.Stderr, "✅ Tool executed successfully\n\n")
 	}
 
@@ -612,8 +633,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	// `jq` or similar do not break on extra warning lines. --strict-output
 	// upgrades the warning to a non-zero exit so CI pipelines can fail
 	// loudly on schema-violating servers.
-	strictOutput, _ := cmd.Flags().GetBool("strict-output")
-	if err := reportOutputViolations(os.Stderr, result.OutputViolations, strictOutput); err != nil {
+	if err := reportOutputViolations(os.Stderr, result.OutputViolations, out.strictOutput); err != nil {
 		return err
 	}
 
@@ -621,8 +641,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	// stderr warning to a non-zero exit. We check this after rendering the
 	// payload so the operator still sees the error content before the
 	// command exits — same ordering pattern as reportOutputViolations.
-	strictErrors, _ := cmd.Flags().GetBool("strict-errors")
-	if err := reportToolError(result.IsError, strictErrors); err != nil {
+	if err := reportToolError(result.IsError, out.strictErrors); err != nil {
 		return err
 	}
 
