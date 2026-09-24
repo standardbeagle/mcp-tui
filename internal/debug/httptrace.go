@@ -4,17 +4,71 @@ import (
 	"crypto/tls"
 	"net/http"
 	"net/http/httptrace"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
+// HTTPExchangeObserver receives every exchange of a traced transport: the
+// request as sent (its headers are the ones on the wire) and the response,
+// or the error when there is none. It runs before the caller reads the
+// body, so it must not consume resp.Body.
+type HTTPExchangeObserver func(req *http.Request, resp *http.Response, err error)
+
+var (
+	exchangeObserversMu sync.RWMutex
+	exchangeObservers   = map[string]HTTPExchangeObserver{}
+)
+
+// ObserveHTTPExchanges registers obs for every exchange of the traced
+// transports created for component, whatever the log level; nil removes it.
+// The debug HTTP pane uses it to show the headers actually sent.
+func ObserveHTTPExchanges(component string, obs HTTPExchangeObserver) {
+	exchangeObserversMu.Lock()
+	defer exchangeObserversMu.Unlock()
+	if obs == nil {
+		delete(exchangeObservers, component)
+		return
+	}
+	exchangeObservers[component] = obs
+}
+
+func exchangeObserver(component string) HTTPExchangeObserver {
+	exchangeObserversMu.RLock()
+	defer exchangeObserversMu.RUnlock()
+	return exchangeObservers[component]
+}
+
+// mcpHeaderPrefix starts every MCP transport header (Mcp-Method, Mcp-Name,
+// Mcp-Param-*, Mcp-Protocol-Version, Mcp-Session-Id).
+const mcpHeaderPrefix = "Mcp-"
+
+// mcpRequestHeaders renders the SEP-2243 standard headers and the protocol
+// version a request carried as sorted "Name:value" entries, URL credentials
+// masked (Mcp-Name holds the URI of a resources/read). Mcp-Session-Id is
+// left out: it is a bearer of the session.
+func mcpRequestHeaders(h http.Header) []string {
+	var out []string
+	for name, values := range h {
+		if !strings.HasPrefix(name, mcpHeaderPrefix) || name == "Mcp-Session-Id" {
+			continue
+		}
+		out = append(out, name+":"+redact.Text(strings.Join(values, ", ")))
+	}
+	sort.Strings(out)
+	return out
+}
+
 // NewHTTPTraceTransport wraps base so every HTTP exchange through it logs one
-// debug line under component: method, redacted URL, status, duration,
-// response Content-Type, the redacted WWW-Authenticate challenge when present,
-// and connection timings (DNS, connect, TLS, first byte, reuse). A transport
-// failure logs "HTTP exchange failed" with the redacted error instead.
+// debug line under component: method, redacted URL, the MCP standard request
+// headers, status, duration, response Content-Type, the redacted
+// WWW-Authenticate challenge when present, and connection timings (DNS,
+// connect, TLS, first byte, reuse). A transport failure logs "HTTP exchange
+// failed" with the redacted error instead. Every exchange also reaches the
+// component's HTTPExchangeObserver, if one is registered.
 //
 // Bodies are never read, so streaming responses (SSE) pass through untouched.
 // Wrap the innermost transport of any client whose traffic should be visible
@@ -48,6 +102,14 @@ func (c *connTimings) set(f func()) {
 }
 
 func (t *httpTraceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.trace(req)
+	if obs := exchangeObserver(t.component); obs != nil {
+		obs(req, resp, err)
+	}
+	return resp, err
+}
+
+func (t *httpTraceTransport) trace(req *http.Request) (*http.Response, error) {
 	if !globalEnabled(LogLevelDebug) {
 		return t.base.RoundTrip(req)
 	}
@@ -85,6 +147,9 @@ func (t *httpTraceTransport) RoundTrip(req *http.Request) (*http.Response, error
 		F("first_byte", timings.first),
 	}
 	timings.mu.Unlock()
+	if mcpHeaders := mcpRequestHeaders(req.Header); len(mcpHeaders) > 0 {
+		fields = append(fields, F("mcp_headers", mcpHeaders))
+	}
 
 	log := Component(t.component)
 	if err != nil {

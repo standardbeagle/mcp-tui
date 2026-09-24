@@ -81,3 +81,100 @@ func TestHTTPTraceTransport_LogsTransportFailure(t *testing.T) {
 		t.Errorf("failure trace missing:\n%s", out)
 	}
 }
+
+// TestHTTPTraceTransport_LogsStandardMCPHeaders: the trace line names the
+// SEP-2243 headers the request actually carried, x-mcp-header parameters
+// included, with URL credentials in them masked.
+func TestHTTPTraceTransport_LogsStandardMCPHeaders(t *testing.T) {
+	testutil.RequireLocalListener(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	read, stop := Capture(LogLevelDebug)
+	defer stop()
+
+	client := &http.Client{Transport: NewHTTPTraceTransport(http.DefaultTransport, "mcp-http")}
+	req, err := http.NewRequest(http.MethodPost, srv.URL, http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Mcp-Protocol-Version", "2026-07-28")
+	req.Header.Set("Mcp-Method", "resources/read")
+	req.Header.Set("Mcp-Name", "https://files.example/report?code=rc-77d1")
+	req.Header.Set("Mcp-Param-Region", "eu-west-1")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	out := read()
+	for _, want := range []string{"Mcp-Method:resources/read", "Mcp-Param-Region:eu-west-1", "Mcp-Protocol-Version:2026-07-28", "files.example/report"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("trace missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "rc-77d1") {
+		t.Errorf("trace leaked the code in Mcp-Name:\n%s", out)
+	}
+}
+
+// TestHTTPTraceTransport_ReportsEveryExchangeToObserver: the observer for a
+// component sees the headers that were sent and the response, whatever the
+// log level, and failed exchanges too.
+func TestHTTPTraceTransport_ReportsEveryExchangeToObserver(t *testing.T) {
+	testutil.RequireLocalListener(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Upstream", "pool-b")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	_, stop := Capture(LogLevelError)
+	defer stop()
+
+	type exchange struct {
+		param  string
+		status int
+		err    error
+	}
+	seen := make(chan exchange, 2)
+	ObserveHTTPExchanges("observer-test", func(req *http.Request, resp *http.Response, err error) {
+		ex := exchange{param: req.Header.Get("Mcp-Param-Tenant"), err: err}
+		if resp != nil {
+			ex.status = resp.StatusCode
+		}
+		seen <- ex
+	})
+	defer ObserveHTTPExchanges("observer-test", nil)
+
+	client := &http.Client{Transport: NewHTTPTraceTransport(http.DefaultTransport, "observer-test")}
+	req, err := http.NewRequest(http.MethodPost, srv.URL, http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Mcp-Param-Tenant", "acme")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if got := <-seen; got.param != "acme" || got.status != http.StatusAccepted || got.err != nil {
+		t.Errorf("observer saw %+v, want the sent Mcp-Param-Tenant and status 202", got)
+	}
+
+	failing := &http.Client{Transport: NewHTTPTraceTransport(roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, net.ErrClosed
+	}), "observer-test")}
+	if failed, err := failing.Get(srv.URL); err == nil {
+		_ = failed.Body.Close()
+		t.Fatal("expected the failing transport's error")
+	}
+	if got := <-seen; got.err == nil {
+		t.Errorf("observer missed the failed exchange: %+v", got)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
