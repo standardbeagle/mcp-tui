@@ -21,8 +21,9 @@ mcp-tui --transport http --url http://localhost:8000/mcp capabilities
 
 ## `verify` — behavior probes
 
-Each probe sends a single targeted request and reports PASS or FAIL plus a
-human-readable fix suggestion. Every probe drives its own short-lived
+Each probe sends a single targeted request and reports PASS, WARN or FAIL plus
+a human-readable fix suggestion. WARN marks a server that breaks a SHOULD in
+the spec: it is reported with its fix but does not fail the run. Every probe drives its own short-lived
 connection, so there is no persistent-session overhead.
 
 ```bash
@@ -40,9 +41,12 @@ mcp-tui verify --json http://localhost:8000/mcp | jq '.results[]|select(.pass==f
 | `mcp-method-headers` | Server tolerates SEP-2243 `MCP-Method`/`MCP-Name` headers |
 | `seterror-content` | Tool-result errors preserve the `Content` payload (SDK v1.6.0+) |
 | `tool-names` | Every tool name is 1-128 characters of `A-Z a-z 0-9 _ - .` (SEP-986) |
+| `list-order` | `tools/list` returns the same order twice (2026-07-28 SHOULD; WARN when it does not) |
 
-The first five probes require a URL target. `tool-names` takes a URL or a
-stdio `--cmd`. `seterror-content` runs against a stdio server and takes an
+The first five probes require a URL target. `tool-names` and `list-order` take
+a URL or a stdio `--cmd`. `list-order` makes sure both lists reach the server:
+when the SDK answered the second from its TTL cache, it asks again on a new
+session. `seterror-content` runs against a stdio server and takes an
 optional `--tool` (default `echo`):
 
 ```bash
@@ -53,7 +57,8 @@ mcp-tui verify --probe seterror-content --cmd npx \
 ## `conform` — the full matrix
 
 `conform` runs every scenario plus every `verify` probe and prints a
-per-scenario PASS/FAIL summary. Skipped scenarios (features the server does not
+per-scenario PASS/WARN/FAIL/SKIP summary. Warnings pass (in a JUnit report
+they are passing test cases with the warning in `system-out`). Skipped scenarios (features the server does not
 advertise, or probes the target kind cannot run, reported as
 `skipped: probe requires a … target`) count as passing.
 

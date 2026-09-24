@@ -36,6 +36,8 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 | `Tab` / `↓`, `Shift+Tab` / `↑` | Move between fields and buttons |
 | `Enter` | Execute (on the Execute button) |
 | `Ctrl+T` | Toggle task mode: Execute calls the tool as an MCP task and follows it |
+| `Ctrl+N` | On a nullable field: send null (again to go back to the typed value) |
+| `Ctrl+E` | On an object field with declared properties: open it as a sub-form, or close it back to a JSON literal |
 | `c` | Show and copy the equivalent CLI command |
 | `v` | Browse the result's fields |
 | `Esc` / `b` | Back |

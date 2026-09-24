@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Named protocol errors**: failed calls name the MCP error code, e.g. `RESOURCE_NOT_FOUND: JSON-RPC error -32602 from resources/read`, covering `-32002`/`-32602` resource-not-found, `-32020` header mismatch, `-32021` missing client capabilities, `-32022` unsupported protocol version and `-32042` URL elicitation required. A `-32042` error lists each URL with its host and tells you to open it and retry.
 - **Elicitation**: titled single- and multi-select enums (SEP-1330) render as pickers that submit the `const` values, and multi-select `minItems`/`maxItems` are enforced in the form. URL-mode elicitations answered by `--elicit-stub` print the server's message, the full URL, its host and the reply to stderr; the TUI overlay shows the message, the host and a warning for punycode hosts. The URL is never opened.
 - **Tool input schemas**: `$ref`/`$defs` and `anyOf [T, null]` parameters (Pydantic, Zod) keep their declared types in `tool call` argument conversion and in the TUI form; a nullable non-string parameter takes `null`, and a schema that cannot resolve (for example a remote `$ref`) fails the call instead of guessing.
+- **More input schema shapes**: `tool call` and the TUI form follow every same-document `$ref` form (`$anchor`, references relative to an `$id`, JSON pointers through any subschema keyword, `$dynamicRef`) and merge `allOf` branches (a conflict is named, not merged). A parameter of several types, or an enum mixing them, takes the first type the value's syntax strictly fits (boolean, integer, number, array, object, string), so `id=0123` stays `"0123"`; the TUI shows the type it read (`integer|string → integer`). A root the form cannot hold (an `allOf` conflict, `anyOf`/`oneOf` alternatives with their own properties) is named on stderr and opens the TUI's raw JSON editor.
+- **Argument validation**: before a call, the CLI and the TUI validate the arguments against the whole input schema (`if`/`then`/`else`, `not`, `patternProperties`, value constraints, nested objects) and refuse a call that breaks it.
+- **`key:=<json>`**: `tool call` sends a JSON literal as is, e.g. `note:=null` sends null to a nullable string (`note=null` still sends the text).
+- **TUI form**: `Ctrl+N` sends null from a nullable field; `Ctrl+E` opens an object field as an indented sub-form of its properties (nested objects too) and closes it back to a JSON literal.
+- **`verify --probe list-order`**: lists tools twice and warns when the order changes (the `2026-07-28` spec says servers SHOULD keep a deterministic order); `conform` runs it as `verify.list-order`.
 - **Tool list diagnostics**: `tool list` and the TUI tools tab name tools the SDK dropped from `tools/list` for invalid `x-mcp-header` annotations (`droppedTools` in JSON), and flag names that break SEP-986. `verify --probe tool-names` checks every tool name against SEP-986.
 - **Server identity**: `server` and the Capabilities tab show the server's title, description, website and icons. Tool, resource, template and prompt lists print icon details (never fetched). On `2026-07-28`, results end with `Served by: <name> <version>` when their `_meta` names the server (`server` in JSON).
 - **OAuth**:
@@ -48,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--mcp-method-headers`** does nothing on `2026-07-28`, where the SDK sends the standard `Mcp-Method`/`Mcp-Name`/`Mcp-Param-*` headers itself; mcp-tui logs that at connect.
 - **2026-07-28 sessions** are labelled `stateless (2026-07-28)` instead of showing an empty session ID, and the ping health check is skipped for them, since that revision removed `ping`.
 - On `2026-07-28` mcp-tui no longer advertises or sends `roots/list_changed`; roots edits change what later input requests are answered with.
+- **`verify` and `conform` report warnings**: a SHOULD-level finding prints `WARN` and does not fail the run. The summaries read `N passed, N warned, N failed` (`conform` adds `, N skipped`), `--json` results carry `"warn": true`, and a JUnit report puts the warning in the passing case's `system-out`.
+- **Fast tool results** show at once in the TUI; a 500ms minimum display time held them back.
 
 ### Fixed
 - **OAuth `iss`**: authorization servers that advertise RFC 9207 support failed with "none was received" because the callback dropped the `iss` parameter.
@@ -64,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Ctrl-C** did not cancel CLI subcommands.
 - **TUI resource and prompt selection**: Enter on a resource or prompt that has a title read the wrong name and failed with "Resource not found" / "unknown prompt".
 - **Disconnect hang**: a notification arriving during disconnect could hang the process.
-- **Background results under overlays**: a tool result that arrived while an overlay (debug screen, elicitation prompt) was open was dropped, leaving the tool screen spinning.
+- **Background results under overlays**: a tool, resource or prompt result that arrived while an overlay (debug screen, elicitation prompt) was open was dropped, leaving the screen spinning.
 - **Concurrent server requests in the TUI**: an elicitation, sampling or confirm request arriving while another was open replaced it or was dropped; they now queue and show one after another.
 - **`conform` skipped the `tool-names` probe**; it now runs every `verify` probe.
 - **Debug screen copy**: copying from the Auth tab (and the tabs after it) reported the wrong tab name.

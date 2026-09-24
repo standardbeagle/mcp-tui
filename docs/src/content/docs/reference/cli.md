@@ -95,12 +95,24 @@ mcp-tui [global-flags] tool <list|describe|call> [args]
 
 - `tool list` — print every tool with its title, description and icons. Flags names that break SEP-986 (1-128 chars of `A-Z a-z 0-9 _ - .`) and warns on stderr about tools the SDK dropped from `tools/list` for invalid `x-mcp-header` annotations (`droppedTools` in JSON).
 - `tool describe <name>` — print the tool's full JSON Schema.
-- `tool call <name> [key=value ...]` — invoke the tool. Each value is converted
-  to the type the input schema declares, following `$ref`/`$defs` and
-  `anyOf [T, null]`. A nullable non-string parameter takes the literal `null`;
-  a parameter with no single type (such as `integer|string`) is read as a JSON
-  literal, with a note on stderr; a schema that does not resolve (such as a
-  remote `$ref`) fails the call. When the server needed input first
+- `tool call <name> [key=value | key:=<json> ...]` — invoke the tool.
+  `key=value` converts the value to the type the input schema declares,
+  following same-document `$ref`s (JSON pointers, `$anchor`s, references
+  relative to an `$id`, `$dynamicRef`), merging `allOf`, and collapsing
+  `anyOf [T, null]`. A parameter of several types (such as `integer|string`,
+  or an enum mixing them) takes the first type the value's syntax strictly
+  fits, in the order boolean, integer, number, array, object, string:
+  `id=42` sends `42`, `id=0123` sends `"0123"`. A nullable non-string
+  parameter takes the literal `null`. `key:=<json>` sends a JSON literal as
+  is, which is how a nullable string gets null (`note:=null`; `note=null`
+  sends the text `"null"`). A parameter with no type at all is read as a
+  JSON literal, falling back to text, with a note on stderr, as is a root the
+  CLI cannot express (an `allOf` conflict, `anyOf`/`oneOf` alternatives with
+  their own properties). Before the call the arguments are validated against
+  the whole input schema (`if`/`then`/`else`, `not`, `patternProperties`,
+  value constraints, nested objects), and a call that breaks it is refused
+  with the schema path of the failure. A schema that does not resolve (such
+  as a remote `$ref`) fails the call. When the server needed input first
   (`2026-07-28` multi round-trip requests), the text output ends with an
   `Input rounds (SEP-2322)` section and JSON output carries `rounds`. When the
   result's `_meta` names the server, the output ends with
@@ -207,14 +219,27 @@ mcp-tui verify [url|--cmd <cmd>]
 | `--tool <name>` | (`seterror-content`) Tool to call, default `echo` |
 
 Probes: `cross-origin`, `dns-rebind`, `content-type`, `origin-header`,
-`mcp-method-headers`, `seterror-content`, `tool-names`. The first five need a URL target;
+`mcp-method-headers`, `seterror-content`, `tool-names`, `list-order`. The first five need a URL target;
 `seterror-content` needs a stdio `--cmd`; `tool-names` (every tool name is 1-128
-characters of `A-Z a-z 0-9 _ - .`, SEP-986) takes either.
+characters of `A-Z a-z 0-9 _ - .`, SEP-986) and `list-order` take either.
+
+`list-order` lists tools twice and compares the order. The `2026-07-28` spec
+says servers SHOULD return tools in a deterministic order, so a changed order
+is reported as `WARN`, not `FAIL`; a tool set that changed between the two
+lists fails as inconclusive. The spec asks this of `tools/list` only. When the
+SDK served the second list from its TTL cache, the probe fetches it again on a
+new session so both lists come from the server.
+
+Each probe prints `PASS`, `WARN` or `FAIL`; the summary counts all three
+(`N passed, N warned, N failed`). A warning keeps `"pass": true` and adds
+`"warn": true` in `--json` output, and does not change the exit code.
 
 ## `conform` subcommand
 
 Run every protocol scenario plus every verify probe, print a per-scenario
-PASS/FAIL summary, and optionally emit a JUnit XML report.
+PASS/WARN/FAIL/SKIP summary, and optionally emit a JUnit XML report. A
+warning (from a SHOULD-level probe such as `list-order`) passes, and in JUnit
+it is a passing test case with the warning in its `system-out`.
 
 ```
 mcp-tui conform [url|--cmd <cmd>]
@@ -237,7 +262,7 @@ Scenarios: `initialize`, `tools.list`, `tools.call`, `tools.call.isError`,
 `elicitation.create`, `notifications`, `completion.complete`, plus the
 probes as `verify.<probe-name>`: `verify.cross-origin`, `verify.dns-rebind`,
 `verify.content-type`, `verify.origin-header`, `verify.mcp-method-headers`,
-`verify.seterror-content` and `verify.tool-names`. A probe the target cannot
+`verify.seterror-content`, `verify.tool-names` and `verify.list-order`. A probe the target cannot
 run is reported as `skipped: probe requires a … target` and counts as passing.
 The stub flags from
 [Client features](/mcp-tui/guides/client-features/) apply here too.
