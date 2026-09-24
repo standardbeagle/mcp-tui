@@ -27,11 +27,14 @@ import (
 //
 //	Name  — probe identifier matching the --probe flag value
 //	Pass  — true when the server's behavior matches the expected contract
-//	Error — concrete failure detail when Pass=false (empty on pass)
-//	Fix   — human-readable suggestion the user can apply (empty on pass)
+//	Warn  — true when the server breaks a SHOULD-level rule: Pass stays
+//	        true (the exit code ignores it) and Error/Fix say what and why
+//	Error — concrete failure or warning detail (empty on a clean pass)
+//	Fix   — human-readable suggestion the user can apply (empty on a clean pass)
 type ProbeResult struct {
 	Name  string `json:"name"`
 	Pass  bool   `json:"pass"`
+	Warn  bool   `json:"warn,omitempty"`
 	Error string `json:"error,omitempty"`
 	Fix   string `json:"fix,omitempty"`
 }

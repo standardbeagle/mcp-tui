@@ -13,6 +13,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -40,14 +41,15 @@ type JUnitTestSuite struct {
 // JUnitTestCase represents a single <testcase> element. ClassName is the
 // suite name (we use "mcp-tui.conform"), Name is the scenario identifier.
 // Time is elapsed-seconds in fixed-point form. Failure is non-nil when the
-// scenario failed; SystemOut carries any captured diagnostic output (skipped
-// for now to keep payloads compact).
+// scenario failed. SystemOut carries a warning: JUnit has no warning state,
+// so a warned scenario passes and says why in its output.
 type JUnitTestCase struct {
 	XMLName   xml.Name      `xml:"testcase"`
 	ClassName string        `xml:"classname,attr"`
 	Name      string        `xml:"name,attr"`
 	Time      string        `xml:"time,attr"`
 	Failure   *JUnitFailure `xml:"failure,omitempty"`
+	SystemOut string        `xml:"system-out,omitempty"`
 }
 
 // JUnitFailure holds the failure metadata. Message is the short summary
@@ -89,6 +91,9 @@ func BuildJUnitReport(suiteName string, results []ScenarioResult) JUnitTestSuite
 				Type:    "Failure",
 				Body:    r.Detail,
 			}
+		}
+		if r.Warn {
+			tc.SystemOut = strings.TrimSuffix("warning: "+r.Error+"\n"+r.Detail, "\n")
 		}
 		suite.Cases = append(suite.Cases, tc)
 	}

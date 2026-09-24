@@ -354,6 +354,7 @@ func TestWriteConformText(t *testing.T) {
 		{Name: "alpha", Pass: true, Detail: "all good", Elapsed: 5 * time.Millisecond},
 		{Name: "beta", Pass: false, Error: "boom", Detail: "stack\nframe", Elapsed: 12 * time.Millisecond},
 		{Name: "gamma", Pass: true, Skipped: true, Error: "skipped: no tools", Elapsed: time.Millisecond},
+		{Name: "delta", Pass: true, Warn: true, Error: "order changed", Detail: "fix: sort", Elapsed: time.Millisecond},
 	}
 	var buf strings.Builder
 	writeConformText(&buf, results)
@@ -367,7 +368,10 @@ func TestWriteConformText(t *testing.T) {
 		"error: boom",
 		"frame",
 		"no tools",
-		"1 passed, 1 failed, 1 skipped",
+		"WARN  delta",
+		"warning: order changed",
+		"fix: sort",
+		"1 passed, 1 warned, 1 failed, 1 skipped",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\n%s", want, got)

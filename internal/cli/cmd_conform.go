@@ -216,14 +216,16 @@ func (c *ConformCommand) buildConformTarget(cmd *cobra.Command, args []string) (
 }
 
 // writeConformText prints a deterministic human-friendly summary. Each
-// scenario gets one line "PASS/FAIL/SKIP <name> [<elapsed>]" with optional
-// indented detail. Skipped scenarios show their reason inline.
+// scenario gets one line "PASS/WARN/FAIL/SKIP <name> [<elapsed>]" with
+// optional indented detail. Skipped scenarios show their reason inline.
 func writeConformText(w io.Writer, results []conform.ScenarioResult) {
 	for _, r := range results {
 		status := "PASS"
 		switch {
 		case r.Skipped:
 			status = "SKIP"
+		case r.Warn:
+			status = "WARN"
 		case !r.Pass:
 			status = "FAIL"
 		}
@@ -232,9 +234,13 @@ func writeConformText(w io.Writer, results []conform.ScenarioResult) {
 			fmt.Fprintf(w, "      %s\n", strings.TrimPrefix(r.Error, "skipped: "))
 			continue
 		}
-		if !r.Pass {
+		if !r.Pass || r.Warn {
+			label := "error"
+			if r.Warn {
+				label = "warning"
+			}
 			if r.Error != "" {
-				fmt.Fprintf(w, "      error: %s\n", r.Error)
+				fmt.Fprintf(w, "      %s: %s\n", label, r.Error)
 			}
 			if r.Detail != "" {
 				for _, line := range strings.Split(r.Detail, "\n") {
@@ -247,8 +253,8 @@ func writeConformText(w io.Writer, results []conform.ScenarioResult) {
 			fmt.Fprintf(w, "      %s\n", r.Detail)
 		}
 	}
-	passed, failed, skipped := conform.CountResults(results)
-	fmt.Fprintf(w, "\n%d passed, %d failed, %d skipped\n", passed, failed, skipped)
+	passed, warned, failed, skipped := conform.CountResults(results)
+	fmt.Fprintf(w, "\n%d passed, %d warned, %d failed, %d skipped\n", passed, warned, failed, skipped)
 }
 
 // writeJUnitFile builds the JUnit suite and writes it to path, creating or

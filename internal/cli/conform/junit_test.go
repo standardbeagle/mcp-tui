@@ -202,3 +202,16 @@ func TestBuildJUnitReport_PreservesCaseTime(t *testing.T) {
 		t.Errorf("suite Time = %q, want 1.505", suite.Time)
 	}
 }
+
+// A warning is no failure, but CI still sees it in the case's system-out.
+func TestBuildJUnitReport_WarningInSystemOut(t *testing.T) {
+	suite := BuildJUnitReport("mcp-tui.conform", []ScenarioResult{
+		{Name: "verify.list-order", Pass: true, Warn: true, Error: "order changed", Detail: "fix: sort"},
+	})
+	if suite.Failures != 0 || suite.Cases[0].Failure != nil {
+		t.Fatalf("warning counted as failure: %+v", suite)
+	}
+	if got, want := suite.Cases[0].SystemOut, "warning: order changed\nfix: sort"; got != want {
+		t.Errorf("SystemOut = %q, want %q", got, want)
+	}
+}

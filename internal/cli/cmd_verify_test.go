@@ -284,28 +284,33 @@ func TestWriteVerifyText(t *testing.T) {
 	results := []verify.ProbeResult{
 		{Name: "cross-origin", Pass: true},
 		{Name: "dns-rebind", Pass: false, Error: "got 200", Fix: "wrap with origin protection"},
+		{Name: "list-order", Pass: true, Warn: true, Error: "order changed", Fix: "sort the tools"},
 	}
 	var buf bytes.Buffer
 	writeVerifyText(&buf, results)
 	got := buf.String()
 
-	for _, want := range []string{"PASS  cross-origin", "FAIL  dns-rebind", "error: got 200", "fix:   wrap with origin protection", "1 passed, 1 failed"} {
+	for _, want := range []string{
+		"PASS  cross-origin", "FAIL  dns-rebind", "error: got 200", "fix:   wrap with origin protection",
+		"WARN  list-order", "error: order changed", "fix:   sort the tools", "1 passed, 1 warned, 1 failed",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\n%s", want, got)
 		}
 	}
 }
 
-// TestTally counts pass/fail for a mixed result slice.
+// TestTally counts pass/warn/fail for a mixed result slice.
 func TestTally(t *testing.T) {
 	results := []verify.ProbeResult{
 		{Pass: true},
 		{Pass: false},
+		{Pass: true, Warn: true},
 		{Pass: true},
 	}
-	pass, fail := tally(results)
-	if pass != 2 || fail != 1 {
-		t.Errorf("tally = (%d, %d); want (2, 1)", pass, fail)
+	pass, warn, fail := tally(results)
+	if pass != 2 || warn != 1 || fail != 1 {
+		t.Errorf("tally = (%d, %d, %d); want (2, 1, 1)", pass, warn, fail)
 	}
 }
 

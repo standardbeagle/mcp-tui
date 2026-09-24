@@ -66,6 +66,8 @@ type Target struct {
 //	Pass    — true if the scenario satisfied its acceptance criteria
 //	Skipped — true if the scenario was skipped because the target lacks
 //	          the required capability (counts as Pass for exit-code purposes)
+//	Warn    — true if the target breaks a SHOULD-level rule (Pass stays
+//	          true; Error carries the warning)
 //	Error   — short, single-line summary shown in the text report
 //	Detail  — multi-line diagnostic body (goes into JUnit <failure>)
 //	Elapsed — wall time spent running the scenario
@@ -73,6 +75,7 @@ type ScenarioResult struct {
 	Name    string        `json:"name"`
 	Pass    bool          `json:"pass"`
 	Skipped bool          `json:"skipped,omitempty"`
+	Warn    bool          `json:"warn,omitempty"`
 	Error   string        `json:"error,omitempty"`
 	Detail  string        `json:"detail,omitempty"`
 	Elapsed time.Duration `json:"elapsed"`
@@ -293,9 +296,14 @@ func (r *Runner) runVerifyProbe(ctx context.Context, probe string) ScenarioResul
 	if problem := verify.TargetProblem(probe, &tt); problem != "" {
 		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: " + problem}
 	}
-	pr := verify.Run(ctx, probe, tt)
-	res := ScenarioResult{Pass: pr.Pass}
-	if !pr.Pass {
+	return scenarioFromProbe(verify.Run(ctx, probe, tt))
+}
+
+// scenarioFromProbe maps a probe's outcome onto a scenario result, keeping
+// the error and fix of a failure or a warning.
+func scenarioFromProbe(pr verify.ProbeResult) ScenarioResult {
+	res := ScenarioResult{Pass: pr.Pass, Warn: pr.Warn}
+	if !pr.Pass || pr.Warn {
 		res.Error = pr.Error
 		if pr.Fix != "" {
 			res.Detail = "fix: " + pr.Fix
@@ -767,15 +775,17 @@ func AllPassed(results []ScenarioResult) bool {
 	return true
 }
 
-// CountResults tallies (passed, failed, skipped). Passed includes Skipped
-// because Skipped is a sub-state of Pass — but the dedicated counter lets
-// the text report show "5 passed, 1 failed, 2 skipped" instead of glomming
-// them together.
-func CountResults(results []ScenarioResult) (passed, failed, skipped int) {
+// CountResults tallies (passed, warned, failed, skipped). Only failures fail
+// the run; the separate counts let the text report show "5 passed,
+// 1 warned, 1 failed, 2 skipped" instead of glomming warnings and skips into
+// passes.
+func CountResults(results []ScenarioResult) (passed, warned, failed, skipped int) {
 	for _, r := range results {
 		switch {
 		case r.Skipped:
 			skipped++
+		case r.Warn:
+			warned++
 		case r.Pass:
 			passed++
 		default:

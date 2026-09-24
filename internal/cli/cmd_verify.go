@@ -232,15 +232,19 @@ func writeVerifyJSON(w io.Writer, results []verify.ProbeResult) error {
 }
 
 // writeVerifyText prints a human-friendly summary. Each probe gets one
-// line "PASS/FAIL <name>" plus an optional indented "fix:" line for failures.
+// line "PASS/WARN/FAIL <name>" plus indented "error:"/"fix:" lines for
+// warnings and failures.
 func writeVerifyText(w io.Writer, results []verify.ProbeResult) {
 	for _, r := range results {
 		status := "PASS"
-		if !r.Pass {
+		switch {
+		case r.Warn:
+			status = "WARN"
+		case !r.Pass:
 			status = "FAIL"
 		}
 		fmt.Fprintf(w, "%s  %s\n", status, r.Name)
-		if !r.Pass {
+		if !r.Pass || r.Warn {
 			if r.Error != "" {
 				fmt.Fprintf(w, "      error: %s\n", r.Error)
 			}
@@ -249,18 +253,21 @@ func writeVerifyText(w io.Writer, results []verify.ProbeResult) {
 			}
 		}
 	}
-	pass, fail := tally(results)
-	fmt.Fprintf(w, "\n%d passed, %d failed\n", pass, fail)
+	pass, warn, fail := tally(results)
+	fmt.Fprintf(w, "\n%d passed, %d warned, %d failed\n", pass, warn, fail)
 }
 
-// tally counts passes and failures.
-func tally(results []verify.ProbeResult) (pass, fail int) {
+// tally counts clean passes, warnings and failures.
+func tally(results []verify.ProbeResult) (pass, warn, fail int) {
 	for _, r := range results {
-		if r.Pass {
+		switch {
+		case r.Warn:
+			warn++
+		case r.Pass:
 			pass++
-		} else {
+		default:
 			fail++
 		}
 	}
-	return pass, fail
+	return pass, warn, fail
 }

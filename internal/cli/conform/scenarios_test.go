@@ -340,10 +340,30 @@ func TestCountResults(t *testing.T) {
 		{Pass: false},
 		{Pass: true, Skipped: true},
 		{Pass: true, Skipped: true},
+		{Pass: true, Warn: true},
 	}
-	p, f, s := CountResults(results)
-	if p != 2 || f != 1 || s != 2 {
-		t.Errorf("CountResults = (%d, %d, %d), want (2, 1, 2)", p, f, s)
+	p, w, f, s := CountResults(results)
+	if p != 2 || w != 1 || f != 1 || s != 2 {
+		t.Errorf("CountResults = (%d, %d, %d, %d), want (2, 1, 1, 2)", p, w, f, s)
+	}
+}
+
+// A SHOULD-level probe finding stays a pass for the exit code but keeps its
+// warning and fix, so conform shows it as WARN rather than hiding it.
+func TestScenarioFromProbe(t *testing.T) {
+	cases := []struct {
+		probe verify.ProbeResult
+		want  ScenarioResult
+	}{
+		{verify.ProbeResult{Pass: true}, ScenarioResult{Pass: true}},
+		{verify.ProbeResult{Pass: false, Error: "boom", Fix: "mend"}, ScenarioResult{Error: "boom", Detail: "fix: mend"}},
+		{verify.ProbeResult{Pass: true, Warn: true, Error: "order changed", Fix: "sort"},
+			ScenarioResult{Pass: true, Warn: true, Error: "order changed", Detail: "fix: sort"}},
+	}
+	for _, c := range cases {
+		if got := scenarioFromProbe(c.probe); got != c.want {
+			t.Errorf("scenarioFromProbe(%+v) = %+v, want %+v", c.probe, got, c.want)
+		}
 	}
 }
 
