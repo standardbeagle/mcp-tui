@@ -49,11 +49,18 @@ const mcpHeaderPrefix = "Mcp-"
 // mcpRequestHeaders renders the SEP-2243 standard headers and the protocol
 // version a request carried as sorted "Name:value" entries, URL credentials
 // masked (Mcp-Name holds the URI of a resources/read). Mcp-Session-Id is
-// left out: it is a bearer of the session.
+// left out: it is a bearer of the session. On a tasks/* request Mcp-Name is
+// the task ID, which a server may use as a bearer token (SEP-2663), so it
+// is masked.
 func mcpRequestHeaders(h http.Header) []string {
+	tasksRequest := strings.HasPrefix(h.Get("Mcp-Method"), "tasks/")
 	var out []string
 	for name, values := range h {
 		if !strings.HasPrefix(name, mcpHeaderPrefix) || name == "Mcp-Session-Id" {
+			continue
+		}
+		if tasksRequest && name == "Mcp-Name" {
+			out = append(out, name+":"+redact.Mask)
 			continue
 		}
 		out = append(out, name+":"+redact.Text(strings.Join(values, ", ")))

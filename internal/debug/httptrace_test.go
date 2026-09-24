@@ -120,6 +120,37 @@ func TestHTTPTraceTransport_LogsStandardMCPHeaders(t *testing.T) {
 	}
 }
 
+// On a tasks/* request Mcp-Name is the task ID, which a server may use as a
+// bearer token (SEP-2663), so the trace masks it as it drops Mcp-Session-Id.
+func TestHTTPTraceTransport_MasksTaskIDInMcpName(t *testing.T) {
+	testutil.RequireLocalListener(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	read, stop := Capture(LogLevelDebug)
+	defer stop()
+
+	client := &http.Client{Transport: NewHTTPTraceTransport(http.DefaultTransport, "mcp-http")}
+	req, err := http.NewRequest(http.MethodPost, srv.URL, http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Mcp-Method", "tasks/get")
+	req.Header.Set("Mcp-Name", "786512e2-9e0d-44bd-8f29-789f320fe840")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	out := read()
+	if strings.Contains(out, "786512e2") || !strings.Contains(out, "Mcp-Name:[REDACTED]") ||
+		!strings.Contains(out, "Mcp-Method:tasks/get") {
+		t.Errorf("trace does not mask the task ID:\n%s", out)
+	}
+}
+
 // TestHTTPTraceTransport_ReportsEveryExchangeToObserver: the observer for a
 // component sees the headers that were sent and the response, whatever the
 // log level, and failed exchanges too.
