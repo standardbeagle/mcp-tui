@@ -2,6 +2,7 @@ package elicitation
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -366,4 +367,105 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestParseForm_EnumSchemas covers the four SEP-1330 enum shapes plus the
+// legacy enumNames form: every one maps to a picker whose EnumValues are
+// what goes on the wire and whose EnumNames are what the user reads.
+func TestParseForm_EnumSchemas(t *testing.T) {
+	const red, green, blue = "#FF0000", "#00FF00", "#0000FF"
+	const redTitle, greenTitle, blueTitle = "Red", "Green", "Blue"
+	option := func(value, title string) map[string]any { return map[string]any{"const": value, "title": title} }
+	colors := []any{option(red, redTitle), option(green, greenTitle), option(blue, blueTitle)}
+	for _, tc := range []struct {
+		name     string
+		prop     map[string]any
+		kind     FieldKind
+		values   []string
+		names    []string
+		def      string
+		defMulti []string
+		minItems int
+		maxItems int
+	}{
+		{
+			name:   "untitled single",
+			prop:   map[string]any{"type": "string", "enum": []any{redTitle, greenTitle, blueTitle}, "default": redTitle},
+			kind:   FieldEnumSingle,
+			values: []string{redTitle, greenTitle, blueTitle},
+			def:    redTitle,
+		},
+		{
+			name:   "titled single",
+			prop:   map[string]any{"type": "string", "oneOf": colors, "default": red},
+			kind:   FieldEnumSingle,
+			values: []string{red, green, blue},
+			names:  []string{redTitle, greenTitle, blueTitle},
+			def:    red,
+		},
+		{
+			name: "legacy enumNames single",
+			prop: map[string]any{
+				"type": "string", "enum": []any{red, green}, "enumNames": []any{redTitle, greenTitle},
+			},
+			kind:   FieldEnumSingle,
+			values: []string{red, green},
+			names:  []string{redTitle, greenTitle},
+		},
+		{
+			name: "untitled multi",
+			prop: map[string]any{
+				"type": "array", "minItems": 1, "maxItems": 2,
+				"items":   map[string]any{"type": "string", "enum": []any{redTitle, greenTitle, blueTitle}},
+				"default": []any{redTitle, greenTitle},
+			},
+			kind:     FieldEnumMulti,
+			values:   []string{redTitle, greenTitle, blueTitle},
+			defMulti: []string{redTitle, greenTitle},
+			minItems: 1,
+			maxItems: 2,
+		},
+		{
+			name: "titled multi",
+			prop: map[string]any{
+				"type": "array", "minItems": 1, "maxItems": 2,
+				"items":   map[string]any{"anyOf": colors},
+				"default": []any{red, green},
+			},
+			kind:     FieldEnumMulti,
+			values:   []string{red, green, blue},
+			names:    []string{redTitle, greenTitle, blueTitle},
+			defMulti: []string{red, green},
+			minItems: 1,
+			maxItems: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form, err := ParseForm("Pick a color", map[string]any{
+				"type": "object", "properties": map[string]any{"color": tc.prop},
+			})
+			if err != nil {
+				t.Fatalf("ParseForm: %v", err)
+			}
+			f := form.Fields[0]
+			if f.Kind != tc.kind {
+				t.Fatalf("kind = %v, want %v", f.Kind, tc.kind)
+			}
+			if !reflect.DeepEqual(f.EnumValues, tc.values) {
+				t.Errorf("EnumValues = %v, want %v", f.EnumValues, tc.values)
+			}
+			if !reflect.DeepEqual(f.EnumNames, tc.names) {
+				t.Errorf("EnumNames = %v, want %v", f.EnumNames, tc.names)
+			}
+			if f.Default != tc.def {
+				t.Errorf("Default = %q, want %q", f.Default, tc.def)
+			}
+			if !reflect.DeepEqual(f.DefaultMulti, tc.defMulti) {
+				t.Errorf("DefaultMulti = %v, want %v", f.DefaultMulti, tc.defMulti)
+			}
+			if f.MinItems != tc.minItems || f.MaxItems != tc.maxItems {
+				t.Errorf("items bounds = [%d,%d], want [%d,%d]", f.MinItems, f.MaxItems, tc.minItems, tc.maxItems)
+			}
+		})
+	}
 }

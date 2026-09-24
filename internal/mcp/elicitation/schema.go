@@ -26,10 +26,10 @@ const (
 	// FieldBool is a checkbox / toggle. Used for "boolean" properties.
 	FieldBool
 	// FieldEnumSingle is a single-select picker. Used for "string"
-	// properties with a non-empty enum list.
+	// properties with a non-empty enum list or titled oneOf options.
 	FieldEnumSingle
 	// FieldEnumMulti is a multi-select picker. Used for "array" properties
-	// whose items have a non-empty enum list. This is the v1.4.0 elicitation
+	// whose items have a non-empty enum list or titled anyOf options. This is the v1.4.0 elicitation
 	// fix — multi-select enums are sent as schemas of the form
 	// {"type":"array","items":{"type":"string","enum":[...]}, "uniqueItems":true}
 	// rather than {"type":"string","enum":[...]} to disambiguate from
@@ -78,8 +78,8 @@ type Field struct {
 	// FieldEnumMulti. For other kinds it is nil.
 	EnumValues []string
 	// EnumNames, when non-empty, has the same length as EnumValues and
-	// supplies human-readable labels for each enum option (the enumNames /
-	// enumLabels schema extension). When empty, the value strings are used
+	// supplies human-readable labels for each enum option (the titles of
+	// titled oneOf/anyOf options, or the legacy enumNames extension). When empty, the value strings are used
 	// as labels.
 	EnumNames []string
 	// Default is the schema-supplied default rendered as a string, or empty
@@ -89,6 +89,10 @@ type Field struct {
 	// DefaultMulti is the default for FieldEnumMulti (a list of values).
 	// nil for other kinds.
 	DefaultMulti []string
+	// MinItems and MaxItems bound how many options a FieldEnumMulti may
+	// select (the schema's minItems/maxItems); 0 means unbounded.
+	MinItems int
+	MaxItems int
 }
 
 // Form is the parsed top-level elicit schema: an ordered list of fields plus
@@ -129,6 +133,14 @@ type rawProp struct {
 	// Items is the schema of array members, used to detect multi-select
 	// enums. The wire shape is `{"type":"array","items":{...}}`.
 	Items *rawProp `json:"items"`
+	// OneOf (single-select) and AnyOf (multi-select items) carry titled
+	// enum options as {"const": value, "title": label} entries (SEP-1330).
+	OneOf []rawProp `json:"oneOf"`
+	AnyOf []rawProp `json:"anyOf"`
+	// Const is the wire value of one titled enum option.
+	Const    json.RawMessage `json:"const"`
+	MinItems int             `json:"minItems"`
+	MaxItems int             `json:"maxItems"`
 }
 
 // ParseForm normalizes an elicit request into a Form ready for the TUI to
@@ -218,14 +230,17 @@ func fieldFromProp(name string, rp rawProp, required bool) Field {
 
 	switch rp.Type {
 	case "string":
-		if len(rp.Enum) > 0 {
+		switch {
+		case len(rp.Enum) > 0:
 			f.Kind = FieldEnumSingle
 			f.EnumValues, f.EnumNames = decodeEnum(rp.Enum, rp.EnumNames)
-			f.Default = decodeDefaultString(rp.Default)
-		} else {
+		case len(rp.OneOf) > 0:
+			f.Kind = FieldEnumSingle
+			f.EnumValues, f.EnumNames = decodeTitledEnum(rp.OneOf)
+		default:
 			f.Kind = FieldText
-			f.Default = decodeDefaultString(rp.Default)
 		}
+		f.Default = decodeDefaultString(rp.Default)
 	case "number", "integer":
 		f.Kind = FieldNumber
 		f.Default = decodeDefaultRaw(rp.Default)
@@ -233,10 +248,11 @@ func fieldFromProp(name string, rp rawProp, required bool) Field {
 		f.Kind = FieldBool
 		f.Default = decodeDefaultRaw(rp.Default)
 	case "array":
-		// The v1.4.0 elicitation fix: multi-select enums are sent as
-		// {"type":"array","items":{"type":"string","enum":[...]}}, NOT as
-		// {"type":"string","enum":[...]}. We detect that shape here.
-		if rp.Items != nil && len(rp.Items.Enum) > 0 {
+		// Multi-select enums are arrays whose items list the options:
+		// untitled as {"type":"string","enum":[...]}, titled as
+		// {"anyOf":[{"const":...,"title":...}]}.
+		switch {
+		case rp.Items != nil && len(rp.Items.Enum) > 0:
 			f.Kind = FieldEnumMulti
 			f.EnumValues, f.EnumNames = decodeEnum(rp.Items.Enum, rp.Items.EnumNames)
 			if rp.Items.EnumNames != nil && len(f.EnumNames) == 0 {
@@ -244,10 +260,16 @@ func fieldFromProp(name string, rp rawProp, required bool) Field {
 				// (some older servers placed enumNames on the array node).
 				f.EnumNames = rp.EnumNames
 			}
-			f.DefaultMulti = decodeDefaultStringSlice(rp.Default)
-		} else {
+		case rp.Items != nil && len(rp.Items.AnyOf) > 0:
+			f.Kind = FieldEnumMulti
+			f.EnumValues, f.EnumNames = decodeTitledEnum(rp.Items.AnyOf)
+		default:
 			f.Kind = FieldUnknown
+			return f
 		}
+		f.DefaultMulti = decodeDefaultStringSlice(rp.Default)
+		f.MinItems = rp.MinItems
+		f.MaxItems = rp.MaxItems
 	default:
 		f.Kind = FieldUnknown
 	}
@@ -276,6 +298,18 @@ func decodeEnum(raw []json.RawMessage, names []string) (values []string, display
 		displayNames = names
 	}
 	return values, displayNames
+}
+
+// decodeTitledEnum splits titled enum options into their wire values
+// (const) and display labels (title).
+func decodeTitledEnum(options []rawProp) (values, titles []string) {
+	raw := make([]json.RawMessage, len(options))
+	titles = make([]string, len(options))
+	for i := range options {
+		raw[i] = options[i].Const
+		titles[i] = options[i].Title
+	}
+	return decodeEnum(raw, titles)
 }
 
 // decodeDefaultString decodes a JSON string default; non-string defaults are
