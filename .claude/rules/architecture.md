@@ -11,7 +11,11 @@ CLI + TUI tool using a simple, flat architecture: `main.go` wires cobra commands
 
 ## Active Architecture Decisions
 
-No active architecture decisions documented yet. Add decisions here as they are made.
+- DECISION: mcp-tui runs the SEP-2322 multi round-trip loop itself (`internal/mcp/mrtr.go`, `mrtr_elicit.go`) with the SDK's loop disabled (`MultiRoundTrip.Disabled`), because the SDK loop sits inside every client middleware and exposes no round to log or report. Fulfilment copies go-sdk v1.8.0 exactly (10 rounds, 3 load-shedding rounds, elicitation schema checks); `service_mrtr_parity_test.go` pins the behaviour and `TestMRTR_SDKVersionReviewed` fails on any go-sdk bump until the copy is re-reviewed. (5fb77b9, parity tests 7305f85)
+- DECISION: MCP tasks are hand-rolled for both wire forms (`internal/mcp/tasks/`) rather than waiting for go-sdk support; the raw JSON-RPC side channel on the SDK connection lives in `tasks/sdk.go`, the one file that touches the SDK, to be replaced when go-sdk ships tasks. HTTP transports keep the SDK connection and read bodies through a RoundTripper, since wrapping the connection drops the SDK's unexported session hook. (2f362bd, af0b72b)
+- DECISION: MCP payloads (event traces, Messages log, session export) are not masked by key name — a tool argument named `state` or `code` is user data — only credentials inside URLs embedded in strings and credential-named `_meta` entries are masked (`redact.PayloadMap`, applied at store time in `event_tracer.go` and `mcp_logger.go`). Protocol-level logging (auth, HTTP) keeps key-name masking. (a2b7e46, 38c9603)
+- DECISION: The auth SSRF guard is wider than the SDK's: it applies at dial time to every auth request (discovery, registration, token, refresh, enterprise exchange) through the one `newAuthHTTPClient`, not only to discovery on a bare `*http.Transport`, which the tracing wrapper would otherwise defeat. (554afde)
+- DECISION: Enterprise managed authorization (SEP-990) caches only the MCP access token, keyed by IdP issuer and IdP client; the ID token and ID-JAG are never written to disk, and no refresh token is used, so IdP policy is re-checked on every expiry. (f5ced22)
 
 Convention: one `DECISION:` line here is the index entry. A decision that passes the triple test (hard to reverse + surprising without context + real trade-off) is promoted by [[decide]] to a full `docs/adr/NNNN-*.md`, linked from its line.
 
@@ -37,7 +41,7 @@ Known gaps: none open for this listener. The concurrent-connection cap is enforc
 
 ### Outbound auth requests (SSRF guard)
 
-Discovery, registration and token endpoints come from documents the MCP server controls, so every auth request goes through one client, `newAuthHTTPClient` (`internal/mcp/oauth/trace.go`), built once per `oauth.NewHandler` and handed to every SDK handler and to cached-session refresh. Its transport (`guardedTransport`, `internal/mcp/oauth/dialguard.go`) refuses at dial time — on the resolved address, via `net.Dialer.Control` — any private (RFC 1918 / ULA), link-local (incl. `169.254.169.254`), CGNAT, multicast or unspecified address; loopback is always allowed. The ranges mirror go-sdk `internal/util.IsPrivateOrReserved`, which oauthex applies only when handed a bare `*http.Transport` — never the case once the tracing wrapper is in place, which is why mcp-tui re-applies it.
+Discovery, registration and token endpoints come from documents the MCP server controls, so every auth request goes through one client, `newAuthHTTPClient` (`internal/mcp/oauth/trace.go`), built once per `oauth.NewHandler` (its only production call site) and handed to every SDK handler, the enterprise IdP sign-in and token exchange, and cached-session refresh. Its default timeout is 30s. Its transport (`guardedTransport`, `internal/mcp/oauth/dialguard.go`) refuses at dial time — on the resolved address, via `net.Dialer.Control` — any private (RFC 1918 / ULA), link-local (incl. `169.254.169.254`), CGNAT, multicast or unspecified address; loopback is always allowed. The ranges mirror go-sdk `internal/util.IsPrivateOrReserved`, which oauthex applies only when handed a bare `*http.Transport` — never the case once the tracing wrapper is in place, which is why mcp-tui re-applies it.
 
 `--oauth-allow-private-network` (`Config.AllowPrivateNetwork`, default false) lifts the refusal; each allowed dial is logged as a warning with its address class.
 
@@ -45,6 +49,8 @@ Known gaps:
 - With an HTTP proxy configured (`HTTPS_PROXY` etc.) the guard is off, as in the SDK: the dialer only sees the proxy's address. Logged as a warning at handler construction; the proxy is then the only control.
 - A caller-supplied `*http.Client` whose transport dials for itself (non-`*http.Transport`, or `DialContext`/`DialTLSContext` set) is used unguarded, logged as a warning. Production passes `nil`, so only tests hit this.
 - The flag cannot admit a literal private IP in a discovered URL: the SDK's own URL check (`checkHTTPSOrLoopback`) still rejects it. Only hostnames that resolve into private ranges are admitted.
+
+Checked 2026-09-24 at b7df00b: the guard's only construction is `newAuthHTTPClient` in `oauth.NewHandler` (`handler.go`), and every auth path (`handler.go`, `enterprise.go`, cache refresh) uses that client. OAuth is not wired on the SSE transport at all (the SDK's `SSEClientTransport` has no `OAuthHandler`); `--oauth-*` flags there are accepted and inert, so no auth request is made.
 
 ## Side Effect Isolation
 
