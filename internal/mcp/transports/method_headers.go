@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"sync/atomic"
+
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 
 // RequestHeaderObserver is invoked by the SEP-2243 method-headers RoundTripper
@@ -166,22 +168,22 @@ func GetHTTPClientForTransportWithMethodHeaders(transportType TransportType, cus
 }
 
 // GetHTTPClientForTransportFull builds the HTTP client used by the SDK
-// transport, layering optional wrappers in a deterministic order:
+// transport, layering wrappers in a deterministic order:
 //
 //  1. base transport from GetHTTPClientForTransport (timeout/keepalive policy)
-//  2. response observer (captures full response headers for the debug pane)
-//  3. static headers from --header KEY=VALUE (additive merge)
-//  4. SEP-2243 method headers injector
+//  2. HTTP trace (one redacted debug line per exchange, "mcp-http")
+//  3. response observer (captures full response headers for the debug pane)
+//  4. static headers from --header KEY=VALUE (additive merge)
+//  5. SEP-2243 method headers injector
 //
 // The order matters: SEP-2243 runs last so its MCP-Method/MCP-Name headers
 // are not stomped by a user-supplied --header MCP-Method=... entry, and the
-// response observer wraps the base so it sees the unmodified server response
-// before any potential retry logic in inner round-trippers.
+// trace and response observer wrap the base so they see the unmodified
+// server response and the final outbound headers. Tracing is always layered
+// in: the custom transport bypasses http.DefaultTransport, so nothing else
+// would see this traffic.
 func GetHTTPClientForTransportFull(transportType TransportType, customClient *http.Client, methodHeaders bool, staticHeaders map[string]string) *http.Client {
 	client := GetHTTPClientForTransport(transportType, customClient)
-	if !methodHeaders && len(staticHeaders) == 0 && getResponseObserver() == nil {
-		return client
-	}
 
 	// Clone so we don't mutate the shared default client.
 	wrapped := *client
@@ -190,18 +192,21 @@ func GetHTTPClientForTransportFull(transportType TransportType, customClient *ht
 		base = http.DefaultTransport
 	}
 
-	// Layer 1 (innermost): response observer — captures the actual server
-	// response unmodified by any retry/redirect inner logic.
+	// Layer 1 (innermost): HTTP trace — times the real network exchange.
+	base = debug.NewHTTPTraceTransport(base, "mcp-http")
+
+	// Layer 2: response observer — captures the actual server response
+	// unmodified by any retry/redirect inner logic.
 	base = newResponseObserverRoundTripper(base)
 
-	// Layer 2: static headers — applied before SEP-2243 so user-supplied
+	// Layer 3: static headers — applied before SEP-2243 so user-supplied
 	// values can be inspected, but the observer still sees the final
 	// merged set on the outbound request.
 	if len(staticHeaders) > 0 {
 		base = newStaticHeadersRoundTripper(base, staticHeaders)
 	}
 
-	// Layer 3 (outermost): SEP-2243 method headers — these depend on the
+	// Layer 4 (outermost): SEP-2243 method headers — these depend on the
 	// JSON-RPC body that the SDK has already serialized, so they go last.
 	if methodHeaders {
 		base = newMethodHeadersRoundTripper(base)
