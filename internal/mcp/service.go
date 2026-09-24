@@ -1301,6 +1301,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		StructuredContent: result.StructuredContent,
 		OutputViolations:  violations,
 		Rounds:            rounds,
+		Server:            respondingServer(result.Meta),
 	}, nil
 }
 
@@ -1558,7 +1559,7 @@ func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceRe
 		debug.F("uri", uri),
 		debug.F("contentsCount", len(contents)))
 
-	return &ReadResourceResult{Contents: contents, Rounds: rounds}, nil
+	return &ReadResourceResult{Contents: contents, Rounds: rounds, Server: respondingServer(result.Meta)}, nil
 }
 
 // ListPrompts returns available prompts using the official SDK's natural iterator pattern
@@ -1695,6 +1696,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 		Description: result.Description,
 		Messages:    messages,
 		Rounds:      rounds,
+		Server:      respondingServer(result.Meta),
 	}, nil
 }
 

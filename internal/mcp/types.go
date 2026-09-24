@@ -483,6 +483,9 @@ type CallToolResult struct {
 	// Rounds lists the input rounds of a multi round-trip call (SEP-2322,
 	// protocol 2026-07-28); empty when the server answered on the first try.
 	Rounds []RoundSummary `json:"rounds,omitempty"`
+	// Server is the server that produced the result (_meta serverInfo,
+	// 2026-07-28); nil when the result does not say.
+	Server *RespondingServer `json:"server,omitempty"`
 }
 
 // GetPromptRequest represents a prompt request
@@ -498,6 +501,8 @@ type GetPromptResult struct {
 	// Rounds lists the input rounds of a multi round-trip call; see
 	// CallToolResult.Rounds.
 	Rounds []RoundSummary `json:"rounds,omitempty"`
+	// Server: see CallToolResult.Server.
+	Server *RespondingServer `json:"server,omitempty"`
 }
 
 // ReadResourceResult is the outcome of resources/read.
@@ -506,6 +511,8 @@ type ReadResourceResult struct {
 	// Rounds lists the input rounds of a multi round-trip call; see
 	// CallToolResult.Rounds.
 	Rounds []RoundSummary `json:"rounds,omitempty"`
+	// Server: see CallToolResult.Server.
+	Server *RespondingServer `json:"server,omitempty"`
 }
 
 // RoundSummary describes one input-required round of a multi round-trip
