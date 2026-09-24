@@ -53,6 +53,16 @@ mcp-tui --transport http --url https://api.example.com/mcp \
   --oauth-dynamic-registration tool list
 ```
 
+## Issuer check on the redirect (RFC 9207)
+
+When the authorization server advertises
+`authorization_response_iss_parameter_supported`, the redirect must carry an
+`iss` equal to the discovered issuer, or the flow fails before the code is
+redeemed (mix-up attack defence). A server that sends `iss` without
+advertising support is refused too; `--oauth-accept-unadvertised-iss` accepts
+a matching `iss` from such a server. Use it only to test non-conforming
+servers; it is logged as a warning.
+
 ## Binding a client to its issuer
 
 A pre-registered client ID is only valid at the authorization server that
@@ -131,5 +141,6 @@ request triggers a fresh authorization.
 | `--oauth-redirect-host` | `127.0.0.1` | Auth-code redirect host (`localhost`, `127.0.0.0/8` or `::1`) |
 | `--oauth-redirect-port` | `0` | Auth-code redirect port (`0` = ephemeral) |
 | `--oauth-dynamic-registration` | `false` | RFC 7591 dynamic registration when client ID is empty |
+| `--oauth-accept-unadvertised-iss` | `false` | Accept `iss` from an AS that does not advertise RFC 9207 support (testing only) |
 | `--oauth-cache` | platform cache dir | Token cache directory (`-` disables) |
 </content>

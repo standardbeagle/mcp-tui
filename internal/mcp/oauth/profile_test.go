@@ -140,3 +140,34 @@ func TestAuthorizationCodeFlow_RequestsOfflineAccess(t *testing.T) {
 	assertNoSecrets(t, out, srv.issuedSecrets())
 	assertLogged(t, out, "grant_types=[authorization_code refresh_token]", "request_refresh_token=true")
 }
+
+// TestAuthorizationCodeFlow_UnadvertisedIss: an AS that sends iss without
+// advertising support is refused by default; --oauth-accept-unadvertised-iss
+// accepts a matching iss and warns that it is on.
+func TestAuthorizationCodeFlow_UnadvertisedIss(t *testing.T) {
+	for _, accept := range []bool{false, true} {
+		t.Run(map[bool]string{false: "default_rejects", true: "opt_in_accepts"}[accept], func(t *testing.T) {
+			logs := captureAuthLogs(t)
+			srv := newMockAuthServer(t)
+			srv.sendUnadvertisedIss = true
+
+			h, err := NewHandler(&Config{ServerURL: srv.ResourceURL(), ClientID: srv.clientID,
+				AcceptUnadvertisedIss: accept, CachePath: "-"}, http.DefaultClient, NoopCache{})
+			require.NoError(t, err)
+			installAutoApproveFetcher(t, h)
+			req, resp := unauthorizedExchange(srv)
+			err = h.Authorize(t.Context(), req, resp)
+
+			out := logs()
+			assertNoSecrets(t, out, srv.issuedSecrets())
+			if !accept {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "does not advertise RFC 9207")
+				assert.NotContains(t, out, "unadvertised RFC 9207 iss")
+				return
+			}
+			require.NoError(t, err)
+			assertLogged(t, out, "WARN [oauth] Accepting unadvertised RFC 9207 iss")
+		})
+	}
+}

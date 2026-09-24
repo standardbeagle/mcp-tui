@@ -103,3 +103,15 @@ func TestBuildOAuthConfig_Issuer(t *testing.T) {
 		t.Errorf("Issuer = %q", cfg.Issuer)
 	}
 }
+
+// TestBuildOAuthConfig_AcceptUnadvertisedIss maps the opt-in flag.
+func TestBuildOAuthConfig_AcceptUnadvertisedIss(t *testing.T) {
+	cfg, err := buildOAuthConfigFromArgs(t, "https://mcp.example.com/mcp",
+		"--oauth-client-id", "mcp-tui-desktop", "--oauth-accept-unadvertised-iss")
+	if err != nil {
+		t.Fatalf("BuildOAuthConfig: %v", err)
+	}
+	if !cfg.AcceptUnadvertisedIss {
+		t.Error("AcceptUnadvertisedIss = false, want true")
+	}
+}

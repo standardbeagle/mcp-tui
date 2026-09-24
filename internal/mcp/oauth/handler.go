@@ -266,7 +266,8 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 		ScopeFilter: h.selectScopes,
 		// SEP-2207: mcp-tui keeps refresh tokens (in the token cache), so it
 		// asks for offline_access when the AS lists it in scopes_supported.
-		RequestRefreshToken: true,
+		RequestRefreshToken:   true,
+		AcceptUnadvertisedIss: h.cfg.AcceptUnadvertisedIss,
 	}
 	if h.cfg.ClientMetadataURL != "" {
 		cfg.ClientIDMetadataDocumentConfig = &auth.ClientIDMetadataDocumentConfig{URL: h.cfg.ClientMetadataURL}
@@ -461,6 +462,9 @@ func logModeSelected(cfg *Config, cache TokenCache) {
 		debug.F("configured_scopes", cfg.scopeList()),
 		debug.F("client_issuer", cfg.Issuer),
 		debug.F("token_cache", cache != nil && !cacheDisabled))
+	if cfg.AcceptUnadvertisedIss {
+		authLog().Warn("Accepting unadvertised RFC 9207 iss (--oauth-accept-unadvertised-iss); meant for testing non-conforming servers only")
+	}
 }
 
 // logAuthorizationRequired records the 401/403 that made the SDK call

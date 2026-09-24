@@ -86,6 +86,13 @@ type Config struct {
 	// client). Pass empty for public clients in auth-code mode.
 	ClientSecret string
 
+	// AcceptUnadvertisedIss accepts an RFC 9207 iss on the authorization
+	// response from an AS whose metadata does not advertise
+	// authorization_response_iss_parameter_supported, provided it matches
+	// the issuer. For testing non-conforming servers only; default false
+	// rejects such responses.
+	AcceptUnadvertisedIss bool
+
 	// Issuer binds the pre-registered client (ClientID) to one
 	// authorization server: the flow fails unless the discovered AS
 	// metadata names this issuer. Empty means no binding.

@@ -70,6 +70,7 @@ See [OAuth](/mcp-tui/guides/oauth/) for the full flow.
 | `--oauth-redirect-host <host>` | `127.0.0.1` | Host for the auth-code redirect URI; must be `localhost`, `127.0.0.0/8` or `::1` |
 | `--oauth-redirect-port <port>` | `0` | Port for the redirect URI (`0` = ephemeral) |
 | `--oauth-dynamic-registration` | `false` | Enable RFC 7591 dynamic client registration when client ID is empty |
+| `--oauth-accept-unadvertised-iss` | `false` | Accept an RFC 9207 `iss` from an authorization server that does not advertise support (testing non-conforming servers only; logged as a warning) |
 | `--oauth-cache <dir>` | platform cache dir | Token cache directory (`-` to disable persistence) |
 
 ## `tool` subcommand

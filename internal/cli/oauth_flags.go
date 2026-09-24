@@ -34,5 +34,6 @@ func RegisterOAuthFlags(flags *pflag.FlagSet) {
 	flags.String("oauth-redirect-host", "127.0.0.1", "Host for the auth-code redirect URI (loopback only)")
 	flags.Int("oauth-redirect-port", 0, "Port for the auth-code redirect URI (0 = ephemeral)")
 	flags.Bool("oauth-dynamic-registration", false, "Enable RFC 7591 dynamic client registration when ClientID is empty")
+	flags.Bool("oauth-accept-unadvertised-iss", false, "Accept an RFC 9207 iss from an authorization server that does not advertise support (testing non-conforming servers only)")
 	flags.String("oauth-cache", "", "Token cache directory ('-' to disable; default: platform cache dir)")
 }

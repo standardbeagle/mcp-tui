@@ -266,6 +266,7 @@ func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (
 	clientSecret, _ := cmd.Flags().GetString("oauth-client-secret")
 	clientMetadataURL, _ := cmd.Flags().GetString("oauth-client-metadata-url")
 	issuer, _ := cmd.Flags().GetString("oauth-issuer")
+	acceptUnadvertisedIss, _ := cmd.Flags().GetBool("oauth-accept-unadvertised-iss")
 	scopes, _ := cmd.Flags().GetString("oauth-scopes")
 	redirectHost, _ := cmd.Flags().GetString("oauth-redirect-host")
 	redirectPort, _ := cmd.Flags().GetInt("oauth-redirect-port")
@@ -294,6 +295,7 @@ func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (
 		ClientSecret:              clientSecret,
 		ClientMetadataURL:         clientMetadataURL,
 		Issuer:                    issuer,
+		AcceptUnadvertisedIss:     acceptUnadvertisedIss,
 		Scopes:                    oauth.ParseScopes(scopes),
 		RedirectHost:              redirectHost,
 		RedirectPort:              redirectPort,

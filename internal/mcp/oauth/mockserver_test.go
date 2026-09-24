@@ -55,6 +55,9 @@ type mockAuthServer struct {
 	// simulate a mix-up attack); empty means the real issuer.
 	advertiseIss bool
 	callbackIss  string
+	// sendUnadvertisedIss sends iss on the redirect without advertising
+	// support: a non-conforming AS.
+	sendUnadvertisedIss bool
 
 	// supportCIMD advertises client_id_metadata_document_supported, so an
 	// https client_id URL is accepted as the client identifier.
@@ -245,7 +248,7 @@ func (m *mockAuthServer) handleAuthorize(w http.ResponseWriter, r *http.Request)
 	rq := u.Query()
 	rq.Set("code", "test_auth_code")
 	rq.Set("state", state)
-	if m.advertiseIss {
+	if m.advertiseIss || m.sendUnadvertisedIss {
 		iss := m.callbackIss
 		if iss == "" {
 			iss = m.authServer.URL
