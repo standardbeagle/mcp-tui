@@ -60,6 +60,9 @@ type MainScreen struct {
 	promptCount      int
 	eventCount       int
 
+	// droppedTools are the tools the SDK removed from the last tools/list.
+	droppedTools []mcp.DroppedTool
+
 	// listCacheLabels holds the SEP-2549 cache label of the tools,
 	// resources and prompts tabs, shown in the list header.
 	listCacheLabels [3]string
@@ -156,6 +159,8 @@ type ToolsLoadedMsg struct {
 	// Cache is how the SDK served each list behind this tab (SEP-2549);
 	// nil entries or an empty slice mean no list caching.
 	Cache []*mcp.ListCacheInfo
+	// Dropped are the tools the SDK removed from tools/list.
+	Dropped []mcp.DroppedTool
 }
 
 // ResourcesLoadedMsg contains loaded resources with full data structure
@@ -544,6 +549,7 @@ func (ms *MainScreen) handleToolsLoaded(msg ToolsLoadedMsg) (tea.Model, tea.Cmd)
 		ms.tools = msg.Tools
 		ms.toolStrings = msg.Items
 		ms.toolCount = msg.ActualCount
+		ms.droppedTools = msg.Dropped
 
 		// Count tools with schema errors
 		ms.schemaErrorCount = 0
@@ -1255,6 +1261,9 @@ func (ms *MainScreen) View() string {
 	}
 	builder.WriteString(ms.renderListHeaderRule(width))
 	builder.WriteString("\n")
+	if ms.activeTab == 0 {
+		builder.WriteString(renderDroppedTools(ms.droppedTools))
+	}
 
 	// Current list or split-pane view for tools, resources, prompts, and events
 	if ms.activeTab == 3 && ms.showEventDetail {
@@ -1850,6 +1859,7 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 			ActualCount: actualCount,
 			Error:       nil,
 			Cache:       []*mcp.ListCacheInfo{ms.mcpService.ListCache("tools/list")},
+			Dropped:     ms.mcpService.DroppedTools(),
 		}
 	}
 }
@@ -2513,6 +2523,27 @@ func (ms *MainScreen) renderEventDetail() string {
 	builder.WriteString(jsonStyle.Render(event.GetFormattedJSON()))
 
 	return builder.String()
+}
+
+// renderDroppedTools warns about the tools the SDK removed from tools/list,
+// one line each with the SDK's reason; "" when there are none.
+func renderDroppedTools(dropped []mcp.DroppedTool) string {
+	if len(dropped) == 0 {
+		return ""
+	}
+	noun := "tools"
+	if len(dropped) == 1 {
+		noun = "tool"
+	}
+	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	var b strings.Builder
+	b.WriteString(warnStyle.Render(fmt.Sprintf("⚠ %d %s dropped by the SDK from tools/list:", len(dropped), noun)))
+	b.WriteString("\n")
+	for _, d := range dropped {
+		b.WriteString(warnStyle.Render("  - " + d.String()))
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // isUnsupportedCapabilityError checks if an error indicates a capability is not supported

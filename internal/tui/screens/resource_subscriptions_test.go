@@ -39,14 +39,14 @@ func queueServer(subscribable bool, depth *string) *officialMCP.Server {
 	return server
 }
 
-// mainScreenOn returns a MainScreen driving a real service connected to
-// server over streamable HTTP at protocolVersion, with the resources tab
-// loaded and active.
-func mainScreenOn(t *testing.T, server *officialMCP.Server, protocolVersion string) (*MainScreen, mcp.Service) {
+// connectedScreenOn returns a MainScreen driving a real service connected
+// to server over streamable HTTP at protocolVersion ("" = latest).
+func connectedScreenOn(t *testing.T, server *officialMCP.Server, protocolVersion string) (*MainScreen, mcp.Service) {
 	t.Helper()
 	svc := mcp.NewService()
 	if err := svc.Connect(context.Background(), &config.ConnectionConfig{
-		Type: config.TransportStreamableHTTP, URL: testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, protocolVersion)),
+		Type:            config.TransportStreamableHTTP,
+		URL:             testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, protocolVersion)),
 		ProtocolVersion: protocolVersion,
 	}); err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -61,6 +61,14 @@ func mainScreenOn(t *testing.T, server *officialMCP.Server, protocolVersion stri
 	}
 	ms := connectedMainScreen(t)
 	ms.mcpService = svc
+	return ms, svc
+}
+
+// mainScreenOn is connectedScreenOn with the resources tab loaded and
+// active.
+func mainScreenOn(t *testing.T, server *officialMCP.Server, protocolVersion string) (*MainScreen, mcp.Service) {
+	t.Helper()
+	ms, svc := connectedScreenOn(t, server, protocolVersion)
 	ms.activeTab = 1
 	runCmd(t, ms, ms.loadResources())
 	return ms, svc
