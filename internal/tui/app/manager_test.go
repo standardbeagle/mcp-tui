@@ -235,3 +235,31 @@ func TestScreenManagerKeepsRequestOverlayWhenConfirmArrives(t *testing.T) {
 		t.Errorf("overlay = %T after the answer, want the queued confirmation", sm.overlayScreen)
 	}
 }
+
+// Reading a resource or getting a prompt can raise an elicitation; the
+// result arrives while that overlay is still up and must reach the main
+// screen, not the overlay.
+func TestScreenManagerDeliversResourceAndPromptResultsUnderAnOverlay(t *testing.T) {
+	for _, msg := range []tea.Msg{
+		screens.ResourceContentLoadedMsg{Resource: &mcp.Resource{URI: "file:///var/log/deploy.log"}},
+		screens.PromptResultLoadedMsg{Prompt: &mcp.Prompt{Name: "code_review"}},
+	} {
+		underneath := &recordingScreen{}
+		overlay := screens.NewRootsScreen(nil)
+		sm := &ScreenManager{
+			config:        &config.Config{},
+			logger:        debug.Component("screen-manager"),
+			currentScreen: underneath,
+			overlayScreen: overlay,
+		}
+
+		dispatch(t, sm, msg)
+
+		if len(underneath.got) != 1 {
+			t.Errorf("%T: screen underneath got %v, want the result", msg, underneath.got)
+		}
+		if sm.overlayScreen != overlay {
+			t.Errorf("%T: overlay = %T, want it left open", msg, sm.overlayScreen)
+		}
+	}
+}

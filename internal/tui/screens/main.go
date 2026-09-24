@@ -216,6 +216,12 @@ type PromptResultLoadedMsg struct {
 	Error  error
 }
 
+// BackgroundWork marks the main screen's read and get results as
+// BackgroundMsg: reading a resource or getting a prompt can raise an
+// elicitation, and that overlay must not swallow the result.
+func (ResourceContentLoadedMsg) BackgroundWork() {}
+func (PromptResultLoadedMsg) BackgroundWork()    {}
+
 // spinnerTickMsg is sent to update the spinner animation
 type spinnerTickMsg struct{}
 
