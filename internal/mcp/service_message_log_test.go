@@ -11,7 +11,6 @@ import (
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
-	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 )
 
 // messageLogged reports whether the MCP Messages log holds an entry of the
@@ -62,17 +61,24 @@ func TestService_DebugMode_LogsEveryMessageToMessagesTab(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.SetElicitationHandler(stub)
-	listChanged := make(chan struct{}, 1)
-	svc.AddNotificationObserver(func(e notifications.Entry) {
-		if e.Type == notifications.TypeToolsListChanged {
-			select {
-			case listChanged <- struct{}{}:
-			default:
-			}
-		}
-	})
 	connectInMemory(t, server, svc, &configPkg.ConnectionConfig{
 		Type: configPkg.TransportStdio, Command: "repo-server", ProtocolVersion: legacyProtocolVersion,
+	})
+	// Signal once list_changed went through every receiving middleware:
+	// notification observers fire before the message log records it, so
+	// waiting on one raced the log.
+	listChanged := make(chan struct{}, 1)
+	svc.client.AddReceivingMiddleware(func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
+		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
+			res, err := next(ctx, method, req)
+			if method == "notifications/tools/list_changed" {
+				select {
+				case listChanged <- struct{}{}:
+				default:
+				}
+			}
+			return res, err
+		}
 	})
 
 	debug.GetMCPLogger().Clear()
