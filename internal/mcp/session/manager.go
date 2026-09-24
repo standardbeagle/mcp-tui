@@ -200,7 +200,7 @@ func (m *Manager) Connect(
 		// Classify and handle the error
 		classified := m.errorHandler.HandleError(connectCtx, err, "session_connect", map[string]interface{}{
 			"transport_type": transportType,
-			"state":          "connecting",
+			"session_state":  "connecting",
 		})
 
 		if !aborted {
@@ -560,7 +560,7 @@ func (m *Manager) handleConnectionFailure(err error) {
 	// Classify the error
 	classified := m.errorHandler.HandleError(context.Background(), err, "health_check", map[string]interface{}{
 		"transport_type": m.info.TransportType,
-		"state":          "connected",
+		"session_state":  "connected",
 		"session_id":     m.info.SessionID,
 	})
 

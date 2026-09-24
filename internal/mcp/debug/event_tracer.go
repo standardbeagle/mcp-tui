@@ -244,8 +244,10 @@ func (et *EventTracer) TraceError(operation string, error error, context map[str
 
 // TraceTransportState records transport state changes
 func (et *EventTracer) TraceTransportState(state string, details map[string]interface{}) *Event {
+	// Not "state": that key names the OAuth state parameter and is masked
+	// by every log path.
 	data := map[string]interface{}{
-		"state": state,
+		"transport_state": state,
 	}
 
 	if details != nil {
@@ -259,8 +261,10 @@ func (et *EventTracer) TraceTransportState(state string, details map[string]inte
 
 // TraceSessionState records session state changes
 func (et *EventTracer) TraceSessionState(state string, details map[string]interface{}) *Event {
+	// Not "state": that key names the OAuth state parameter and is masked
+	// by every log path.
 	data := map[string]interface{}{
-		"state": state,
+		"session_state": state,
 	}
 
 	if details != nil {
