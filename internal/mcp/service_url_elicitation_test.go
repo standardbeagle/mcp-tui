@@ -143,3 +143,33 @@ func TestService_URLElicitation_LogsRedactedURL(t *testing.T) {
 		})
 	}
 }
+
+// TestService_URLElicitationRequired_ShowsURLAndNextStep: a 2025-11-25
+// server that answers -32042 wants the user to visit a URL before the call
+// can succeed. mcp-tui does not retry by itself, so the error the CLI and
+// TUI print must carry each URL, its host, and what to do next.
+func TestService_URLElicitationRequired_ShowsURLAndNextStep(t *testing.T) {
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "sso-server", Version: "1.0.0"}, nil)
+	addTool(server, "list_repos", func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+		return nil, officialMCP.URLElicitationRequiredError([]*officialMCP.ElicitParams{{
+			Mode: "url", Message: "Authorize GitHub access", URL: "https://github.com/login/device", ElicitationID: "gh-1",
+		}})
+	})
+	svc := NewService().(*service)
+	connectInMemory(t, server, svc, &configPkg.ConnectionConfig{
+		Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: "2025-11-25",
+	})
+
+	_, err := svc.CallTool(context.Background(), CallToolRequest{Name: "list_repos"})
+	if err == nil {
+		t.Fatal("CallTool succeeded, want URL elicitation required")
+	}
+	for _, want := range []string{
+		string(debug.ErrorCodeURLElicitationRequired), "Authorize GitHub access",
+		"https://github.com/login/device", "Host: github.com", "then retry",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q:\n%s", want, err)
+		}
+	}
+}
