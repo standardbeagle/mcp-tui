@@ -91,3 +91,45 @@ func TestScreenManagerOpensElicitationOverlayOverToolScreen(t *testing.T) {
 		t.Errorf("current screen = %T, want the tool screen to stay underneath", sm.currentScreen)
 	}
 }
+
+// recordingScreen records the messages it receives.
+type recordingScreen struct{ got []tea.Msg }
+
+func (r *recordingScreen) Init() tea.Cmd { return nil }
+func (r *recordingScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	r.got = append(r.got, msg)
+	return r, nil
+}
+func (r *recordingScreen) View() string    { return "" }
+func (r *recordingScreen) Name() string    { return "recording" }
+func (r *recordingScreen) CanGoBack() bool { return true }
+func (r *recordingScreen) Reset()          {}
+func (r *recordingScreen) IsOverlay() bool { return false }
+
+// taskProgress stands in for the progress of a tool call followed as a task.
+type taskProgress struct{ status string }
+
+func (taskProgress) BackgroundWork() {}
+
+// Background work a screen started reports to that screen even while an
+// overlay is open: often the work itself opened it (an elicitation), and
+// an overlay that swallowed the report broke the screen's follow-up.
+func TestScreenManagerDeliversBackgroundWorkUnderAnOverlay(t *testing.T) {
+	underneath := &recordingScreen{}
+	overlay := screens.NewRootsScreen(nil)
+	sm := &ScreenManager{
+		config:        &config.Config{},
+		logger:        debug.Component("screen-manager"),
+		currentScreen: underneath,
+		overlayScreen: overlay,
+	}
+
+	dispatch(t, sm, taskProgress{status: "input_required"})
+
+	if len(underneath.got) != 1 || underneath.got[0] != (taskProgress{status: "input_required"}) {
+		t.Errorf("screen underneath got %v, want the progress report", underneath.got)
+	}
+	if sm.overlayScreen != overlay {
+		t.Errorf("overlay = %T, want it left open", sm.overlayScreen)
+	}
+}

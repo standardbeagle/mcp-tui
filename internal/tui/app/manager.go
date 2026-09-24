@@ -190,6 +190,13 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sm.overlayScreen = msg.Screen
 			return sm, sm.overlayScreen.Init()
 
+		case screens.BackgroundMsg:
+			model, cmd := sm.currentScreen.Update(msg)
+			if newScreen, ok := model.(screens.Screen); ok {
+				sm.currentScreen = newScreen
+			}
+			return sm, cmd
+
 		case screens.ConfirmDecisionMsg:
 			// Decision messages travel from an overlay (ConfirmScreen) to the
 			// parent screen that opened it. Forwarding straight to the parent

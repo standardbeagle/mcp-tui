@@ -40,6 +40,15 @@ type ToggleOverlayMsg struct {
 	Screen Screen
 }
 
+// BackgroundMsg reports on work a screen started in the background, such as
+// a tool call or a task it follows. The screen manager hands it to the
+// current screen even while an overlay is open: the overlay is often one
+// the work itself opened (an elicitation prompt), and one that swallowed
+// the report would leave the screen waiting forever.
+type BackgroundMsg interface {
+	BackgroundWork()
+}
+
 // ErrorMsg is sent when an error occurs
 type ErrorMsg struct {
 	Error error
