@@ -31,11 +31,12 @@ import (
 // own marshaling. We re-declare the type so tests don't break if the SDK adds
 // a new field that happens to have the same JSON tag.
 type Implementation struct {
-	Name       string             `json:"name"`
-	Title      string             `json:"title,omitempty"`
-	Version    string             `json:"version"`
-	WebsiteURL string             `json:"websiteUrl,omitempty"`
-	Icons      []officialMCP.Icon `json:"icons,omitempty"`
+	Name        string             `json:"name"`
+	Title       string             `json:"title,omitempty"`
+	Description string             `json:"description,omitempty"`
+	Version     string             `json:"version"`
+	WebsiteURL  string             `json:"websiteUrl,omitempty"`
+	Icons       []officialMCP.Icon `json:"icons,omitempty"`
 }
 
 // ServerCaps is the snapshot of *officialMCP.ServerCapabilities. Pointer fields
@@ -116,10 +117,11 @@ func FromInitializeResult(
 // independent of any later SDK mutation.
 func implementationFrom(impl *officialMCP.Implementation) *Implementation {
 	cp := &Implementation{
-		Name:       impl.Name,
-		Title:      impl.Title,
-		Version:    impl.Version,
-		WebsiteURL: impl.WebsiteURL,
+		Name:        impl.Name,
+		Title:       impl.Title,
+		Description: impl.Description,
+		Version:     impl.Version,
+		WebsiteURL:  impl.WebsiteURL,
 	}
 	if len(impl.Icons) > 0 {
 		cp.Icons = append([]officialMCP.Icon(nil), impl.Icons...)

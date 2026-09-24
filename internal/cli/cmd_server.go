@@ -5,6 +5,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 )
 
 // ServerCommand handles server information operations
@@ -54,9 +57,12 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	fmt.Printf("==================\n\n")
 
 	// Basic info
-	fmt.Printf("Name:     %s\n", info.Name)
-	fmt.Printf("Version:  %s\n", info.Version)
-	fmt.Printf("Protocol: %s\n", info.ProtocolVersion)
+	fmt.Printf("Name:        %s\n", info.Name)
+	fmt.Printf("Version:     %s\n", info.Version)
+	fmt.Printf("Protocol:    %s\n", info.ProtocolVersion)
+	if snap := c.service.GetCapabilitiesSnapshot(); snap != nil && snap.ServerInfo != nil {
+		printServerIdentity(snap.ServerInfo)
+	}
 	fmt.Printf("\n")
 
 	// Capabilities
@@ -126,4 +132,22 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "\n✅ Server information complete\n")
 
 	return nil
+}
+
+// printServerIdentity prints what the server declared about itself beyond
+// name and version: title, description, website and icons (described, not
+// fetched).
+func printServerIdentity(impl *capabilities.Implementation) {
+	if impl.Title != "" {
+		fmt.Printf("Title:       %s\n", impl.Title)
+	}
+	if impl.Description != "" {
+		fmt.Printf("Description: %s\n", impl.Description)
+	}
+	if impl.WebsiteURL != "" {
+		fmt.Printf("Website:     %s\n", impl.WebsiteURL)
+	}
+	for _, icon := range impl.Icons {
+		fmt.Printf("Icon:        %s\n", mcp.DescribeIcon(icon))
+	}
 }

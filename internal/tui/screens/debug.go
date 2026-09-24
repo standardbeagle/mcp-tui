@@ -1023,7 +1023,8 @@ func capDisplayString(s string) string {
 }
 
 // renderImplementation prints the role header (Server / Client) plus the
-// Implementation fields in a compact form. Title and websiteURL are only
+// Implementation fields in a compact form. Title, description, websiteURL
+// and icons are only
 // rendered when present so the common case (servers that don't set them)
 // stays uncluttered.
 func renderImplementation(role string, impl *capabilities.Implementation) string {
@@ -1038,11 +1039,14 @@ func renderImplementation(role string, impl *capabilities.Implementation) string
 		b.WriteString(fmt.Sprintf("  Title:   %s\n", impl.Title))
 	}
 	b.WriteString(fmt.Sprintf("  Version: %s\n", capDisplayString(impl.Version)))
+	if impl.Description != "" {
+		fmt.Fprintf(&b, "  About:   %s\n", impl.Description)
+	}
 	if impl.WebsiteURL != "" {
 		b.WriteString(fmt.Sprintf("  Website: %s\n", impl.WebsiteURL))
 	}
-	if len(impl.Icons) > 0 {
-		b.WriteString(fmt.Sprintf("  Icons:   %d\n", len(impl.Icons)))
+	for _, icon := range impl.Icons {
+		fmt.Fprintf(&b, "  Icon:    %s\n", mcp.DescribeIcon(icon))
 	}
 	return b.String()
 }
