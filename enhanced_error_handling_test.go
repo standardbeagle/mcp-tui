@@ -279,38 +279,37 @@ func TestWorkingServerCompatibility(t *testing.T) {
 		t.Skip("Skipping compatibility test in short mode")
 	}
 
-	// Test with a simple echo server that behaves like a working MCP server
-	// (though it won't actually implement MCP protocol)
+	// A server that starts and announces itself on stdout but never speaks
+	// MCP: the handshake must reject the announcement as a protocol failure,
+	// not take the server for one that failed to start.
 	service := mcp.NewServiceWithConfig(mcpConfig.Default())
 	service.SetDebugMode(true)
 
-	runningCmd, runningArgs := testutil.ServerPrintsThenSleeps(t, "MCP server running on stdio", 10)
+	// The server stays up 2s after printing, far longer than reading one
+	// line takes, and then exits: the SDK's close waits for a server that
+	// ignores its closed stdin, up to 5s, and this keeps the test short.
+	runningCmd, runningArgs := testutil.ServerPrintsThenSleeps(t, "MCP server running on stdio", 2)
 	connectionConfig := &config.ConnectionConfig{
 		Type:    config.TransportStdio,
 		Command: runningCmd,
 		Args:    runningArgs,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Only a hang guard: the outcome must not depend on it. With the old
+	// 5s deadline the connect usually outlasted it (pwsh start plus the
+	// SDK's close wait), and any error passed.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	err := service.Connect(ctx, connectionConfig)
-
-	// This will fail at the MCP protocol level (because it's not a real MCP server)
-	// but it should NOT fail at the pre-flight validation level
-	if err != nil {
-		errorStr := err.Error()
-
-		// Should NOT be a server startup error
-		if strings.Contains(errorStr, "server startup failed") {
-			t.Errorf("Working server simulation should not be classified as startup failure: %s", errorStr)
-		}
-
-		// If it fails, it should be due to MCP protocol issues, not startup issues
-		if !strings.Contains(errorStr, "MCP protocol") && !strings.Contains(errorStr, "initialize") {
-			t.Logf("Note: Error was: %s", errorStr)
-			// This is acceptable - the server starts fine but MCP protocol fails
-		}
+	if err == nil {
+		t.Fatal("Connect succeeded against a server that never speaks MCP")
+	}
+	if !strings.Contains(err.Error(), "invalid character 'M'") {
+		t.Errorf("Connect error = %v, want the announcement rejected as invalid JSON", err)
+	}
+	if strings.Contains(err.Error(), "server startup failed") {
+		t.Errorf("a running server was classified as a startup failure: %v", err)
 	}
 }
 

@@ -97,10 +97,13 @@ func ServerSleeps(t *testing.T, seconds float64) (command string, args []string)
 }
 
 // ServerPrintsThenSleeps writes msg to stdout and then stays alive, modelling a
-// server that announces itself but never speaks MCP.
+// server that announces itself but never speaks MCP. The flush matters:
+// PowerShell buffers a redirected stdout, so without it msg arrives only
+// when the process exits.
 func ServerPrintsThenSleeps(t *testing.T, msg string, seconds float64) (command string, args []string) {
 	t.Helper()
 	body := "[Console]::Out.WriteLine(" + psQuote(msg) + ")\n" +
+		"[Console]::Out.Flush()\n" +
 		"Start-Sleep -Seconds " + strconv.FormatFloat(seconds, 'f', -1, 64) + "\n"
 	return Script(t, "prints-then-sleeps", body)
 }

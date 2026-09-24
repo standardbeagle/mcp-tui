@@ -209,51 +209,60 @@ func TestConcurrentServiceOperations(t *testing.T) {
 
 		const numOperations = 50
 		var wg sync.WaitGroup
-		var connectSuccesses int64
-		var connectErrors int64
+		var mu sync.Mutex
+		var connectErrs []error
+		var slowest time.Duration
 
 		connConfig := &config.ConnectionConfig{
 			Type: config.TransportHTTP,
 			URL:  server.URL,
 		}
 
-		// Concurrent connect/disconnect operations
+		// Concurrent connect/disconnect operations. The deadline only turns a
+		// hang into a failure; it is not a latency budget. Measured slowest of
+		// the 50 connects: 0.16s idle, 0.28s beside the full suite, 0.48s
+		// under -race, 0.87s under -race -cpu 1, 0.98s under -race beside the
+		// full suite (-count=20 each). Connect costs ~5ms of CPU, so
+		// 50 at once starve on a loaded machine: a 2s deadline was seen to
+		// fail 13 of 50 there, and an assertion that let 10 fail hid it.
 		for i := 0; i < numOperations; i++ {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
 
 				service := NewService()
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
 
+				start := time.Now()
 				err := service.Connect(ctx, connConfig)
+				elapsed := time.Since(start)
+				mu.Lock()
+				slowest = max(slowest, elapsed)
 				if err != nil {
-					atomic.AddInt64(&connectErrors, 1)
+					connectErrs = append(connectErrs, fmt.Errorf("connect %d after %v: %w", id, elapsed, err))
+				}
+				mu.Unlock()
+				if err != nil {
 					return
 				}
 
-				atomic.AddInt64(&connectSuccesses, 1)
-
 				// Quick operation
-				if service.IsConnected() {
-					service.ListTools(ctx)
+				if _, err := service.ListTools(ctx); err != nil {
+					mu.Lock()
+					connectErrs = append(connectErrs, fmt.Errorf("list tools %d: %w", id, err))
+					mu.Unlock()
 				}
-
-				// Disconnect
-				service.Disconnect()
+				assert.NoError(t, service.Disconnect())
 			}(i)
 		}
 
 		wg.Wait()
 
-		successTotal := atomic.LoadInt64(&connectSuccesses)
-		errorTotal := atomic.LoadInt64(&connectErrors)
-
-		t.Logf("Concurrent connections: %d successes, %d errors", successTotal, errorTotal)
-
-		assert.Greater(t, successTotal, int64(40), "Most connections should succeed")
-		assert.LessOrEqual(t, errorTotal, int64(10), "Error rate should be reasonable")
+		t.Logf("Concurrent connections: %d, slowest connect %v", numOperations, slowest)
+		for _, err := range connectErrs {
+			t.Error(err)
+		}
 	})
 
 	t.Run("Service_State_Race_Conditions", func(t *testing.T) {
