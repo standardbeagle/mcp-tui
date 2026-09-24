@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
@@ -71,6 +72,8 @@ const (
 	statusCancelled     = "cancelled"
 	methodToolsCall     = "tools/call"
 	methodListen        = "subscriptions/listen"
+	methodInitialize    = "initialize"
+	methodToolsList     = "tools/list"
 )
 
 // TaskAnswer is the client's answer to one of a task's input requests.
@@ -606,8 +609,14 @@ func (ts *TaskServer) holdResult(ctx context.Context, id string, answer reply) {
 			answer(res, rpcErr)
 			return
 		}
+		ts.mu.Lock()
+		push := ts.push
+		ts.mu.Unlock()
 		for _, ask := range asks {
-			ts.push(ask)
+			if push == nil {
+				panic("testutil: 2025-11-25 task input needs the in-memory transport")
+			}
+			push(ask)
 		}
 		select {
 		case <-changed:
@@ -802,7 +811,7 @@ func (c *taskServerConn) consume(m *jsonrpc.Request) bool {
 		return false
 	}
 	if !c.ts.intercepts(m) {
-		if m.Method == "initialize" || m.Method == "tools/list" {
+		if m.Method == methodInitialize || m.Method == methodToolsList {
 			c.ts.mu.Lock()
 			c.ts.methodOf[idKey(m.ID)] = m.Method
 			c.ts.mu.Unlock()
@@ -844,31 +853,38 @@ func (c *taskServerConn) Write(ctx context.Context, msg jsonrpc.Message) error {
 		method := c.ts.methodOf[idKey(resp.ID)]
 		delete(c.ts.methodOf, idKey(resp.ID))
 		c.ts.mu.Unlock()
-		switch method {
-		case "initialize":
-			resp.Result = amend(resp.Result, func(m map[string]any) {
-				caps, ok := m["capabilities"].(map[string]any)
-				if !ok {
-					panic("testutil: initialize result without capabilities")
-				}
-				caps["tasks"] = map[string]any{"list": map[string]any{}, "cancel": map[string]any{},
-					"requests": map[string]any{"tools": map[string]any{"call": map[string]any{}}}}
-			})
-		case "tools/list":
-			resp.Result = amend(resp.Result, func(m map[string]any) {
-				tools, ok := m["tools"].([]any)
-				if !ok {
-					panic("testutil: tools/list result without tools")
-				}
-				for _, tool := range tools {
-					if tm, ok := tool.(map[string]any); ok && tm["name"] == TaskToolName {
-						tm["execution"] = map[string]any{"taskSupport": "required"}
-					}
-				}
-			})
-		}
+		resp.Result = c.ts.amendResult(method, resp.Result)
 	}
 	return c.Connection.Write(ctx, msg)
+}
+
+// amendResult declares 2025-11-25 tasks in the SDK's result of method:
+// capabilities.tasks on initialize, execution.taskSupport on tools/list.
+func (ts *TaskServer) amendResult(method string, result json.RawMessage) json.RawMessage {
+	switch method {
+	case methodInitialize:
+		return amend(result, func(m map[string]any) {
+			caps, ok := m["capabilities"].(map[string]any)
+			if !ok {
+				panic("testutil: initialize result without capabilities")
+			}
+			caps["tasks"] = map[string]any{"list": map[string]any{}, "cancel": map[string]any{},
+				"requests": map[string]any{"tools": map[string]any{"call": map[string]any{}}}}
+		})
+	case methodToolsList:
+		return amend(result, func(m map[string]any) {
+			tools, ok := m["tools"].([]any)
+			if !ok {
+				panic("testutil: tools/list result without tools")
+			}
+			for _, tool := range tools {
+				if tm, ok := tool.(map[string]any); ok && tm["name"] == TaskToolName {
+					tm["execution"] = map[string]any{"taskSupport": "required"}
+				}
+			}
+		})
+	}
+	return result
 }
 
 func amend(result json.RawMessage, fn func(map[string]any)) json.RawMessage {
@@ -882,11 +898,16 @@ func amend(result json.RawMessage, fn func(map[string]any)) json.RawMessage {
 
 // ---- streamable HTTP (extension) ----
 
-// HTTPHandler serves the task server over streamable HTTP. Only the
-// extension runs over it (the SDK serves 2026-07-28 statelessly), and it
-// records each tasks request's Mcp-Name header.
+// HTTPHandler serves the task server over streamable HTTP and records each
+// tasks request's Mcp-Name header. The 2025-11-25 form runs on a stateful
+// handler answering in JSON, so the task server can amend the handshake; it
+// sends no status notifications and no elicitations over HTTP.
 func (ts *TaskServer) HTTPHandler() http.Handler {
 	sdk := StreamableHTTPHandler(ts.Server, ts.version)
+	if !ts.extension {
+		sdk = officialMCP.NewStreamableHTTPHandler(func(*http.Request) *officialMCP.Server { return ts.Server },
+			&officialMCP.StreamableHTTPOptions{JSONResponse: true})
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			sdk.ServeHTTP(w, r)
@@ -898,35 +919,76 @@ func (ts *TaskServer) HTTPHandler() http.Handler {
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
-		msg, err := jsonrpc.DecodeMessage(body)
-		req, isReq := msg.(*jsonrpc.Request)
-		if err != nil || !isReq || !req.IsCall() || !ts.intercepts(req) {
-			sdk.ServeHTTP(w, r)
-			return
-		}
-		if strings.HasPrefix(req.Method, "tasks/") {
-			ts.mu.Lock()
-			ts.routing[req.Method] = append(ts.routing[req.Method], r.Header.Get("Mcp-Name"))
-			ts.mu.Unlock()
-		}
-		if req.Method == methodListen {
-			ts.streamListen(w, r, req)
-			return
-		}
-		replied := make(chan *jsonrpc.Response, 1)
-		ts.serve(r.Context(), req, func(result json.RawMessage, err *jsonrpc.Error) {
-			replied <- &jsonrpc.Response{ID: req.ID, Result: result, Error: err}
-		})
-		data, err := jsonrpc.EncodeMessage(<-replied)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write(data); err != nil {
-			return
-		}
+		ts.servePost(w, r, sdk, body)
 	})
+}
+
+// servePost answers one POSTed message: the task server's own requests
+// itself, the 2025-11-25 handshake and tools/list amended, the rest by the
+// SDK.
+func (ts *TaskServer) servePost(w http.ResponseWriter, r *http.Request, sdk http.Handler, body []byte) {
+	msg, err := jsonrpc.DecodeMessage(body)
+	req, isReq := msg.(*jsonrpc.Request)
+	switch {
+	case err != nil || !isReq || !req.IsCall():
+		sdk.ServeHTTP(w, r)
+		return
+	case !ts.intercepts(req):
+		if !ts.extension && (req.Method == methodInitialize || req.Method == methodToolsList) {
+			ts.serveAmended(w, r, sdk, req.Method)
+			return
+		}
+		sdk.ServeHTTP(w, r)
+		return
+	}
+	if strings.HasPrefix(req.Method, "tasks/") {
+		ts.mu.Lock()
+		ts.routing[req.Method] = append(ts.routing[req.Method], r.Header.Get("Mcp-Name"))
+		ts.mu.Unlock()
+	}
+	if req.Method == methodListen {
+		ts.streamListen(w, r, req)
+		return
+	}
+	replied := make(chan *jsonrpc.Response, 1)
+	ts.serve(r.Context(), req, func(result json.RawMessage, err *jsonrpc.Error) {
+		replied <- &jsonrpc.Response{ID: req.ID, Result: result, Error: err}
+	})
+	data, err := jsonrpc.EncodeMessage(<-replied)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(data); err != nil {
+		return
+	}
+}
+
+// serveAmended lets the SDK answer a 2025-11-25 handshake or tools/list and
+// declares tasks in its JSON answer.
+func (ts *TaskServer) serveAmended(w http.ResponseWriter, r *http.Request, sdk http.Handler, method string) {
+	rec := httptest.NewRecorder()
+	sdk.ServeHTTP(rec, r)
+	body := rec.Body.Bytes()
+	if msg, err := jsonrpc.DecodeMessage(body); err == nil {
+		if resp, ok := msg.(*jsonrpc.Response); ok && resp.Error == nil {
+			resp.Result = ts.amendResult(method, resp.Result)
+			if body, err = jsonrpc.EncodeMessage(resp); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+	for k, v := range rec.Header() {
+		if k != "Content-Length" {
+			w.Header()[k] = v
+		}
+	}
+	w.WriteHeader(rec.Code)
+	if _, err := w.Write(body); err != nil {
+		return
+	}
 }
 
 func (ts *TaskServer) streamListen(w http.ResponseWriter, r *http.Request, req *jsonrpc.Request) {
