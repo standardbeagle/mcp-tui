@@ -656,7 +656,10 @@ func validateConnectionConfig(config *configPkg.ConnectionConfig) error {
 	if err := validateProtocolVersion(config.ProtocolVersion); err != nil {
 		return err
 	}
-	return validateServerLogLevel(config.ServerLogLevel)
+	if err := validateServerLogLevel(config.ServerLogLevel); err != nil {
+		return err
+	}
+	return validateTraceparent(config.Traceparent)
 }
 
 // validateProtocolVersion accepts the empty string (SDK latest) and any
@@ -691,6 +694,9 @@ func (s *service) addProtocolMiddleware(client *officialMCP.Client) {
 	client.AddSendingMiddleware(s.handshake.middleware())
 	if s.connectionConfig != nil && s.connectionConfig.ServerLogLevel != "" {
 		client.AddSendingMiddleware(serverLogLevelMiddleware(s.connectionConfig.ServerLogLevel))
+	}
+	if s.connectionConfig != nil && s.connectionConfig.Traceparent != "" {
+		client.AddSendingMiddleware(traceparentMiddleware(s.connectionConfig.Traceparent))
 	}
 }
 

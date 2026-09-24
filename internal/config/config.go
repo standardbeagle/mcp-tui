@@ -84,6 +84,11 @@ type ConnectionConfig struct {
 	// level travels in every request's _meta; on older protocols it is set
 	// once with logging/setLevel after connect.
 	ServerLogLevel string
+
+	// Traceparent is a W3C Trace Context traceparent stamped into the _meta
+	// of every request (SEP-414), so the server's spans join the caller's
+	// trace. Empty sends none.
+	Traceparent string
 }
 
 // Validate checks if the configuration is valid
