@@ -196,10 +196,10 @@ Examples:
 	rootCmd.PersistentFlags().StringVar(&cfg.Command, "cmd", "", "Command to run MCP server (STDIO mode)")
 	rootCmd.PersistentFlags().StringSliceVar(&cfg.Args, "args", []string{}, "Arguments for MCP server command")
 	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
-	rootCmd.PersistentFlags().String("transport", "stdio", "Transport type (stdio, sse, http, streamable-http)")
+	rootCmd.PersistentFlags().String("transport", "stdio", "Transport type (stdio, sse, http, streamable-http); sse is deprecated and negotiates at most 2025-11-25")
 	rootCmd.PersistentFlags().String("protocol-version", "", "MCP protocol version to request (e.g. 2025-11-25); empty = SDK latest")
 	rootCmd.PersistentFlags().String("server-log-level", "",
-		"Minimum server log notification level to request (debug ... emergency); empty = none")
+		"Minimum server log notification level to request (debug ... emergency); empty = none. Logging is deprecated (SEP-2577)")
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	// Debug mode always enabled - this is a testing/debug tool
 	cfg.DebugMode = true
@@ -220,9 +220,9 @@ Examples:
 	// override role/model/stopReason. --sampling-tool-use injects a canned
 	// tool_use reply (sampling-with-tools, SDK v1.4.0+) of the form
 	// "<tool_name>:<json args>".
-	rootCmd.PersistentFlags().String("sampling-stub", "", "Auto-reply text for sampling/createMessage requests (CLI mode)")
-	rootCmd.PersistentFlags().String("sampling-stub-file", "", "JSON file with reply template for sampling/createMessage requests")
-	rootCmd.PersistentFlags().String("sampling-tool-use", "", "Auto-reply with a tool_use block of the form '<tool_name>:<json args>' (CLI mode)")
+	rootCmd.PersistentFlags().String("sampling-stub", "", "Auto-reply text for sampling/createMessage requests (CLI mode); sampling is deprecated (SEP-2577)")
+	rootCmd.PersistentFlags().String("sampling-stub-file", "", "JSON file with reply template for sampling/createMessage requests; sampling is deprecated (SEP-2577)")
+	rootCmd.PersistentFlags().String("sampling-tool-use", "", "Auto-reply with a tool_use block of the form '<tool_name>:<json args>' (CLI mode); sampling is deprecated (SEP-2577)")
 
 	// Elicitation stub flags. When the connected server issues an
 	// elicitation/create request, the CLI replies with this stub instead of
@@ -240,8 +240,8 @@ Examples:
 	// each into a file:// URI. --roots-file reads the same shape from a JSON
 	// file. Both flags can be used together; entries from the file are
 	// loaded first, then --root flags are appended.
-	rootCmd.PersistentFlags().StringSlice("root", nil, "Declare a root the server may access; format 'name=path' (repeatable)")
-	rootCmd.PersistentFlags().String("roots-file", "", "JSON file with a 'roots' array of {name, uri} entries")
+	rootCmd.PersistentFlags().StringSlice("root", nil, "Declare a root the server may access; format 'name=path' (repeatable); roots are deprecated (SEP-2577)")
+	rootCmd.PersistentFlags().String("roots-file", "", "JSON file with a 'roots' array of {name, uri} entries; roots are deprecated (SEP-2577)")
 
 	// Notification streaming flag. When set, every server-to-client
 	// notification (logging, progress, list_changed, resource updates,

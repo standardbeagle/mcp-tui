@@ -19,9 +19,9 @@ mcp-tui [global-flags] <subcommand> [subcommand-flags] [args]
 | `--cmd <bin>` | | STDIO transport command |
 | `--args <a,b,...>` | | Comma-separated args for `--cmd` |
 | `--url <url>` | | URL for HTTP/SSE transports |
-| `--transport <stdio\|sse\|http\|streamable-http>` | `stdio` | Transport selection |
+| `--transport <stdio\|sse\|http\|streamable-http>` | `stdio` | Transport selection. `sse` (HTTP+SSE) is deprecated and negotiates at most `2025-11-25`; use `http` for `2026-07-28`. |
 | `--protocol-version <version>` | SDK latest | MCP protocol version to request: `2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26`, or `2024-11-05`. The server may negotiate down. Any other value fails before connecting. Pin `2025-11-25` when a server's tools still call the client directly (sampling, elicitation, roots) and fail under `2026-07-28`. |
-| `--server-log-level <level>` | none | Ask the server for `notifications/message` at this level or above: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`. On `2026-07-28` the level travels in every request's `_meta` (`logging/setLevel` no longer exists); on older versions it is sent once with `logging/setLevel` after connecting. Without it servers send no log notifications. |
+| `--server-log-level <level>` | none | Ask the server for `notifications/message` at this level or above: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`. On `2026-07-28` the level travels in every request's `_meta` (`logging/setLevel` no longer exists); on older versions it is sent once with `logging/setLevel` after connecting. Without it servers send no log notifications. Logging is deprecated as of `2026-07-28` (SEP-2577). |
 | `--timeout <duration>` | `10s` | Connection timeout (e.g. `30s`, `2m`) |
 | `--header KEY=VALUE` | | Add an HTTP header to every request (repeatable; HTTP transports only) |
 | `--mcp-method-headers` | `false` | Inject SEP-2243 `MCP-Method`/`MCP-Name` headers on every JSON-RPC request (HTTP transports only) |
@@ -47,13 +47,13 @@ See [Client features](/mcp-tui/guides/client-features/).
 
 | Flag | Description |
 |------|-------------|
-| `--sampling-stub <text>` | Auto-reply text for `sampling/createMessage` requests |
-| `--sampling-stub-file <path>` | JSON reply template for `sampling/createMessage` (can override role/model/stopReason) |
-| `--sampling-tool-use <tool:json>` | Auto-reply with a `tool_use` block of the form `<tool_name>:<json args>` |
+| `--sampling-stub <text>` | Auto-reply text for `sampling/createMessage` requests. Sampling is deprecated as of `2026-07-28` (SEP-2577). |
+| `--sampling-stub-file <path>` | JSON reply template for `sampling/createMessage` (can override role/model/stopReason). Sampling is deprecated (SEP-2577). |
+| `--sampling-tool-use <tool:json>` | Auto-reply with a `tool_use` block of the form `<tool_name>:<json args>`. Sampling is deprecated (SEP-2577). |
 | `--elicit-stub <json>` | Auto-reply JSON for `elicitation/create` requests |
 | `--elicit-stub-file <path>` | JSON reply file for `elicitation/create` |
-| `--root <name=path>` | Declare a root the server may access (repeatable) |
-| `--roots-file <path>` | JSON file with a `roots` array of `{name, uri}` entries |
+| `--root <name=path>` | Declare a root the server may access (repeatable). Roots are deprecated as of `2026-07-28` (SEP-2577); servers then ask for them via multi round-trip requests, and edits send no `roots/list_changed`. |
+| `--roots-file <path>` | JSON file with a `roots` array of `{name, uri}` entries. Roots are deprecated (SEP-2577). |
 | `--watch-notifications` | Stream server-to-client notifications to stderr |
 
 ### OAuth

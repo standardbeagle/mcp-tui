@@ -850,6 +850,12 @@ func (s *service) logConnectionDetails(config *configPkg.ConnectionConfig) {
 	debug.Info("Connecting to MCP server",
 		debug.F("transport", config.Type),
 		debug.F("url", redact.URL(config.URL)))
+	if config.Type == configPkg.TransportSSE {
+		// The SDK's HTTP+SSE binding does not serve 2026-07-28, so the
+		// handshake falls back to an older protocol.
+		debug.Warn("HTTP+SSE transport is deprecated; negotiates ≤2025-11-25; use streamable HTTP for 2026-07-28",
+			debug.F("url", redact.URL(config.URL)))
+	}
 }
 
 // updateServerInfo updates server information after successful connection.

@@ -38,3 +38,29 @@ func TestService_Connect_LogsStatelessSession(t *testing.T) {
 		})
 	}
 }
+
+// TestService_Connect_WarnsSSEIsDeprecated pins the connect warning for the
+// HTTP+SSE transport, which cannot serve 2026-07-28, and its absence for the
+// others.
+func TestService_Connect_WarnsSSEIsDeprecated(t *testing.T) {
+	for _, tc := range []struct {
+		transport configPkg.TransportType
+		warn      bool
+	}{
+		{transport: configPkg.TransportSSE, warn: true},
+		{transport: configPkg.TransportStdio, warn: false},
+	} {
+		t.Run(string(tc.transport), func(t *testing.T) {
+			read, stop := debug.Capture(debug.LogLevelWarn)
+			defer stop()
+			server := officialMCP.NewServer(&officialMCP.Implementation{Name: "legacy-server", Version: "1.0.0"}, nil)
+			connectInMemory(t, server, NewService().(*service), &configPkg.ConnectionConfig{
+				Type: tc.transport, Command: "noop", URL: "http://127.0.0.1:8080/sse",
+			})
+			got := strings.Contains(read(), "HTTP+SSE transport is deprecated; negotiates ≤2025-11-25")
+			if got != tc.warn {
+				t.Errorf("SSE deprecation warning logged = %v, want %v:\n%s", got, tc.warn, read())
+			}
+		})
+	}
+}

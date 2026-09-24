@@ -257,3 +257,30 @@ func TestMainCommandValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestDeprecatedFeatureFlagsSayDeprecated pins that the help for flags
+// driving features 2026-07-28 deprecates (SEP-2577: logging, sampling,
+// roots) or whose transport cannot speak it (HTTP+SSE) says so.
+func TestDeprecatedFeatureFlagsSayDeprecated(t *testing.T) {
+	originalCfg := cfg
+	cfg = config.Default()
+	defer func() { cfg = originalCfg }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	flags := createRootCommand(ctx).PersistentFlags()
+
+	for name, want := range map[string]string{
+		"server-log-level":   "deprecated (SEP-2577)",
+		"sampling-stub":      "deprecated (SEP-2577)",
+		"sampling-stub-file": "deprecated (SEP-2577)",
+		"sampling-tool-use":  "deprecated (SEP-2577)",
+		"root":               "deprecated (SEP-2577)",
+		"roots-file":         "deprecated (SEP-2577)",
+		"transport":          "sse is deprecated",
+	} {
+		flag := flags.Lookup(name)
+		require.NotNil(t, flag, "--%s must exist", name)
+		assert.Contains(t, flag.Usage, want, "--%s help", name)
+	}
+}
