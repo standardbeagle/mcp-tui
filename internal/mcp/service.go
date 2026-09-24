@@ -414,8 +414,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// Build an OAuth handler when the connection config carried one. Type
 	// asserting via interface{} keeps the config package free of an
 	// oauth-package dependency. SDK-side, only StreamableClientTransport
-	// honours OAuthHandler — for SSE/STDIO this field is silently
-	// ignored, which matches the current SDK contract.
+	// honors OAuthHandler; validateOAuthTransport refused the others.
 	if oauthCfg, ok := config.OAuth.(*oauth.Config); ok && oauthCfg != nil && oauthCfg.Mode() != oauth.ModeNone {
 		cache, err := oauth.NewFileTokenCache(oauthCfg.CachePath)
 		if err != nil {
@@ -599,7 +598,29 @@ func validateConnectionConfig(config *configPkg.ConnectionConfig) error {
 	if err := validateServerLogLevel(config.ServerLogLevel); err != nil {
 		return err
 	}
+	if err := validateOAuthTransport(config); err != nil {
+		return err
+	}
 	return validateTraceparent(config.Traceparent)
+}
+
+// validateOAuthTransport refuses OAuth on a transport that cannot carry it.
+// Only the SDK's streamable HTTP client takes an OAuth handler; the SSE
+// client has no hook, so OAuth there connected without ever sending a token.
+// The CLI refuses stdio earlier (BuildOAuthConfig); this covers every path.
+func validateOAuthTransport(config *configPkg.ConnectionConfig) error {
+	oauthCfg, ok := config.OAuth.(*oauth.Config)
+	if !ok || oauthCfg.Mode() == oauth.ModeNone {
+		return nil
+	}
+	switch config.Type {
+	case configPkg.TransportSSE:
+		return fmt.Errorf("OAuth is not supported on the SSE transport: the SDK's SSE client cannot send " +
+			"the token; connect over streamable HTTP instead (--transport http)")
+	case configPkg.TransportStdio:
+		return fmt.Errorf("OAuth is only supported on HTTP transports (got %s)", config.Type)
+	}
+	return nil
 }
 
 // validateProtocolVersion accepts the empty string (SDK latest) and any

@@ -36,7 +36,7 @@ import (
 // ~/Library/Caches/mcp-tui/oauth (macOS), or %LOCALAPPDATA%\mcp-tui\oauth
 // (Windows). Pass --oauth-cache=- to disable persistence.
 func RegisterOAuthFlags(flags *pflag.FlagSet) {
-	flags.String("oauth-client-id", "", "OAuth client ID (enables OAuth on HTTP transports)")
+	flags.String("oauth-client-id", "", "OAuth client ID (enables OAuth; streamable HTTP transport only)")
 	flags.String("oauth-client-secret", "",
 		"OAuth client secret (with --oauth-client-id, switches to client-credentials grant, "+
 			"except with --oauth-idp-issuer)")
