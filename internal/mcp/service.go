@@ -135,6 +135,11 @@ type service struct {
 	taskLink  *tasks.Link
 	tasks     *tasks.Client
 	taskTools map[string]string
+
+	// progressRoutes maps each progressToken of a call in flight to that
+	// call; progressSeq numbers the tokens (progress.go).
+	progressRoutes map[string]*progressCall
+	progressSeq    uint64
 }
 
 // getNextRequestID returns the next request ID
@@ -323,6 +328,9 @@ func (s *service) SetDebugMode(debug bool) {
 func (s *service) captureNotificationsMiddleware() officialMCP.Middleware {
 	return func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
 		return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
+			if p, ok := req.GetParams().(*officialMCP.ProgressNotificationParams); ok && p != nil {
+				s.routeProgress(p)
+			}
 			if entry, ok := notifications.FromRequest(method, req, time.Now()); ok {
 				s.publishNotification(&entry)
 			}
@@ -810,6 +818,8 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 
 	s.addProtocolMiddleware(client)
 	client.AddSendingMiddleware(wireProbeMiddleware())
+	// Added last so it runs first: the message log and tracer see the token.
+	client.AddSendingMiddleware(s.progressTokenMiddleware())
 
 	acked := make(chan struct{})
 	var ackOnce sync.Once
@@ -1207,6 +1217,9 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 		Arguments: req.Arguments,
 	}
 
+	ctx, progress := s.beginProgress(ctx)
+	defer s.endProgress(progress)
+
 	// Call the tool, answering any input requests the server returns.
 	var result *officialMCP.CallToolResult
 	rounds, err := s.runInputRounds(ctx, session, "tools/call", req.Name,
@@ -1499,6 +1512,9 @@ func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceRe
 		URI: uri,
 	}
 
+	ctx, progress := s.beginProgress(ctx)
+	defer s.endProgress(progress)
+
 	var result *officialMCP.ReadResourceResult
 	rounds, err := s.runInputRounds(ctx, session, "resources/read", uri,
 		func(
@@ -1632,6 +1648,9 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 		Name:      req.Name,
 		Arguments: arguments,
 	}
+
+	ctx, progress := s.beginProgress(ctx)
+	defer s.endProgress(progress)
 
 	var result *officialMCP.GetPromptResult
 	rounds, err := s.runInputRounds(ctx, session, "prompts/get", req.Name,
