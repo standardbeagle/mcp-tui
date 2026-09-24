@@ -1,6 +1,9 @@
 package app
 
 import (
+	"errors"
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
@@ -108,19 +111,47 @@ func (sm *ScreenManager) CurrentMainScreen() *screens.MainScreen {
 // the caller. MainScreen can be underneath a detail screen or overlay, so walk
 // the navigation stack as well as the current screen.
 func (sm *ScreenManager) Shutdown() error {
-	main := sm.CurrentMainScreen()
-	if main == nil {
-		for i := len(sm.screenStack) - 1; i >= 0; i-- {
-			if candidate, ok := sm.screenStack[i].(*screens.MainScreen); ok {
-				main = candidate
-				break
-			}
-		}
-	}
+	main := sm.sessionScreen()
 	if main == nil || main.Service() == nil {
 		return nil
 	}
 	return main.Service().Disconnect()
+}
+
+// sessionScreen returns the MainScreen that owns the MCP session: the
+// current screen, or the nearest one beneath it on the navigation stack
+// (a tool or detail screen sits above it). nil before any connection.
+func (sm *ScreenManager) sessionScreen() *screens.MainScreen {
+	if main := sm.CurrentMainScreen(); main != nil {
+		return main
+	}
+	for i := len(sm.screenStack) - 1; i >= 0; i-- {
+		if candidate, ok := sm.screenStack[i].(*screens.MainScreen); ok {
+			return candidate
+		}
+	}
+	return nil
+}
+
+// routeInputRequest hands a server's sampling or elicitation request to the
+// session's MainScreen, which opens the overlay and waits for the next one,
+// whichever screen the user is on. With no session screen to answer, the
+// request is rejected so the server is not left waiting.
+func (sm *ScreenManager) routeInputRequest(msg tea.Msg) (tea.Model, tea.Cmd) {
+	main := sm.sessionScreen()
+	if main == nil {
+		err := errors.New("no TUI session screen to answer the server request")
+		sm.logger.Warn("Rejecting server request", debug.F("msg", fmt.Sprintf("%T", msg)), debug.F("error", err))
+		switch req := msg.(type) {
+		case screens.SamplingRequestMsg:
+			req.Pending.Reject(err)
+		case screens.ElicitationRequestMsg:
+			req.Pending.Reject(err)
+		}
+		return sm, nil
+	}
+	_, cmd := main.Update(msg)
+	return sm, cmd
 }
 
 // Init initializes the screen manager
@@ -134,6 +165,11 @@ func (sm *ScreenManager) Init() tea.Cmd {
 
 // Update handles messages and screen transitions
 func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg.(type) {
+	case screens.SamplingRequestMsg, screens.ElicitationRequestMsg:
+		return sm.routeInputRequest(msg)
+	}
+
 	// If we have an overlay screen, route messages to it first
 	if sm.overlayScreen != nil {
 		switch msg := msg.(type) {
