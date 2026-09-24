@@ -187,3 +187,33 @@ func TestToolScreen_RootSchemaNoteOpensRawJSON(t *testing.T) {
 		t.Errorf("view does not show the root schema note:\n%s", view)
 	}
 }
+
+// A multi-type field reads its value by syntax and shows the type it read.
+func TestToolScreen_MultiTypeFieldShowsInferredType(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(`{"type": "object", "properties": {"id": {"type": ["integer", "string"]}}}`), &schema); err != nil {
+		t.Fatal(err)
+	}
+	ts := NewToolScreen(mcp.Tool{Name: "lookup", InputSchema: schema}, nil)
+
+	for _, c := range []struct {
+		value, shown string
+		want         any
+	}{
+		{"42", "→ integer", 42},
+		{"0123", "→ string", "0123"},
+	} {
+		ts.setField(t, "id", c.value)
+		ts.validateField(0)
+		args, err := ts.buildArguments()
+		if err != nil {
+			t.Fatalf("buildArguments(%q): %v", c.value, err)
+		}
+		if args["id"] != c.want {
+			t.Errorf("id=%q sent %#v, want %#v", c.value, args["id"], c.want)
+		}
+		if view := ts.View(); !strings.Contains(view, "integer|string") || !strings.Contains(view, c.shown) {
+			t.Errorf("id=%q: view lacks the union or %q:\n%s", c.value, c.shown, view)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package inputschema
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -61,7 +62,7 @@ func TestParse_ResolvesLocalRefsAndSimpleUnions(t *testing.T) {
 			t.Errorf("param %q missing", want.Name)
 			continue
 		}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("param %q = %+v, want %+v", want.Name, got, want)
 		}
 	}
@@ -80,23 +81,63 @@ func TestParse_TypeArrayWithNull(t *testing.T) {
 	}
 }
 
-// A union a single CLI value or form field cannot express is named, not
-// dropped: the param falls back to a JSON literal and says why.
-func TestParse_MultiTypeUnionIsJSONWithNote(t *testing.T) {
+// A union of several non-null types is kept as its alternatives; a value's
+// syntax picks one. A property with no type at all stays a JSON literal and
+// says so.
+func TestParse_MultiTypeUnion(t *testing.T) {
 	s, err := Parse("t", decode(t, `{"type":"object","properties":{
-		"id": {"oneOf": [{"type":"integer"}, {"type":"string"}]},
+		"id": {"oneOf": [{"type":"string"}, {"type":"integer"}]},
+		"limit": {"type": ["string", "number", "null", "boolean"]},
+		"level": {"enum": [1, 2, "max", null]},
+		"retries": {"enum": [0, 1, 3]},
 		"any": {}
 	}}`))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	id, _ := s.Param("id")
-	if id.Kind != KindJSON || !strings.Contains(id.Note, "integer|string") {
-		t.Errorf("id = %+v, want JSON kind with a note naming integer|string", id)
+	for _, want := range []Param{
+		{Name: "id", Kind: KindUnion, Union: []Kind{KindInteger, KindString}},
+		{Name: "limit", Kind: KindUnion, Nullable: true, Union: []Kind{KindBoolean, KindNumber, KindString}},
+		{Name: "level", Kind: KindUnion, Nullable: true, Union: []Kind{KindInteger, KindString}},
+		{Name: "retries", Kind: KindInteger},
+	} {
+		if got, ok := s.Param(want.Name); !ok || !reflect.DeepEqual(got, want) {
+			t.Errorf("param %q = %+v (found %v), want %+v", want.Name, got, ok, want)
+		}
 	}
 	anyParam, _ := s.Param("any")
 	if anyParam.Kind != KindJSON || anyParam.Note == "" {
 		t.Errorf("untyped param = %+v, want JSON kind with a note", anyParam)
+	}
+}
+
+// A value takes the first alternative its syntax strictly fits, in the
+// order boolean, integer, number, array, object, string: "0123" is no
+// integer literal, so it stays a string and keeps its leading zero.
+func TestParam_UnionKind(t *testing.T) {
+	idOrName := Param{Name: "id", Kind: KindUnion, Union: []Kind{KindInteger, KindString}}
+	flagOrCount := Param{Name: "n", Kind: KindUnion, Union: []Kind{KindBoolean, KindNumber}}
+	for _, c := range []struct {
+		p     Param
+		value string
+		want  Kind
+	}{
+		{idOrName, "42", KindInteger},
+		{idOrName, "-7", KindInteger},
+		{idOrName, "0123", KindString},
+		{idOrName, "4.5", KindString},
+		{idOrName, "billing-api", KindString},
+		{flagOrCount, "true", KindBoolean},
+		{flagOrCount, "2.5e3", KindNumber},
+		{flagOrCount, "12", KindNumber},
+	} {
+		got, err := c.p.UnionKind(c.value)
+		if err != nil || got != c.want {
+			t.Errorf("%s.UnionKind(%q) = %s, %v; want %s", c.p.Name, c.value, got, err, c.want)
+		}
+	}
+	if _, err := flagOrCount.UnionKind("yes"); err == nil || !strings.Contains(err.Error(), "boolean|number") {
+		t.Errorf(`UnionKind("yes") error = %v, want one naming boolean|number`, err)
 	}
 }
 
@@ -284,7 +325,7 @@ func TestParse_MergesAllOf(t *testing.T) {
 		{Name: "priority", Kind: KindString, Required: true, Description: "How urgent"},
 		{Name: "size", Kind: KindInteger},
 	} {
-		if got, ok := s.Param(want.Name); !ok || got != want {
+		if got, ok := s.Param(want.Name); !ok || !reflect.DeepEqual(got, want) {
 			t.Errorf("param %q = %+v (found %v), want %+v", want.Name, got, ok, want)
 		}
 	}

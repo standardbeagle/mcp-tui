@@ -76,3 +76,36 @@ func TestToolCall_ReportsRootSchemaNote(t *testing.T) {
 		t.Errorf("stderr lacks the root schema note:\n%s", run.stderr)
 	}
 }
+
+// A value for a multi-type parameter takes the first type its syntax
+// strictly fits: an integer literal is sent as a number, anything else that
+// the union allows as a string.
+func TestToolCall_MultiTypeUnionPicksTypeBySyntax(t *testing.T) {
+	svc := connectEchoServer(t, map[string]string{"lookup": `{"type": "object", "properties": {
+		"id": {"type": ["integer", "string"]},
+		"flag": {"type": ["boolean", "number"]}
+	}}`})
+	for _, c := range []struct {
+		arg  string
+		key  string
+		want any
+	}{
+		{"id=42", "id", float64(42)},
+		{"id=0123", "id", "0123"},
+		{"id=INV-7", "id", "INV-7"},
+		{"flag=true", "flag", true},
+		{"flag=2.5", "flag", 2.5},
+	} {
+		got, run := echoedArguments(t, svc, "lookup", c.arg)
+		if run.err != nil {
+			t.Errorf("%s: %v\n%s", c.arg, run.err, run.stderr)
+			continue
+		}
+		if got[c.key] != c.want {
+			t.Errorf("%s sent %s=%#v, want %#v", c.arg, c.key, got[c.key], c.want)
+		}
+	}
+	if _, run := echoedArguments(t, svc, "lookup", "flag=yes"); run.err == nil || !strings.Contains(run.err.Error(), "boolean|number") {
+		t.Errorf("flag=yes error = %v, want one naming boolean|number", run.err)
+	}
+}

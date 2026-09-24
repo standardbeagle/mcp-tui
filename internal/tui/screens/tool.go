@@ -137,6 +137,10 @@ type toolField struct {
 	// itemKind is the type of an array's items; comma-separated input is
 	// only accepted for string (or unknown) items.
 	itemKind inputschema.Kind
+	// union lists a KindUnion field's types; inferredKind is the one the
+	// current value's syntax picks.
+	union        []inputschema.Kind
+	inferredKind inputschema.Kind
 	// note says what the schema could not express for this field.
 	note            string
 	required        bool
@@ -443,6 +447,8 @@ func fieldsFromSchema(schema inputschema.Schema) []toolField {
 			}
 		case inputschema.KindObject:
 			input.Placeholder = "JSON object"
+		case inputschema.KindUnion:
+			input.Placeholder = p.UnionLabel() + " (type read from the value)"
 		case inputschema.KindJSON:
 			input.Placeholder = "JSON value (or plain text)"
 		default:
@@ -454,6 +460,7 @@ func fieldsFromSchema(schema inputschema.Schema) []toolField {
 			fieldType:   p.Kind,
 			nullable:    p.Nullable,
 			itemKind:    p.ItemKind,
+			union:       p.Union,
 			note:        p.Note,
 			required:    p.Required,
 			input:       input,
@@ -1212,12 +1219,25 @@ func (f *toolField) isNullLiteral(value string) bool {
 	return f.nullable && f.fieldType != inputschema.KindString && strings.TrimSpace(value) == jsonNullLiteral
 }
 
+// unionKind is the type of a KindUnion field that value's syntax picks.
+func (f *toolField) unionKind(value string) (inputschema.Kind, error) {
+	return inputschema.Param{Name: f.name, Union: f.union}.UnionKind(value)
+}
+
 // convert parses a non-empty field value as the field's type.
 func (f *toolField) convert(value string) (interface{}, error) {
 	if f.isNullLiteral(value) {
 		return nil, nil
 	}
 	switch f.fieldType {
+	case inputschema.KindUnion:
+		kind, err := f.unionKind(value)
+		if err != nil {
+			return nil, err
+		}
+		picked := *f
+		picked.fieldType = kind
+		return picked.convert(value)
 	case inputschema.KindNumber:
 		var num float64
 		if err := json.Unmarshal([]byte(value), &num); err != nil {
@@ -1283,6 +1303,7 @@ func (ts *ToolScreen) validateField(index int) {
 
 	field := &ts.fields[index]
 	field.validationError = ""
+	field.inferredKind = ""
 	value := field.input.Value()
 
 	// Check required fields
@@ -1296,6 +1317,14 @@ func (ts *ToolScreen) validateField(index int) {
 
 	// Type-specific validation
 	switch field.fieldType {
+	case inputschema.KindUnion:
+		if value != "" {
+			kind, err := field.unionKind(value)
+			if err != nil {
+				field.validationError = err.Error()
+			}
+			field.inferredKind = kind
+		}
 	case "number":
 		if value != "" {
 			var num float64
@@ -1427,6 +1456,12 @@ func (ts *ToolScreen) renderHeader() string {
 
 			// Always show field type for clarity
 			typeIndicator := string(field.fieldType)
+			if field.fieldType == inputschema.KindUnion {
+				typeIndicator = inputschema.Param{Union: field.union}.UnionLabel()
+				if field.inferredKind != "" {
+					typeIndicator += " → " + string(field.inferredKind)
+				}
+			}
 			if field.itemKind != "" {
 				typeIndicator += " of " + string(field.itemKind)
 			}

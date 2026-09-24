@@ -19,9 +19,11 @@ import (
 // shape corrupts data (pin=0123 losing its leading zero, version=1.10 becoming
 // 1.1, an id of "true" becoming a boolean).
 //
-// When the schema does not describe the property, or describes it with no
-// single type (inputschema.KindJSON), the value's own syntax is the only
-// signal available, so it is parsed as JSON with a string fallback. For a
+// A property of several types (inputschema.KindUnion) takes the first type
+// the value's syntax strictly fits (Param.UnionKind). When the schema does
+// not describe the property, or declares no type (inputschema.KindJSON),
+// the value's own syntax is the only signal available, so it is parsed as
+// JSON with a string fallback. For a
 // nullable non-string parameter the literal "null" sends null; a nullable
 // string keeps "null" as text, since the two cannot be told apart.
 func coerceToolArgument(schema inputschema.Schema, key, value string) (interface{}, error) {
@@ -36,7 +38,14 @@ func coerceToolArgument(schema inputschema.Schema, key, value string) (interface
 	if param.Nullable && param.Kind != inputschema.KindString && strings.TrimSpace(value) == "null" {
 		return nil, nil
 	}
-	return convertToKind(param.Kind, key, value)
+	kind := param.Kind
+	if kind == inputschema.KindUnion {
+		var err error
+		if kind, err = param.UnionKind(value); err != nil {
+			return nil, err
+		}
+	}
+	return convertToKind(kind, key, value)
 }
 
 // convertToKind parses value as a JSON value of kind, naming key in the

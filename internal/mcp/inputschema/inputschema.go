@@ -20,7 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -33,8 +35,10 @@ import (
 // Kind is the JSON type a parameter value takes.
 type Kind string
 
-// The kinds a parameter can take. KindJSON means no single type: the value
-// is read as a JSON literal, and as a plain string when it is not one.
+// The kinds a parameter can take. KindUnion means several types, listed in
+// Param.Union: a value's syntax picks one (Param.UnionKind). KindJSON means
+// the types are unknown: the value is read as a JSON literal, and as a plain
+// string when it is not one.
 const (
 	KindString  Kind = "string"
 	KindInteger Kind = "integer"
@@ -43,7 +47,17 @@ const (
 	KindArray   Kind = "array"
 	KindObject  Kind = "object"
 	KindNull    Kind = "null"
+	KindUnion   Kind = "union"
 	KindJSON    Kind = "json"
+)
+
+// unionOrder is the order UnionKind tries a union's alternatives in: the
+// strictest syntax first, string (which fits anything) last.
+var unionOrder = []Kind{KindBoolean, KindInteger, KindNumber, KindArray, KindObject, KindString}
+
+var (
+	integerLiteral = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
+	numberLiteral  = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
 )
 
 // Dialect2020 is the JSON Schema dialect MCP assumes when $schema is absent.
@@ -70,6 +84,9 @@ type Param struct {
 	Required bool
 	// ItemKind is the kind of an array's items, "" when unknown or mixed.
 	ItemKind Kind
+	// Union lists a KindUnion parameter's non-null types, in the order
+	// UnionKind tries them.
+	Union []Kind
 	// Note says what Parse could not express for this parameter and how the
 	// value is read instead; "" when the parameter is fully represented.
 	Note string
@@ -84,6 +101,47 @@ type Schema struct {
 	// Note says what Parse could not express about the root object (and so
 	// why Params may be incomplete); "" when the root is fully represented.
 	Note string
+}
+
+// UnionKind picks the alternative of a KindUnion parameter that value's
+// syntax strictly fits, trying boolean, integer, number, array, object and
+// string in that order. Strict means a JSON literal: "0123" is not an
+// integer, so an integer|string parameter keeps it as text.
+func (p Param) UnionKind(value string) (Kind, error) {
+	trimmed := strings.TrimSpace(value)
+	for _, kind := range p.Union {
+		switch kind {
+		case KindBoolean:
+			if trimmed == "true" || trimmed == "false" {
+				return kind, nil
+			}
+		case KindInteger:
+			if integerLiteral.MatchString(trimmed) {
+				return kind, nil
+			}
+		case KindNumber:
+			if numberLiteral.MatchString(trimmed) {
+				return kind, nil
+			}
+		case KindArray, KindObject:
+			open := map[Kind]string{KindArray: "[", KindObject: "{"}[kind]
+			if strings.HasPrefix(trimmed, open) && json.Valid([]byte(trimmed)) {
+				return kind, nil
+			}
+		case KindString:
+			return kind, nil
+		}
+	}
+	return "", fmt.Errorf("argument %q expects %s, got %q", p.Name, p.UnionLabel(), value)
+}
+
+// UnionLabel renders a union's alternatives, e.g. "integer|string".
+func (p Param) UnionLabel() string {
+	names := make([]string, len(p.Union))
+	for i, k := range p.Union {
+		names[i] = string(k)
+	}
+	return strings.Join(names, "|")
 }
 
 // Param returns the parameter called name.
@@ -209,8 +267,12 @@ func (w walker) param(prop *jsonschema.Schema) Param {
 	case len(concrete) == 0:
 		p.Kind, p.Note = KindJSON, "no type declared; value is read as JSON"
 	default:
-		p.Kind = KindJSON
-		p.Note = "accepts " + strings.Join(concrete, "|") + "; value is read as JSON"
+		p.Kind = KindUnion
+		for _, k := range unionOrder {
+			if slices.Contains(concrete, string(k)) {
+				p.Union = append(p.Union, k)
+			}
+		}
 	}
 	if p.Kind == KindArray {
 		p.ItemKind = w.itemKind(target)
@@ -253,12 +315,11 @@ func (w walker) types(s *jsonschema.Schema) (types []string, note string) {
 	case len(s.Types) > 0:
 		return dedupe(s.Types), ""
 	case len(s.Enum) > 0:
-		for _, v := range s.Enum {
-			if _, ok := v.(string); !ok {
-				return nil, "enum of mixed types"
-			}
+		types := make([]string, len(s.Enum))
+		for i, v := range s.Enum {
+			types[i] = string(jsonKind(v))
 		}
-		return []string{string(KindString)}, ""
+		return dedupe(types), ""
 	}
 	branches := s.AnyOf
 	if len(branches) == 0 {
@@ -396,6 +457,28 @@ func (w walker) deref(s *jsonschema.Schema) (target *jsonschema.Schema, note str
 // unescape decodes one JSON pointer segment (RFC 6901).
 func unescape(segment string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
+}
+
+// jsonKind is the JSON type of a decoded JSON value; a number with no
+// fraction is an integer.
+func jsonKind(v any) Kind {
+	switch v := v.(type) {
+	case nil:
+		return KindNull
+	case bool:
+		return KindBoolean
+	case float64:
+		if v == math.Trunc(v) {
+			return KindInteger
+		}
+		return KindNumber
+	case string:
+		return KindString
+	case []any:
+		return KindArray
+	default:
+		return KindObject
+	}
 }
 
 func dedupe(types []string) []string {
