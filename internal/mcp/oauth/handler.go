@@ -455,6 +455,7 @@ func logModeSelected(cfg *Config, cache TokenCache) {
 		debug.F("registration_order", registrationOrder(cfg)),
 		debug.F("confidential_client", cfg.ClientSecret != ""),
 		debug.F("configured_scopes", cfg.scopeList()),
+		debug.F("client_issuer", cfg.Issuer),
 		debug.F("token_cache", cache != nil && !cacheDisabled))
 }
 

@@ -64,6 +64,7 @@ See [OAuth](/mcp-tui/guides/oauth/) for the full flow.
 |------|---------|-------------|
 | `--oauth-client-id <id>` | | OAuth client ID (enables OAuth on HTTP transports) |
 | `--oauth-client-secret <secret>` | | Client secret (with `--oauth-client-id`, switches to client-credentials grant) |
+| `--oauth-issuer <url>` | | Issuer the pre-registered client belongs to; the flow fails if the discovered authorization server names another |
 | `--oauth-client-metadata-url <url>` | | HTTPS URL of a Client ID Metadata Document (SEP-991), used as the client ID when the authorization server supports it |
 | `--oauth-scopes <a,b>` | | Comma- or space-separated scopes to request instead of the discovered ones (authorization code only) |
 | `--oauth-redirect-host <host>` | `127.0.0.1` | Host for the auth-code redirect URI; must be `localhost`, `127.0.0.0/8` or `::1` |

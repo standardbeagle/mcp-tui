@@ -91,3 +91,15 @@ func TestRegisterOAuthFlags_NoTokenURLOverride(t *testing.T) {
 		t.Fatal("--oauth-token-url is registered but nothing applies it")
 	}
 }
+
+// TestBuildOAuthConfig_Issuer binds the pre-registered client to an issuer.
+func TestBuildOAuthConfig_Issuer(t *testing.T) {
+	cfg, err := buildOAuthConfigFromArgs(t, "https://mcp.example.com/mcp",
+		"--oauth-client-id", "mcp-tui-desktop", "--oauth-issuer", "https://login.contoso.example")
+	if err != nil {
+		t.Fatalf("BuildOAuthConfig: %v", err)
+	}
+	if cfg.Issuer != "https://login.contoso.example" {
+		t.Errorf("Issuer = %q", cfg.Issuer)
+	}
+}

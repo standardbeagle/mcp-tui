@@ -53,6 +53,20 @@ mcp-tui --transport http --url https://api.example.com/mcp \
   --oauth-dynamic-registration tool list
 ```
 
+## Binding a client to its issuer
+
+A pre-registered client ID is only valid at the authorization server that
+issued it. Pass `--oauth-issuer` to refuse any other: if the discovered
+authorization server metadata names a different `issuer`, the flow stops
+before any credential is sent.
+
+```bash
+mcp-tui --transport http --url https://api.example.com/mcp \
+  --oauth-client-id my-client-id \
+  --oauth-issuer https://login.example.com \
+  tool list
+```
+
 ## Client ID Metadata Document
 
 With a Client ID Metadata Document (SEP-991) you host your client's metadata
@@ -111,6 +125,7 @@ request triggers a fresh authorization.
 |------|---------|-------------|
 | `--oauth-client-id` | | Client ID (enables OAuth on HTTP transports) |
 | `--oauth-client-secret` | | Client secret (switches to client-credentials grant) |
+| `--oauth-issuer` | | Issuer the pre-registered client is bound to |
 | `--oauth-client-metadata-url` | | Client ID Metadata Document URL (SEP-991) |
 | `--oauth-scopes` | | Comma- or space-separated scopes (authorization code only) |
 | `--oauth-redirect-host` | `127.0.0.1` | Auth-code redirect host (`localhost`, `127.0.0.0/8` or `::1`) |

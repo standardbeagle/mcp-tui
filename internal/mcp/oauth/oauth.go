@@ -86,6 +86,11 @@ type Config struct {
 	// client). Pass empty for public clients in auth-code mode.
 	ClientSecret string
 
+	// Issuer binds the pre-registered client (ClientID) to one
+	// authorization server: the flow fails unless the discovered AS
+	// metadata names this issuer. Empty means no binding.
+	Issuer string
+
 	// ClientMetadataURL is the https URL of a Client ID Metadata Document
 	// (SEP-991). When the authorization server advertises
 	// client_id_metadata_document_supported the URL itself is the
@@ -163,6 +168,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("oauth: ServerURL must use http or https, got %q", u.Scheme)
 	}
 
+	if c.Issuer != "" && c.ClientID == "" {
+		return errors.New("oauth: Issuer requires a pre-registered ClientID")
+	}
+
 	switch c.Mode() {
 	case ModeClientCredentials:
 		if c.ClientID == "" {
@@ -222,7 +231,7 @@ func (c *Config) preregistered() *oauthex.ClientCredentials {
 	if c == nil || c.ClientID == "" {
 		return nil
 	}
-	cc := &oauthex.ClientCredentials{ClientID: c.ClientID}
+	cc := &oauthex.ClientCredentials{ClientID: c.ClientID, Issuer: c.Issuer}
 	if c.ClientSecret != "" {
 		cc.ClientSecretAuth = &oauthex.ClientSecretAuth{ClientSecret: c.ClientSecret}
 	}

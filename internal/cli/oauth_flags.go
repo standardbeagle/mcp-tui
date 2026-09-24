@@ -28,6 +28,7 @@ import (
 func RegisterOAuthFlags(flags *pflag.FlagSet) {
 	flags.String("oauth-client-id", "", "OAuth client ID (enables OAuth on HTTP transports)")
 	flags.String("oauth-client-secret", "", "OAuth client secret (with --oauth-client-id, switches to client-credentials grant)")
+	flags.String("oauth-issuer", "", "Issuer the pre-registered client belongs to; the flow fails if the discovered authorization server names another")
 	flags.String("oauth-client-metadata-url", "", "HTTPS URL of a Client ID Metadata Document used as the client_id when the authorization server supports it (SEP-991)")
 	flags.String("oauth-scopes", "", "Comma- or space-separated OAuth scopes to request instead of the discovered ones (authorization code only)")
 	flags.String("oauth-redirect-host", "127.0.0.1", "Host for the auth-code redirect URI (loopback only)")
