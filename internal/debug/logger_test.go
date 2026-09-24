@@ -80,26 +80,21 @@ func (s *safeBuffer) Reset() {
 	s.buf.Reset()
 }
 
-// setupGlobalLoggerTest sets up the global logger for testing
+// setupGlobalLoggerTest swaps a fresh global logger in for the test and
+// restores the previous one afterwards. The previous logger is left running:
+// shutting it down would strand every later test that logs through the
+// package-level functions (Capture, the slog bridge) on a dead writer.
 func setupGlobalLoggerTest(t *testing.T) *safeBuffer {
 	testMutex.Lock()
 
-	// Shutdown any existing global logger
-	Shutdown()
-
-	// Wait for shutdown to complete
-	time.Sleep(10 * time.Millisecond)
-
-	// Create a new buffer and logger
+	prev := globalLogger
 	buf := &safeBuffer{}
 	globalLogger = NewLogger()
 	SetGlobalOutput(buf)
 
-	// Register cleanup
 	t.Cleanup(func() {
-		// Wait a bit to ensure all messages are processed
-		time.Sleep(20 * time.Millisecond)
 		Shutdown()
+		globalLogger = prev
 		testMutex.Unlock()
 	})
 

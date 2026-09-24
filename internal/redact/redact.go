@@ -71,10 +71,15 @@ func IsSensitiveParam(name string) bool {
 }
 
 // FieldValue returns the value a structured log field may carry: Mask when
-// the key names a sensitive header or parameter, v otherwise. A numeric
+// the key names a sensitive header or parameter, v otherwise. A dotted key
+// ("request.access_token", from a flattened group) is judged by its last
+// segment. A numeric
 // "code" passes through — it is a JSON-RPC or HTTP status code, never an
 // OAuth authorization code, and masking it would hide what went wrong.
 func FieldValue(key string, v any) any {
+	if i := strings.LastIndexByte(key, '.'); i >= 0 {
+		key = key[i+1:]
+	}
 	if !IsSensitiveParam(key) && !IsSensitiveHeader(key) {
 		return v
 	}

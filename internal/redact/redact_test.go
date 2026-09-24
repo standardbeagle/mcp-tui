@@ -266,3 +266,9 @@ func TestError_MasksURLInsideTransportError(t *testing.T) {
 		t.Errorf("error text lost its cause: %s", out)
 	}
 }
+
+func TestFieldValue_JudgesDottedKeyByLastSegment(t *testing.T) {
+	if got := FieldValue("token.refresh_token", secretValue); got != Mask {
+		t.Errorf("dotted refresh_token = %v, want mask", got)
+	}
+}

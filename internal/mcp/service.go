@@ -631,6 +631,12 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 	// Build the client options. Sampling handler (if configured) is the same
 	// in both the debug and non-debug paths, so build it once here.
 	clientOptions := &officialMCP.ClientOptions{
+		// The SDK's own slog output (jsonrpc2 internal errors, keepalive
+		// failures, dropped invalid tools) joins the debug log as "sdk".
+		// StreamableClientTransport also has a logger for spec violations,
+		// but v1.8.0 keeps it unexported with no setter, so those Warn lines
+		// stay unobservable until the SDK exports it.
+		Logger: debug.SlogLogger("sdk"),
 		// Add progress notification handler for long-running operations
 		ProgressNotificationHandler: func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
 			debug.Info("Progress notification",
