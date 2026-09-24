@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // LogLevel represents different logging levels
@@ -78,6 +80,10 @@ type logEntry struct {
 	msg       string
 	fields    []Field
 	timestamp time.Time
+
+	// flushed, when non-nil, marks a Flush barrier: the writer closes it
+	// instead of writing, proving every entry queued before it is written.
+	flushed chan struct{}
 }
 
 // logger implements the Logger interface
@@ -197,12 +203,20 @@ func (l *logger) start() {
 		for {
 			select {
 			case entry := <-l.logChan:
+				if entry.flushed != nil {
+					close(entry.flushed)
+					continue
+				}
 				l.writeLog(entry)
 			case <-l.done:
 				// Drain any remaining log entries
 				for {
 					select {
 					case entry := <-l.logChan:
+						if entry.flushed != nil {
+							close(entry.flushed)
+							continue
+						}
 						l.writeLog(entry)
 					default:
 						return
@@ -228,6 +242,22 @@ func (l *logger) stop() {
 	l.mu.Unlock()
 
 	l.wg.Wait()
+}
+
+// Flush blocks until every entry logged before the call has been written to
+// the output and the TUI buffer. It returns immediately once the logger has
+// been shut down.
+func (l *logger) Flush() {
+	barrier := logEntry{flushed: make(chan struct{})}
+	select {
+	case l.logChan <- barrier:
+	case <-l.done:
+		return
+	}
+	select {
+	case <-barrier.flushed:
+	case <-l.done:
+	}
 }
 
 // writeLog writes a log entry to the output
@@ -334,10 +364,16 @@ func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 	baseFields := l.fields
 	l.mu.RUnlock()
 
-	// Combine base fields and additional fields
+	// Combine base fields and additional fields. Every value passes through
+	// the redact package here, so no log path can emit a credential that it
+	// labelled by its protocol name (access_token, Authorization, ...).
 	allFields := make([]Field, 0, len(baseFields)+len(fields))
-	allFields = append(allFields, baseFields...)
-	allFields = append(allFields, fields...)
+	for _, f := range baseFields {
+		allFields = append(allFields, Field{Key: f.Key, Value: redact.FieldValue(f.Key, f.Value)})
+	}
+	for _, f := range fields {
+		allFields = append(allFields, Field{Key: f.Key, Value: redact.FieldValue(f.Key, f.Value)})
+	}
 
 	// Create log entry and send to channel
 	entry := logEntry{
@@ -386,6 +422,14 @@ func Error(msg string, fields ...Field) {
 // Fatal logs a fatal message using the global logger and exits
 func Fatal(msg string, fields ...Field) {
 	globalLogger.Fatal(msg, fields...)
+}
+
+// Flush blocks until every entry logged through the global logger before the
+// call has been written.
+func Flush() {
+	if l, ok := globalLogger.(*logger); ok {
+		l.Flush()
+	}
 }
 
 // SetGlobalLevel sets the global logger level

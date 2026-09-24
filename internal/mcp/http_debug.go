@@ -14,6 +14,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // init registers observers with the transports package so per-request
@@ -66,7 +67,7 @@ func captureRoundTrip(req *http.Request, resp *http.Response, err error) {
 		Headers:        responseHeaders,
 	}
 	if err != nil {
-		info.ResponseBody = fmt.Sprintf("HTTP Request Failed: %v", err)
+		info.ResponseBody = "HTTP Request Failed: " + redact.Error(err)
 	}
 	lastHTTPError = info
 }
@@ -314,7 +315,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		// redaction rules apply.
 		debug.Info("Starting HTTP request",
 			debug.F("method", req.Method),
-			debug.F("url", req.URL.String()),
+			debug.F("url", redact.RedactedURL(req.URL)),
 			debug.F("headers", RedactHeaders(requestHeaders, GetShowHeaderOverrides())))
 	}
 
@@ -332,7 +333,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			StatusCode:        0, // No response received
 			RequestBody:       string(requestBody),
 			RequestHeaders:    requestHeaders,
-			ResponseBody:      fmt.Sprintf("HTTP Request Failed: %v", err),
+			ResponseBody:      "HTTP Request Failed: " + redact.Error(err),
 			Headers:           headers,
 			ConnectionDetails: connInfo,
 		}
@@ -341,8 +342,8 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 
 		if t.debugMode {
 			debug.Error("HTTP request failed",
-				debug.F("url", req.URL.String()),
-				debug.F("error", err),
+				debug.F("url", redact.RedactedURL(req.URL)),
+				debug.F("error", redact.Error(err)),
 				debug.F("errorType", fmt.Sprintf("%T", err)),
 				debug.F("connectionDetails", connInfo))
 		}
@@ -412,7 +413,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 
 			if t.debugMode {
 				debug.Info("HTTP Response Captured",
-					debug.F("url", req.URL.String()),
+					debug.F("url", redact.RedactedURL(req.URL)),
 					debug.F("statusCode", resp.StatusCode),
 					debug.F("isError", isError),
 					debug.F("isSSE", isSSE),
@@ -426,7 +427,8 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 
 				if isError {
 					debug.Error("HTTP Error Details",
-						debug.F("response", tryPrettyPrintJSON(string(bodyBytes))))
+						debug.F("response", tryPrettyPrintJSON(
+							redact.Body(resp.Header.Get("Content-Type"), bodyBytes))))
 				}
 			}
 		}
@@ -436,7 +438,8 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 }
 
 // FormatHTTPError formats the HTTP error information for display, applying
-// the default redaction policy (Authorization, Cookie, Set-Cookie are masked).
+// the default redaction policy: sensitive headers (redact.IsSensitiveHeader)
+// are masked, and the URL and bodies pass through the redact package.
 // Use FormatHTTPErrorWithOverrides when the caller wired --show-headers and
 // needs to reveal specific headers verbatim.
 func FormatHTTPError(info *HTTPErrorInfo) string {
@@ -456,7 +459,7 @@ func FormatHTTPErrorWithOverrides(info *HTTPErrorInfo, showHeaders []string) str
 	sb.WriteString(fmt.Sprintf("HTTP Request Analysis (captured at %s)\n", info.Timestamp.Format(time.RFC3339)))
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 	sb.WriteString(fmt.Sprintf("Method: %s\n", info.Method))
-	sb.WriteString(fmt.Sprintf("URL: %s\n", info.URL))
+	sb.WriteString(fmt.Sprintf("URL: %s\n", redact.URL(info.URL)))
 	sb.WriteString(fmt.Sprintf("Status Code: %d\n\n", info.StatusCode))
 
 	// Connection Details
@@ -488,7 +491,8 @@ func FormatHTTPErrorWithOverrides(info *HTTPErrorInfo, showHeaders []string) str
 		sb.WriteString(fmt.Sprintf("  Stream Duration: %v\n", sse.StreamDuration))
 		sb.WriteString(fmt.Sprintf("  Connection Drops: %d\n", sse.ConnectionDrops))
 		if sse.LastEventData != "" {
-			sb.WriteString(fmt.Sprintf("  Last Event Data: %s\n", truncateString(sse.LastEventData, 100)))
+			lastEvent := redact.Body(headerValue(info.Headers, "Content-Type"), []byte(sse.LastEventData))
+			sb.WriteString(fmt.Sprintf("  Last Event Data: %s\n", truncateString(lastEvent, 100)))
 		}
 		sb.WriteString("\n")
 	}
@@ -501,12 +505,13 @@ func FormatHTTPErrorWithOverrides(info *HTTPErrorInfo, showHeaders []string) str
 
 	if info.RequestBody != "" {
 		sb.WriteString("Request Body:\n")
-		sb.WriteString(tryPrettyPrintJSON(info.RequestBody))
+		sb.WriteString(tryPrettyPrintJSON(
+			redact.Body(headerValue(info.RequestHeaders, "Content-Type"), []byte(info.RequestBody))))
 		sb.WriteString("\n\n")
 	}
 
 	sb.WriteString("Response Body:\n")
-	sb.WriteString(tryPrettyPrintJSON(info.ResponseBody))
+	sb.WriteString(tryPrettyPrintJSON(responseBodyForDisplay(info)))
 	sb.WriteString("\n\n")
 
 	if len(info.Headers) > 0 {
@@ -515,6 +520,27 @@ func FormatHTTPErrorWithOverrides(info *HTTPErrorInfo, showHeaders []string) str
 	}
 
 	return sb.String()
+}
+
+// responseBodyForDisplay masks credentials in the captured response body. A
+// status of 0 means no response arrived and the body holds the transport
+// error text, which capture already passed through redact.Error.
+func responseBodyForDisplay(info *HTTPErrorInfo) string {
+	if info.StatusCode == 0 {
+		return info.ResponseBody
+	}
+	return redact.Body(headerValue(info.Headers, "Content-Type"), []byte(info.ResponseBody))
+}
+
+// headerValue looks up a header in a captured snapshot map, whose keys keep
+// the casing they were captured with.
+func headerValue(headers map[string]string, name string) string {
+	for k, v := range headers {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
 }
 
 // writeHeaderLines renders a header map to sb in alphabetically-sorted order

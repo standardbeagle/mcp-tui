@@ -263,3 +263,18 @@ func TestFormatHTTPError_AppliesRedaction(t *testing.T) {
 		t.Errorf("Set-Cookie should remain redacted; got:\n%s", out2)
 	}
 }
+
+// TestRedactHeaders_UsesSharedSensitiveList pins the debug pane to the
+// redact package's list, so DPoP proofs and proxy credentials are masked
+// alongside bearer tokens.
+func TestRedactHeaders_UsesSharedSensitiveList(t *testing.T) {
+	out := RedactHeaders(map[string]string{
+		"DPoP":                "eyJ.proof.sig",
+		"Proxy-Authorization": "Basic cHJveHk6cHc=",
+	}, nil)
+	for name, got := range out {
+		if got != redactedSentinel {
+			t.Errorf("%s: got %q, want %q", name, got, redactedSentinel)
+		}
+	}
+}

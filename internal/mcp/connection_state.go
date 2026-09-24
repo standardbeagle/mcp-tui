@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // ConnectionStage represents the current stage of HTTP connection
@@ -44,12 +46,12 @@ func SetConnectionState(stage ConnectionStage, message string, url string, err e
 	currentConnectionState = &ConnectionStateInfo{
 		Stage:     stage,
 		Message:   message,
-		URL:       url,
+		URL:       redact.URL(url),
 		Timestamp: time.Now(),
 	}
 
 	if err != nil {
-		currentConnectionState.Error = err.Error()
+		currentConnectionState.Error = redact.Error(err)
 	}
 
 	if currentConnectionState != nil {

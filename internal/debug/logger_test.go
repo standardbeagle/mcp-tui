@@ -294,3 +294,45 @@ func TestFieldIntegration(t *testing.T) {
 		})
 	}
 }
+
+// TestLogger_MasksSensitiveFieldKeys proves the logger core routes every
+// field through the redact package, so a caller that logs a credential by
+// its protocol name cannot leak it to the output or the TUI buffer.
+func TestLogger_MasksSensitiveFieldKeys(t *testing.T) {
+	l, buf := testLoggerSetup()
+	defer testLoggerTeardown(l)
+
+	l.Info("token exchange",
+		F("access_token", "leak-me-1"),
+		F("Authorization", "Bearer leak-me-2"),
+		F("code", -32601),
+		F("grant_type", "authorization_code"))
+	l.Flush()
+
+	out := buf.String()
+	for _, secret := range []string{"leak-me-1", "leak-me-2"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("log output leaked %q: %s", secret, out)
+		}
+	}
+	for _, keep := range []string{"code=-32601", "grant_type=authorization_code", "access_token=[REDACTED]"} {
+		if !strings.Contains(out, keep) {
+			t.Errorf("log output missing %q: %s", keep, out)
+		}
+	}
+}
+
+// TestLogger_FlushWaitsForQueuedEntries covers the Flush hook tests and
+// shutdown paths use instead of sleeping on the async writer.
+func TestLogger_FlushWaitsForQueuedEntries(t *testing.T) {
+	l, buf := testLoggerSetup()
+	defer testLoggerTeardown(l)
+
+	for i := 0; i < 100; i++ {
+		l.Info("entry", F("i", i))
+	}
+	l.Flush()
+	if got := strings.Count(buf.String(), "entry"); got != 100 {
+		t.Fatalf("after Flush saw %d entries, want 100", got)
+	}
+}

@@ -169,7 +169,7 @@ func (m *Manager) Connect(
 
 	debug.Info("Session manager: Starting connection",
 		debug.F("transport", transportType),
-		debug.F("state", m.info.State))
+		debug.F("sessionState", m.info.State))
 
 	// Trace connection start
 	var connectionStartEvent *mcpDebug.Event
@@ -541,7 +541,7 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 
 	debug.Debug("Session manager: Health check passed",
 		debug.F("sessionID", session.ID()),
-		debug.F("state", state),
+		debug.F("sessionState", state),
 		debug.F("transport", transportType))
 }
 

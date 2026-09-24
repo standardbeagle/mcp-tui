@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,4 +149,32 @@ func TestDebugRoundTripperPreservesJSONBody(t *testing.T) {
 	n, _ := resp.Body.Read(body)
 	assert.Contains(t, string(body[:n]), `"jsonrpc":"2.0"`,
 		"the buffered body must be replayed to the caller")
+}
+
+// TestFormatHTTPError_MasksCredentialsInURLAndBodies covers the Ctrl+D HTTP
+// pane when the last captured exchange was an OAuth token request: the code,
+// verifier and issued tokens must never be rendered.
+func TestFormatHTTPError_MasksCredentialsInURLAndBodies(t *testing.T) {
+	info := &HTTPErrorInfo{
+		Method:         "POST",
+		URL:            "https://as.example.com/token?state=st-8f1e2a",
+		StatusCode:     200,
+		RequestHeaders: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		RequestBody:    "grant_type=authorization_code&code=ac-7c3d9b&code_verifier=cv-51aa0e",
+		Headers:        map[string]string{"Content-Type": "application/json"},
+		ResponseBody:   `{"access_token":"at-2b9f44","refresh_token":"rt-0d1c73","token_type":"Bearer"}`,
+	}
+
+	out := FormatHTTPError(info)
+
+	for _, secret := range []string{"st-8f1e2a", "ac-7c3d9b", "cv-51aa0e", "at-2b9f44", "rt-0d1c73"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("HTTP pane leaked %q:\n%s", secret, out)
+		}
+	}
+	for _, keep := range []string{"authorization_code", "Bearer"} {
+		if !strings.Contains(out, keep) {
+			t.Errorf("HTTP pane dropped %q:\n%s", keep, out)
+		}
+	}
 }
