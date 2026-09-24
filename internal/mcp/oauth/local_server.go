@@ -14,6 +14,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
+
+	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // LocalServerFetcher implements auth.AuthorizationCodeFetcher by spinning up
@@ -127,6 +130,7 @@ func (f *LocalServerFetcher) Fetch(ctx context.Context, args *auth.Authorization
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
+		logCallbackReceived(query)
 		oauthErr := query.Get("error")
 		if oauthErr != "" {
 			desc := query.Get("error_description")
@@ -160,7 +164,12 @@ func (f *LocalServerFetcher) Fetch(ctx context.Context, args *auth.Authorization
 	// Open the browser. Failure to open is non-fatal — the user can copy
 	// the URL manually — but we surface it via the fetch result if the
 	// callback never arrives.
+	logAuthorizationRequest(args.URL)
 	browserErr := f.browserOpener(args.URL)
+	if browserErr != nil {
+		authLog().Warn("Browser did not open; open the authorization URL manually",
+			debug.F("error", redact.Error(browserErr)))
+	}
 
 	select {
 	case <-ctx.Done():
@@ -225,4 +234,43 @@ func openBrowser(target string) error {
 		return fmt.Errorf("oauth: don't know how to open browser on %s", runtime.GOOS)
 	}
 	return cmd.Start()
+}
+
+// logAuthorizationRequest records what the authorization URL asks for:
+// endpoint, client, redirect, scopes, PKCE method and resource. The state and
+// code challenge are credentials-in-flight and appear only as presence flags.
+func logAuthorizationRequest(rawURL string) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		authLog().Warn("Authorization URL unparseable", debug.F("error", redact.Error(err)))
+		return
+	}
+	q := u.Query()
+	endpoint := *u
+	endpoint.RawQuery = ""
+	authLog().Info("Authorization request",
+		debug.F("authorization_endpoint", endpoint.String()),
+		debug.F("response_type", q.Get("response_type")),
+		debug.F("client_id", q.Get("client_id")),
+		debug.F("redirect_uri", q.Get("redirect_uri")),
+		debug.F("scope", q.Get("scope")),
+		debug.F("resource", q["resource"]),
+		debug.F("code_challenge_method", q.Get("code_challenge_method")),
+		debug.F("has_code_challenge", q.Get("code_challenge") != ""),
+		debug.F("has_state", q.Get("state") != ""))
+}
+
+// logCallbackReceived records which parameters the redirect carried. Values
+// of code, state and iss are never logged; the OAuth error code and its
+// description are diagnostics, not credentials.
+func logCallbackReceived(q url.Values) {
+	fields := []debug.Field{
+		debug.F("has_code", q.Get("code") != ""),
+		debug.F("has_state", q.Get("state") != ""),
+		debug.F("has_iss", q.Get("iss") != ""),
+	}
+	if e := q.Get("error"); e != "" {
+		fields = append(fields, debug.F("oauth_error", e), debug.F("error_description", q.Get("error_description")))
+	}
+	authLog().Info("Authorization callback received", fields...)
 }

@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/auth/extauth"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"golang.org/x/oauth2"
+
+	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // State describes the current authentication state for status indicators.
@@ -89,7 +93,9 @@ type AuthorizationCodeFetcher interface {
 type handler = Handler
 
 // NewHandler builds a Handler. httpClient may be nil, in which case
-// http.DefaultClient is used. cache may be nil to disable persistence.
+// http.DefaultClient is used; either way the handler works on a copy whose
+// transport traces every auth exchange (see newAuthHTTPClient). cache may be
+// nil to disable persistence.
 func NewHandler(cfg *Config, httpClient *http.Client, cache TokenCache) (*Handler, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("oauth: config is required")
@@ -100,19 +106,17 @@ func NewHandler(cfg *Config, httpClient *http.Client, cache TokenCache) (*Handle
 	if cfg.Mode() == ModeNone {
 		return nil, fmt.Errorf("oauth: config produces ModeNone (nothing to do)")
 	}
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-
 	h := &Handler{
 		cfg:        cfg,
-		httpClient: httpClient,
+		httpClient: newAuthHTTPClient(httpClient),
 		cache:      cache,
 		state:      StateIdle,
 		fetcherFactory: func(host string, port int) AuthorizationCodeFetcher {
 			return newLocalServerFetcher(host, port)
 		},
 	}
+
+	logModeSelected(cfg, cache)
 
 	// Try to populate the delegate from a cached token before any 401 hits
 	// the wire. If the cache returns a usable refresh token the delegate
@@ -122,6 +126,7 @@ func NewHandler(cfg *Config, httpClient *http.Client, cache TokenCache) (*Handle
 	if err := h.tryPopulateFromCache(); err != nil {
 		// Cache hits are best-effort. Surface the error to debug logs but
 		// fall back to a clean Authorize() on the first 401.
+		authLog().Warn("Token cache unreadable; will authorize on first 401", debug.F("error", redact.Error(err)))
 		h.lastErr = err
 	}
 
@@ -164,6 +169,7 @@ func (h *Handler) Reauthenticate() error {
 			return fmt.Errorf("oauth: clear cache: %w", err)
 		}
 	}
+	authLog().Info("Reauthentication requested; token dropped", debug.F("cache_cleared", cache != nil))
 	return nil
 }
 
@@ -186,6 +192,7 @@ func (h *Handler) TokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 // Authorize implements auth.OAuthHandler. Dispatches to either client-
 // credentials or authorization-code based on the configured mode.
 func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.Response) error {
+	logAuthorizationRequired(req, resp)
 	h.mu.Lock()
 	h.state = StateAuthorizing
 	h.lastErr = nil
@@ -198,6 +205,7 @@ func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.R
 	}
 
 	if err := delegate.Authorize(ctx, req, resp); err != nil {
+		authLog().Error("Authorization failed", debug.F("mode", h.cfg.Mode()), debug.F("error", redact.Error(err)))
 		h.recordError(err)
 		return err
 	}
@@ -208,8 +216,11 @@ func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.R
 	h.lastErr = nil
 	h.mu.Unlock()
 
+	tok := currentToken(ctx, delegate)
+	authLog().Info("Authorization succeeded", append([]debug.Field{debug.F("mode", h.cfg.Mode())}, tokenSummary(tok)...)...)
+
 	// Persist the freshly acquired token (best-effort).
-	h.persistToken(ctx, delegate)
+	h.persistToken(tok)
 	return nil
 }
 
@@ -247,6 +258,12 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 		RedirectURL:              redirectURL,
 		AuthorizationCodeFetcher: fetcher.Fetch,
 		Client:                   h.httpClient,
+		// Observation only: the discovered set is returned unchanged, so
+		// the SDK's scope selection is exactly what it would be without it.
+		ScopeFilter: func(discovered []string) []string {
+			authLog().Info("Scopes discovered", debug.F("scopes", discovered))
+			return discovered
+		},
 	}
 	if pre := h.cfg.preregistered(); pre != nil {
 		cfg.PreregisteredClient = pre
@@ -260,6 +277,9 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 			},
 		}
 	}
+	authLog().Info("Authorization-code handler ready",
+		debug.F("redirect_url", redirectURL),
+		debug.F("registration", registrationPath(h.cfg)))
 	return auth.NewAuthorizationCodeHandler(cfg)
 }
 
@@ -276,8 +296,11 @@ func (h *Handler) tryPopulateFromCache() error {
 		return err
 	}
 	if tok == nil {
+		authLog().Info("Token cache miss")
 		return nil
 	}
+	authLog().Info("Token cache hit", append(tokenSummary(tok),
+		debug.F("expired", !tok.Expiry.IsZero() && tok.Expiry.Before(time.Now())))...)
 
 	src := oauth2.StaticTokenSource(tok)
 	wrappedSrc := oauth2.ReuseTokenSource(tok, src)
@@ -289,22 +312,94 @@ func (h *Handler) tryPopulateFromCache() error {
 	return nil
 }
 
-// persistToken extracts the current token from the delegate's TokenSource
-// and writes it to the cache. Failures are logged but not fatal — the
-// request can still complete with the in-memory token.
-func (h *Handler) persistToken(ctx context.Context, delegate auth.OAuthHandler) {
-	if h.cache == nil || delegate == nil {
-		return
-	}
+// currentToken returns the token the delegate currently holds, or nil when
+// it cannot produce one (the failure is logged, not returned: the request can
+// still complete with whatever the SDK holds in memory).
+func currentToken(ctx context.Context, delegate auth.OAuthHandler) *oauth2.Token {
 	src, err := delegate.TokenSource(ctx)
 	if err != nil || src == nil {
-		return
+		authLog().Warn("No token source after authorization", debug.F("error", redact.Error(err)))
+		return nil
 	}
 	tok, err := src.Token()
-	if err != nil || tok == nil {
+	if err != nil {
+		authLog().Warn("Token source failed after authorization", debug.F("error", redact.Error(err)))
+		return nil
+	}
+	return tok
+}
+
+// persistToken writes the token to the cache. Failures are logged but not
+// fatal — the request can still complete with the in-memory token.
+func (h *Handler) persistToken(tok *oauth2.Token) {
+	if h.cache == nil || tok == nil {
 		return
 	}
-	_ = h.cache.Save(cacheKey(h.cfg), tok)
+	if err := h.cache.Save(cacheKey(h.cfg), tok); err != nil {
+		authLog().Warn("Token cache save failed", debug.F("error", redact.Error(err)))
+		return
+	}
+	authLog().Info("Token cached", tokenSummary(tok)...)
+}
+
+// tokenSummary describes a token without any of its credential values.
+func tokenSummary(tok *oauth2.Token) []debug.Field {
+	if tok == nil {
+		return []debug.Field{debug.F("token", "none")}
+	}
+	scope, _ := tok.Extra("scope").(string)
+	return []debug.Field{
+		debug.F("token_type", tok.Type()),
+		debug.F("expiry", tok.Expiry),
+		debug.F("granted_scope", scope),
+		debug.F("has_refresh_token", tok.RefreshToken != ""),
+	}
+}
+
+// registrationPath names how the client identifies itself to the AS.
+func registrationPath(cfg *Config) string {
+	switch {
+	case cfg.ClientID != "":
+		return "preregistered"
+	case cfg.EnableDynamicRegistration:
+		return "dynamic"
+	default:
+		return "none"
+	}
+}
+
+// logModeSelected records which grant the configuration selected and the
+// inputs that decided it.
+func logModeSelected(cfg *Config, cache TokenCache) {
+	_, cacheDisabled := cache.(NoopCache)
+	authLog().Info("OAuth mode selected",
+		debug.F("mode", cfg.Mode()),
+		debug.F("server_url", redact.URL(cfg.ServerURL)),
+		debug.F("registration", registrationPath(cfg)),
+		debug.F("confidential_client", cfg.ClientSecret != ""),
+		debug.F("token_cache", cache != nil && !cacheDisabled))
+	if len(cfg.scopeList()) > 0 || cfg.TokenURL != "" {
+		authLog().Warn("Configured scopes and token URL are not applied; the SDK uses the discovered values",
+			debug.F("configured_scopes", cfg.scopeList()),
+			debug.F("configured_token_url", redact.URL(cfg.TokenURL)))
+	}
+}
+
+// logAuthorizationRequired records the 401/403 that made the SDK call
+// Authorize, with its redacted challenge.
+func logAuthorizationRequired(req *http.Request, resp *http.Response) {
+	fields := []debug.Field{}
+	if resp != nil {
+		challenges := make([]string, 0, len(resp.Header.Values("WWW-Authenticate")))
+		for _, c := range resp.Header.Values("WWW-Authenticate") {
+			challenges = append(challenges, redact.Challenge(c))
+		}
+		fields = append(fields, debug.F("status", resp.StatusCode), debug.F("www_authenticate", challenges))
+	}
+	if req != nil {
+		fields = append(fields, debug.F("method", req.Method), debug.F("url", redact.RedactedURL(req.URL)))
+	}
+	authLog().Info("Authorization required", fields...)
 }
 
 // cachedDelegate is a minimal auth.OAuthHandler whose TokenSource is fixed

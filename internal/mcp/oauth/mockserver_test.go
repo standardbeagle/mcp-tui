@@ -50,6 +50,7 @@ type mockAuthServer struct {
 	mu                     sync.Mutex
 	tokenRequests          []url.Values
 	registerRequests       []json.RawMessage
+	authorizeStates        []string
 	issuedAccessToken      string
 	requireSecretOnRefresh bool
 }
@@ -203,6 +204,9 @@ func (m *mockAuthServer) handleAuthorize(w http.ResponseWriter, r *http.Request)
 	q := r.URL.Query()
 	redirectURI := q.Get("redirect_uri")
 	state := q.Get("state")
+	m.mu.Lock()
+	m.authorizeStates = append(m.authorizeStates, state)
+	m.mu.Unlock()
 	if redirectURI == "" {
 		http.Error(w, "missing redirect_uri", http.StatusBadRequest)
 		return
@@ -287,4 +291,30 @@ func (m *mockAuthServer) lastTokenRequest() url.Values {
 		return nil
 	}
 	return m.tokenRequests[len(m.tokenRequests)-1]
+}
+
+// issuedSecrets returns every credential value the mock handed out or
+// received during the flows run so far: tokens, the authorization code, the
+// client secret, and the random PKCE verifier and state the SDK generated.
+// A log sweep asserts none of them appears in any output.
+func (m *mockAuthServer) issuedSecrets() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	secrets := []string{
+		m.issuedAccessToken, m.issuedAccessToken + "_refreshed",
+		"test_refresh_token", "test_auth_code", m.clientSecret,
+	}
+	for _, form := range m.tokenRequests {
+		for _, name := range []string{"code_verifier", "code", "client_secret", "refresh_token"} {
+			if v := form.Get(name); v != "" {
+				secrets = append(secrets, v)
+			}
+		}
+	}
+	for _, state := range m.authorizeStates {
+		if state != "" {
+			secrets = append(secrets, state)
+		}
+	}
+	return secrets
 }
