@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -74,10 +75,20 @@ type Handler struct {
 	// a stubbed browser opener.
 	fetcherFactory func(host string, port int) AuthorizationCodeFetcher
 
+	// stepUp is set while Authorize handles a 403 (SEP-2350 step-up), so
+	// selectScopes passes the challenged scope through.
+	stepUp atomic.Bool
+
 	mu       sync.Mutex
 	delegate auth.OAuthHandler
-	state    State
-	lastErr  error
+	// sdk is the SDK handler that runs Authorize. It is built on first use
+	// and kept across calls: it records the scopes each issuer granted,
+	// which step-up unions with the newly challenged ones. fetcher is the
+	// callback server it redirects to, released by Reauthenticate.
+	sdk     auth.OAuthHandler
+	fetcher AuthorizationCodeFetcher
+	state   State
+	lastErr error
 }
 
 // AuthorizationCodeFetcher is the abstraction over the SDK's
@@ -87,6 +98,7 @@ type Handler struct {
 type AuthorizationCodeFetcher interface {
 	RedirectURL() string
 	Fetch(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error)
+	Close() error
 }
 
 // internal alias so the compile-time assertion in oauth.go has a target.
@@ -159,11 +171,20 @@ func (h *Handler) Status() Status {
 func (h *Handler) Reauthenticate() error {
 	h.mu.Lock()
 	h.delegate = nil
+	h.sdk = nil
+	fetcher := h.fetcher
+	h.fetcher = nil
 	h.state = StateIdle
 	h.lastErr = nil
 	cache := h.cache
 	cfg := h.cfg
 	h.mu.Unlock()
+
+	if fetcher != nil {
+		if err := fetcher.Close(); err != nil {
+			return fmt.Errorf("oauth: release callback listener: %w", err)
+		}
+	}
 
 	if cache != nil {
 		if err := cache.Delete(cacheKey(cfg)); err != nil {
@@ -194,12 +215,13 @@ func (h *Handler) TokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 // credentials or authorization-code based on the configured mode.
 func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.Response) error {
 	logAuthorizationRequired(req, resp)
+	h.stepUp.Store(resp != nil && resp.StatusCode == http.StatusForbidden)
 	h.mu.Lock()
 	h.state = StateAuthorizing
 	h.lastErr = nil
 	h.mu.Unlock()
 
-	delegate, err := h.buildDelegate()
+	delegate, err := h.sdkHandler()
 	if err != nil {
 		h.recordError(err)
 		return err
@@ -233,7 +255,24 @@ func (h *Handler) recordError(err error) {
 	h.mu.Unlock()
 }
 
-func (h *Handler) buildDelegate() (auth.OAuthHandler, error) {
+// sdkHandler returns the SDK handler for the configured grant, building it
+// on first use.
+func (h *Handler) sdkHandler() (auth.OAuthHandler, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.sdk != nil {
+		return h.sdk, nil
+	}
+	sdk, err := h.buildSDKHandler()
+	if err != nil {
+		return nil, err
+	}
+	h.sdk = sdk
+	return sdk, nil
+}
+
+// buildSDKHandler constructs the SDK handler; h.mu is held.
+func (h *Handler) buildSDKHandler() (auth.OAuthHandler, error) {
 	switch h.cfg.Mode() {
 	case ModeClientCredentials:
 		return extauth.NewClientCredentialsHandler(&extauth.ClientCredentialsHandlerConfig{
@@ -248,14 +287,15 @@ func (h *Handler) buildDelegate() (auth.OAuthHandler, error) {
 }
 
 // buildAuthCodeHandler wires AuthorizationCodeHandler with a fetcher (the
-// loopback callback server in production, a stub in tests) and either
-// pre-registered credentials or DCR.
+// loopback callback server in production, a stub in tests) and the
+// configured registration paths; h.mu is held.
 func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error) {
 	fetcher := h.fetcherFactory(h.cfg.RedirectHost, h.cfg.RedirectPort)
 	redirectURL := fetcher.RedirectURL()
 	if redirectURL == "" {
 		return nil, fmt.Errorf("oauth: failed to bind callback listener (host=%s, port=%d)", h.cfg.RedirectHost, h.cfg.RedirectPort)
 	}
+	h.fetcher = fetcher
 	cfg := &auth.AuthorizationCodeHandlerConfig{
 		RedirectURL: redirectURL,
 		AuthorizationCodeFetcher: func(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
@@ -294,11 +334,15 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 // selectScopes is the SDK's ScopeFilter: it picks the scopes to request
 // from those the SDK discovered (WWW-Authenticate challenge, else PRM
 // scopes_supported). Configured scopes (--oauth-scopes) replace the
-// discovered set. The SDK adds offline_access and the step-up union after
-// this, so neither is affected.
+// discovered set, except on step-up, where the discovered set is the
+// challenged scope and must be requested. The SDK adds offline_access and
+// unions in the scopes already granted after this.
 func (h *Handler) selectScopes(discovered []string) []string {
 	source, selected := "discovered", discovered
-	if configured := h.cfg.scopeList(); len(configured) > 0 {
+	switch configured := h.cfg.scopeList(); {
+	case h.stepUp.Load():
+		source = "step_up"
+	case len(configured) > 0:
 		source, selected = "configured", configured
 	}
 	authLog().Info("Scopes selected",

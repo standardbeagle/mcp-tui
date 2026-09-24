@@ -171,3 +171,51 @@ func TestAuthorizationCodeFlow_UnadvertisedIss(t *testing.T) {
 		})
 	}
 }
+
+// insufficientScopeExchange builds the 403 a resource server returns when
+// the token lacks a scope the operation needs (step-up, SEP-2350).
+func insufficientScopeExchange(srv *mockAuthServer, scope string) (*http.Request, *http.Response) {
+	req, resp := unauthorizedExchange(srv)
+	resp.StatusCode = http.StatusForbidden
+	resp.Header.Set("WWW-Authenticate",
+		`Bearer error="insufficient_scope", scope="`+scope+`", resource_metadata="`+srv.resourceServer.URL+`/.well-known/oauth-protected-resource/mcp"`)
+	return req, resp
+}
+
+// TestAuthorizationCodeFlow_StepUp (SEP-2350): a 403 insufficient_scope
+// challenge re-runs authorization asking for the scopes already granted
+// plus the challenged one, and the log shows the step-up.
+func TestAuthorizationCodeFlow_StepUp(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		configured []string
+		first      []string
+	}{
+		{name: "discovered", first: []string{"mcp:read"}},
+		{name: "configured", configured: []string{"files:read"}, first: []string{"files:read"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureAuthLogs(t)
+			srv := newMockAuthServer(t)
+			h, err := NewHandler(&Config{ServerURL: srv.ResourceURL(), ClientID: srv.clientID, Scopes: tc.configured, CachePath: "-"},
+				http.DefaultClient, NoopCache{})
+			require.NoError(t, err)
+			installAutoApproveFetcher(t, h)
+			driveAuthCode(t, h, srv)
+			require.Equal(t, StateAuthorized, h.Status().State, "first flow failed: %v", h.Status().LastError)
+			assert.ElementsMatch(t, tc.first, requestedScopes(srv))
+
+			req, resp := insufficientScopeExchange(srv, "mcp:write")
+			require.NoError(t, h.Authorize(t.Context(), req, resp))
+			require.Equal(t, StateAuthorized, h.Status().State, "step-up failed: %v", h.Status().LastError)
+			assert.ElementsMatch(t, append(append([]string{}, tc.first...), "mcp:write"), requestedScopes(srv))
+
+			out := logs()
+			assertNoSecrets(t, out, srv.issuedSecrets())
+			assertLogged(t, out,
+				"[oauth] Authorization required status=403",
+				"error=\"insufficient_scope\"",
+				"[oauth] Scopes selected source=step_up discovered=[mcp:write] selected=[mcp:write]")
+		})
+	}
+}

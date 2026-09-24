@@ -96,6 +96,33 @@ func (f *LocalServerFetcher) Close() error {
 	return nil
 }
 
+// takeListener hands the bound listener to one Fetch call. The first Fetch
+// takes the one RedirectURL bound; a later one (step-up re-authorization)
+// re-binds the same host:port, since the AS only redirects to the
+// registered URL.
+func (f *LocalServerFetcher) takeListener() (net.Listener, error) {
+	redirectURL := f.RedirectURL()
+	if redirectURL == "" {
+		return nil, fmt.Errorf("oauth: failed to bind callback listener on %s:%d", f.host, f.port)
+	}
+	f.mu.Lock()
+	listener := f.listener
+	f.listener = nil
+	f.mu.Unlock()
+	if listener != nil {
+		return listener, nil
+	}
+	u, err := url.Parse(redirectURL)
+	if err != nil {
+		return nil, fmt.Errorf("oauth: parse redirect URL: %w", err)
+	}
+	listener, err = net.Listen("tcp", u.Host)
+	if err != nil {
+		return nil, fmt.Errorf("oauth: re-bind callback listener on %s: %w", u.Host, err)
+	}
+	return listener, nil
+}
+
 // Fetch is the auth.AuthorizationCodeFetcher implementation. It opens the
 // user's browser to args.URL and serves a single HTTP request on the
 // loopback listener, returning the code+state from the redirect query.
@@ -104,25 +131,11 @@ func (f *LocalServerFetcher) Fetch(ctx context.Context, args *auth.Authorization
 		return nil, fmt.Errorf("oauth: empty authorization URL")
 	}
 
-	// Make sure we have a listener; RedirectURL must have been called by
-	// the handler config builder, but support late binding too.
-	f.mu.Lock()
-	listener := f.listener
-	f.listener = nil // hand off ownership to this Fetch call
-	f.mu.Unlock()
-
-	if listener == nil {
-		// Re-bind if RedirectURL hasn't been called yet (defensive).
-		if u := f.RedirectURL(); u == "" {
-			return nil, fmt.Errorf("oauth: failed to bind callback listener on %s:%d", f.host, f.port)
-		}
-		f.mu.Lock()
-		listener = f.listener
-		f.listener = nil
-		f.mu.Unlock()
-	}
-
 	expectedState, err := authorizationState(args.URL)
+	if err != nil {
+		return nil, err
+	}
+	listener, err := f.takeListener()
 	if err != nil {
 		return nil, err
 	}
