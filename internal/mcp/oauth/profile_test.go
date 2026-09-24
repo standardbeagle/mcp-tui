@@ -113,3 +113,30 @@ func TestConfig_IssuerRequiresPreregisteredClient(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Issuer requires a pre-registered ClientID")
 }
+
+// TestAuthorizationCodeFlow_RequestsOfflineAccess (SEP-2207): mcp-tui can
+// store refresh tokens, so it asks for offline_access when the AS supports
+// it, and a dynamically registered client declares the refresh_token grant.
+func TestAuthorizationCodeFlow_RequestsOfflineAccess(t *testing.T) {
+	logs := captureAuthLogs(t)
+	srv := newMockAuthServer(t)
+	srv.allowDCR = true
+	srv.asScopes = []string{"mcp:read", "mcp:write", "offline_access"}
+
+	h, err := NewHandler(&Config{ServerURL: srv.ResourceURL(), EnableDynamicRegistration: true, CachePath: "-"},
+		http.DefaultClient, NoopCache{})
+	require.NoError(t, err)
+	installAutoApproveFetcher(t, h)
+	driveAuthCode(t, h, srv)
+	require.Equal(t, StateAuthorized, h.Status().State, "flow failed: %v", h.Status().LastError)
+
+	assert.ElementsMatch(t, []string{"mcp:read", "offline_access"}, requestedScopes(srv))
+	srv.mu.Lock()
+	require.Len(t, srv.registerRequests, 1)
+	assert.Contains(t, string(srv.registerRequests[0]), `"refresh_token"`)
+	srv.mu.Unlock()
+
+	out := logs()
+	assertNoSecrets(t, out, srv.issuedSecrets())
+	assertLogged(t, out, "grant_types=[authorization_code refresh_token]", "request_refresh_token=true")
+}

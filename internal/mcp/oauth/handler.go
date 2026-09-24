@@ -264,6 +264,9 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 		},
 		Client:      h.httpClient,
 		ScopeFilter: h.selectScopes,
+		// SEP-2207: mcp-tui keeps refresh tokens (in the token cache), so it
+		// asks for offline_access when the AS lists it in scopes_supported.
+		RequestRefreshToken: true,
 	}
 	if h.cfg.ClientMetadataURL != "" {
 		cfg.ClientIDMetadataDocumentConfig = &auth.ClientIDMetadataDocumentConfig{URL: h.cfg.ClientMetadataURL}
@@ -282,6 +285,7 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 	}
 	authLog().Info("Authorization-code handler ready",
 		debug.F("redirect_url", redirectURL),
+		debug.F("request_refresh_token", cfg.RequestRefreshToken),
 		debug.F("registration_order", registrationOrder(h.cfg)))
 	return auth.NewAuthorizationCodeHandler(cfg)
 }

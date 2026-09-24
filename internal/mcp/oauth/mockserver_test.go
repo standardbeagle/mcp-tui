@@ -39,6 +39,9 @@ type mockAuthServer struct {
 	// scopes the resource server advertises in PRM.
 	advertisedScopes []string
 
+	// asScopes is the AS metadata scopes_supported (e.g. offline_access).
+	asScopes []string
+
 	// optional override: when non-nil, the /authorize handler calls this
 	// to compute the redirect (used for browser-callback simulation).
 	authorizeOverride func(w http.ResponseWriter, r *http.Request)
@@ -139,6 +142,9 @@ func (m *mockAuthServer) handleASM(w http.ResponseWriter, _ *http.Request) {
 	}
 	if m.supportCIMD {
 		asm["client_id_metadata_document_supported"] = true
+	}
+	if len(m.asScopes) > 0 {
+		asm["scopes_supported"] = m.asScopes
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(asm)
