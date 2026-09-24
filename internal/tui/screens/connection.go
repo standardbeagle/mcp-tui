@@ -1223,7 +1223,7 @@ func (cs *ConnectionScreen) renderTransportSelection() string {
 	options = append(options, stdioText)
 
 	// SSE option
-	sseText := "2) SSE"
+	sseText := "2) SSE (deprecated)"
 	if cs.transportType == config.TransportSSE {
 		sseStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("0")).

@@ -1446,7 +1446,12 @@ func (ds *DebugScreen) renderNotificationLegend() string {
 		if i > 0 {
 			b.WriteString("  ")
 		}
-		fmt.Fprintf(&b, "%d=%s", i+1, t)
+		label := string(t)
+		if t == notifications.TypeMessage {
+			// Server log notifications; logging is deprecated (SEP-2577).
+			label += " (logging, deprecated)"
+		}
+		fmt.Fprintf(&b, "%d=%s", i+1, label)
 	}
 	b.WriteString("   |   Space/P=pause • +/-=level • 0=clear types • x=clear • c/y=copy")
 	return b.String()

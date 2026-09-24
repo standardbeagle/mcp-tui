@@ -270,6 +270,7 @@ func (s *SamplingScreen) View() string {
 	if s.pending != nil && s.pending.IsWithTools() {
 		title = "Sampling Request (with tools)"
 	}
+	title += " · deprecated (SEP-2577)"
 	b.WriteString(s.titleStyle.Render(title))
 	b.WriteString("\n")
 	b.WriteString(s.dimStyle.Render("The MCP server has requested an LLM sampling completion."))
@@ -362,6 +363,7 @@ func (s *SamplingScreen) renderRequestSummary(b *strings.Builder) {
 			b.WriteString(s.contentStyle.Render(formatModelPrefs(prefs)))
 			b.WriteString("\n")
 		}
+		s.renderIncludeContext(b, p.IncludeContext)
 		b.WriteString(s.labelStyle.Render("Messages:"))
 		b.WriteString("\n")
 		for i, msg := range p.Messages {
@@ -403,6 +405,7 @@ func (s *SamplingScreen) renderRequestSummary(b *strings.Builder) {
 			b.WriteString(s.contentStyle.Render(formatModelPrefs(prefs)))
 			b.WriteString("\n")
 		}
+		s.renderIncludeContext(b, p.IncludeContext)
 		b.WriteString(s.labelStyle.Render("Messages:"))
 		b.WriteString("\n")
 		for i, msg := range p.Messages {
@@ -416,6 +419,18 @@ func (s *SamplingScreen) renderRequestSummary(b *strings.Builder) {
 		b.WriteString(s.dimStyle.Render("(request payload unavailable)"))
 		b.WriteString("\n")
 	}
+}
+
+// renderIncludeContext flags an includeContext that asks for server
+// context: "thisServer" and "allServers" are deprecated (SEP-2596) and will
+// go with sampling itself. "none" and absent are the supported values.
+func (s *SamplingScreen) renderIncludeContext(b *strings.Builder, includeContext string) {
+	if includeContext == "" || includeContext == "none" {
+		return
+	}
+	b.WriteString(s.labelStyle.Render("includeContext: "))
+	b.WriteString(s.contentStyle.Render(includeContext + " — deprecated (SEP-2596)"))
+	b.WriteString("\n")
 }
 
 // summarizeContentSlice renders a SamplingMessageV2.Content slice (used by
