@@ -510,7 +510,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 // statelessProtocolVersion is the first protocol version (SEP-2575) in which
 // list_changed notifications travel only on a subscriptions/listen stream.
-const statelessProtocolVersion = "2026-07-28"
+const statelessProtocolVersion = session.StatelessProtocolVersion
 
 // subscriptionsAckTimeout bounds how long Connect waits for the server to
 // acknowledge the list_changed subscription.

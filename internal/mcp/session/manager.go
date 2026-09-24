@@ -17,6 +17,16 @@ import (
 // cannot stall the monitoring goroutine until the next tick.
 const healthCheckTimeout = 5 * time.Second
 
+// StatelessProtocolVersion is the first MCP protocol version without
+// sessions (SEP-2575): no initialize handshake, no session ID and no ping.
+const StatelessProtocolVersion = "2026-07-28"
+
+// IsStateless reports whether protocolVersion is StatelessProtocolVersion
+// or later.
+func IsStateless(protocolVersion string) bool {
+	return protocolVersion >= StatelessProtocolVersion
+}
+
 // maxReconnectDelay caps the exponential backoff between reconnection attempts.
 const maxReconnectDelay = 30 * time.Second
 
@@ -515,6 +525,17 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 
 	if state != StateConnected || session == nil {
 		return // Not in a state that needs health checking
+	}
+
+	// 2026-07-28 removed ping (SEP-2575). A stateless session holds no
+	// connection that can silently drop, so there is nothing to probe: each
+	// request succeeds or fails on its own. Any other request would be a
+	// poor stand-in: the list methods are answered from the SDK's cache
+	// without touching the wire, and server/discover is not exposed.
+	if res := session.InitializeResult(); res != nil && IsStateless(res.ProtocolVersion) {
+		debug.Debug("Session manager: Health check skipped; ping was removed in 2026-07-28 (SEP-2575)",
+			debug.F("protocolVersion", res.ProtocolVersion))
+		return
 	}
 
 	// Ping the server. A cached session ID stays non-empty long after the
