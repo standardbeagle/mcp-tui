@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"sync"
 	"time"
@@ -180,7 +181,11 @@ func (c *Client) call(
 	ctx context.Context, s Session, method, taskID string, params map[string]any,
 ) (json.RawMessage, error) {
 	if s.Support.Form == FormExtension {
-		params["_meta"] = s.Meta
+		meta := maps.Clone(s.Meta)
+		if own, ok := params["_meta"].(map[string]any); ok {
+			maps.Copy(meta, own)
+		}
+		params["_meta"] = meta
 		if taskID != "" {
 			ctx = withRoutingName(ctx, taskID)
 		}
@@ -211,6 +216,9 @@ type ToolCall struct {
 	// (2026-07-28) that the server answered with input_required.
 	InputResponses json.RawMessage
 	RequestState   string
+	// ProgressToken, when set, asks for progress on the call; under
+	// 2025-11-25 it stays valid for the task's lifetime.
+	ProgressToken string
 }
 
 // CallTool sends a tools/call that may become a task: with the "task"
@@ -227,6 +235,9 @@ func (c *Client) CallTool(ctx context.Context, call *ToolCall) (task *Task, resu
 	params := map[string]any{"name": call.Name, "arguments": call.Arguments}
 	if call.Arguments == nil {
 		params["arguments"] = map[string]any{}
+	}
+	if call.ProgressToken != "" {
+		params["_meta"] = map[string]any{"progressToken": call.ProgressToken}
 	}
 	switch s.Support.Form {
 	case FormExperimental:

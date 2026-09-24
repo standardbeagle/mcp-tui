@@ -11,6 +11,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
@@ -310,5 +311,62 @@ func TestService_Progress_EachMRTRRoundGetsItsOwnToken(t *testing.T) {
 	}
 	if n := activeProgressTokens(svc); n != 0 {
 		t.Errorf("%d progress tokens still routed after the call returned", n)
+	}
+}
+
+// TestService_Progress_ExperimentalTaskKeepsItsToken pins 2025-11-25 tasks:
+// the progressToken of the tools/call that created the task "remains valid
+// throughout the task lifetime", so progress sent after the call returned
+// reaches the observer of AwaitTask, and the token is released once the
+// task ends.
+func TestService_Progress_ExperimentalTaskKeepsItsToken(t *testing.T) {
+	svc, ts := connectTaskServer(t, legacyProtocolVersion)
+	id := startReport(t, svc, ts)
+	sent := ts.ProgressToken(id)
+	if sent == nil {
+		t.Fatal("the task-augmented tools/call carried no progressToken")
+	}
+
+	observed := make(chan Progress, 4)
+	ctx := WithProgressObserver(context.Background(), func(p Progress) { observed <- p })
+	done := make(chan error, 1)
+	statuses := make(chan tasks.Status, 16)
+	go func() {
+		_, err := svc.AwaitTask(ctx, id, func(t tasks.Task) { statuses <- t.Status })
+		done <- err
+	}()
+	// AwaitTask reports the first poll once it is observing the task.
+	waitStatus(t, statuses, tasks.StatusWorking)
+	ts.ReportProgress(id, 1, 4, "rendering page 1")
+	select {
+	case p := <-observed:
+		if want := strings.Trim(string(sent), `"`); p.Token != want || p.Progress != 1 || p.Total != 4 ||
+			p.Message != "rendering page 1" {
+			t.Errorf("progress = %+v, want 1/4 \"rendering page 1\" on token %s", p, want)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the task's progress never reached AwaitTask's observer")
+	}
+	ts.Complete(id, "Q3 report ready")
+	if err := <-done; err != nil {
+		t.Fatalf("AwaitTask: %v", err)
+	}
+	if n := activeProgressTokens(svc); n != 0 {
+		t.Errorf("%d progress tokens still routed after the task ended", n)
+	}
+}
+
+// TestService_Progress_ExtensionTaskReleasesItsToken pins the 2026-07-28
+// tasks extension, which does not support progress on tasks: the tools/call
+// still carries a token for its own run, released once the server answers
+// with the task handle.
+func TestService_Progress_ExtensionTaskReleasesItsToken(t *testing.T) {
+	svc, ts := connectTaskServer(t, testutil.MRTRProtocolVersion)
+	id := startReport(t, svc, ts)
+	if ts.ProgressToken(id) == nil {
+		t.Error("the tools/call that created the task carried no progressToken")
+	}
+	if n := activeProgressTokens(svc); n != 0 {
+		t.Errorf("%d progress tokens still routed after the call returned the task", n)
 	}
 }

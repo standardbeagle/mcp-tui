@@ -99,6 +99,9 @@ type serverTask struct {
 	elicited map[string]bool
 	expired  bool
 	changed  chan struct{}
+	// progressToken is the _meta.progressToken of the tools/call that
+	// created the task; nil when it carried none.
+	progressToken json.RawMessage
 }
 
 func (st *serverTask) terminal() bool {
@@ -203,6 +206,29 @@ func (ts *TaskServer) Fail(id string, code int64, message string) {
 // Progress updates a working task's status message.
 func (ts *TaskServer) Progress(id, message string) {
 	ts.update(id, func(st *serverTask) { st.message = message })
+}
+
+// ProgressToken is the progressToken the call that created the task
+// carried; nil when it carried none.
+func (ts *TaskServer) ProgressToken(id string) json.RawMessage {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.tasks[id].progressToken
+}
+
+// ReportProgress sends notifications/progress for a 2025-11-25 task on the
+// token of the call that created it, which stays valid for the task's
+// lifetime. The extension does not support progress on tasks.
+func (ts *TaskServer) ReportProgress(id string, progress, total float64, message string) {
+	if ts.extension {
+		panic("testutil: the tasks extension does not support progress on tasks")
+	}
+	ts.mu.Lock()
+	token, push := ts.tasks[id].progressToken, ts.push
+	ts.mu.Unlock()
+	push(&jsonrpc.Request{Method: "notifications/progress", Params: mustJSON(map[string]any{
+		"progressToken": token, "progress": progress, "total": total, "message": message,
+	})})
 }
 
 // RequireInput moves the task to input_required, asking for a name through
@@ -479,6 +505,7 @@ func (ts *TaskServer) callTaskTool(p *taskParams) (result json.RawMessage, rpcEr
 		created: now, updated: now, ttlMs: ttl,
 		inputs: map[string]json.RawMessage{}, answers: map[string]json.RawMessage{},
 		elicited: map[string]bool{}, changed: make(chan struct{}),
+		progressToken: p.Meta["progressToken"],
 	}
 	ts.tasks[st.id] = st
 	res := ts.wireLocked(st, false)

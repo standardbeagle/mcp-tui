@@ -140,6 +140,9 @@ type service struct {
 	// call; progressSeq numbers the tokens (progress.go).
 	progressRoutes map[string]*progressCall
 	progressSeq    uint64
+	// taskProgress holds the progress subscription a 2025-11-25 task keeps
+	// from the call that created it, by task ID, until the task ends.
+	taskProgress map[string]*progressCall
 }
 
 // getNextRequestID returns the next request ID

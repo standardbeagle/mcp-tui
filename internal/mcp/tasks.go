@@ -106,17 +106,25 @@ func (s *service) CallToolAsTask(ctx context.Context, req CallToolRequest, ttlMs
 	if err != nil {
 		return nil, err
 	}
-	call := &taskCallRounds{client: client, call: tasks.ToolCall{Name: req.Name, Arguments: req.Arguments, TTLMs: ttlMs}}
+	ctx, progress := s.beginProgress(ctx)
+	call := &taskCallRounds{
+		client:    client,
+		call:      tasks.ToolCall{Name: req.Name, Arguments: req.Arguments, TTLMs: ttlMs},
+		nextToken: func() string { return s.nextProgressToken(progress) },
+	}
 	rounds, err := s.runInputRounds(ctx, session, "tools/call", req.Name, call.send)
 	if err != nil {
+		s.endProgress(progress)
 		return nil, fmt.Errorf("failed to call tool '%s' as a task: %w", req.Name, nameProtocolError(err, "tools/call"))
 	}
 	if call.task != nil {
 		s.mu.Lock()
 		s.taskTools[call.task.ID] = req.Name
 		s.mu.Unlock()
+		s.keepTaskProgress(client.Support().Form, call.task.ID, progress)
 		return &ToolTaskOutcome{Task: call.task}, nil
 	}
+	s.endProgress(progress)
 	return &ToolTaskOutcome{Result: s.toolResult(ctx, req.Name, call.result, rounds)}, nil
 }
 
@@ -125,8 +133,10 @@ func (s *service) CallToolAsTask(ctx context.Context, req CallToolRequest, ttlMs
 type taskCallRounds struct {
 	client *tasks.Client
 	call   tasks.ToolCall
-	task   *tasks.Task
-	result *officialMCP.CallToolResult
+	// nextToken issues each round's progressToken.
+	nextToken func() string
+	task      *tasks.Task
+	result    *officialMCP.CallToolResult
 }
 
 // send is a sendRound: one tools/call carrying the previous round's answers.
@@ -135,6 +145,7 @@ func (r *taskCallRounds) send(
 ) (officialMCP.InputRequestMap, string, error) {
 	call := r.call
 	call.RequestState = state
+	call.ProgressToken = r.nextToken()
 	if len(responses) > 0 {
 		raw, err := json.Marshal(responses)
 		if err != nil {
@@ -208,6 +219,8 @@ func (s *service) AwaitTask(ctx context.Context, id string, onUpdate func(tasks.
 	if err != nil {
 		return nil, err
 	}
+	s.observeTaskProgress(ctx, id)
+	defer s.endTaskProgress(id)
 	raw, err := client.Await(ctx, id, tasks.AwaitOptions{
 		Fulfill:  s.taskInputFulfiller(session),
 		OnUpdate: onUpdate,
@@ -258,4 +271,49 @@ func (s *service) taskInputFulfiller(session *officialMCP.ClientSession) tasks.F
 func (s *service) recordTaskNotification(method string, t *tasks.Task, params json.RawMessage) {
 	entry := notifications.FromTaskStatus(method, t.ID, string(t.Status), t.StatusMessage, params, time.Now())
 	s.publishNotification(&entry)
+	if t.Status.IsTerminal() {
+		s.endTaskProgress(t.ID)
+	}
+}
+
+// keepTaskProgress keeps routing the progress of a call that created a
+// 2025-11-25 task: its token "remains valid throughout the task lifetime"
+// (SEP-1686, Task Progress Notifications). The tasks extension does not
+// support progress on tasks, so there the call's tokens end with the call.
+func (s *service) keepTaskProgress(form tasks.Form, id string, progress *progressCall) {
+	if form != tasks.FormExperimental {
+		s.endProgress(progress)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.taskProgress == nil {
+		s.taskProgress = make(map[string]*progressCall)
+	}
+	s.taskProgress[id] = progress
+}
+
+// observeTaskProgress hands the progress of task id to the observer in
+// ctx, if the task kept its call's token and ctx carries one.
+func (s *service) observeTaskProgress(ctx context.Context, id string) {
+	observe, ok := ctx.Value(progressObserverKey{}).(func(Progress))
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if progress := s.taskProgress[id]; progress != nil {
+		progress.observe = observe
+	}
+}
+
+// endTaskProgress stops routing the progress of task id once it ended.
+func (s *service) endTaskProgress(id string) {
+	s.mu.Lock()
+	progress := s.taskProgress[id]
+	delete(s.taskProgress, id)
+	s.mu.Unlock()
+	if progress != nil {
+		s.endProgress(progress)
+	}
 }
