@@ -152,7 +152,8 @@ func Form(body []byte) string {
 }
 
 // JSON masks the value of every sensitive key at any depth of a JSON
-// document. Invalid JSON is replaced by a summary.
+// document, and every URL credential inside a string value (see Text).
+// Invalid JSON is replaced by a summary.
 func JSON(body []byte) string {
 	var doc any
 	if err := json.Unmarshal(body, &doc); err != nil {
@@ -181,6 +182,8 @@ func maskJSON(v any) any {
 			t[i] = maskJSON(child)
 		}
 		return t
+	case string:
+		return Text(t)
 	default:
 		return v
 	}
@@ -288,4 +291,106 @@ func Error(err error) string {
 		}
 	}
 	return text
+}
+
+// embeddedURL matches an absolute URL inside free text: a scheme, "://", and
+// everything up to whitespace or a quote.
+var embeddedURL = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.\-]*://[^\s"'<>` + "`" + `]+`)
+
+// Text masks the sensitive query and fragment parameters and the userinfo
+// password of every absolute URL embedded in s. URLs that carry none are
+// left byte-for-byte unchanged, so ordinary text and links stay readable.
+func Text(s string) string {
+	if !strings.Contains(s, "://") {
+		return s
+	}
+	return embeddedURL.ReplaceAllStringFunc(s, func(raw string) string {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return fmt.Sprintf("[unparseable URL, %d bytes]", len(raw))
+		}
+		if !urlCarriesSecret(u) {
+			return raw
+		}
+		return RedactedURL(u)
+	})
+}
+
+// urlCarriesSecret reports whether u has a userinfo password or a sensitive
+// query or fragment parameter. An unparseable query or fragment counts as
+// secret, because it cannot be scanned.
+func urlCarriesSecret(u *url.URL) bool {
+	if _, hasPassword := u.User.Password(); hasPassword {
+		return true
+	}
+	for _, part := range []string{u.RawQuery, u.Fragment} {
+		if part == "" {
+			continue
+		}
+		values, err := url.ParseQuery(part)
+		if err != nil {
+			return true
+		}
+		for name := range values {
+			if IsSensitiveParam(name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// metaKey is the key under which MCP carries protocol metadata (_meta).
+const metaKey = "_meta"
+
+// Payload returns a copy of a decoded MCP payload (map[string]any, []any and
+// scalars, as encoding/json produces) that is safe to log. It does not mask
+// by key name: a tool argument named "state" or "code" is the user's data and
+// stays readable. Instead every string passes through Text, so a URL with a
+// credential in its query or fragment is masked wherever it appears, and
+// every _meta entry whose name ends in a credential name (authorization,
+// access_token, ...; judged after the last "/" or ".") is masked. v is not
+// modified.
+func Payload(v any) any {
+	return payload(v, false)
+}
+
+// PayloadMap is Payload for a JSON object.
+func PayloadMap(m map[string]any) map[string]any {
+	return payloadMap(m, false)
+}
+
+func payloadMap(m map[string]any, inMeta bool) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, child := range m {
+		if inMeta {
+			name := k
+			if i := strings.LastIndexByte(name, '/'); i >= 0 {
+				name = name[i+1:]
+			}
+			if FieldValue(name, child) == Mask {
+				out[k] = Mask
+				continue
+			}
+		}
+		out[k] = payload(child, k == metaKey)
+	}
+	return out
+}
+
+func payload(v any, inMeta bool) any {
+	switch t := v.(type) {
+	case map[string]any:
+		return payloadMap(t, inMeta)
+	case []any:
+		out := make([]any, len(t))
+		for i, child := range t {
+			out[i] = payload(child, false)
+		}
+		return out
+	case string:
+		return Text(t)
+	default:
+		return v
+	}
 }

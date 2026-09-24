@@ -292,3 +292,86 @@ func TestFieldValue_JudgesDottedKeyByLastSegment(t *testing.T) {
 		t.Errorf("dotted refresh_token = %v, want mask", got)
 	}
 }
+
+func TestText_MasksSensitiveParamsOfEveryEmbeddedURL(t *testing.T) {
+	in := "Open https://sso.example.com/device?code=" + secretValue + " then https://app.example.com/cb#access_token=" + secretValue + "&x=1 and ftp://u:" + secretValue + "@host/f"
+	got := Text(in)
+	if strings.Contains(got, secretValue) {
+		t.Fatalf("Text leaks the secret: %s", got)
+	}
+	for _, keep := range []string{"Open https://sso.example.com/device?code=", "then https://app.example.com/cb#", "x=1", "ftp://u:"} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("Text(%q) = %q, lost %q", in, got, keep)
+		}
+	}
+}
+
+func TestText_LeavesPlainTextAndCleanURLsUntouched(t *testing.T) {
+	for _, in := range []string{
+		"state=open code=42",
+		"see https://example.com/docs/page for details",
+		"https://example.com/search?q=b&a=c#top",
+		"https://user@example.com/x",
+		"",
+	} {
+		if got := Text(in); got != in {
+			t.Errorf("Text(%q) = %q, want unchanged", in, got)
+		}
+	}
+}
+
+func TestPayload_MasksURLsAndMetaCredentialsButNotArgumentNames(t *testing.T) {
+	in := map[string]any{
+		"arguments": map[string]any{
+			"state": "open",
+			"code":  "fmt.Println()",
+			"link":  "https://h.example/cb?state=" + secretValue,
+		},
+		"content": []any{map[string]any{"text": "go to https://h.example/d?code=" + secretValue}},
+		"_meta": map[string]any{
+			"authorization":            "Bearer " + secretValue,
+			"example.com/access_token": secretValue,
+			"progressToken":            7,
+			"traceparent":              "00-abc-def-01",
+		},
+		"count": 3,
+	}
+	out := Payload(in)
+	rendered := fmt.Sprintf("%v", out)
+	if strings.Contains(rendered, secretValue) {
+		t.Fatalf("Payload leaks the secret: %s", rendered)
+	}
+	args := out.(map[string]any)["arguments"].(map[string]any)
+	if args["state"] != "open" || args["code"] != "fmt.Println()" {
+		t.Errorf("Payload masked ordinary argument names: %v", args)
+	}
+	meta := out.(map[string]any)["_meta"].(map[string]any)
+	if meta["progressToken"] != 7 || meta["traceparent"] != "00-abc-def-01" {
+		t.Errorf("Payload masked non-credential _meta keys: %v", meta)
+	}
+	if fmt.Sprintf("%v", in) == rendered {
+		t.Error("Payload returned its input unchanged")
+	}
+	if !strings.Contains(fmt.Sprintf("%v", in), secretValue) {
+		t.Error("Payload modified its input; it must return a copy")
+	}
+}
+
+// An MCP body on the wire (traced by the HTTP debug transports) carries
+// URLs inside ordinary string values, not under credential key names.
+func TestBody_MasksURLCredentialsInsideJSONStrings(t *testing.T) {
+	body := `{"result":{"inputRequests":{"login":{"params":{"url":"https://sso.example/d?code=` + secretValue + `"}}}}}`
+	for _, ct := range []string{"application/json", "text/event-stream"} {
+		in := body
+		if ct == "text/event-stream" {
+			in = "event: message\ndata: " + body + "\n"
+		}
+		got := Body(ct, []byte(in))
+		if strings.Contains(got, secretValue) {
+			t.Errorf("Body(%s) leaks the code: %s", ct, got)
+		}
+		if !strings.Contains(got, "sso.example/d?code=") {
+			t.Errorf("Body(%s) dropped the URL: %s", ct, got)
+		}
+	}
+}
