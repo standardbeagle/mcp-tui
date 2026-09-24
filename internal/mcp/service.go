@@ -561,6 +561,9 @@ func (s *service) initializeConnection() error {
 	// Initialize session manager if not already done
 	if s.sessionManager == nil {
 		s.sessionManager = sessionPkg.NewManager()
+		// Task support is read from the handshake, which an automatic
+		// reconnection repeats; the new server may declare tasks differently.
+		s.sessionManager.OnReconnected(s.startTaskSession)
 
 		// Configure session manager based on unified config
 		if s.config != nil {

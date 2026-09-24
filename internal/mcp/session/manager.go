@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -93,6 +94,9 @@ type Manager struct {
 	sessionOptions *officialMCP.ClientSessionOptions
 	info           *Info
 	closeFunc      context.CancelFunc
+	// reconnectObservers run after each successful reconnection; see
+	// OnReconnected.
+	reconnectObservers []func(*officialMCP.ClientSession)
 
 	// Configuration
 	maxReconnectAttempts int
@@ -311,6 +315,17 @@ func (m *Manager) Disconnect() error {
 
 	debug.Info("Session manager: Disconnection complete", debug.F("finalState", StateClosed))
 	return lastErr
+}
+
+// OnReconnected registers fn to run with the new session after each
+// successful automatic reconnection, so state read from the handshake can
+// be read again. Observers run in registration order on the reconnection
+// goroutine, after the manager reports StateConnected and without its lock
+// held (an observer may call back into the manager or take its own locks).
+func (m *Manager) OnReconnected(fn func(*officialMCP.ClientSession)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reconnectObservers = append(m.reconnectObservers, fn)
 }
 
 // GetSession returns the current session if connected
@@ -749,11 +764,15 @@ func (m *Manager) attemptReconnection() {
 		m.info.LastError = nil
 		m.info.ReconnectCount = attempt
 		requiresMonitor := contextStrategy.RequiresLongLivedConnection()
+		observers := slices.Clone(m.reconnectObservers)
 		m.mu.Unlock()
 
 		debug.Info("Session manager: Reconnection successful",
 			debug.F("attempt", attempt),
 			debug.F("newSessionID", SessionLabel(session)))
+		for _, observe := range observers {
+			observe(session)
+		}
 
 		if requiresMonitor {
 			go m.startHealthMonitoring(connectCtx)

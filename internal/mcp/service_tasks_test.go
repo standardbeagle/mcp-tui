@@ -3,17 +3,23 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	mcpConfig "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
@@ -440,4 +446,116 @@ func TestTasks_LoggedByFingerprint(t *testing.T) {
 			}
 		})
 	}
+}
+
+// successiveTransport connects to the next transport in line on each
+// Connect, as a reconnection reaches a restarted server.
+type successiveTransport struct {
+	mu   sync.Mutex
+	next []officialMCP.Transport
+}
+
+func (s *successiveTransport) Connect(ctx context.Context) (officialMCP.Connection, error) {
+	s.mu.Lock()
+	if len(s.next) == 0 {
+		s.mu.Unlock()
+		return nil, errors.New("no server left to connect to")
+	}
+	t := s.next[0]
+	s.next = s.next[1:]
+	s.mu.Unlock()
+	return t.Connect(ctx)
+}
+
+// droppableTransport's connection fails its reads with a connection reset
+// once dropped, as a network drop does.
+type droppableTransport struct {
+	inner   officialMCP.Transport
+	dropped chan struct{}
+}
+
+func (d *droppableTransport) Connect(ctx context.Context) (officialMCP.Connection, error) {
+	conn, err := d.inner.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &droppableConn{Connection: conn, dropped: d.dropped}, nil
+}
+
+type droppableConn struct {
+	officialMCP.Connection
+	dropped chan struct{}
+}
+
+func (c *droppableConn) Read(ctx context.Context) (jsonrpc.Message, error) {
+	type read struct {
+		msg jsonrpc.Message
+		err error
+	}
+	got := make(chan read, 1)
+	go func() {
+		msg, err := c.Connection.Read(ctx)
+		got <- read{msg, err}
+	}()
+	select {
+	case r := <-got:
+		return r.msg, r.err
+	case <-c.dropped:
+		return nil, fmt.Errorf("read: %w", syscall.ECONNRESET)
+	}
+}
+
+// reconnectingFactory hands out transport with the SSE context strategy,
+// the one whose sessions the manager health-checks and reconnects.
+type reconnectingFactory struct{ fakeTransportFactory }
+
+func (f *reconnectingFactory) CreateTransport(*transports.TransportConfig) (officialMCP.Transport, transports.ContextStrategy, error) {
+	return f.transport, transports.NewContextStrategy(transports.TransportSSE), nil
+}
+
+// Task support comes from the handshake, so an automatic reconnection must
+// read it again: here the server comes back declaring tasks it did not
+// declare before, and task calls must work on the new session.
+func TestTasks_SupportReReadAfterReconnection(t *testing.T) {
+	version := testutil.LegacyProtocolVersion
+	plain := officialMCP.NewServer(&officialMCP.Implementation{Name: "weather", Version: "2.1.0"}, nil)
+	clientT, serverT := officialMCP.NewInMemoryTransports()
+	plainSession, err := plain.Connect(context.Background(), serverT, nil)
+	if err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	t.Cleanup(func() { _ = plainSession.Close() })
+	drop := &droppableTransport{inner: clientT, dropped: make(chan struct{})}
+	ts := testutil.NewTaskServer(version)
+
+	cfg := mcpConfig.Default()
+	cfg.Session.HealthCheckInterval = 10 * time.Millisecond
+	cfg.Session.ReconnectDelay = 0
+	svc := NewServiceWithConfig(cfg).(*service)
+	svc.transportFactory = &reconnectingFactory{fakeTransportFactory{
+		transport: &successiveTransport{next: []officialMCP.Transport{drop, ts.InMemoryTransport(t)}},
+	}}
+	if err := svc.Connect(context.Background(), &configPkg.ConnectionConfig{
+		Type: configPkg.TransportStdio, Command: noopCommand, ProtocolVersion: version,
+	}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Disconnect() })
+	if svc.TaskSupport().Declared {
+		t.Fatalf("TaskSupport = %+v before the restart, want none declared", svc.TaskSupport())
+	}
+
+	reconnected := make(chan struct{})
+	svc.sessionManager.OnReconnected(func(*officialMCP.ClientSession) { close(reconnected) })
+	close(drop.dropped) // the network drops; the health check notices
+	select {
+	case <-reconnected:
+	case <-time.After(10 * time.Second):
+		t.Fatal("service never reconnected")
+	}
+
+	if got := svc.TaskSupport(); got.Form != tasks.FormExperimental || !got.Declared || !got.ToolCall {
+		t.Fatalf("TaskSupport = %+v after reconnecting, want the new server's experimental tasks", got)
+	}
+	startReport(t, svc, ts)
 }
