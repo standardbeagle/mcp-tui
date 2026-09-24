@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
@@ -2309,6 +2310,7 @@ func (ms *MainScreen) renderToolDetail() string {
 		contentBuilder.WriteString(nameLineStyle.Render("Name: " + tool.Name))
 		contentBuilder.WriteString("\n")
 	}
+	contentBuilder.WriteString(renderIcons(tool.Icons))
 	contentBuilder.WriteString("\n")
 
 	// Schema error section (if any)
@@ -2522,6 +2524,23 @@ func (ms *MainScreen) renderEventDetail() string {
 	return builder.String()
 }
 
+// renderIcons lists each icon (SEP-973) on its own line: src, mime type,
+// sizes, theme. Icons are never fetched. "" when there are none.
+func renderIcons(icons []officialMCP.Icon) string {
+	if len(icons) == 0 {
+		return ""
+	}
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	var b strings.Builder
+	b.WriteString(style.Render("Icons:"))
+	b.WriteString("\n")
+	for _, icon := range icons {
+		b.WriteString(style.Render("  " + mcp.DescribeIcon(icon)))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // renderDroppedTools warns about the tools the SDK removed from tools/list,
 // one line each with the SDK's reason; "" when there are none.
 func renderDroppedTools(dropped []mcp.DroppedTool) string {
@@ -2611,6 +2630,7 @@ func (ms *MainScreen) renderResourceViewer() string {
 		builder.WriteString(metaStyle.Render(fmt.Sprintf("MIME Type: %s", ms.selectedResource.MimeType)))
 		builder.WriteString("\n")
 	}
+	builder.WriteString(renderIcons(ms.selectedResource.Icons))
 	builder.WriteString("\n")
 
 	// Content
@@ -2695,6 +2715,7 @@ func (ms *MainScreen) renderPromptViewer() string {
 		builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.selectedPrompt.Description)))
 		builder.WriteString("\n")
 	}
+	builder.WriteString(renderIcons(ms.selectedPrompt.Icons))
 
 	// Arguments
 	if ms.selectedPrompt.Arguments != nil && len(ms.selectedPrompt.Arguments) > 0 {

@@ -382,6 +382,7 @@ func (s *ResourceTemplateScreen) View() string {
 		b.WriteString(s.helpStyle.Render(s.template.Description))
 		b.WriteString("\n")
 	}
+	b.WriteString(renderIcons(s.template.Icons))
 	b.WriteString("\n")
 
 	for i, name := range s.variables {
