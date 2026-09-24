@@ -258,6 +258,37 @@ func TestStdioServerIntegration(t *testing.T) {
 	})
 }
 
+// TestNaturalCLIConnectionString runs the CLI the way the README shows it,
+// with the server as one positional connection string before the
+// subcommand: `mcp-tui "server --stdio" tool list`. main pulls the string
+// out before cobra parses flags and hands it to the subcommand; if that
+// hand-off broke, tool list would report no connection instead of
+// spawning the server.
+func TestNaturalCLIConnectionString(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration tests in short mode")
+	}
+	bin := buildTestBinary(t)
+
+	// Same budget as TestStdioServerIntegration: the CLI spawns a stand-in
+	// server that fails the MCP handshake.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	serverCmd, serverArgs := testutil.ServerExitsImmediately(t)
+	fields := make([]string, 0, len(serverArgs)+1)
+	for _, field := range append([]string{serverCmd}, serverArgs...) {
+		fields = append(fields, "'"+field+"'")
+	}
+	output, err := exec.CommandContext(ctx, bin, strings.Join(fields, " "), "tool", "list").CombinedOutput()
+	outputStr := string(output)
+
+	assert.Error(t, err, "a server that never speaks MCP must fail the handshake")
+	assert.Contains(t, outputStr, "Starting process: "+serverCmd)
+	assert.Contains(t, outputStr, "MCP initialization failed")
+	assert.NotContains(t, outputStr, "no MCP server connection specified")
+}
+
 func TestDebugMode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration tests in short mode")
