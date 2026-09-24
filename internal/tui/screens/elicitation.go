@@ -463,9 +463,27 @@ func (s *ElicitationScreen) View() string {
 	}
 	if s.isURLMode() {
 		params := s.pending.Request.Params
+		if params.Message != "" {
+			b.WriteString(s.contentStyle.Render(params.Message))
+			b.WriteString("\n\n")
+		}
+		// The spec requires the full URL before consent and recommends
+		// highlighting the host against subdomain spoofing.
+		target := elicitation.ParseURLTarget(params.URL)
 		b.WriteString(s.labelStyle.Render("URL:"))
 		b.WriteString("\n")
-		b.WriteString(s.contentStyle.Render(params.URL))
+		b.WriteString(s.contentStyle.Render(target.URL))
+		b.WriteString("\n")
+		b.WriteString(s.labelStyle.Render("Host: "))
+		if target.Host == "" {
+			b.WriteString(s.errorStyle.Render("(unparseable URL)"))
+		} else {
+			b.WriteString(s.choiceStyle.Render(target.Host))
+		}
+		if target.Punycode {
+			b.WriteString("\n")
+			b.WriteString(s.errorStyle.Render(elicitation.PunycodeWarning))
+		}
 		b.WriteString("\n\n")
 		b.WriteString(s.dimStyle.Render("Accept confirms consent. Open the URL manually in a browser; it is never fetched automatically."))
 		b.WriteString("\n\n")

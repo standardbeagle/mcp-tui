@@ -459,3 +459,24 @@ func TestElicitationScreen_MultiSelectEnforcesItemBounds(t *testing.T) {
 		t.Errorf("three of maxItems 2 selected: err = %v, want an 'at most 2' error", err)
 	}
 }
+
+// TestElicitationScreen_URLModeShowsMessageHostAndPunycodeWarning: before
+// consent the overlay shows why the server asks, the full URL, its host,
+// and a warning when the host is punycode.
+func TestElicitationScreen_URLModeShowsMessageHostAndPunycodeWarning(t *testing.T) {
+	s := NewElicitationScreen(&elicitation.PendingRequest{Request: &officialMCP.ElicitRequest{
+		Params: &officialMCP.ElicitParams{
+			Mode: "url", Message: "Confirm the payment", URL: "https://xn--pypal-4ve.com/checkout/7731",
+		},
+	}})
+	s.UpdateSize(120, 30)
+
+	view := s.View()
+	for _, want := range []string{
+		"Confirm the payment", "https://xn--pypal-4ve.com/checkout/7731", "xn--pypal-4ve.com", "punycode",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("URL overlay lacks %q:\n%s", want, view)
+		}
+	}
+}
