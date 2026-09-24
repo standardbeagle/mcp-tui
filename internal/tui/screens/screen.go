@@ -49,6 +49,16 @@ type BackgroundMsg interface {
 	BackgroundWork()
 }
 
+// RequestOverlay is an overlay someone waits on for an answer: a server's
+// elicitation or sampling request, or a destructive tool's confirmation.
+// The screen manager never drops or replaces one; an overlay that arrives
+// while one is open waits its turn, and one arriving while any overlay is
+// open waits for that to close.
+type RequestOverlay interface {
+	Screen
+	AnswersRequest()
+}
+
 // ErrorMsg is sent when an error occurs
 type ErrorMsg struct {
 	Error error

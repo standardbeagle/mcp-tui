@@ -68,6 +68,10 @@ func (c *ConfirmScreen) initStyles() {
 		Padding(1, 2)
 }
 
+// AnswersRequest marks the overlay as a RequestOverlay: the tool screen
+// waits for its decision.
+func (c *ConfirmScreen) AnswersRequest() {}
+
 // Init implements tea.Model.
 func (c *ConfirmScreen) Init() tea.Cmd { return nil }
 

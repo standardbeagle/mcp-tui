@@ -20,6 +20,9 @@ type ScreenManager struct {
 	currentScreen screens.Screen
 	screenStack   []screens.Screen
 	overlayScreen screens.Screen // Overlay screen that preserves underlying screen
+	// queuedOverlays wait for the open overlay to close, oldest first; see
+	// openOverlay.
+	queuedOverlays []screens.Screen
 }
 
 // NewScreenManager creates a new screen manager
@@ -175,20 +178,29 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case screens.BackMsg:
 			// For overlay screens, back means close the overlay
-			sm.overlayScreen = nil
-			sm.logger.Info("Closing overlay screen")
-			return sm, nil
+			cmd := sm.closeOverlay()
+			return sm, cmd
 
 		case screens.ToggleOverlayMsg:
 			// Toggle off the overlay if it's the same screen
 			if msg.Screen != nil && sm.overlayScreen.Name() == msg.Screen.Name() {
-				sm.overlayScreen = nil
 				sm.logger.Info("Toggling off overlay screen")
-				return sm, nil
+				cmd := sm.closeOverlay()
+				return sm, cmd
 			}
-			// Otherwise, replace with new overlay
-			sm.overlayScreen = msg.Screen
-			return sm, sm.overlayScreen.Init()
+			cmd := sm.openOverlay(msg.Screen)
+			return sm, cmd
+
+		case screens.TransitionMsg:
+			if msg.Transition.Screen.IsOverlay() {
+				cmd := sm.openOverlay(msg.Transition.Screen)
+				return sm, cmd
+			}
+			model, cmd := sm.overlayScreen.Update(msg)
+			if newScreen, ok := model.(screens.Screen); ok {
+				sm.overlayScreen = newScreen
+			}
+			return sm, cmd
 
 		case screens.BackgroundMsg:
 			model, cmd := sm.currentScreen.Update(msg)
@@ -234,9 +246,8 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screens.TransitionMsg:
 		// Check if this is an overlay screen
 		if msg.Transition.Screen.IsOverlay() {
-			sm.overlayScreen = msg.Transition.Screen
-			sm.logger.Info("Opening overlay screen", debug.F("overlay", msg.Transition.Screen.Name()))
-			return sm, sm.overlayScreen.Init()
+			cmd := sm.openOverlay(msg.Transition.Screen)
+			return sm, cmd
 		}
 
 		// Normal screen transition
@@ -256,9 +267,8 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screens.ToggleOverlayMsg:
 		// Toggle on the overlay
 		if msg.Screen != nil {
-			sm.overlayScreen = msg.Screen
-			sm.logger.Info("Toggling on overlay screen", debug.F("overlay", msg.Screen.Name()))
-			return sm, sm.overlayScreen.Init()
+			cmd := sm.openOverlay(msg.Screen)
+			return sm, cmd
 		}
 		return sm, nil
 
@@ -288,6 +298,42 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return sm, cmd
 	}
+}
+
+// openOverlay shows overlay, or queues it behind the open one. A request
+// overlay is never dropped or replaced (screens.RequestOverlay): one that
+// arrives while any overlay is open, or any overlay that arrives while a
+// request overlay is open, waits its turn. Other overlays replace each
+// other as before.
+func (sm *ScreenManager) openOverlay(overlay screens.Screen) tea.Cmd {
+	if sm.overlayScreen != nil && (isRequestOverlay(overlay) || isRequestOverlay(sm.overlayScreen)) {
+		sm.queuedOverlays = append(sm.queuedOverlays, overlay)
+		sm.logger.Info("Queueing overlay screen",
+			debug.F("overlay", overlay.Name()),
+			debug.F("open", sm.overlayScreen.Name()),
+			debug.F("queued", len(sm.queuedOverlays)))
+		return nil
+	}
+	sm.overlayScreen = overlay
+	sm.logger.Info("Opening overlay screen", debug.F("overlay", overlay.Name()))
+	return overlay.Init()
+}
+
+// closeOverlay closes the open overlay and shows the next queued one.
+func (sm *ScreenManager) closeOverlay() tea.Cmd {
+	sm.logger.Info("Closing overlay screen", debug.F("overlay", sm.overlayScreen.Name()))
+	sm.overlayScreen = nil
+	if len(sm.queuedOverlays) == 0 {
+		return nil
+	}
+	next := sm.queuedOverlays[0]
+	sm.queuedOverlays = sm.queuedOverlays[1:]
+	return sm.openOverlay(next)
+}
+
+func isRequestOverlay(screen screens.Screen) bool {
+	_, ok := screen.(screens.RequestOverlay)
+	return ok
 }
 
 // View renders the current screen

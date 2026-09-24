@@ -153,6 +153,10 @@ func (s *ElicitationScreen) initStyles() {
 		Padding(1, 2)
 }
 
+// AnswersRequest marks the overlay as a RequestOverlay: the server waits
+// for its answer.
+func (s *ElicitationScreen) AnswersRequest() {}
+
 // Init implements tea.Model.
 func (s *ElicitationScreen) Init() tea.Cmd {
 	return textinput.Blink

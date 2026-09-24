@@ -98,6 +98,10 @@ func (s *SamplingScreen) initStyles() {
 		Padding(1, 2)
 }
 
+// AnswersRequest marks the overlay as a RequestOverlay: the server waits
+// for its answer.
+func (s *SamplingScreen) AnswersRequest() {}
+
 // Init implements tea.Model.
 func (s *SamplingScreen) Init() tea.Cmd {
 	return nil

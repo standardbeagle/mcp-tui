@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,14 +21,24 @@ import (
 // must answer. The goroutine ends when the test does.
 func pendingElicitation(t *testing.T) *elicitation.PendingRequest {
 	t.Helper()
+	pending, _ := startElicitation(t, "Your name?")
+	return pending
+}
+
+// startElicitation is pendingElicitation for message, also returning a
+// channel closed once the server's handler has its answer.
+func startElicitation(t *testing.T, message string) (pending *elicitation.PendingRequest, answered <-chan struct{}) {
+	t.Helper()
 	delivered := make(chan *elicitation.PendingRequest, 1)
+	done := make(chan struct{})
 	handler := elicitation.NewTUIHandler(func(p *elicitation.PendingRequest) { delivered <- p })
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go func() {
-		_, _ = handler.HandleElicit(ctx, &officialMCP.ElicitRequest{Params: &officialMCP.ElicitParams{Message: "Your name?"}})
+		defer close(done)
+		_, _ = handler.HandleElicit(ctx, &officialMCP.ElicitRequest{Params: &officialMCP.ElicitParams{Message: message}})
 	}()
-	return <-delivered
+	return <-delivered, done
 }
 
 // dispatch runs sm.Update for msg and then for every message its commands
@@ -131,5 +142,96 @@ func TestScreenManagerDeliversBackgroundWorkUnderAnOverlay(t *testing.T) {
 	}
 	if sm.overlayScreen != overlay {
 		t.Errorf("overlay = %T, want it left open", sm.overlayScreen)
+	}
+}
+
+// requireAnswered waits for the server's handler to get its answer. The
+// answer is already given when this is called, so the bound only turns a
+// hang into a failure.
+func requireAnswered(t *testing.T, name string, answered <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-answered:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s: server handler still waiting for an answer", name)
+	}
+}
+
+// sessionManagerFixture returns a screen manager on a session's main screen.
+func sessionManagerFixture() *ScreenManager {
+	cfg := &config.Config{}
+	main := screens.NewMainScreen(cfg, &config.ConnectionConfig{Type: config.TransportHTTP, URL: "http://127.0.0.1:1/mcp"})
+	return &ScreenManager{
+		config:        cfg,
+		logger:        debug.Component("screen-manager"),
+		currentScreen: main,
+	}
+}
+
+// requireOverlayShowing fails unless the open overlay renders want.
+func requireOverlayShowing(t *testing.T, sm *ScreenManager, want string) {
+	t.Helper()
+	if sm.overlayScreen == nil {
+		t.Fatalf("no overlay open, want one showing %q", want)
+	}
+	if view := sm.overlayScreen.View(); !strings.Contains(view, want) {
+		t.Fatalf("overlay %s shows %q, want %q", sm.overlayScreen.Name(), view, want)
+	}
+}
+
+// A server request that arrives while another request's overlay is open
+// waits its turn: it was dropped, and the server waited forever.
+func TestScreenManagerQueuesConcurrentRequestOverlays(t *testing.T) {
+	sm := sessionManagerFixture()
+	first, firstAnswered := startElicitation(t, "First question?")
+	second, secondAnswered := startElicitation(t, "Second question?")
+
+	dispatch(t, sm, screens.ElicitationRequestMsg{Pending: first})
+	dispatch(t, sm, screens.ElicitationRequestMsg{Pending: second})
+	requireOverlayShowing(t, sm, "First question?")
+
+	dispatch(t, sm, tea.KeyMsg{Type: tea.KeyEsc})
+	requireAnswered(t, "first", firstAnswered)
+	requireOverlayShowing(t, sm, "Second question?")
+
+	dispatch(t, sm, tea.KeyMsg{Type: tea.KeyEsc})
+	requireAnswered(t, "second", secondAnswered)
+	if sm.overlayScreen != nil {
+		t.Errorf("overlay = %s after both answers, want none", sm.overlayScreen.Name())
+	}
+}
+
+// A request that arrives while the user has another overlay open (here
+// the roots editor) shows once that overlay closes.
+func TestScreenManagerQueuesRequestOverlayBehindAnOpenOverlay(t *testing.T) {
+	sm := sessionManagerFixture()
+	sm.overlayScreen = screens.NewRootsScreen(nil)
+	pending, answered := startElicitation(t, "Your name?")
+
+	dispatch(t, sm, screens.ElicitationRequestMsg{Pending: pending})
+	if _, ok := sm.overlayScreen.(*screens.RootsScreen); !ok {
+		t.Fatalf("overlay = %T, want the roots editor left open", sm.overlayScreen)
+	}
+
+	dispatch(t, sm, screens.BackMsg{})
+	requireOverlayShowing(t, sm, "Your name?")
+	dispatch(t, sm, tea.KeyMsg{Type: tea.KeyEsc})
+	requireAnswered(t, "elicitation", answered)
+}
+
+// A confirmation raised while a server request is open does not replace
+// it: the request would never be answered.
+func TestScreenManagerKeepsRequestOverlayWhenConfirmArrives(t *testing.T) {
+	sm := sessionManagerFixture()
+	pending, answered := startElicitation(t, "Your name?")
+	dispatch(t, sm, screens.ElicitationRequestMsg{Pending: pending})
+
+	dispatch(t, sm, screens.ToggleOverlayMsg{Screen: screens.NewConfirmScreen(mcp.Tool{Name: "wipe"})})
+	requireOverlayShowing(t, sm, "Your name?")
+
+	dispatch(t, sm, tea.KeyMsg{Type: tea.KeyEsc})
+	requireAnswered(t, "elicitation", answered)
+	if _, ok := sm.overlayScreen.(*screens.ConfirmScreen); !ok {
+		t.Errorf("overlay = %T after the answer, want the queued confirmation", sm.overlayScreen)
 	}
 }
