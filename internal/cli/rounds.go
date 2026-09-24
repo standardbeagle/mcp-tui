@@ -30,3 +30,12 @@ func writeRespondingServer(w io.Writer, server *mcp.RespondingServer) {
 	}
 	fmt.Fprintln(w, "\nServed by: "+server.String())
 }
+
+// writeReadCache prints how the SDK served a resources/read (SEP-2549);
+// nothing for sessions without a read cache.
+func writeReadCache(w io.Writer, cache *mcp.ReadCacheInfo) {
+	if cache == nil {
+		return
+	}
+	fmt.Fprintln(w, "\nCache: "+cache.Label())
+}

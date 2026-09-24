@@ -241,6 +241,7 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 		fmt.Println("No content available for this resource")
 		writeRoundTrace(os.Stdout, result.Rounds)
 		writeRespondingServer(os.Stdout, result.Server)
+		writeReadCache(os.Stdout, result.Cache)
 		return nil
 	}
 
@@ -316,12 +317,13 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 
 	writeRoundTrace(os.Stdout, result.Rounds)
 	writeRespondingServer(os.Stdout, result.Server)
+	writeReadCache(os.Stdout, result.Cache)
 	return nil
 }
 
-// resourceReadOutput is the `resource read --format json` document. rounds
-// and server appear only when present, matching the omitempty fields of
-// tool and prompt results.
+// resourceReadOutput is the `resource read --format json` document. rounds,
+// server and cache appear only when present, matching the omitempty fields
+// of tool and prompt results.
 func resourceReadOutput(uri string, result *mcp.ReadResourceResult) map[string]interface{} {
 	out := map[string]interface{}{
 		"uri":      uri,
@@ -333,6 +335,9 @@ func resourceReadOutput(uri string, result *mcp.ReadResourceResult) map[string]i
 	}
 	if result.Server != nil {
 		out["server"] = result.Server
+	}
+	if result.Cache != nil {
+		out["cache"] = result.Cache
 	}
 	return out
 }

@@ -99,11 +99,13 @@ type MainScreen struct {
 	resourceContent    []mcp.ResourceContents
 	resourceRounds     []mcp.RoundSummary
 	resourceServer     *mcp.RespondingServer
-	promptResult       *mcp.GetPromptResult
-	resourceLoading    bool
-	promptLoading      bool
-	resourceLoadStart  time.Time
-	promptLoadStart    time.Time
+	// resourceCache is how the SDK served the open read (SEP-2549).
+	resourceCache     *mcp.ReadCacheInfo
+	promptResult      *mcp.GetPromptResult
+	resourceLoading   bool
+	promptLoading     bool
+	resourceLoadStart time.Time
+	promptLoadStart   time.Time
 	// callProgress is the server's progress on the prompt get or resource
 	// read in flight.
 	callProgress callProgress
@@ -639,6 +641,7 @@ func (ms *MainScreen) handleResourceContentLoaded(msg ResourceContentLoadedMsg) 
 		ms.resourceContent = msg.Content.Contents
 		ms.resourceRounds = msg.Content.Rounds
 		ms.resourceServer = msg.Content.Server
+		ms.resourceCache = msg.Content.Cache
 		ms.resourceViewerOpen = true
 		delete(ms.resourceUpdates, msg.Resource.URI)
 		ms.refreshResourceRows()
@@ -797,6 +800,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ms.resourceContent = nil
 			ms.resourceRounds = nil
 			ms.resourceServer = nil
+			ms.resourceCache = nil
 			return ms, nil
 		}
 		if ms.promptViewerOpen {
@@ -2670,6 +2674,10 @@ func (ms *MainScreen) renderResourceViewer() string {
 	}
 	if ms.selectedResource.MimeType != "" {
 		builder.WriteString(metaStyle.Render(fmt.Sprintf("MIME Type: %s", ms.selectedResource.MimeType)))
+		builder.WriteString("\n")
+	}
+	if ms.resourceCache != nil {
+		builder.WriteString(metaStyle.Render("Cache: " + ms.resourceCache.Label()))
 		builder.WriteString("\n")
 	}
 	builder.WriteString(renderIcons(ms.selectedResource.Icons))
