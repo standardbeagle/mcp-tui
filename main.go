@@ -144,6 +144,11 @@ Examples:
 					connectionConfig.OAuth = oauthCfg
 				}
 
+				// Mirror --protocol-version; the service validates it at Connect.
+				if protocolVersion, _ := cmd.Flags().GetString("protocol-version"); protocolVersion != "" {
+					connectionConfig.ProtocolVersion = protocolVersion
+				}
+
 				// Mirror --mcp-method-headers into the connection config so
 				// the TUI's transport factory enables the SEP-2243 RoundTripper.
 				if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
@@ -187,6 +192,7 @@ Examples:
 	rootCmd.PersistentFlags().StringSliceVar(&cfg.Args, "args", []string{}, "Arguments for MCP server command")
 	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
 	rootCmd.PersistentFlags().String("transport", "stdio", "Transport type (stdio, sse, http, streamable-http)")
+	rootCmd.PersistentFlags().String("protocol-version", "", "MCP protocol version to request (e.g. 2025-11-25); empty = SDK latest")
 	rootCmd.PersistentFlags().DurationVar(&cfg.ConnectionTimeout, "timeout", cfg.ConnectionTimeout, "Connection timeout")
 	// Debug mode always enabled - this is a testing/debug tool
 	cfg.DebugMode = true

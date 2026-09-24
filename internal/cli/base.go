@@ -183,6 +183,13 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		connConfig.OAuth = oauthCfg
 	}
 
+	// Mirror --protocol-version into the connection config. Validation
+	// against the SDK's supported versions happens in the service at
+	// Connect, so CLI and TUI reject the same values with the same error.
+	if protocolVersion, _ := cmd.Flags().GetString("protocol-version"); protocolVersion != "" {
+		connConfig.ProtocolVersion = protocolVersion
+	}
+
 	// Mirror --mcp-method-headers (SEP-2243) into the connection config so
 	// the transport factory wraps the HTTP client with the header injector
 	// at Connect time. STDIO ignores the flag because the SEP only applies

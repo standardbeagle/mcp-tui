@@ -78,6 +78,15 @@ func TestCLIIntegration(t *testing.T) {
 			contains: []string{"executable file not found"},
 		},
 		{
+			// Version validation runs before the transport exists, so the
+			// bogus command is never spawned and the error names the
+			// versions the user can pick instead.
+			name:     "unsupported protocol version rejected before spawn",
+			args:     []string{"tool", "list", "--cmd", "nonexistent-command-xyz", "--protocol-version", "2099-01-01"},
+			wantErr:  true,
+			contains: []string{"unsupported MCP protocol version", "2026-07-28", "2025-11-25", "2024-11-05"},
+		},
+		{
 			name:     "server help",
 			args:     []string{"server", "--help"},
 			wantErr:  false,
