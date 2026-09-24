@@ -48,11 +48,11 @@ func NewTracker() *Tracker {
 // transition it represents. A transition the spec forbids is recorded all
 // the same, since the server's view is what the user must see, and
 // reported as ErrInvalidTransition.
-func (tr *Tracker) Observe(t Task) (Transition, error) {
+func (tr *Tracker) Observe(t *Task) (Transition, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	prev, seen := tr.tasks[t.ID]
-	tr.tasks[t.ID] = t
+	tr.tasks[t.ID] = *t
 	if !seen {
 		return Transition{First: true, To: t.Status}, nil
 	}
@@ -75,8 +75,8 @@ func (tr *Tracker) Get(id string) (Task, bool) {
 func (tr *Tracker) Snapshot() []Task {
 	tr.mu.Lock()
 	out := make([]Task, 0, len(tr.tasks))
-	for _, t := range tr.tasks {
-		out = append(out, t)
+	for id := range tr.tasks {
+		out = append(out, tr.tasks[id])
 	}
 	tr.mu.Unlock()
 	sort.Slice(out, func(i, j int) bool {

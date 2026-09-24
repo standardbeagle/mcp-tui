@@ -254,6 +254,8 @@ func withRoutingName(ctx context.Context, name string) context.Context {
 }
 
 func routingName(ctx context.Context) string {
-	name, _ := ctx.Value(routingNameKey{}).(string)
-	return name
+	if name, ok := ctx.Value(routingNameKey{}).(string); ok {
+		return name
+	}
+	return ""
 }

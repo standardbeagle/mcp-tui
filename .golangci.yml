@@ -35,6 +35,10 @@ linters:
       min-occurrences: 3
     misspell:
       locale: US
+      # MCP spells these on the wire (notifications/cancelled, task status
+      # "cancelled"); Go identifiers and docs must match the spec.
+      ignore-rules:
+        - cancelled
     lll:
       line-length: 120
     gocritic:

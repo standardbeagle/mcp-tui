@@ -9,11 +9,11 @@ import (
 
 func TestFormFor(t *testing.T) {
 	cases := map[string]Form{
-		"2024-11-05": FormNone,
-		"2025-06-18": FormNone,
-		"2025-11-25": FormExperimental,
-		"2026-07-28": FormExtension,
-		"2027-01-15": FormExtension,
+		"2024-11-05":        FormNone,
+		"2025-06-18":        FormNone,
+		experimentalVersion: FormExperimental,
+		extensionVersion:    FormExtension,
+		"2027-01-15":        FormExtension,
 	}
 	for version, want := range cases {
 		if got := FormFor(version); got != want {
@@ -173,23 +173,23 @@ func TestCanTransition(t *testing.T) {
 func TestTracker_RecordsTransitionsAndFlagsInvalidOnes(t *testing.T) {
 	tr := NewTracker()
 	at := time.Date(2026, 7, 28, 9, 0, 0, 0, time.UTC)
-	task := func(status Status) Task {
-		return Task{ID: "t-42", Status: status, CreatedAt: at, LastUpdatedAt: at}
+	taskAt := func(status Status) *Task {
+		return &Task{ID: "t-42", Status: status, CreatedAt: at, LastUpdatedAt: at}
 	}
 
-	tn, err := tr.Observe(task(StatusWorking))
+	tn, err := tr.Observe(taskAt(StatusWorking))
 	if err != nil || !tn.First || tn.To != StatusWorking {
 		t.Fatalf("first observation = %+v, %v", tn, err)
 	}
-	tn, err = tr.Observe(task(StatusWorking))
+	tn, err = tr.Observe(taskAt(StatusWorking))
 	if err != nil || tn.Changed() {
 		t.Fatalf("repeat observation = %+v, %v", tn, err)
 	}
-	tn, err = tr.Observe(task(StatusCompleted))
+	tn, err = tr.Observe(taskAt(StatusCompleted))
 	if err != nil || tn.From != StatusWorking || tn.To != StatusCompleted || !tn.Changed() {
 		t.Fatalf("working→completed = %+v, %v", tn, err)
 	}
-	if _, err = tr.Observe(task(StatusWorking)); !errors.Is(err, ErrInvalidTransition) {
+	if _, err = tr.Observe(taskAt(StatusWorking)); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("completed→working: err = %v, want ErrInvalidTransition", err)
 	}
 	snap := tr.Snapshot()
@@ -224,10 +224,10 @@ func TestExpired(t *testing.T) {
 
 func TestPollInterval(t *testing.T) {
 	five := int64(5000)
-	if got := (Task{PollIntervalMs: &five}).PollInterval(); got != 5*time.Second {
+	if got := (&Task{PollIntervalMs: &five}).PollInterval(); got != 5*time.Second {
 		t.Errorf("PollInterval = %v", got)
 	}
-	if got := (Task{}).PollInterval(); got != DefaultPollInterval {
+	if got := (&Task{}).PollInterval(); got != DefaultPollInterval {
 		t.Errorf("PollInterval without a server hint = %v, want %v", got, DefaultPollInterval)
 	}
 }

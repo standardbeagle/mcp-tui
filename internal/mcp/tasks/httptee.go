@@ -25,7 +25,11 @@ func (t *teeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil || resp.Body == nil {
 		return resp, err
 	}
-	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil {
+		// The SDK rejects the body too: no JSON-RPC in it to observe.
+		return resp, nil
+	}
 	switch mediaType {
 	case "application/json":
 		resp.Body = &jsonTee{body: resp.Body, link: t.link}

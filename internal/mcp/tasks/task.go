@@ -112,7 +112,7 @@ type Task struct {
 // Expired reports whether the task outlived its TTL without reaching a
 // terminal status, the point from which the spec lets a client treat it as
 // no longer usable.
-func (t Task) Expired(now time.Time) bool {
+func (t *Task) Expired(now time.Time) bool {
 	if t.TTLMs == nil || t.Status.IsTerminal() {
 		return false
 	}
@@ -121,7 +121,7 @@ func (t Task) Expired(now time.Time) bool {
 
 // PollInterval is the server's suggested polling interval, or
 // DefaultPollInterval when it gave none.
-func (t Task) PollInterval() time.Duration {
+func (t *Task) PollInterval() time.Duration {
 	if t.PollIntervalMs == nil || *t.PollIntervalMs <= 0 {
 		return DefaultPollInterval
 	}
@@ -200,7 +200,7 @@ func DecodeTask(form Form, raw json.RawMessage) (Task, error) {
 	if form == FormExtension {
 		t.TTLMs, t.PollIntervalMs = w.TTLMs, w.PollIntervalMs
 		t.InputRequests, t.Result, t.Error = nonNull(w.InputRequests), nonNull(w.Result), w.Error
-		if err := checkStatusPayload(t); err != nil {
+		if err := checkStatusPayload(&t); err != nil {
 			return Task{}, err
 		}
 	}
@@ -208,7 +208,7 @@ func DecodeTask(form Form, raw json.RawMessage) (Task, error) {
 }
 
 // checkStatusPayload enforces the extension's status-specific fields.
-func checkStatusPayload(t Task) error {
+func checkStatusPayload(t *Task) error {
 	switch {
 	case t.Status == StatusInputRequired && len(t.InputRequests) == 0:
 		return fmt.Errorf("%w: input_required without inputRequests", ErrMalformedTask)
