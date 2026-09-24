@@ -539,6 +539,15 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		}
 		toolArgs[raw.key] = parsedValue
 	}
+	// Check the whole schema, including what no key=value argument
+	// expresses (if/then/else, not, patternProperties, nested structure),
+	// before the call goes out.
+	if err := inputSchema.Validate(toolArgs); err != nil {
+		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+			fmt.Fprintf(os.Stderr, "❌ Arguments do not match the tool's input schema\n")
+		}
+		return fmt.Errorf("tool %q: %w", toolName, err)
+	}
 
 	strictOutput, err := cmd.Flags().GetBool("strict-output")
 	if err != nil {

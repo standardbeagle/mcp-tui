@@ -387,3 +387,39 @@ func TestParse_RootAlternatives(t *testing.T) {
 		t.Errorf("constraint-only alternatives = %+v, want both params and no note", s)
 	}
 }
+
+// Keywords no form expresses (if/then/else, not, patternProperties) are
+// enforced by validating the arguments against the whole schema.
+func TestSchema_ValidateEnforcesTheWholeSchema(t *testing.T) {
+	s, err := Parse("t", decode(t, `{
+		"type": "object",
+		"properties": {
+			"mode": {"type": "string"},
+			"path": {"type": "string"},
+			"address": {"type": "object", "properties": {"zip": {"type": "string"}}}
+		},
+		"patternProperties": {"^x-": {"type": "integer"}},
+		"if": {"properties": {"mode": {"const": "file"}}, "required": ["mode"]},
+		"then": {"required": ["path"]},
+		"not": {"required": ["forbidden"]}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := s.Validate(map[string]any{"mode": "file", "path": "/etc/hosts", "x-retries": int64(3)}); err != nil {
+		t.Errorf("valid arguments rejected: %v", err)
+	}
+	for name, args := range map[string]map[string]any{
+		"then":              {"mode": "file"},
+		"not":               {"forbidden": true},
+		"patternProperties": {"x-retries": "three"},
+		"zip":               {"address": map[string]any{"zip": 12345}},
+	} {
+		if err := s.Validate(args); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("%v: error = %v, want one mentioning %q", args, err, name)
+		}
+	}
+	if err := (Schema{}).Validate(map[string]any{"any": 1}); err != nil {
+		t.Errorf("an absent schema rejected arguments: %v", err)
+	}
+}

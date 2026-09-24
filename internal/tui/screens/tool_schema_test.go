@@ -217,3 +217,24 @@ func TestToolScreen_MultiTypeFieldShowsInferredType(t *testing.T) {
 		}
 	}
 }
+
+// The form validates its arguments against the whole schema before a call:
+// a conditional requirement no field shows still stops it.
+func TestToolScreen_ValidatesArgumentsAgainstTheWholeSchema(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(`{"type": "object",
+		"properties": {"mode": {"type": "string"}, "path": {"type": "string"}},
+		"if": {"properties": {"mode": {"const": "file"}}, "required": ["mode"]},
+		"then": {"required": ["path"]}}`), &schema); err != nil {
+		t.Fatal(err)
+	}
+	ts := NewToolScreen(mcp.Tool{Name: "ship", InputSchema: schema}, nil)
+	ts.setField(t, "mode", "file")
+	if _, err := ts.buildArguments(); err == nil || !strings.Contains(err.Error(), "then") {
+		t.Errorf("err = %v, want the unmet then-requirement", err)
+	}
+	ts.setField(t, "path", "/srv/out")
+	if _, err := ts.buildArguments(); err != nil {
+		t.Errorf("valid arguments refused: %v", err)
+	}
+}

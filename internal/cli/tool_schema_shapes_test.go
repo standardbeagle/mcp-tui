@@ -61,16 +61,16 @@ func echoedArguments(t *testing.T, svc mcp.Service, tool string, args ...string)
 	return got, run
 }
 
-// A root the parser cannot express is reported on stderr, and the call
-// still goes out with each value read by its own syntax.
+// A root the parser cannot express is reported on stderr. (This root is
+// unsatisfiable, so validation then refuses the call.)
 func TestToolCall_ReportsRootSchemaNote(t *testing.T) {
 	svc := connectEchoServer(t, map[string]string{"tag": `{"type": "object", "allOf": [
 		{"type": "object", "properties": {"id": {"type": "string"}}},
 		{"type": "object", "properties": {"id": {"type": "integer"}}}
 	]}`})
 	run := runToolCall(t, svc, []string{"tag", "id=7"})
-	if run.err != nil {
-		t.Fatalf("tool call: %v\n%s", run.err, run.stderr)
+	if run.err == nil || !strings.Contains(run.err.Error(), "input schema") {
+		t.Errorf("err = %v, want the unsatisfiable schema to refuse the call", run.err)
 	}
 	if !strings.Contains(run.stderr, `allOf branches both define property "id"`) {
 		t.Errorf("stderr lacks the root schema note:\n%s", run.stderr)
@@ -107,5 +107,54 @@ func TestToolCall_MultiTypeUnionPicksTypeBySyntax(t *testing.T) {
 	}
 	if _, run := echoedArguments(t, svc, "lookup", "flag=yes"); run.err == nil || !strings.Contains(run.err.Error(), "boolean|number") {
 		t.Errorf("flag=yes error = %v, want one naming boolean|number", run.err)
+	}
+}
+
+// shippingSchema carries rules no key=value argument expresses: a
+// conditional requirement, a forbidden property, pattern-named properties
+// and a nested object's structure.
+const shippingSchema = `{
+	"type": "object",
+	"properties": {
+		"mode": {"type": "string"},
+		"path": {"type": "string"},
+		"address": {"type": "object", "properties": {"zip": {"type": "string"}}, "required": ["zip"]}
+	},
+	"patternProperties": {"^x-": {"type": "integer"}},
+	"if": {"properties": {"mode": {"const": "file"}}, "required": ["mode"]},
+	"then": {"required": ["path"]},
+	"not": {"required": ["legacy"]}
+}`
+
+// Arguments are validated against the whole input schema before the call,
+// and a call that breaks it is refused without reaching the server.
+func TestToolCall_ValidatesArgumentsBeforeSending(t *testing.T) {
+	svc := connectEchoServer(t, map[string]string{"ship": shippingSchema})
+
+	got, run := echoedArguments(t, svc, "ship", "mode=file", "path=/srv/out", `address={"zip":"94107"}`, "x-retries=3")
+	if run.err != nil {
+		t.Fatalf("valid call refused: %v\n%s", run.err, run.stderr)
+	}
+	if got["x-retries"] != float64(3) {
+		t.Errorf("x-retries sent as %#v, want the integer 3", got["x-retries"])
+	}
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"mode=file"}, "then"},
+		{[]string{"legacy=yes"}, "not"},
+		{[]string{"x-retries=three"}, "patternProperties"},
+		{[]string{`address={"zip":94107}`}, "zip"},
+		{[]string{`address={"street":"Main St"}`}, "zip"},
+	} {
+		run := runToolCall(t, svc, append([]string{"ship"}, c.args...))
+		if run.err == nil || !strings.Contains(run.err.Error(), c.want) {
+			t.Errorf("%v: error = %v, want one mentioning %q", c.args, run.err, c.want)
+		}
+		if strings.Contains(run.stdout, "Tool response") {
+			t.Errorf("%v: the call reached the server:\n%s", c.args, run.stdout)
+		}
 	}
 }

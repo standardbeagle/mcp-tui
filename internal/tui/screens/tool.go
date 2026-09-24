@@ -100,6 +100,10 @@ type ToolScreen struct {
 	runningTask *tasks.Task
 	taskUpdates <-chan tea.Msg
 
+	// inputSchema is the parsed input schema; the arguments are validated
+	// against it before a call. Zero (accepting anything) when it did not
+	// parse.
+	inputSchema inputschema.Schema
 	// schemaNote says why the input schema's root is not shown as a form
 	// (the raw JSON editor is used instead).
 	schemaNote string
@@ -405,6 +409,7 @@ func (ts *ToolScreen) parseSchema() {
 	// missing the parameter.
 	if !ts.tool.HasSchemaError() {
 		schema, err := inputschema.Parse(ts.tool.Name, ts.tool.InputSchema)
+		ts.inputSchema = schema
 		switch {
 		case err != nil:
 			ts.tool.SchemaError = &mcp.SchemaError{Message: err.Error()}
@@ -1167,8 +1172,21 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 }
 
 // buildArguments turns the form (or the raw JSON editor) into tool call
-// arguments, converting each field to the type its schema declares.
+// arguments, converting each field to the type its schema declares, and
+// validates them against the whole input schema.
 func (ts *ToolScreen) buildArguments() (map[string]interface{}, error) {
+	args, err := ts.formArguments()
+	if err != nil {
+		return nil, err
+	}
+	if err := ts.inputSchema.Validate(args); err != nil {
+		return nil, err
+	}
+	return args, nil
+}
+
+// formArguments reads the arguments out of the form or the raw JSON editor.
+func (ts *ToolScreen) formArguments() (map[string]interface{}, error) {
 	if ts.rawJSONMode {
 		args := make(map[string]interface{})
 		rawValue := strings.TrimSpace(ts.rawJSONInput.Value())

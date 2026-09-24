@@ -101,6 +101,33 @@ type Schema struct {
 	// Note says what Parse could not express about the root object (and so
 	// why Params may be incomplete); "" when the root is fully represented.
 	Note string
+
+	// resolved is the whole schema, for Validate; nil for an empty one.
+	resolved *jsonschema.Resolved
+}
+
+// Validate checks args, as they will be sent, against the whole input
+// schema, including the keywords no form or CLI argument expresses
+// (if/then/else, not, patternProperties, value constraints, the structure
+// of nested objects). An empty schema accepts anything.
+func (s Schema) Validate(args map[string]any) error {
+	if s.resolved == nil {
+		return nil
+	}
+	// Validate the JSON that goes on the wire, not the Go values built
+	// for it.
+	data, err := json.Marshal(args)
+	if err != nil {
+		return fmt.Errorf("arguments: %w", err)
+	}
+	var instance any
+	if err := json.Unmarshal(data, &instance); err != nil {
+		return fmt.Errorf("arguments: %w", err)
+	}
+	if err := s.resolved.Validate(instance); err != nil {
+		return fmt.Errorf("arguments do not match the input schema: %w", err)
+	}
+	return nil
 }
 
 // UnionKind picks the alternative of a KindUnion parameter that value's
@@ -171,11 +198,12 @@ func Parse(toolName string, inputSchema map[string]any) (Schema, error) {
 	}
 	// Resolve validates the schema and every $ref in it; the loader turns
 	// any $ref outside the document into ErrRemoteRef.
-	if _, err := root.Resolve(&jsonschema.ResolveOptions{Loader: refuseRemote}); err != nil {
+	resolved, err := root.Resolve(&jsonschema.ResolveOptions{Loader: refuseRemote})
+	if err != nil {
 		return Schema{}, fmt.Errorf("input schema: %w", err)
 	}
 
-	out := Schema{Dialect: root.Schema}
+	out := Schema{Dialect: root.Schema, resolved: resolved}
 	if out.Dialect != "" && strings.TrimSuffix(out.Dialect, "#") != Dialect2020 {
 		debug.Info("Tool input schema declares a dialect other than JSON Schema 2020-12",
 			debug.F("tool", toolName), debug.F("dialect", out.Dialect))
