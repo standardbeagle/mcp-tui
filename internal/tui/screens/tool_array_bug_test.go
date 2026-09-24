@@ -1,8 +1,6 @@
 package screens
 
 import (
-	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
@@ -30,7 +28,8 @@ func TestToolArrayFieldBug(t *testing.T) {
 
 		// Test 1: Empty field value
 		ts.fields[0].input.SetValue("")
-		args := ts.buildArguments()
+		args, err := ts.buildArguments()
+		require.NoError(t, err)
 
 		// With the current bug, empty string splits to [""]
 		if items, ok := args["items"].([]interface{}); ok {
@@ -44,7 +43,8 @@ func TestToolArrayFieldBug(t *testing.T) {
 
 		// Test 2: Valid JSON empty array
 		ts.fields[0].input.SetValue("[]")
-		args = ts.buildArguments()
+		args, err = ts.buildArguments()
+		require.NoError(t, err)
 
 		if items, ok := args["items"].([]interface{}); ok {
 			t.Logf("JSON '[]' resulted in array: %v (length: %d)", items, len(items))
@@ -53,7 +53,8 @@ func TestToolArrayFieldBug(t *testing.T) {
 
 		// Test 3: Comma-separated with trailing comma
 		ts.fields[0].input.SetValue("a,b,")
-		args = ts.buildArguments()
+		args, err = ts.buildArguments()
+		require.NoError(t, err)
 
 		if items, ok := args["items"].([]interface{}); ok {
 			t.Logf("'a,b,' resulted in array: %v (length: %d)", items, len(items))
@@ -65,7 +66,8 @@ func TestToolArrayFieldBug(t *testing.T) {
 
 		// Test 4: Just a comma
 		ts.fields[0].input.SetValue(",")
-		args = ts.buildArguments()
+		args, err = ts.buildArguments()
+		require.NoError(t, err)
 
 		if items, ok := args["items"].([]interface{}); ok {
 			t.Logf("',' resulted in array: %v (length: %d)", items, len(items))
@@ -95,7 +97,8 @@ func TestToolArrayFieldBug(t *testing.T) {
 		ts.fields[0].input.SetValue("")
 
 		// First execution
-		args1 := ts.buildArguments()
+		args1, err := ts.buildArguments()
+		require.NoError(t, err)
 		t.Logf("First execution args: %v", args1)
 
 		// The issue: if the server returns a default value on first call
@@ -103,37 +106,11 @@ func TestToolArrayFieldBug(t *testing.T) {
 
 		// Simulate user entering same empty value again
 		ts.fields[0].input.SetValue("")
-		args2 := ts.buildArguments()
+		args2, err := ts.buildArguments()
+		require.NoError(t, err)
 		t.Logf("Second execution args: %v", args2)
 
 		// Both should be identical
 		assert.Equal(t, args1, args2, "Arguments should be consistent across executions")
 	})
-}
-
-// buildArguments is a test helper that extracts the argument building logic
-func (ts *ToolScreen) buildArguments() map[string]interface{} {
-	args := make(map[string]interface{})
-	for _, field := range ts.fields {
-		if field.input.Value() != "" {
-			switch field.fieldType {
-			case "array":
-				var arr []interface{}
-				if err := json.Unmarshal([]byte(field.input.Value()), &arr); err == nil {
-					args[field.name] = arr
-				} else {
-					// Try parsing as comma-separated
-					parts := strings.Split(field.input.Value(), ",")
-					arr := make([]interface{}, len(parts))
-					for i, p := range parts {
-						arr[i] = strings.TrimSpace(p)
-					}
-					args[field.name] = arr
-				}
-			default:
-				args[field.name] = field.input.Value()
-			}
-		}
-	}
-	return args
 }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
@@ -113,9 +114,17 @@ type ToolScreen struct {
 
 // toolField represents a single input field
 type toolField struct {
-	name            string
-	description     string
-	fieldType       string
+	name        string
+	description string
+	// fieldType is the JSON type the value takes (inputschema.Param.Kind).
+	fieldType inputschema.Kind
+	// nullable: the literal "null" sends null (for non-string types).
+	nullable bool
+	// itemKind is the type of an array's items; comma-separated input is
+	// only accepted for string (or unknown) items.
+	itemKind inputschema.Kind
+	// note says what the schema could not express for this field.
+	note            string
 	required        bool
 	input           textinput.Model
 	validationError string // Real-time validation error
@@ -372,83 +381,73 @@ func (ts *ToolScreen) parseSchema() {
 	ts.fields = []toolField{}
 	ts.rawJSONMode = false
 
-	// Check if tool has a schema error - use raw JSON mode
-	if ts.tool.HasSchemaError() {
-		ts.rawJSONMode = true
-		ts.rawJSONInput = textinput.New()
-		ts.rawJSONInput.Placeholder = `{"key": "value"}`
-		ts.rawJSONInput.CharLimit = 0
-		ts.rawJSONInput.Width = 60
-		return
-	}
-
-	// If no schema, tool takes no parameters
-	if ts.tool.InputSchema == nil || len(ts.tool.InputSchema) == 0 {
-		return
-	}
-
-	// Parse properties from the schema
-	if propsInterface, ok := ts.tool.InputSchema["properties"]; ok {
-		if props, ok := propsInterface.(map[string]interface{}); ok {
-			// Check required fields
-			requiredMap := make(map[string]bool)
-			if requiredInterface, ok := ts.tool.InputSchema["required"]; ok {
-				// Handle both []interface{} (from JSON unmarshal) and []string (from tests/direct creation)
-				switch required := requiredInterface.(type) {
-				case []interface{}:
-					for _, req := range required {
-						if reqStr, ok := req.(string); ok {
-							requiredMap[reqStr] = true
-						}
-					}
-				case []string:
-					for _, reqStr := range required {
-						requiredMap[reqStr] = true
-					}
-				}
-			}
-
-			// Create fields from properties
-			for name, propDef := range props {
-				// Create textinput model
-				input := textinput.New()
-				input.Placeholder = "Enter " + name
-				input.CharLimit = 0 // No limit
-				input.Width = 58    // Slightly smaller than the border width
-
-				field := toolField{
-					name:     name,
-					required: requiredMap[name],
-					input:    input,
-				}
-
-				// Extract field info from property definition
-				if propMap, ok := propDef.(map[string]interface{}); ok {
-					if propType, ok := propMap["type"].(string); ok {
-						field.fieldType = propType
-						// Update placeholder based on type
-						switch propType {
-						case "number":
-							input.Placeholder = "Enter a number"
-						case "integer":
-							input.Placeholder = "Enter an integer"
-						case "boolean":
-							input.Placeholder = "true or false"
-						case "array":
-							input.Placeholder = "JSON array or comma-separated"
-						case "object":
-							input.Placeholder = "JSON object"
-						}
-					}
-					if desc, ok := propMap["description"].(string); ok {
-						field.description = desc
-					}
-				}
-
-				ts.fields = append(ts.fields, field)
-			}
+	// A schema that does not resolve (remote $ref, dangling local $ref,
+	// invalid keyword) falls back to raw JSON with the reason shown in the
+	// schema error banner, rather than a form missing the parameter.
+	if !ts.tool.HasSchemaError() {
+		schema, err := inputschema.Parse(ts.tool.Name, ts.tool.InputSchema)
+		if err != nil {
+			ts.tool.SchemaError = &mcp.SchemaError{Message: err.Error()}
+		} else {
+			ts.fields = fieldsFromSchema(schema)
+			return
 		}
 	}
+
+	ts.rawJSONMode = true
+	ts.rawJSONInput = textinput.New()
+	ts.rawJSONInput.Placeholder = `{"key": "value"}`
+	ts.rawJSONInput.CharLimit = 0
+	ts.rawJSONInput.Width = 60
+}
+
+// fieldsFromSchema builds one text input per schema parameter, in name
+// order.
+func fieldsFromSchema(schema inputschema.Schema) []toolField {
+	fields := make([]toolField, 0, len(schema.Params))
+	for _, p := range schema.Params {
+		input := textinput.New()
+		input.CharLimit = 0 // No limit
+		input.Width = 58    // Slightly smaller than the border width
+		switch p.Kind {
+		case inputschema.KindNumber:
+			input.Placeholder = "Enter a number"
+		case inputschema.KindInteger:
+			input.Placeholder = "Enter an integer"
+		case inputschema.KindBoolean:
+			input.Placeholder = "true or false"
+		case inputschema.KindArray:
+			if commaSeparatedItems(p.ItemKind) {
+				input.Placeholder = "JSON array or comma-separated"
+			} else {
+				input.Placeholder = "JSON array"
+			}
+		case inputschema.KindObject:
+			input.Placeholder = "JSON object"
+		case inputschema.KindJSON:
+			input.Placeholder = "JSON value (or plain text)"
+		default:
+			input.Placeholder = "Enter " + p.Name
+		}
+		fields = append(fields, toolField{
+			name:        p.Name,
+			description: p.Description,
+			fieldType:   p.Kind,
+			nullable:    p.Nullable,
+			itemKind:    p.ItemKind,
+			note:        p.Note,
+			required:    p.Required,
+			input:       input,
+		})
+	}
+	return fields
+}
+
+// commaSeparatedItems reports whether an array whose items are of kind may
+// be typed as "a, b, c": splitting yields strings, so only string (or
+// undeclared) items qualify.
+func commaSeparatedItems(kind inputschema.Kind) bool {
+	return kind == "" || kind == inputschema.KindString
 }
 
 // Init initializes the tool screen
@@ -993,105 +992,10 @@ func openConfirmOverlay(tool mcp.Tool) tea.Cmd {
 
 // executeTool executes the tool with current parameters
 func (ts *ToolScreen) executeTool() tea.Cmd {
-	var args map[string]interface{}
-
-	// Handle raw JSON mode
-	if ts.rawJSONMode {
-		rawValue := strings.TrimSpace(ts.rawJSONInput.Value())
-		if rawValue == "" {
-			// Empty input means empty args
-			args = make(map[string]interface{})
-		} else {
-			// Parse the raw JSON
-			if err := json.Unmarshal([]byte(rawValue), &args); err != nil {
-				ts.SetError(fmt.Errorf("invalid JSON: %v", err))
-				return nil
-			}
-		}
-	} else {
-		// Validate required fields
-		for _, field := range ts.fields {
-			value := field.input.Value()
-			if field.required && value == "" {
-				// Array fields are allowed to be empty (will be sent as [])
-				if field.fieldType != "array" {
-					ts.SetError(fmt.Errorf("required field '%s' is empty", field.name))
-					return nil
-				}
-			}
-		}
-
-		// Build arguments map
-		args = make(map[string]interface{})
-		for _, field := range ts.fields {
-			value := field.input.Value()
-
-			// Special handling for array fields - include even if empty
-			if field.fieldType == "array" && value == "" {
-				// Only include empty array if field is required or user explicitly entered []
-				if field.required {
-					args[field.name] = []interface{}{}
-				}
-				continue
-			}
-
-			if value != "" {
-				// Try to parse the value based on field type
-				switch field.fieldType {
-				case "number":
-					var num float64
-					if err := json.Unmarshal([]byte(value), &num); err == nil {
-						args[field.name] = num
-					} else {
-						ts.SetError(fmt.Errorf("invalid number for field '%s'", field.name))
-						return nil
-					}
-				case "integer":
-					var num int
-					if err := json.Unmarshal([]byte(value), &num); err == nil {
-						args[field.name] = num
-					} else {
-						ts.SetError(fmt.Errorf("invalid integer for field '%s'", field.name))
-						return nil
-					}
-				case "boolean":
-					var b bool
-					if err := json.Unmarshal([]byte(value), &b); err == nil {
-						args[field.name] = b
-					} else {
-						ts.SetError(fmt.Errorf("invalid boolean for field '%s' (use true/false)", field.name))
-						return nil
-					}
-				case "array":
-					var arr []interface{}
-					if err := json.Unmarshal([]byte(value), &arr); err == nil {
-						args[field.name] = arr
-					} else {
-						// Try parsing as comma-separated
-						parts := strings.Split(value, ",")
-						arr := make([]interface{}, 0, len(parts))
-						for _, p := range parts {
-							trimmed := strings.TrimSpace(p)
-							if trimmed != "" {
-								arr = append(arr, trimmed)
-							}
-						}
-						args[field.name] = arr
-					}
-				case "object":
-					var obj map[string]interface{}
-					if err := json.Unmarshal([]byte(value), &obj); err == nil {
-						args[field.name] = obj
-					} else {
-						ts.SetError(fmt.Errorf("invalid JSON object for field '%s'", field.name))
-						return nil
-					}
-				default:
-					// Default to string
-					args[field.name] = value
-				}
-			}
-		}
+	args, err := ts.buildArguments()
+	if err != nil {
+		ts.SetError(err)
+		return nil
 	}
 
 	ts.executing = true
@@ -1132,6 +1036,122 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 	)
 }
 
+// buildArguments turns the form (or the raw JSON editor) into tool call
+// arguments, converting each field to the type its schema declares.
+func (ts *ToolScreen) buildArguments() (map[string]interface{}, error) {
+	if ts.rawJSONMode {
+		args := make(map[string]interface{})
+		rawValue := strings.TrimSpace(ts.rawJSONInput.Value())
+		if rawValue == "" {
+			return args, nil
+		}
+		if err := json.Unmarshal([]byte(rawValue), &args); err != nil {
+			return nil, fmt.Errorf("invalid JSON: %v", err)
+		}
+		return args, nil
+	}
+
+	// Validate required fields. Array fields are allowed to be empty (they
+	// are sent as []).
+	for i := range ts.fields {
+		field := &ts.fields[i]
+		if field.required && field.input.Value() == "" && field.fieldType != inputschema.KindArray {
+			return nil, fmt.Errorf("required field '%s' is empty", field.name)
+		}
+	}
+
+	args := make(map[string]interface{})
+	for i := range ts.fields {
+		field := &ts.fields[i]
+		value := field.input.Value()
+		if value == "" {
+			// Include an empty array only when the field is required.
+			if field.fieldType == inputschema.KindArray && field.required {
+				args[field.name] = []interface{}{}
+			}
+			continue
+		}
+		converted, err := field.convert(value)
+		if err != nil {
+			return nil, err
+		}
+		args[field.name] = converted
+	}
+	return args, nil
+}
+
+// jsonNullLiteral is what a user types to send null.
+const jsonNullLiteral = "null"
+
+// isNullLiteral reports that value sends null: the field is nullable and
+// not a string (for a string, "null" is text).
+func (f *toolField) isNullLiteral(value string) bool {
+	return f.nullable && f.fieldType != inputschema.KindString && strings.TrimSpace(value) == jsonNullLiteral
+}
+
+// convert parses a non-empty field value as the field's type.
+func (f *toolField) convert(value string) (interface{}, error) {
+	if f.isNullLiteral(value) {
+		return nil, nil
+	}
+	switch f.fieldType {
+	case inputschema.KindNumber:
+		var num float64
+		if err := json.Unmarshal([]byte(value), &num); err != nil {
+			return nil, fmt.Errorf("invalid number for field '%s'", f.name)
+		}
+		return num, nil
+	case inputschema.KindInteger:
+		var num int
+		if err := json.Unmarshal([]byte(value), &num); err != nil {
+			return nil, fmt.Errorf("invalid integer for field '%s'", f.name)
+		}
+		return num, nil
+	case inputschema.KindBoolean:
+		var b bool
+		if err := json.Unmarshal([]byte(value), &b); err != nil {
+			return nil, fmt.Errorf("invalid boolean for field '%s' (use true/false)", f.name)
+		}
+		return b, nil
+	case inputschema.KindArray:
+		return f.convertArray(value)
+	case inputschema.KindObject:
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(value), &obj); err != nil {
+			return nil, fmt.Errorf("invalid JSON object for field '%s'", f.name)
+		}
+		return obj, nil
+	case inputschema.KindJSON:
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(value), &parsed); err != nil {
+			return value, nil
+		}
+		return parsed, nil
+	default:
+		return value, nil
+	}
+}
+
+// convertArray parses a JSON array, or "a, b, c" when the items are
+// strings.
+func (f *toolField) convertArray(value string) (interface{}, error) {
+	var arr []interface{}
+	if err := json.Unmarshal([]byte(value), &arr); err == nil {
+		return arr, nil
+	}
+	if !commaSeparatedItems(f.itemKind) {
+		return nil, fmt.Errorf("field '%s' takes a JSON array of %s", f.name, f.itemKind)
+	}
+	parts := strings.Split(value, ",")
+	arr = make([]interface{}, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			arr = append(arr, trimmed)
+		}
+	}
+	return arr, nil
+}
+
 // validateField validates a single field
 func (ts *ToolScreen) validateField(index int) {
 	if index >= len(ts.fields) {
@@ -1145,6 +1165,9 @@ func (ts *ToolScreen) validateField(index int) {
 	// Check required fields
 	if field.required && strings.TrimSpace(value) == "" {
 		field.validationError = "This field is required"
+		return
+	}
+	if field.isNullLiteral(value) {
 		return
 	}
 
@@ -1174,8 +1197,11 @@ func (ts *ToolScreen) validateField(index int) {
 		if value != "" {
 			var arr []interface{}
 			if err := json.Unmarshal([]byte(value), &arr); err != nil {
-				// Try comma-separated format
-				if !strings.Contains(value, ",") {
+				switch {
+				case !commaSeparatedItems(field.itemKind):
+					field.validationError = fmt.Sprintf("Must be a JSON array of %s", field.itemKind)
+				case !strings.Contains(value, ","):
+					// Try comma-separated format
 					field.validationError = "Must be a JSON array or comma-separated values"
 				}
 			}
@@ -1263,14 +1289,20 @@ func (ts *ToolScreen) renderHeader() string {
 			}
 
 			// Always show field type for clarity
-			typeIndicator := field.fieldType
-			if typeIndicator == "" {
-				typeIndicator = "string"
+			typeIndicator := string(field.fieldType)
+			if field.itemKind != "" {
+				typeIndicator += " of " + string(field.itemKind)
+			}
+			if field.nullable {
+				typeIndicator += "|null"
 			}
 			label += fmt.Sprintf(" [%s]", typeIndicator)
 
 			if field.description != "" {
 				label += fmt.Sprintf(" - %s", field.description)
+			}
+			if field.note != "" {
+				label += fmt.Sprintf(" (%s)", field.note)
 			}
 			builder.WriteString(ts.labelStyle.Render(label + ":"))
 			builder.WriteString("\n")

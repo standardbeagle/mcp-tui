@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +32,7 @@ func TestArrayFieldBehaviorDocumented(t *testing.T) {
 		ts := NewToolScreen(tool, nil)
 		require.Len(t, ts.fields, 1)
 		require.True(t, ts.fields[0].required)
-		require.Equal(t, "array", ts.fields[0].fieldType)
+		require.Equal(t, inputschema.KindArray, ts.fields[0].fieldType)
 
 		// User leaves field empty (common scenario)
 		ts.fields[0].input.SetValue("")
