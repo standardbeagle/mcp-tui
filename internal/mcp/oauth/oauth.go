@@ -93,11 +93,6 @@ type Config struct {
 	// Authorization-code only.
 	ClientMetadataURL string
 
-	// TokenURL is an optional override for the token endpoint. When empty
-	// the endpoint is auto-discovered via Protected Resource Metadata
-	// (RFC 9728) + Authorization Server Metadata (RFC 8414).
-	TokenURL string
-
 	// Scopes is an optional list of scopes to request. When empty the
 	// client falls back to the scopes advertised by the resource server.
 	Scopes []string

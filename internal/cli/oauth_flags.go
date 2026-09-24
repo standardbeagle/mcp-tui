@@ -18,9 +18,9 @@ import (
 //     Metadata Document (when the AS supports it), pre-registered client
 //     ID, dynamic registration.
 //
-// --oauth-token-url overrides automatic discovery via Protected Resource
-// Metadata + Authorization Server Metadata; useful when the server cannot
-// publish .well-known endpoints.
+// Endpoints are always discovered (Protected Resource Metadata, then
+// Authorization Server Metadata, then the SDK's /authorize and /token
+// fallbacks); the SDK offers no token endpoint override.
 //
 // Tokens are cached under $XDG_CACHE_HOME/mcp-tui/oauth (Linux),
 // ~/Library/Caches/mcp-tui/oauth (macOS), or %LOCALAPPDATA%\mcp-tui\oauth
@@ -29,7 +29,6 @@ func RegisterOAuthFlags(flags *pflag.FlagSet) {
 	flags.String("oauth-client-id", "", "OAuth client ID (enables OAuth on HTTP transports)")
 	flags.String("oauth-client-secret", "", "OAuth client secret (with --oauth-client-id, switches to client-credentials grant)")
 	flags.String("oauth-client-metadata-url", "", "HTTPS URL of a Client ID Metadata Document used as the client_id when the authorization server supports it (SEP-991)")
-	flags.String("oauth-token-url", "", "OAuth token endpoint override (skips auto-discovery)")
 	flags.String("oauth-scopes", "", "Comma- or space-separated OAuth scopes to request")
 	flags.String("oauth-redirect-host", "127.0.0.1", "Host for the auth-code redirect URI (loopback only)")
 	flags.Int("oauth-redirect-port", 0, "Port for the auth-code redirect URI (0 = ephemeral)")

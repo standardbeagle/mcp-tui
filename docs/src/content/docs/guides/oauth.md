@@ -69,15 +69,13 @@ Otherwise MCP-TUI tries the next configured method: a pre-registered
 `--oauth-client-id`, then dynamic registration. The debug log records which
 method was chosen and why (`Client registration resolved`).
 
-## Discovery and overrides
+## Discovery
 
-By default the handler discovers endpoints via Protected Resource Metadata and
-Authorization Server Metadata (`.well-known`). When a server cannot publish
-those, override the token endpoint directly:
-
-```bash
-mcp-tui ... --oauth-token-url https://auth.example.com/oauth/token ...
-```
+The handler always discovers endpoints: Protected Resource Metadata (RFC 9728),
+then Authorization Server Metadata (RFC 8414 or OpenID Connect discovery).
+When a server publishes no authorization server metadata, the MCP SDK falls
+back to `/authorize`, `/token` and `/register` on the authorization server's
+origin. There is no flag to override the token endpoint.
 
 `--oauth-scopes` accepts a comma- or space-separated list.
 
@@ -106,7 +104,6 @@ request triggers a fresh authorization.
 | `--oauth-client-id` | | Client ID (enables OAuth on HTTP transports) |
 | `--oauth-client-secret` | | Client secret (switches to client-credentials grant) |
 | `--oauth-client-metadata-url` | | Client ID Metadata Document URL (SEP-991) |
-| `--oauth-token-url` | | Token endpoint override (skips discovery) |
 | `--oauth-scopes` | | Comma- or space-separated scopes |
 | `--oauth-redirect-host` | `127.0.0.1` | Auth-code redirect host (`localhost`, `127.0.0.0/8` or `::1`) |
 | `--oauth-redirect-port` | `0` | Auth-code redirect port (`0` = ephemeral) |

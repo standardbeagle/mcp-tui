@@ -80,3 +80,14 @@ func TestBuildOAuthConfig_ClientMetadataURL(t *testing.T) {
 		t.Error("an http client metadata URL must be rejected")
 	}
 }
+
+// TestRegisterOAuthFlags_NoTokenURLOverride: the SDK always takes the token
+// endpoint from authorization server metadata (or its /token fallback) and
+// has no override, so no flag may pretend to set one.
+func TestRegisterOAuthFlags_NoTokenURLOverride(t *testing.T) {
+	cmd := &cobra.Command{Use: "mcp-tui"}
+	RegisterOAuthFlags(cmd.Flags())
+	if cmd.Flags().Lookup("oauth-token-url") != nil {
+		t.Fatal("--oauth-token-url is registered but nothing applies it")
+	}
+}

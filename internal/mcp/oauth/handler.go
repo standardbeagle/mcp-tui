@@ -443,10 +443,9 @@ func logModeSelected(cfg *Config, cache TokenCache) {
 		debug.F("registration_order", registrationOrder(cfg)),
 		debug.F("confidential_client", cfg.ClientSecret != ""),
 		debug.F("token_cache", cache != nil && !cacheDisabled))
-	if len(cfg.scopeList()) > 0 || cfg.TokenURL != "" {
-		authLog().Warn("Configured scopes and token URL are not applied; the SDK uses the discovered values",
-			debug.F("configured_scopes", cfg.scopeList()),
-			debug.F("configured_token_url", redact.URL(cfg.TokenURL)))
+	if len(cfg.scopeList()) > 0 {
+		authLog().Warn("Configured scopes are not applied; the SDK uses the discovered values",
+			debug.F("configured_scopes", cfg.scopeList()))
 	}
 }
 

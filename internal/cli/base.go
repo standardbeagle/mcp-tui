@@ -265,7 +265,6 @@ func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (
 	clientID, _ := cmd.Flags().GetString("oauth-client-id")
 	clientSecret, _ := cmd.Flags().GetString("oauth-client-secret")
 	clientMetadataURL, _ := cmd.Flags().GetString("oauth-client-metadata-url")
-	tokenURL, _ := cmd.Flags().GetString("oauth-token-url")
 	scopes, _ := cmd.Flags().GetString("oauth-scopes")
 	redirectHost, _ := cmd.Flags().GetString("oauth-redirect-host")
 	redirectPort, _ := cmd.Flags().GetInt("oauth-redirect-port")
@@ -274,7 +273,7 @@ func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (
 
 	// No OAuth flags? Bail early so we don't pollute connections that
 	// don't need auth.
-	if clientID == "" && clientSecret == "" && clientMetadataURL == "" && tokenURL == "" && scopes == "" &&
+	if clientID == "" && clientSecret == "" && clientMetadataURL == "" && scopes == "" &&
 		redirectPort == 0 && !dynReg && cachePath == "" {
 		return nil, nil
 	}
@@ -293,7 +292,6 @@ func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (
 		ClientID:                  clientID,
 		ClientSecret:              clientSecret,
 		ClientMetadataURL:         clientMetadataURL,
-		TokenURL:                  tokenURL,
 		Scopes:                    oauth.ParseScopes(scopes),
 		RedirectHost:              redirectHost,
 		RedirectPort:              redirectPort,
