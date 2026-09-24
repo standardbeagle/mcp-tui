@@ -21,7 +21,7 @@ func TestCachedSession_ExpiredIsRefreshedAndSaved(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, cache.Save(cacheKey(cfg), &Session{
 		Token: &oauth2.Token{
-			AccessToken: "expired_access_token", RefreshToken: "test_refresh_token", TokenType: "Bearer",
+			AccessToken: "expired_access_token", RefreshToken: "test_refresh_token",
 			Expiry: time.Now().Add(-time.Hour),
 		},
 		Client: &SessionClient{ClientID: srv.clientID, TokenURL: srv.AuthURL() + "/token", AuthStyle: oauth2.AuthStyleInParams},

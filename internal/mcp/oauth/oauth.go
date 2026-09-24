@@ -181,34 +181,48 @@ func (c *Config) Validate() error {
 
 	switch c.Mode() {
 	case ModeClientCredentials:
-		if c.ClientID == "" {
-			return errors.New("oauth: client-credentials requires ClientID")
-		}
-		if c.ClientSecret == "" {
-			return errors.New("oauth: client-credentials requires ClientSecret")
-		}
-		if c.ClientMetadataURL != "" {
-			return errors.New("oauth: ClientMetadataURL identifies a public client and cannot be combined with client-credentials")
-		}
-		if len(c.scopeList()) > 0 {
-			return errors.New("oauth: scopes cannot be configured for client-credentials; the SDK requests the scopes the resource server advertises")
-		}
+		return c.validateClientCredentials()
 	case ModeAuthorizationCode:
-		// ClientID may be empty when CIMD or DCR supplies the identity.
-		if c.ClientID == "" && c.ClientMetadataURL == "" && !c.EnableDynamicRegistration {
-			return errors.New("oauth: authorization-code without ClientID requires a client metadata URL or dynamic client registration")
-		}
-		if c.ClientMetadataURL != "" && !isNonRootHTTPSURL(c.ClientMetadataURL) {
-			return fmt.Errorf("oauth: ClientMetadataURL %q must be a non-root https URL", c.ClientMetadataURL)
-		}
-		if c.RedirectPort < 0 || c.RedirectPort > 65535 {
-			return fmt.Errorf("oauth: RedirectPort %d out of range", c.RedirectPort)
-		}
-		if c.RedirectHost != "" && !isLoopbackHost(c.RedirectHost) {
-			return fmt.Errorf("oauth: RedirectHost %q is not a loopback address (use 127.0.0.1, ::1 or localhost)", c.RedirectHost)
-		}
+		return c.validateAuthorizationCode()
 	case ModeNone:
 		// Nothing to validate.
+	}
+	return nil
+}
+
+func (c *Config) validateClientCredentials() error {
+	if c.ClientID == "" {
+		return errors.New("oauth: client-credentials requires ClientID")
+	}
+	if c.ClientSecret == "" {
+		return errors.New("oauth: client-credentials requires ClientSecret")
+	}
+	if c.ClientMetadataURL != "" {
+		return errors.New("oauth: ClientMetadataURL identifies a public client " +
+			"and cannot be combined with client-credentials")
+	}
+	if len(c.scopeList()) > 0 {
+		return errors.New("oauth: scopes cannot be configured for client-credentials; " +
+			"the SDK requests the scopes the resource server advertises")
+	}
+	return nil
+}
+
+func (c *Config) validateAuthorizationCode() error {
+	// ClientID may be empty when CIMD or DCR supplies the identity.
+	if c.ClientID == "" && c.ClientMetadataURL == "" && !c.EnableDynamicRegistration {
+		return errors.New("oauth: authorization-code without ClientID requires " +
+			"a client metadata URL or dynamic client registration")
+	}
+	if c.ClientMetadataURL != "" && !isNonRootHTTPSURL(c.ClientMetadataURL) {
+		return fmt.Errorf("oauth: ClientMetadataURL %q must be a non-root https URL", c.ClientMetadataURL)
+	}
+	if c.RedirectPort < 0 || c.RedirectPort > 65535 {
+		return fmt.Errorf("oauth: RedirectPort %d out of range", c.RedirectPort)
+	}
+	if c.RedirectHost != "" && !isLoopbackHost(c.RedirectHost) {
+		return fmt.Errorf("oauth: RedirectHost %q is not a loopback address (use 127.0.0.1, ::1 or localhost)",
+			c.RedirectHost)
 	}
 	return nil
 }

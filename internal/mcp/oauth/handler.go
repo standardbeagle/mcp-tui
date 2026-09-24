@@ -387,7 +387,8 @@ func (h *Handler) tryPopulateFromCache() error {
 	src := oauth2.StaticTokenSource(session.Token)
 	if session.Client != nil {
 		oc := session.Client.oauth2Config()
-		src = h.newSavingTokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, h.httpClient), oc, session.Token)
+		refreshCtx := context.WithValue(context.Background(), oauth2.HTTPClient, h.httpClient)
+		src = h.newSavingTokenSource(refreshCtx, oc, session.Token)
 	}
 	h.mu.Lock()
 	h.delegate = &cachedDelegate{src: src}
@@ -574,7 +575,8 @@ func logModeSelected(cfg *Config, cache TokenCache) {
 		debug.F("client_issuer", cfg.Issuer),
 		debug.F("token_cache", cache != nil && !cacheDisabled))
 	if cfg.AcceptUnadvertisedIss {
-		authLog().Warn("Accepting unadvertised RFC 9207 iss (--oauth-accept-unadvertised-iss); meant for testing non-conforming servers only")
+		authLog().Warn("Accepting unadvertised RFC 9207 iss (--oauth-accept-unadvertised-iss); " +
+			"meant for testing non-conforming servers only")
 	}
 }
 

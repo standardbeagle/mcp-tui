@@ -58,7 +58,7 @@ mcp-tui --transport http --url https://api.example.com/mcp \
 When the authorization server advertises
 `authorization_response_iss_parameter_supported`, the redirect must carry an
 `iss` equal to the discovered issuer, or the flow fails before the code is
-redeemed (mix-up attack defence). A server that sends `iss` without
+redeemed (mix-up attack defense). A server that sends `iss` without
 advertising support is refused too; `--oauth-accept-unadvertised-iss` accepts
 a matching `iss` from such a server. Use it only to test non-conforming
 servers; it is logged as a warning.

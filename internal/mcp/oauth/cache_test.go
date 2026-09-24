@@ -193,7 +193,7 @@ func TestCacheKey(t *testing.T) {
 	assert.NotEqual(t, cacheKey(a), cacheKey(d))
 
 	// A CIMD client is a different client from a DCR one.
-	e := &Config{ServerURL: "https://x", EnableDynamicRegistration: true}
-	f := &Config{ServerURL: "https://x", EnableDynamicRegistration: true, ClientMetadataURL: "https://mcp-tui.standardbeagle.dev/client.json"}
+	e := &Config{ServerURL: exampleServerURL, EnableDynamicRegistration: true}
+	f := &Config{ServerURL: exampleServerURL, EnableDynamicRegistration: true, ClientMetadataURL: "https://mcp-tui.standardbeagle.dev/client.json"}
 	assert.NotEqual(t, cacheKey(e), cacheKey(f))
 }

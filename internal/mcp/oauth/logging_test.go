@@ -141,7 +141,7 @@ func TestAuthorizationCodeFlow_IssParameter(t *testing.T) {
 		"[oauth] Authorization succeeded")
 }
 
-// TestAuthorizationCodeFlow_IssMismatchRejected is the mix-up defence: an iss
+// TestAuthorizationCodeFlow_IssMismatchRejected is the mix-up defense: an iss
 // naming a different issuer fails the flow before the code is redeemed.
 func TestAuthorizationCodeFlow_IssMismatchRejected(t *testing.T) {
 	logs := captureAuthLogs(t)
@@ -153,8 +153,7 @@ func TestAuthorizationCodeFlow_IssMismatchRejected(t *testing.T) {
 		http.DefaultClient, NoopCache{})
 	require.NoError(t, err)
 	installAutoApproveFetcher(t, h)
-	req, resp := unauthorizedExchange(srv)
-	err = h.Authorize(context.Background(), req, resp)
+	err = authorizeUnauthorized(context.Background(), h, srv)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not match expected issuer")
 	assert.Equal(t, 0, srv.tokenRequestCount(), "code must not be redeemed after an issuer mismatch")

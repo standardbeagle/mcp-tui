@@ -62,35 +62,35 @@ func TestConfig_ModeAndValidate(t *testing.T) {
 		},
 		{
 			name:     "auth_code redirect host binds every interface",
-			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "0.0.0.0"},
+			cfg:      &Config{ServerURL: exampleServerURL, ClientID: "id", RedirectHost: "0.0.0.0"},
 			wantMode: ModeAuthorizationCode,
 			wantErr:  `RedirectHost "0.0.0.0" is not a loopback address`,
 		},
 		{
 			name:     "auth_code redirect host on the LAN",
-			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "192.168.1.20"},
+			cfg:      &Config{ServerURL: exampleServerURL, ClientID: "id", RedirectHost: "192.168.1.20"},
 			wantMode: ModeAuthorizationCode,
 			wantErr:  "is not a loopback address",
 		},
 		{
 			name:     "auth_code redirect host is a public name",
-			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "callback.example.com"},
+			cfg:      &Config{ServerURL: exampleServerURL, ClientID: "id", RedirectHost: "callback.example.com"},
 			wantMode: ModeAuthorizationCode,
 			wantErr:  "is not a loopback address",
 		},
 		{
 			name:     "auth_code redirect host 127.0.0.2",
-			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "127.0.0.2"},
+			cfg:      &Config{ServerURL: exampleServerURL, ClientID: "id", RedirectHost: "127.0.0.2"},
 			wantMode: ModeAuthorizationCode,
 		},
 		{
 			name:     "auth_code redirect host ::1",
-			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "::1"},
+			cfg:      &Config{ServerURL: exampleServerURL, ClientID: "id", RedirectHost: "::1"},
 			wantMode: ModeAuthorizationCode,
 		},
 		{
 			name:     "auth_code redirect host localhost",
-			cfg:      &Config{ServerURL: "https://x", ClientID: "id", RedirectHost: "localhost"},
+			cfg:      &Config{ServerURL: exampleServerURL, ClientID: "id", RedirectHost: "localhost"},
 			wantMode: ModeAuthorizationCode,
 		},
 	}
@@ -420,23 +420,31 @@ func TestLocalServerFetcher_Fetch_OAuthError(t *testing.T) {
 // URL, getting a 401, and calling Authorize on the handler.
 func driveClientCredentials(t *testing.T, h *Handler, srv *mockAuthServer) {
 	t.Helper()
-	req, resp := unauthorizedExchange(srv)
-	require.NoError(t, h.Authorize(context.Background(), req, resp))
+	require.NoError(t, authorizeUnauthorized(t.Context(), h, srv))
 }
 
-// unauthorizedExchange builds the request and the 401 + WWW-Authenticate
-// response the SDK transport hands to Authorize on first contact.
-func unauthorizedExchange(srv *mockAuthServer) (*http.Request, *http.Response) {
-	req, _ := http.NewRequest(http.MethodGet, srv.ResourceURL(), nil)
+// authorizeUnauthorized hands Authorize the request and the 401 +
+// WWW-Authenticate response the SDK transport sees on first contact.
+func authorizeUnauthorized(ctx context.Context, h *Handler, srv *mockAuthServer) error {
+	return authorizeChallenge(ctx, h, srv, http.StatusUnauthorized,
+		`Bearer resource_metadata="`+srv.resourceServer.URL+`/.well-known/oauth-protected-resource/mcp", scope="mcp:read"`)
+}
+
+// authorizeChallenge calls Authorize as the SDK transport does for a
+// response with the given status and WWW-Authenticate challenge.
+func authorizeChallenge(ctx context.Context, h *Handler, srv *mockAuthServer, status int, challenge string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.ResourceURL(), http.NoBody)
+	if err != nil {
+		return err
+	}
 	resp := &http.Response{
-		StatusCode: http.StatusUnauthorized,
-		Header:     http.Header{},
+		StatusCode: status,
+		Header:     http.Header{"Www-Authenticate": {challenge}},
 		Body:       http.NoBody,
 		Request:    req,
 	}
-	resp.Header.Set("WWW-Authenticate",
-		`Bearer resource_metadata="`+srv.resourceServer.URL+`/.well-known/oauth-protected-resource/mcp", scope="mcp:read"`)
-	return req, resp
+	defer resp.Body.Close()
+	return h.Authorize(ctx, req, resp)
 }
 
 // driveAuthCode reuses driveClientCredentials — Handler.Authorize dispatches

@@ -19,6 +19,10 @@ import (
 // callback must echo it to be accepted.
 const callbackState = "Vq3yL0c2pXw9sKd8"
 
+// acceptedCode is the authorization code of the callback a test expects to
+// complete the flow.
+const acceptedCode = "SplxlOBeZQQYbYS6WxSbIA"
+
 // fetchResult is what a background Fetch returned.
 type fetchResult struct {
 	res *auth.AuthorizationResult
@@ -63,8 +67,7 @@ func awaitFetch(t *testing.T, done <-chan fetchResult) fetchResult {
 var callbackClient = &http.Client{Timeout: 5 * time.Second}
 
 func getCallback(redirectURL, code, state string) (*http.Response, error) {
-	q := url.Values{"code": {code}, "state": {state}}
-	return callbackClient.Get(redirectURL + "?" + q.Encode())
+	return callbackClient.Get(redirectURL + "?code=" + url.QueryEscape(code) + "&state=" + url.QueryEscape(state))
 }
 
 // TestLocalServerFetcher_RepeatedCallbacksDoNotHang reproduces a browser (or
@@ -77,7 +80,7 @@ func TestLocalServerFetcher_RepeatedCallbacksDoNotHang(t *testing.T) {
 	f := newLocalServerFetcher("127.0.0.1", 0)
 
 	done := startFetch(t, f, func(redirectURL string) {
-		for _, code := range []string{"SplxlOBeZQQYbYS6WxSbIA", "4Jd9QqXcMfVgR7wZ2tLpKA", "hY6b1NnTzC0eWm8uPr3sDg"} {
+		for _, code := range []string{acceptedCode, "4Jd9QqXcMfVgR7wZ2tLpKA", "hY6b1NnTzC0eWm8uPr3sDg"} {
 			go func() {
 				resp, err := getCallback(redirectURL, code, callbackState)
 				if err == nil {
@@ -92,7 +95,7 @@ func TestLocalServerFetcher_RepeatedCallbacksDoNotHang(t *testing.T) {
 
 	r := awaitFetch(t, done)
 	require.NoError(t, r.err)
-	assert.Contains(t, []string{"SplxlOBeZQQYbYS6WxSbIA", "4Jd9QqXcMfVgR7wZ2tLpKA", "hY6b1NnTzC0eWm8uPr3sDg"}, r.res.Code)
+	assert.Contains(t, []string{acceptedCode, "4Jd9QqXcMfVgR7wZ2tLpKA", "hY6b1NnTzC0eWm8uPr3sDg"}, r.res.Code)
 }
 
 // TestLocalServerFetcher_IgnoresCallbackWithForeignState: a request with a
@@ -114,7 +117,7 @@ func TestLocalServerFetcher_IgnoresCallbackWithForeignState(t *testing.T) {
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Errorf("forged callback status = %d, want 400", resp.StatusCode)
 			}
-			resp, err = getCallback(redirectURL, "SplxlOBeZQQYbYS6WxSbIA", callbackState)
+			resp, err = getCallback(redirectURL, acceptedCode, callbackState)
 			if err == nil {
 				_ = resp.Body.Close()
 			}
@@ -123,10 +126,10 @@ func TestLocalServerFetcher_IgnoresCallbackWithForeignState(t *testing.T) {
 
 	r := awaitFetch(t, done)
 	require.NoError(t, r.err)
-	assert.Equal(t, "SplxlOBeZQQYbYS6WxSbIA", r.res.Code)
+	assert.Equal(t, acceptedCode, r.res.Code)
 	out := logs()
 	assertLogged(t, out, "[oauth] Authorization callback ignored reason=state_mismatch")
-	assertNoSecrets(t, out, []string{callbackState, "SplxlOBeZQQYbYS6WxSbIA", "not-our-state", "forged-by-another-process"})
+	assertNoSecrets(t, out, []string{callbackState, acceptedCode, "not-our-state", "forged-by-another-process"})
 }
 
 // TestLocalServerFetcher_UnknownPathIs404 keeps the listener's surface to
@@ -147,7 +150,7 @@ func TestLocalServerFetcher_UnknownPathIs404(t *testing.T) {
 			if resp.StatusCode != http.StatusNotFound {
 				t.Errorf("GET /favicon.ico status = %d, want 404", resp.StatusCode)
 			}
-			resp, err = getCallback(redirectURL, "SplxlOBeZQQYbYS6WxSbIA", callbackState)
+			resp, err = getCallback(redirectURL, acceptedCode, callbackState)
 			if err == nil {
 				_ = resp.Body.Close()
 			}
@@ -156,7 +159,7 @@ func TestLocalServerFetcher_UnknownPathIs404(t *testing.T) {
 
 	r := awaitFetch(t, done)
 	require.NoError(t, r.err)
-	assert.Equal(t, "SplxlOBeZQQYbYS6WxSbIA", r.res.Code)
+	assert.Equal(t, acceptedCode, r.res.Code)
 }
 
 // TestLocalServerFetcher_OversizedHeadersRejected caps request headers: a
@@ -167,7 +170,7 @@ func TestLocalServerFetcher_OversizedHeadersRejected(t *testing.T) {
 
 	done := startFetch(t, f, func(redirectURL string) {
 		go func() {
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, redirectURL, nil)
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, redirectURL, http.NoBody)
 			if err != nil {
 				t.Errorf("build request: %v", err)
 				return
@@ -182,7 +185,7 @@ func TestLocalServerFetcher_OversizedHeadersRejected(t *testing.T) {
 			if resp.StatusCode != http.StatusRequestHeaderFieldsTooLarge {
 				t.Errorf("oversized request status = %d, want 431", resp.StatusCode)
 			}
-			resp, err = getCallback(redirectURL, "SplxlOBeZQQYbYS6WxSbIA", callbackState)
+			resp, err = getCallback(redirectURL, acceptedCode, callbackState)
 			if err == nil {
 				_ = resp.Body.Close()
 			}

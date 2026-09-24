@@ -9,6 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// discoveredScope is what the mock resource server's challenge names.
+const discoveredScope = "mcp:read"
+
+// configuredScopes stands for --oauth-scopes in the tests below.
+var configuredScopes = []string{"files:read", "files:write"}
+
 // requestedScopes is the scope set the last authorization request asked for.
 func requestedScopes(srv *mockAuthServer) []string {
 	return strings.Fields(srv.lastAuthorizeRequest().Get("scope"))
@@ -23,7 +29,7 @@ func TestAuthorizationCodeFlow_ConfiguredScopes(t *testing.T) {
 	h, err := NewHandler(&Config{
 		ServerURL: srv.ResourceURL(),
 		ClientID:  srv.clientID,
-		Scopes:    []string{"files:read", "files:write"},
+		Scopes:    configuredScopes,
 		CachePath: "-",
 	}, http.DefaultClient, NoopCache{})
 	require.NoError(t, err)
@@ -31,7 +37,7 @@ func TestAuthorizationCodeFlow_ConfiguredScopes(t *testing.T) {
 	driveAuthCode(t, h, srv)
 	require.Equal(t, StateAuthorized, h.Status().State, "flow failed: %v", h.Status().LastError)
 
-	assert.ElementsMatch(t, []string{"files:read", "files:write"}, requestedScopes(srv))
+	assert.ElementsMatch(t, configuredScopes, requestedScopes(srv))
 	out := logs()
 	assertNoSecrets(t, out, srv.issuedSecrets())
 	assertLogged(t, out, "[oauth] Scopes selected source=configured discovered=[mcp:read] selected=[files:read files:write]")
@@ -51,14 +57,14 @@ func TestAuthorizationCodeFlow_DiscoveredScopes(t *testing.T) {
 	driveAuthCode(t, h, srv)
 	require.Equal(t, StateAuthorized, h.Status().State, "flow failed: %v", h.Status().LastError)
 
-	assert.ElementsMatch(t, []string{"mcp:read"}, requestedScopes(srv))
+	assert.ElementsMatch(t, []string{discoveredScope}, requestedScopes(srv))
 	assertLogged(t, logs(), "[oauth] Scopes selected source=discovered discovered=[mcp:read] selected=[mcp:read]")
 }
 
 // TestConfig_ScopesRejectedForClientCredentials: the SDK's client-credentials
 // handler has no scope hook, so configured scopes there would be ignored.
 func TestConfig_ScopesRejectedForClientCredentials(t *testing.T) {
-	err := (&Config{ServerURL: "https://x", ClientID: "svc", ClientSecret: "s3cr3t-value", Scopes: []string{"mcp:read"}}).Validate()
+	err := (&Config{ServerURL: exampleServerURL, ClientID: "svc", ClientSecret: "s3cr3t-value", Scopes: []string{discoveredScope}}).Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "scopes cannot be configured for client-credentials")
 }
@@ -71,8 +77,8 @@ func TestPreregisteredClient_IssuerBinding(t *testing.T) {
 		secret string
 		setup  func(t *testing.T, h *Handler)
 	}{
-		{name: "authorization_code", setup: installAutoApproveFetcher},
-		{name: "client_credentials", secret: "test-secret", setup: func(*testing.T, *Handler) {}},
+		{name: ModeAuthorizationCode.String(), setup: installAutoApproveFetcher},
+		{name: ModeClientCredentials.String(), secret: "test-secret", setup: func(*testing.T, *Handler) {}},
 	} {
 		t.Run(tc.name+"/match", func(t *testing.T) {
 			logs := captureAuthLogs(t)
@@ -94,8 +100,7 @@ func TestPreregisteredClient_IssuerBinding(t *testing.T) {
 				Issuer: "https://login.contoso.example", CachePath: "-"}, http.DefaultClient, NoopCache{})
 			require.NoError(t, err)
 			tc.setup(t, h)
-			req, resp := unauthorizedExchange(srv)
-			err = h.Authorize(t.Context(), req, resp)
+			err = authorizeUnauthorized(t.Context(), h, srv)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "does not match pre-registered credentials issuer")
 			assert.Equal(t, 0, srv.tokenRequestCount(), "no token request may reach the wrong issuer")
@@ -109,7 +114,7 @@ func TestPreregisteredClient_IssuerBinding(t *testing.T) {
 // TestConfig_IssuerRequiresPreregisteredClient: the binding applies to
 // pre-registered credentials only.
 func TestConfig_IssuerRequiresPreregisteredClient(t *testing.T) {
-	err := (&Config{ServerURL: "https://x", EnableDynamicRegistration: true, Issuer: "https://login.contoso.example"}).Validate()
+	err := (&Config{ServerURL: exampleServerURL, EnableDynamicRegistration: true, Issuer: "https://login.contoso.example"}).Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Issuer requires a pre-registered ClientID")
 }
@@ -121,7 +126,7 @@ func TestAuthorizationCodeFlow_RequestsOfflineAccess(t *testing.T) {
 	logs := captureAuthLogs(t)
 	srv := newMockAuthServer(t)
 	srv.allowDCR = true
-	srv.asScopes = []string{"mcp:read", "mcp:write", "offline_access"}
+	srv.asScopes = []string{discoveredScope, "mcp:write", "offline_access"}
 
 	h, err := NewHandler(&Config{ServerURL: srv.ResourceURL(), EnableDynamicRegistration: true, CachePath: "-"},
 		http.DefaultClient, NoopCache{})
@@ -130,7 +135,7 @@ func TestAuthorizationCodeFlow_RequestsOfflineAccess(t *testing.T) {
 	driveAuthCode(t, h, srv)
 	require.Equal(t, StateAuthorized, h.Status().State, "flow failed: %v", h.Status().LastError)
 
-	assert.ElementsMatch(t, []string{"mcp:read", "offline_access"}, requestedScopes(srv))
+	assert.ElementsMatch(t, []string{discoveredScope, "offline_access"}, requestedScopes(srv))
 	srv.mu.Lock()
 	require.Len(t, srv.registerRequests, 1)
 	assert.Contains(t, string(srv.registerRequests[0]), `"refresh_token"`)
@@ -155,8 +160,7 @@ func TestAuthorizationCodeFlow_UnadvertisedIss(t *testing.T) {
 				AcceptUnadvertisedIss: accept, CachePath: "-"}, http.DefaultClient, NoopCache{})
 			require.NoError(t, err)
 			installAutoApproveFetcher(t, h)
-			req, resp := unauthorizedExchange(srv)
-			err = h.Authorize(t.Context(), req, resp)
+			err = authorizeUnauthorized(t.Context(), h, srv)
 
 			out := logs()
 			assertNoSecrets(t, out, srv.issuedSecrets())
@@ -172,14 +176,14 @@ func TestAuthorizationCodeFlow_UnadvertisedIss(t *testing.T) {
 	}
 }
 
-// insufficientScopeExchange builds the 403 a resource server returns when
-// the token lacks a scope the operation needs (step-up, SEP-2350).
-func insufficientScopeExchange(srv *mockAuthServer, scope string) (*http.Request, *http.Response) {
-	req, resp := unauthorizedExchange(srv)
-	resp.StatusCode = http.StatusForbidden
-	resp.Header.Set("WWW-Authenticate",
-		`Bearer error="insufficient_scope", scope="`+scope+`", resource_metadata="`+srv.resourceServer.URL+`/.well-known/oauth-protected-resource/mcp"`)
-	return req, resp
+// authorizeInsufficientScope hands Authorize the 403 a resource server
+// returns when the token lacks a scope the operation needs (step-up,
+// SEP-2350).
+func authorizeInsufficientScope(t *testing.T, h *Handler, srv *mockAuthServer, scope string) error {
+	t.Helper()
+	return authorizeChallenge(t.Context(), h, srv, http.StatusForbidden,
+		`Bearer error="insufficient_scope", scope="`+scope+`", resource_metadata="`+
+			srv.resourceServer.URL+`/.well-known/oauth-protected-resource/mcp"`)
 }
 
 // TestAuthorizationCodeFlow_StepUp (SEP-2350): a 403 insufficient_scope
@@ -191,8 +195,8 @@ func TestAuthorizationCodeFlow_StepUp(t *testing.T) {
 		configured []string
 		first      []string
 	}{
-		{name: "discovered", first: []string{"mcp:read"}},
-		{name: "configured", configured: []string{"files:read"}, first: []string{"files:read"}},
+		{name: "discovered", first: []string{discoveredScope}},
+		{name: "configured", configured: configuredScopes, first: configuredScopes},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			logs := captureAuthLogs(t)
@@ -205,8 +209,7 @@ func TestAuthorizationCodeFlow_StepUp(t *testing.T) {
 			require.Equal(t, StateAuthorized, h.Status().State, "first flow failed: %v", h.Status().LastError)
 			assert.ElementsMatch(t, tc.first, requestedScopes(srv))
 
-			req, resp := insufficientScopeExchange(srv, "mcp:write")
-			require.NoError(t, h.Authorize(t.Context(), req, resp))
+			require.NoError(t, authorizeInsufficientScope(t, h, srv, "mcp:write"))
 			require.Equal(t, StateAuthorized, h.Status().State, "step-up failed: %v", h.Status().LastError)
 			assert.ElementsMatch(t, append(append([]string{}, tc.first...), "mcp:write"), requestedScopes(srv))
 

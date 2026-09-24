@@ -12,6 +12,9 @@ import (
 // (SEP-991) as a desktop client would host it.
 const clientMetadataURL = "https://mcp-tui.standardbeagle.dev/oauth/client-metadata.json"
 
+// exampleServerURL is the MCP endpoint of config-only tests (no network).
+const exampleServerURL = "https://mcp.example.com/mcp"
+
 // TestAuthorizationCodeFlow_ClientIDMetadataDocument: when the AS advertises
 // client_id_metadata_document_supported, the metadata URL itself is the
 // client_id, ahead of a pre-registered client and without registering.
@@ -102,10 +105,10 @@ func TestConfig_ClientMetadataURLValidation(t *testing.T) {
 		cfg     *Config
 		wantErr string
 	}{
-		{name: "valid", cfg: &Config{ServerURL: "https://x", ClientMetadataURL: clientMetadataURL}},
-		{name: "http", cfg: &Config{ServerURL: "https://x", ClientMetadataURL: "http://mcp-tui.standardbeagle.dev/client.json"}, wantErr: "non-root https URL"},
-		{name: "root path", cfg: &Config{ServerURL: "https://x", ClientMetadataURL: "https://mcp-tui.standardbeagle.dev"}, wantErr: "non-root https URL"},
-		{name: "with client secret", cfg: &Config{ServerURL: "https://x", ClientMetadataURL: clientMetadataURL, ClientID: "svc", ClientSecret: "s3cr3t-value"}, wantErr: "cannot be combined with client-credentials"},
+		{name: "valid", cfg: &Config{ServerURL: exampleServerURL, ClientMetadataURL: clientMetadataURL}},
+		{name: "http", cfg: &Config{ServerURL: exampleServerURL, ClientMetadataURL: "http://mcp-tui.standardbeagle.dev/client.json"}, wantErr: "non-root https URL"},
+		{name: "root path", cfg: &Config{ServerURL: exampleServerURL, ClientMetadataURL: "https://mcp-tui.standardbeagle.dev"}, wantErr: "non-root https URL"},
+		{name: "with client secret", cfg: &Config{ServerURL: exampleServerURL, ClientMetadataURL: clientMetadataURL, ClientID: "svc", ClientSecret: "s3cr3t-value"}, wantErr: "cannot be combined with client-credentials"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.cfg.Validate()
