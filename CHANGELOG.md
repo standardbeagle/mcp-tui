@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Old OAuth token cache entries are ignored.** Cache files written by 0.9.1 and earlier hold a bare token with no refresh endpoint and are treated as a cache miss. Migration: none needed; the next run signs in once and writes the new format. To clear them by hand, delete the `mcp-tui/oauth` cache directory.
 - **Default protocol is now `2026-07-28`.** With go-sdk v1.8.0 the client asks for `2026-07-28` first. On that revision servers can no longer call the client mid-request (sampling, elicitation, roots go through multi round-trip input requests) and there is no session or `ping`. Migration: for a server whose tools still call the client directly, pass `--protocol-version 2025-11-25`.
 
+- **OAuth is refused on SSE.** `--oauth-*` flags with `--transport sse` were accepted and silently ignored (the SDK's SSE client cannot carry a token), so the server's 401 looked like an auth-server problem. Connecting now fails with an error naming streamable HTTP. Migration: use `--transport http` (or `streamable-http`) against the server's streamable HTTP endpoint.
+
 ### Added
 - **Protocol version control**: `--protocol-version` pins the MCP version to request (`2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`) for CLI and TUI; an unsupported value fails before any server starts. The debug log records how the version was negotiated (`server/discover` attempts, versions the server offered, fallback to `initialize`).
 - **Multi round-trip requests (SEP-2322)**: on `2026-07-28`, input requests a server returns from `tools/call`, `prompts/get` and `resources/read` are answered with the configured sampling, elicitation and roots handlers and the call is retried. Each round is logged, and results list the rounds they took: an "Input rounds (SEP-2322)" section in CLI text output, a `rounds` field in JSON, and a trace under the result in the TUI.
@@ -61,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI resource and prompt selection**: Enter on a resource or prompt that has a title read the wrong name and failed with "Resource not found" / "unknown prompt".
 - **Disconnect hang**: a notification arriving during disconnect could hang the process.
 - **Background results under overlays**: a tool result that arrived while an overlay (debug screen, elicitation prompt) was open was dropped, leaving the tool screen spinning.
+- **Concurrent server requests in the TUI**: an elicitation, sampling or confirm request arriving while another was open replaced it or was dropped; they now queue and show one after another.
+- **`conform` skipped the `tool-names` probe**; it now runs every `verify` probe.
+- **Debug screen copy**: copying from the Auth tab (and the tabs after it) reported the wrong tab name.
 
 ## [0.9.1] - 2026-07-09
 

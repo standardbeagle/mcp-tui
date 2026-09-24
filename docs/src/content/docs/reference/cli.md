@@ -166,7 +166,9 @@ mcp-tui [global-flags] server
 
 Print MCP server information: name, version, negotiated protocol, the
 server's title, description, website and icons when it declares them,
-its capabilities, and the number of tools, resources and prompts.
+the names of the capabilities it declared (sorted, without their settings;
+use `capabilities` for the full declaration), and how many tools, resources
+and prompts it offers, naming them when there are five or fewer.
 
 ## `capabilities` subcommand
 
@@ -198,7 +200,7 @@ characters of `A-Z a-z 0-9 _ - .`, SEP-986) takes either.
 
 ## `conform` subcommand
 
-Run every protocol scenario plus the verify probes (all but `tool-names`), print a per-scenario
+Run every protocol scenario plus every verify probe, print a per-scenario
 PASS/FAIL summary, and optionally emit a JUnit XML report.
 
 ```
@@ -221,9 +223,10 @@ Scenarios: `initialize`, `tools.list`, `tools.call`, `tools.call.isError`,
 `prompts.list`, `prompts.get`, `sampling.createMessage`,
 `elicitation.create`, `notifications`, `completion.complete`, plus the
 probes as `verify.<probe-name>`: `verify.cross-origin`, `verify.dns-rebind`,
-`verify.content-type`, `verify.origin-header`, `verify.mcp-method-headers` and
-`verify.seterror-content`. The `tool-names` probe is not part of `conform`; run
-it with `verify --probe tool-names`. The stub flags from
+`verify.content-type`, `verify.origin-header`, `verify.mcp-method-headers`,
+`verify.seterror-content` and `verify.tool-names`. A probe the target cannot
+run is reported as `skipped: probe requires a … target` and counts as passing.
+The stub flags from
 [Client features](/mcp-tui/guides/client-features/) apply here too.
 
 ## Exit codes

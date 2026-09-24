@@ -7,9 +7,10 @@ When an HTTP MCP server responds with `401` and a `WWW-Authenticate` header,
 MCP-TUI delegates to its OAuth handler. Three modes are supported, selected by
 which flags you provide.
 
-OAuth runs on the `http` and `streamable-http` transports. With `--cmd`
-(stdio) the `--oauth-*` flags are an error. With `--transport sse` they are
-accepted but have no effect: the SDK's SSE client has no OAuth hook.
+OAuth runs on the `http` and `streamable-http` transports only. With `--cmd`
+(stdio) or `--transport sse` the connection is refused with an error that names
+streamable HTTP as the fix: neither transport can carry an OAuth token (the
+SDK's SSE client has no OAuth hook).
 
 ## Authorization code + PKCE (interactive)
 

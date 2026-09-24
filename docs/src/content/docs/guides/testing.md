@@ -5,7 +5,7 @@ description: Verify MCP server compliance with behavior probes and the full conf
 
 MCP-TUI ships two testing subcommands: `verify` runs a small suite of targeted
 behavior probes, and `conform` runs the complete protocol matrix (every
-protocol scenario plus every probe except `tool-names`). Both exit non-zero when anything fails, so they
+protocol scenario plus every probe). Both exit non-zero when anything fails, so they
 drop straight into CI.
 
 ## `capabilities` — what did the server negotiate?
@@ -52,9 +52,10 @@ mcp-tui verify --probe seterror-content --cmd npx \
 
 ## `conform` — the full matrix
 
-`conform` runs every scenario plus the `verify` probes (all but `tool-names`) and prints a
+`conform` runs every scenario plus every `verify` probe and prints a
 per-scenario PASS/FAIL summary. Skipped scenarios (features the server does not
-advertise) count as passing.
+advertise, or probes the target kind cannot run, reported as
+`skipped: probe requires a … target`) count as passing.
 
 ```bash
 mcp-tui conform http://localhost:8000/mcp
@@ -66,7 +67,7 @@ Scenarios: `initialize`, `tools.list`, `tools.call`, `tools.call.isError`,
 `resources.list`, `resources.read`, `resources.templates.list`,
 `prompts.list`, `prompts.get`, `sampling.createMessage`,
 `elicitation.create`, `notifications`, `completion.complete`, and every probe
-except `tool-names` as `verify.<probe-name>`.
+as `verify.<probe-name>`.
 
 ### Driving the harder scenarios
 

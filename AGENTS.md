@@ -34,7 +34,7 @@ make ci          # vet + fmt-check + test + race
 ```
 main.go                  cobra root；註 tool/task/resource/prompt/server/capabilities/verify/conform
 internal/cli/            subcommands (cmd_*.go, tool.go)；base.go 共 connection flags；oauth_flags.go 註 --oauth-*
-  conform/ verify/       規格情景與安全探針（verify 有 tool-names，conform 不含之）
+  conform/ verify/       規格情景與安全探針（conform 之 verify 情景取自 verify.AllProbes）
 internal/mcp/            service layer（service.go）包 go-sdk client
   mrtr.go mrtr_elicit.go 自行之 multi round-trip 迴圈（SDK 迴圈停用），每輪記錄
   list_cache.go          SEP-2549 list cache 觀測；handshake_trace.go 記版本協商
@@ -70,7 +70,7 @@ docs/                    Astro docs site（dev.standardbeagle.com）
 
 **Streamable HTTP / HTTP**：`officialMCP.StreamableClientTransport`。HTTP client timeout 30s。Client 必 accept `application/json` 與 `text/event-stream`。
 
-**SSE**（deprecated）：`officialMCP.SSEClientTransport`。最高協商 2025-11-25，連時記 Warn。SDK SSE client 無 OAuthHandler，故 `--oauth-*` 於 SSE 受而無效。
+**SSE**（deprecated）：`officialMCP.SSEClientTransport`。最高協商 2025-11-25，連時記 Warn。SDK SSE client 無 OAuthHandler，故 OAuth 於 SSE（及 stdio）連線時即拒（`validateOAuthTransport`）。
 - **CRITICAL**：connection context 必為 `context.Background()`（`sseContextStrategy`），勿用 CLI timeout context，否則殺 hanging GET。Operation context 可用呼者之 ctx。
 - HTTP client `Timeout: 0`（`transports/http_config.go`）。
 - 流程：GET /sse → 首 event `endpoint` 帶 session URL → POST 至該 endpoint（202）→ responses 經 SSE stream 回。
