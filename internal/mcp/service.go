@@ -23,6 +23,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // Helper functions for MCP logging
@@ -756,23 +757,20 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 	return client, nil
 }
 
-// logConnectionDetails logs the connection configuration
+// logConnectionDetails logs where the connection goes. It names fields
+// explicitly: the whole ConnectionConfig must never be logged, because its
+// Headers carry --header credentials and its Environment carries API keys.
 func (s *service) logConnectionDetails(config *configPkg.ConnectionConfig) {
-	switch config.Type {
-	case configPkg.TransportStdio:
+	if config.Type == configPkg.TransportStdio {
 		debug.Info("Connecting to MCP server",
 			debug.F("transport", "stdio"),
 			debug.F("command", config.Command),
 			debug.F("args", config.Args))
-	case configPkg.TransportHTTP, configPkg.TransportSSE:
-		debug.Info("Connecting to MCP server",
-			debug.F("transport", config.Type),
-			debug.F("url", config.URL))
-	default:
-		debug.Info("Connecting to MCP server",
-			debug.F("transport", config.Type),
-			debug.F("config", config))
+		return
 	}
+	debug.Info("Connecting to MCP server",
+		debug.F("transport", config.Type),
+		debug.F("url", redact.URL(config.URL)))
 }
 
 // updateServerInfo updates server information after successful connection.
