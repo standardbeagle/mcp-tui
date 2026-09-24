@@ -31,12 +31,9 @@ No active migrations. Document ongoing migrations here.
 
 | Listener | Code | Posture | Caps |
 |---|---|---|---|
-| OAuth auth-code callback | `internal/mcp/oauth/local_server.go` | `loopback` (`127.0.0.1`, ephemeral port, one request) | `ReadHeaderTimeout` 10s only |
+| OAuth auth-code callback | `internal/mcp/oauth/local_server.go` | `loopback` (`127.0.0.1` default; `--oauth-redirect-host` must be `localhost`, `127.0.0.0/8` or `::1`, enforced in `Config.Validate`; ephemeral port) | `MaxHeaderBytes` 16 KiB; `ReadHeaderTimeout`/`ReadTimeout`/`WriteTimeout`/`IdleTimeout` 10s; 8 concurrent connections (extra closed on arrival); only `GET /callback` routed (all else 404/405); only the first callback echoing the flow's `state` completes it, others get 400; shutdown bounded at 5s |
 
-Known gaps (not yet fixed):
-- `--oauth-redirect-host` help text says "loopback only", but the host is passed to `net.Listen` unvalidated — `0.0.0.0` binds every interface.
-- No max connections, `MaxHeaderBytes`, `ReadTimeout`, or `WriteTimeout` on the callback server.
-- `resultCh` is buffered 1; a second callback request blocks its handler on send, so `srv.Shutdown(context.Background())` can hang.
+Known gaps: none open for this listener. The concurrent-connection cap is enforced in `ConnState` (close on `StateNew`), so a connection past the cap is accepted by the kernel before it is closed.
 
 ## Side Effect Isolation
 

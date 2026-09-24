@@ -69,7 +69,7 @@ docs/                    Astro docs site（dev.standardbeagle.com）
 
 ## Exposure Posture
 
-唯一 listener：OAuth auth-code callback（`internal/mcp/oauth/local_server.go`），`loopback`，預設 `127.0.0.1` ephemeral port，僅受一請求。已知缺口見 `.claude/rules/architecture.md`（`--oauth-redirect-host` 未驗 loopback；無 conn/header/write caps）。
+唯一 listener：OAuth auth-code callback（`internal/mcp/oauth/local_server.go`），`loopback`，預設 `127.0.0.1` ephemeral port；`--oauth-redirect-host` 限 loopback（`Config.Validate` 驗）。Caps：header 16 KiB、read/write/idle 10s、並連 8、僅 `GET /callback`、唯首個 state 相符之回調成流、shutdown 限 5s。詳見 `.claude/rules/architecture.md`。
 
 ## Debugging
 
