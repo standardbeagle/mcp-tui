@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/standardbeagle/mcp-tui/internal/cli/verify"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
@@ -61,25 +63,51 @@ func TestIsScenarioName(t *testing.T) {
 }
 
 // TestAllScenarios_VerifyProbesAligned ensures every verify probe shows up
-// in AllScenarios with the canonical "verify." prefix. Without this, a
-// future probe added to internal/cli/verify could silently miss the
-// conformance suite.
+// in AllScenarios with the canonical "verify." prefix, in verify's order.
+// A hand-kept copy of the list missed tool-names when that probe landed.
 func TestAllScenarios_VerifyProbesAligned(t *testing.T) {
-	want := map[string]bool{
-		"verify.cross-origin":       true,
-		"verify.dns-rebind":         true,
-		"verify.content-type":       true,
-		"verify.origin-header":      true,
-		"verify.mcp-method-headers": true,
-		"verify.seterror-content":   true,
-	}
-	have := make(map[string]bool, len(AllScenarios))
+	var got []string
 	for _, s := range AllScenarios {
-		have[s] = true
+		if probe, ok := strings.CutPrefix(s, "verify."); ok {
+			got = append(got, probe)
+		}
 	}
-	for w := range want {
-		if !have[w] {
-			t.Errorf("AllScenarios missing %q", w)
+	if !slices.Equal(got, verify.AllProbes) {
+		t.Errorf("verify scenarios = %v, want verify.AllProbes %v", got, verify.AllProbes)
+	}
+}
+
+// The tool-names probe runs against a URL or a command; a URL-only target
+// must run it rather than skip it as a stdio-only probe.
+func TestRunner_ToolNamesRunsAgainstAURL(t *testing.T) {
+	testutil.RequireLocalListener(t)
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close() // connection refused: the probe runs and fails fast
+	r := NewRunner(Target{URL: closed.URL})
+	defer r.Close()
+	res := r.Run(withTimeout(t, 30*time.Second), "verify.tool-names")
+	if res.Skipped {
+		t.Fatalf("verify.tool-names skipped for a URL target: %+v", res)
+	}
+	if res.Pass || !strings.Contains(res.Error, "connect failed") {
+		t.Errorf("result = %+v, want the probe to run and fail to connect", res)
+	}
+}
+
+// HTTP probes skip on a command-only target, stdio probes on a URL-only one.
+func TestRunner_SkipsProbesTheTargetCannotRun(t *testing.T) {
+	for _, tc := range []struct {
+		target Target
+		probe  string
+	}{
+		{Target{Command: "server"}, "verify.cross-origin"},
+		{Target{URL: "http://127.0.0.1:1/mcp"}, "verify.seterror-content"},
+	} {
+		r := NewRunner(tc.target)
+		res := r.Run(context.Background(), tc.probe)
+		r.Close()
+		if !res.Skipped || !res.Pass {
+			t.Errorf("%s on %+v = %+v, want skipped", tc.probe, tc.target, res)
 		}
 	}
 }

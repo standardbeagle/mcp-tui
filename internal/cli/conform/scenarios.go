@@ -85,9 +85,9 @@ type ScenarioResult struct {
 // Sections:
 //  1. Protocol scenarios (initialize through completion/complete) — driven
 //     against the connected target via mcp.Service.
-//  2. Verify probes — six security/behavior probes from internal/cli/verify
+//  2. Verify probes — every probe in verify.AllProbes, in its order,
 //     prefixed with "verify." for namespacing.
-var AllScenarios = []string{
+var AllScenarios = append([]string{
 	"initialize",
 	"tools.list",
 	"tools.call",
@@ -101,12 +101,16 @@ var AllScenarios = []string{
 	"elicitation.create",
 	"notifications",
 	"completion.complete",
-	"verify.cross-origin",
-	"verify.dns-rebind",
-	"verify.content-type",
-	"verify.origin-header",
-	"verify.mcp-method-headers",
-	"verify.seterror-content",
+}, verifyScenarios()...)
+
+// verifyScenarios names each verify probe as a scenario. Derived, not
+// copied: a hand-kept copy missed tool-names when that probe landed.
+func verifyScenarios() []string {
+	names := make([]string, len(verify.AllProbes))
+	for i, probe := range verify.AllProbes {
+		names[i] = "verify." + probe
+	}
+	return names
 }
 
 // IsScenarioName reports whether name is one of AllScenarios. The CLI uses
@@ -275,29 +279,19 @@ func (r *Runner) dispatch(ctx context.Context, name string) ScenarioResult {
 }
 
 // runVerifyProbe wraps verify.Run, mapping ProbeResult fields onto
-// ScenarioResult. A missing target shape (HTTP probe with no URL, or stdio
-// probe with no Command) yields a Skipped result rather than a hard fail —
-// users running `conform <url>` against an HTTP-only target shouldn't see
-// the seterror-content probe FAIL just because they didn't supply --cmd.
+// ScenarioResult. A target the probe cannot run against (verify.TargetProblem:
+// an HTTP probe with no URL, a stdio probe with no Command) yields a Skipped
+// result rather than a hard fail — users running `conform <url>` against an
+// HTTP-only target shouldn't see the seterror-content probe FAIL just
+// because they didn't supply --cmd.
 func (r *Runner) runVerifyProbe(ctx context.Context, probe string) ScenarioResult {
-	if !verify.IsHTTPProbe(probe) && r.target.Command == "" {
-		return ScenarioResult{
-			Pass:    true,
-			Skipped: true,
-			Error:   "skipped: probe needs a stdio command",
-		}
-	}
-	if verify.IsHTTPProbe(probe) && r.target.URL == "" {
-		return ScenarioResult{
-			Pass:    true,
-			Skipped: true,
-			Error:   "skipped: probe needs an HTTP URL",
-		}
-	}
 	tt := verify.Target{
 		URL:     r.target.URL,
 		Command: r.target.Command,
 		Args:    r.target.Args,
+	}
+	if problem := verify.TargetProblem(probe, &tt); problem != "" {
+		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: " + problem}
 	}
 	pr := verify.Run(ctx, probe, tt)
 	res := ScenarioResult{Pass: pr.Pass}
