@@ -293,6 +293,7 @@ Examples:
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())
+	rootCmd.AddCommand(createTaskCommand())
 	rootCmd.AddCommand(createResourceCommand())
 	rootCmd.AddCommand(createPromptCommand())
 	rootCmd.AddCommand(createServerCommand())
@@ -306,6 +307,11 @@ Examples:
 func createToolCommand() *cobra.Command {
 	toolCmd := cli.NewToolCommand()
 	return toolCmd.CreateCommand()
+}
+
+func createTaskCommand() *cobra.Command {
+	taskCmd := cli.NewTaskCommand()
+	return taskCmd.CreateCommand()
 }
 
 func createResourceCommand() *cobra.Command {

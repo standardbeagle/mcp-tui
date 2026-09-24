@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 )
 
 // ToolCommand handles tool-related CLI operations
@@ -156,6 +158,13 @@ a server-flagged-destructive tool.`,
 	// --strict-output flag pattern so the two are easy to remember.
 	cmd.Flags().Bool("strict-errors", false,
 		"Exit non-zero when the tool returns a result with isError:true (v1.5.0 input-validation channel)")
+
+	// MCP tasks: --task lets the server run the call in the background and
+	// answer with a task handle (see the task command).
+	cmd.Flags().Bool(flagTask, false,
+		"Call the tool as an MCP task: print the task handle instead of waiting (see 'mcp-tui task')")
+	cmd.Flags().Int64("ttl", 0, "With --task: requested task retention in milliseconds (2025-11-25 tasks only)")
+	cmd.Flags().Bool("wait", false, "With --task: poll the task to its end and print its result")
 
 	return cmd
 }
@@ -465,6 +474,11 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		rawArgs = append(rawArgs, rawArg{key: key, value: value})
 	}
 
+	taskMode, err := parseTaskFlags(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := tc.WithContext()
 	defer cancel()
 
@@ -523,6 +537,23 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		toolArgs[raw.key] = parsedValue
 	}
 
+	strictOutput, err := cmd.Flags().GetBool("strict-output")
+	if err != nil {
+		return err
+	}
+	strictErrors, err := cmd.Flags().GetBool("strict-errors")
+	if err != nil {
+		return err
+	}
+	out := resultOutput{
+		format: tc.GetOutputFormat(), porcelain: porcelainMode,
+		strictOutput: strictOutput, strictErrors: strictErrors,
+		document: map[string]interface{}{"tool": toolName, "arguments": toolArgs},
+	}
+	if taskMode.asTask {
+		return tc.callAsTask(ctx, mcp.CallToolRequest{Name: toolName, Arguments: toolArgs}, taskMode, out)
+	}
+
 	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
 	}
@@ -539,13 +570,88 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		return tc.HandleError(err, "call tool")
 	}
 
-	strictOutput, _ := cmd.Flags().GetBool("strict-output")
-	strictErrors, _ := cmd.Flags().GetBool("strict-errors")
-	return printToolResult(resultOutput{
-		format: tc.GetOutputFormat(), porcelain: porcelainMode,
-		strictOutput: strictOutput, strictErrors: strictErrors,
-		document: map[string]interface{}{"tool": toolName, "arguments": toolArgs},
-	}, result)
+	return printToolResult(out, result)
+}
+
+// flagTask is tool call's --task flag.
+const flagTask = "task"
+
+// taskFlags are tool call's MCP task options.
+type taskFlags struct {
+	asTask bool
+	wait   bool
+	ttlMs  *int64
+}
+
+// parseTaskFlags reads --task, --wait and --ttl, which only mean something
+// together.
+func parseTaskFlags(cmd *cobra.Command) (taskFlags, error) {
+	var f taskFlags
+	var err error
+	if f.asTask, err = cmd.Flags().GetBool(flagTask); err != nil {
+		return f, err
+	}
+	if f.wait, err = cmd.Flags().GetBool("wait"); err != nil {
+		return f, err
+	}
+	if cmd.Flags().Changed("ttl") {
+		ttl, err := cmd.Flags().GetInt64("ttl")
+		if err != nil {
+			return f, err
+		}
+		f.ttlMs = &ttl
+	}
+	if !f.asTask && (f.wait || f.ttlMs != nil) {
+		return f, fmt.Errorf("--wait and --ttl apply to task calls; add --task")
+	}
+	return f, nil
+}
+
+// callAsTask calls a tool as an MCP task and prints the task handle, or
+// with --wait polls it to its end and prints the result as a direct call.
+func (tc *ToolCommand) callAsTask(ctx context.Context, req mcp.CallToolRequest, f taskFlags, out resultOutput) error {
+	svc := tc.GetService()
+	if f.ttlMs != nil && svc.TaskSupport().Form != tasks.FormExperimental {
+		return fmt.Errorf("--ttl applies to 2025-11-25 experimental tasks only; the %s form has no client-requested TTL",
+			svc.TaskSupport().Form)
+	}
+	text := out.format == OutputFormatText && !out.porcelain
+	if text {
+		fmt.Fprintf(os.Stderr, "🚀 Calling tool as a task...\n")
+	}
+	outcome, err := svc.CallToolAsTask(ctx, req, f.ttlMs)
+	if err != nil {
+		return tc.HandleError(err, "call tool as a task")
+	}
+	if outcome.Result != nil {
+		if text {
+			fmt.Fprintln(os.Stderr, "ℹ️  The server answered directly; no task was created.")
+		}
+		return printToolResult(out, outcome.Result)
+	}
+	task := outcome.Task
+	if !f.wait {
+		if out.format == OutputFormatJSON {
+			out.document[docTask] = task
+			return printJSON(out.document)
+		}
+		fmt.Printf("Task %s created (%s)\n", task.ID, taskStatusLine(task))
+		fmt.Printf("Poll:   mcp-tui task get %s\n", task.ID)
+		fmt.Printf("Result: mcp-tui task result %s\n", task.ID)
+		return nil
+	}
+	if text {
+		fmt.Fprintf(os.Stderr, "⏳ Task %s created; waiting for it to finish...\n", task.ID)
+	}
+	result, last, err := awaitTaskResult(ctx, svc, task.ID, text)
+	if err != nil {
+		return tc.HandleError(err, "wait for task")
+	}
+	if last != nil {
+		task = last
+	}
+	out.document[docTask] = task
+	return printToolResult(out, result)
 }
 
 // resultOutput is how to print a tool result: the output format, whether

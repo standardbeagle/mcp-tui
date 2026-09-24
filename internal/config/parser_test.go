@@ -293,6 +293,7 @@ func TestIsKnownSubcommand(t *testing.T) {
 		{"server", true},
 		{"completion", true},
 		{"help", true},
+		{"task", true},
 		{"unknown", false},
 		{"", false},
 		{"Tool", false}, // case sensitive
