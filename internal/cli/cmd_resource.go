@@ -182,6 +182,7 @@ func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) err
 		if resource.MimeType != "" {
 			fmt.Println(mimeTypeStyle.Render(fmt.Sprintf("Type: %s", resource.MimeType)))
 		}
+		printIcons(resource.Icons)
 	}
 
 	return nil
@@ -435,6 +436,7 @@ func (rc *ResourceCommand) runTemplatesCommand(cmd *cobra.Command, _ []string) e
 		if tpl.MimeType != "" {
 			fmt.Println(mimeStyle.Render("Type: " + tpl.MimeType))
 		}
+		printIcons(tpl.Icons)
 	}
 
 	return nil

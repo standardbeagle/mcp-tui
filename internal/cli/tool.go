@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
@@ -259,6 +260,7 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		if tool.Description != "" {
 			fmt.Println(descriptionStyle.Render(tool.Description))
 		}
+		printIcons(tool.Icons)
 	}
 
 	// Footer
@@ -266,6 +268,15 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	fmt.Println(countStyle.Render(fmt.Sprintf("Total: %d tools", len(tools))))
 
 	return nil
+}
+
+// printIcons prints one indented "Icon:" line per icon (SEP-973); icons are
+// described, never fetched.
+func printIcons(icons []officialMCP.Icon) {
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).MarginLeft(2)
+	for _, icon := range icons {
+		fmt.Println(style.Render("Icon: " + mcp.DescribeIcon(icon)))
+	}
 }
 
 // writeDroppedTools warns about the tools the SDK removed from tools/list,

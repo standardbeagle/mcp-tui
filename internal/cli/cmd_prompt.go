@@ -288,6 +288,7 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 		if prompt.Description != "" {
 			fmt.Println(descriptionStyle.Render(prompt.Description))
 		}
+		printIcons(prompt.Icons)
 
 		// Show argument count if available
 		if prompt.Arguments != nil {
