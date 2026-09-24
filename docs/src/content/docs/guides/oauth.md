@@ -37,9 +37,11 @@ For non-interactive service auth (RFC 6749 §4.4). Triggered when **both**
 mcp-tui --transport http --url https://api.example.com/mcp \
   --oauth-client-id svc-client \
   --oauth-client-secret "$MCP_CLIENT_SECRET" \
-  --oauth-scopes "mcp.read" \
   tool list
 ```
+
+The client-credentials grant always requests the scopes the resource server
+advertises; `--oauth-scopes` is rejected in this mode.
 
 ## Dynamic client registration
 
@@ -77,7 +79,13 @@ When a server publishes no authorization server metadata, the MCP SDK falls
 back to `/authorize`, `/token` and `/register` on the authorization server's
 origin. There is no flag to override the token endpoint.
 
-`--oauth-scopes` accepts a comma- or space-separated list.
+## Scopes
+
+In the authorization-code flow, MCP-TUI requests the scopes the server's
+`WWW-Authenticate` challenge names, or else the `scopes_supported` in its
+Protected Resource Metadata. `--oauth-scopes` (a comma- or space-separated
+list) replaces that set. The debug log's `Scopes selected` line shows both
+sets.
 
 ## Token cache
 
@@ -104,7 +112,7 @@ request triggers a fresh authorization.
 | `--oauth-client-id` | | Client ID (enables OAuth on HTTP transports) |
 | `--oauth-client-secret` | | Client secret (switches to client-credentials grant) |
 | `--oauth-client-metadata-url` | | Client ID Metadata Document URL (SEP-991) |
-| `--oauth-scopes` | | Comma- or space-separated scopes |
+| `--oauth-scopes` | | Comma- or space-separated scopes (authorization code only) |
 | `--oauth-redirect-host` | `127.0.0.1` | Auth-code redirect host (`localhost`, `127.0.0.0/8` or `::1`) |
 | `--oauth-redirect-port` | `0` | Auth-code redirect port (`0` = ephemeral) |
 | `--oauth-dynamic-registration` | `false` | RFC 7591 dynamic registration when client ID is empty |

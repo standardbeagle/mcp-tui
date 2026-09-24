@@ -93,8 +93,10 @@ type Config struct {
 	// Authorization-code only.
 	ClientMetadataURL string
 
-	// Scopes is an optional list of scopes to request. When empty the
-	// client falls back to the scopes advertised by the resource server.
+	// Scopes is an optional list of scopes to request in the
+	// authorization-code flow, replacing the discovered set (challenge
+	// scope, else PRM scopes_supported). Rejected for client-credentials,
+	// whose SDK handler always requests the discovered set.
 	Scopes []string
 
 	// RedirectHost is the host portion of the auth-code redirect URI and
@@ -171,6 +173,9 @@ func (c *Config) Validate() error {
 		}
 		if c.ClientMetadataURL != "" {
 			return errors.New("oauth: ClientMetadataURL identifies a public client and cannot be combined with client-credentials")
+		}
+		if len(c.scopeList()) > 0 {
+			return errors.New("oauth: scopes cannot be configured for client-credentials; the SDK requests the scopes the resource server advertises")
 		}
 	case ModeAuthorizationCode:
 		// ClientID may be empty when CIMD or DCR supplies the identity.

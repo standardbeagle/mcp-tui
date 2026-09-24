@@ -262,13 +262,8 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 			logRegistrationResolved(h.cfg, args.URL)
 			return fetcher.Fetch(ctx, args)
 		},
-		Client: h.httpClient,
-		// Observation only: the discovered set is returned unchanged, so
-		// the SDK's scope selection is exactly what it would be without it.
-		ScopeFilter: func(discovered []string) []string {
-			authLog().Info("Scopes discovered", debug.F("scopes", discovered))
-			return discovered
-		},
+		Client:      h.httpClient,
+		ScopeFilter: h.selectScopes,
 	}
 	if h.cfg.ClientMetadataURL != "" {
 		cfg.ClientIDMetadataDocumentConfig = &auth.ClientIDMetadataDocumentConfig{URL: h.cfg.ClientMetadataURL}
@@ -289,6 +284,23 @@ func (h *Handler) buildAuthCodeHandler() (*auth.AuthorizationCodeHandler, error)
 		debug.F("redirect_url", redirectURL),
 		debug.F("registration_order", registrationOrder(h.cfg)))
 	return auth.NewAuthorizationCodeHandler(cfg)
+}
+
+// selectScopes is the SDK's ScopeFilter: it picks the scopes to request
+// from those the SDK discovered (WWW-Authenticate challenge, else PRM
+// scopes_supported). Configured scopes (--oauth-scopes) replace the
+// discovered set. The SDK adds offline_access and the step-up union after
+// this, so neither is affected.
+func (h *Handler) selectScopes(discovered []string) []string {
+	source, selected := "discovered", discovered
+	if configured := h.cfg.scopeList(); len(configured) > 0 {
+		source, selected = "configured", configured
+	}
+	authLog().Info("Scopes selected",
+		debug.F("source", source),
+		debug.F("discovered", discovered),
+		debug.F("selected", selected))
+	return selected
 }
 
 // tryPopulateFromCache looks up a cached token and, on hit, builds a static
@@ -442,11 +454,8 @@ func logModeSelected(cfg *Config, cache TokenCache) {
 		debug.F("server_url", redact.URL(cfg.ServerURL)),
 		debug.F("registration_order", registrationOrder(cfg)),
 		debug.F("confidential_client", cfg.ClientSecret != ""),
+		debug.F("configured_scopes", cfg.scopeList()),
 		debug.F("token_cache", cache != nil && !cacheDisabled))
-	if len(cfg.scopeList()) > 0 {
-		authLog().Warn("Configured scopes are not applied; the SDK uses the discovered values",
-			debug.F("configured_scopes", cfg.scopeList()))
-	}
 }
 
 // logAuthorizationRequired records the 401/403 that made the SDK call

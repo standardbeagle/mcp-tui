@@ -81,7 +81,7 @@ func TestAuthorizationCodeFlow_DCR_LogsEveryStepWithoutSecrets(t *testing.T) {
 		"iss_parameter_supported=false",
 		"client_id_metadata_document_supported=false",
 		"[oauth] Dynamic client registration status=201",
-		"[oauth] Scopes discovered",
+		"[oauth] Scopes selected source=discovered",
 		"[oauth] Authorization request",
 		"code_challenge_method=S256",
 		"[oauth] Authorization callback received has_code=true has_state=true has_iss=false",
