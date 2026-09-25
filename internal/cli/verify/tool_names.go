@@ -50,6 +50,7 @@ func connectProbeService(ctx context.Context, name string, t *Target) (mcp.Servi
 	connectCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := svc.Connect(connectCtx, cc); err != nil {
+		disconnectProbeService(name, svc)
 		return nil, &ProbeResult{Name: name, Pass: false, Error: fmt.Sprintf("connect failed: %v", err),
 			Fix: "verify the target starts an MCP server (try `mcp-tui <target> tool list` first)"}
 	}

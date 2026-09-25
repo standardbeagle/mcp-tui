@@ -495,6 +495,7 @@ func ProbeSetErrorContent(ctx context.Context, t Target) ProbeResult {
 	connectCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := svc.Connect(connectCtx, cc); err != nil {
+		disconnectProbeService(name, svc)
 		return ProbeResult{
 			Name:  name,
 			Pass:  false,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/cli/verify"
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
@@ -216,6 +217,11 @@ func (r *Runner) ensureConnected(ctx context.Context) (mcp.Service, error) {
 	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := svc.Connect(connectCtx, cc); err != nil {
+		// Release whatever the failed connect left (a started server
+		// process, a transport) now, not at process exit.
+		if derr := svc.Disconnect(); derr != nil {
+			debug.Warn("conform: disconnect after failed connect", debug.F("error", derr))
+		}
 		r.connErr = fmt.Errorf("connect failed: %w", err)
 		return nil, r.connErr
 	}
