@@ -106,8 +106,12 @@ mcp-tui [global-flags] tool <list|describe|call> [args]
   `id=42` sends `42`, `id=0123` sends `"0123"`. A nullable non-string
   parameter takes the literal `null`. `key:=<json>` sends a JSON literal as
   is, which is how a nullable string gets null (`note:=null`; `note=null`
-  sends the text `"null"`). A parameter with no type at all is read as a
-  JSON literal, falling back to text, with a note on stderr, as is a root the
+  sends the text `"null"`). A parameter with no type takes the type of its
+  `enum` values or its `const`; failing those, the type of its `default`
+  (other values are still allowed, so a note on stderr says where the type
+  came from; `key:=<json>` sends any other). With none of these any JSON value
+  is allowed: the value is read as a JSON literal, falling back to text,
+  with a note on stderr, as is a root the
   CLI cannot express (an `allOf` conflict, `anyOf`/`oneOf` alternatives with
   their own properties). Before the call the arguments are validated against
   the whole input schema (`if`/`then`/`else`, `not`, `patternProperties`,

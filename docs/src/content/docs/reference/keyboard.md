@@ -38,7 +38,9 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 | `Ctrl+T` | Toggle task mode: Execute calls the tool as an MCP task and follows it |
 | `Ctrl+O` | Toggle sending arguments that break the input schema: by default such a call is refused; while on (`[schema violations sent]` in the title) it is sent, the violation is shown under the title, and the copied CLI command carries `--skip-arg-validation` |
 | `Ctrl+N` | On a nullable field: send null (again to go back to the typed value) |
-| `Ctrl+E` | On an object field with declared properties: open it as a sub-form, or close it back to a JSON literal |
+| `Ctrl+E` | On an object field with declared properties: open it as a sub-form, or close it back to a JSON literal. On an array of such objects: open it as a list of elements (one to start), each an object sub-form, or close it back to a JSON literal |
+| `Ctrl+A` | On an array of objects open as a list, or in one of its elements: add an element at the end (on a closed one: open it). Elsewhere the text input's own Ctrl+A (line start) |
+| `Ctrl+X` | In an element of an array of objects: remove that element; the rest are numbered again |
 | `c` | Show and copy the equivalent CLI command (POSIX shell syntax; each word single-quoted as needed). Server arguments are written one `--arg` each. Raw JSON arguments are written as one `key:=<json>` per top-level key; JSON the CLI cannot take (not an object, or a key other than letters, digits, `_` and `-`) gives a `#` line naming the problem instead of a command |
 | `v` | Browse the result's fields |
 | `Esc` / `b` | Back |
