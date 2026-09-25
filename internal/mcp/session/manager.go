@@ -220,7 +220,7 @@ func (m *Manager) Connect(
 		}
 
 		// Classify and handle the error
-		classified := m.errorHandler.HandleError(connectCtx, err, "session_connect", map[string]interface{}{
+		classified := m.errorHandler.HandleError(connectCtx, err, errors.OperationSessionConnect, map[string]interface{}{
 			"transport_type": transportType,
 			"session_state":  "connecting",
 		})

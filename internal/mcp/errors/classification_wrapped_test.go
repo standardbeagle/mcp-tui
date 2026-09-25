@@ -67,18 +67,18 @@ func TestClassifyWrappedNetworkErrors(t *testing.T) {
 	classifier := NewErrorClassifier()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			category, _ := classifier.analyzeError(tt.err)
+			category, _ := classifier.analyzeError(tt.err, "")
 			assert.Equal(t, tt.wantCategory, category, "category for %v", tt.err)
-			assert.Equal(t, tt.wantRecoverable, classifier.isRecoverable(tt.err, category),
+			assert.Equal(t, tt.wantRecoverable, classifier.isRecoverable(category),
 				"a wrapped network failure must stay recoverable so reconnection runs")
 		})
 	}
 }
 
-// A stdio server that exits during the MCP handshake reports "connection
-// closed" / "broken pipe". Those must not be mistaken for transient network
-// faults: retrying a misconfigured server is pointless, and the user needs the
-// protocol failure reported instead.
+// "connection closed" / "broken pipe" as bare strings do not say whether a
+// session ever existed (a stdio server exiting during the handshake produces
+// them too), so text alone must not make them transient network faults. A
+// typed lost connection is classified by IsConnectionLost and the operation.
 func TestServerExitDuringHandshakeIsNotATransientConnectionError(t *testing.T) {
 	classifier := NewErrorClassifier()
 
@@ -86,7 +86,7 @@ func TestServerExitDuringHandshakeIsNotATransientConnectionError(t *testing.T) {
 		"connection closed",
 		"broken pipe",
 	} {
-		category, _ := classifier.analyzeError(fmt.Errorf("%s", msg))
+		category, _ := classifier.analyzeError(fmt.Errorf("%s", msg), "")
 		assert.NotEqual(t, CategoryConnection, category,
 			"%q must not be classified as a transient connection fault", msg)
 	}
@@ -104,7 +104,7 @@ func TestNonRecoverableCategoriesStayNonRecoverable(t *testing.T) {
 		CategorySerialization,
 		CategoryServerStartup,
 	} {
-		assert.False(t, classifier.isRecoverable(fmt.Errorf("boom"), category),
+		assert.False(t, classifier.isRecoverable(category),
 			"category %s must not be retried", category)
 	}
 }

@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os/exec"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ErrorCategory represents different types of MCP errors
@@ -76,6 +80,11 @@ func (c ErrorCategory) String() string {
 	}
 }
 
+// OperationSessionConnect names the initial session handshake in the
+// operation passed to ErrorHandler.HandleError. A connection lost there
+// never became a session, so it is classified differently from one lost later.
+const OperationSessionConnect = "session_connect"
+
 // ErrorSeverity represents the severity level of an error
 type ErrorSeverity int
 
@@ -137,7 +146,9 @@ func NewErrorClassifier() *ErrorClassifier {
 	return &ErrorClassifier{}
 }
 
-// Classify analyzes an error and returns a classified error with metadata
+// Classify analyzes an error and returns a classified error with metadata.
+// context["operation"], when present, names what failed; see
+// OperationSessionConnect.
 func (ec *ErrorClassifier) Classify(err error, context map[string]interface{}) *ClassifiedError {
 	if err == nil {
 		return nil
@@ -148,10 +159,12 @@ func (ec *ErrorClassifier) Classify(err error, context map[string]interface{}) *
 		return classified
 	}
 
+	operation, _ := context["operation"].(string)
+
 	// Analyze error type and content
-	category, severity := ec.analyzeError(err)
-	recoverable := ec.isRecoverable(err, category)
-	retryAfter := ec.getRetryDelay(err, category)
+	category, severity := ec.analyzeError(err, operation)
+	recoverable := ec.isRecoverable(category)
+	retryAfter := ec.getRetryDelay(category)
 
 	return &ClassifiedError{
 		Category:    category,
@@ -164,28 +177,54 @@ func (ec *ErrorClassifier) Classify(err error, context map[string]interface{}) *
 	}
 }
 
-// analyzeError determines the category and severity of an error
-func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity) {
-	errStr := strings.ToLower(err.Error())
+// Codes the SDK's jsonrpc2 layer uses for calls failed by a connection
+// shutting down. The sentinels themselves are internal to the SDK; a
+// *jsonrpc.Error matches them by code alone (WireError.Is).
+const (
+	codeClientClosing = -32003
+	codeServerClosing = -32004
+)
 
-	// Context timeout errors
-	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(errStr, "timeout") {
-		if strings.Contains(errStr, "connection") {
-			return CategoryConnection, SeverityError
-		}
+// IsConnectionLost reports whether err means the connection to the server is
+// gone: the peer closed it (EOF; a stdio server exiting), the SDK reports it
+// closed or closing, the server no longer knows the session, or the socket
+// was closed underneath a call.
+func IsConnectionLost(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, officialMCP.ErrConnectionClosed) || errors.Is(err, officialMCP.ErrSessionMissing) ||
+		errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	var rpcErr *jsonrpc.Error
+	return errors.As(err, &rpcErr) && (rpcErr.Code == codeClientClosing || rpcErr.Code == codeServerClosing)
+}
+
+// analyzeError determines the category and severity of an error. Types
+// decide first: context errors, lost connections, network and syscall
+// errors, process errors, then JSON-RPC error codes. Message matching is
+// left for errors that reach us with no type to inspect, and each such
+// check says where those come from.
+func (ec *ErrorClassifier) analyzeError(err error, operation string) (ErrorCategory, ErrorSeverity) {
+	if errors.Is(err, context.DeadlineExceeded) {
 		return CategoryTimeout, SeverityWarning
 	}
-
-	// Context cancellation
 	if errors.Is(err, context.Canceled) {
 		return CategoryClientUsage, SeverityInfo
 	}
 
-	// Typed network and syscall errors. These use errors.As, not a bare type
-	// assertion: transports wrap their failures (fmt.Errorf("%w"), jsonrpc),
-	// and an assertion on the outermost error misses every wrapped one --
-	// which sent real connection failures to CategoryUnknown, marking them
-	// unrecoverable and silently disabling reconnection.
+	if IsConnectionLost(err) {
+		// A connection lost before the handshake completed never became a
+		// session: the server exited during startup or does not speak MCP.
+		// Retrying it meets the same failure; the user needs it reported.
+		if operation == OperationSessionConnect {
+			return CategoryProtocol, SeverityError
+		}
+		return CategoryTransport, SeverityWarning
+	}
+
+	// errors.As, not a type assertion: transports wrap their failures
+	// (fmt.Errorf("%w"), jsonrpc), and an assertion on the outermost error
+	// misses every wrapped one.
 
 	// DNS resolution errors (checked before net.Error: *net.DNSError is one).
 	var dnsErr *net.DNSError
@@ -230,20 +269,53 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryConnection, SeverityError
 	}
 
+	// A server command that is not on PATH.
+	if errors.Is(err, exec.ErrNotFound) {
+		return CategoryClientConfig, SeverityError
+	}
+
 	// Process execution errors
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return CategoryServerInternal, SeverityError
 	}
 
-	// Message-based fallback for connection failures that reach us as plain
-	// strings, having lost their type on the way through the transport stack.
-	//
-	// Only unambiguous network faults belong here. "connection closed" and
-	// "broken pipe" are deliberately absent: a stdio server that exits during
-	// the MCP handshake produces exactly those, and treating them as transient
-	// network errors would send a misconfigured server into a pointless retry
-	// loop instead of reporting the protocol failure.
+	// A JSON-RPC error response: the code says what went wrong; the
+	// message is the server's own words and decides nothing.
+	var rpcErr *jsonrpc.Error
+	if errors.As(err, &rpcErr) {
+		switch rpcErr.Code {
+		case jsonrpc.CodeParseError, jsonrpc.CodeInvalidRequest, officialMCP.CodeUnsupportedProtocolVersion:
+			return CategoryProtocol, SeverityError
+		case jsonrpc.CodeMethodNotFound:
+			return CategoryServerCapability, SeverityWarning
+		case jsonrpc.CodeInvalidParams:
+			return CategoryValidation, SeverityError
+		case jsonrpc.CodeInternalError:
+			return CategoryServerInternal, SeverityError
+		}
+	}
+
+	return ec.analyzeErrorMessage(strings.ToLower(err.Error()))
+}
+
+// analyzeErrorMessage classifies an error that carries no type to inspect,
+// by its text. What reaches here: server stderr captured at startup (plain
+// text by nature), SDK errors built with %v or unexported types (the SDK's
+// unsupportedProtocolVersionError, HTTP status failures such as "failed to
+// connect: Unauthorized"), and errors other layers flattened to strings.
+func (ec *ErrorClassifier) analyzeErrorMessage(errStr string) (ErrorCategory, ErrorSeverity) {
+	if strings.Contains(errStr, "timeout") {
+		if strings.Contains(errStr, "connection") {
+			return CategoryConnection, SeverityError
+		}
+		return CategoryTimeout, SeverityWarning
+	}
+
+	// Network faults whose type was lost on the way through a layer that
+	// formats with %v. "connection closed" and "broken pipe" are absent on
+	// purpose: as bare strings they do not say whether a session ever
+	// existed, and a typed lost connection is caught by IsConnectionLost.
 	if strings.Contains(errStr, "connection refused") ||
 		strings.Contains(errStr, "connection reset") ||
 		strings.Contains(errStr, "no such host") ||
@@ -251,7 +323,7 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryConnection, SeverityError
 	}
 
-	// Server startup errors - detect common patterns (check before protocol errors)
+	// Server startup failures, recognised in the server's stderr output.
 	if strings.Contains(errStr, "environment variable") && strings.Contains(errStr, "required") {
 		return CategoryServerStartup, SeverityError
 	}
@@ -265,43 +337,14 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryServerStartup, SeverityError
 	}
 
-	// Protocol-specific errors - check for initialization/registration failures FIRST
-	// These must be checked before generic "invalid" check to avoid misclassification
-
-	// SDK initialization errors (pattern: `calling "initialize": ...`)
+	// Handshake and version failures. The SDK reports a server-chosen
+	// version it cannot speak with an unexported error type.
 	if strings.Contains(errStr, `calling "initialize"`) ||
-		strings.Contains(errStr, `calling "initialized"`) ||
-		strings.Contains(errStr, "initialize") ||
-		strings.Contains(errStr, "initialized") ||
 		strings.Contains(errStr, "registration") ||
-		strings.Contains(errStr, "handshake") {
-		return CategoryProtocol, SeverityError
-	}
-
-	// EOF during protocol initialization indicates server exited unexpectedly
-	if strings.Contains(errStr, "eof") && strings.Contains(errStr, "protocol") {
-		return CategoryProtocol, SeverityError
-	}
-
-	// Client is closing during initialization
-	if strings.Contains(errStr, "client is closing") {
-		return CategoryProtocol, SeverityError
-	}
-
-	// Connection closed during MCP operations
-	if strings.Contains(errStr, "connection closed") &&
-		(strings.Contains(errStr, "calling") || strings.Contains(errStr, "mcp")) {
-		return CategoryProtocol, SeverityError
-	}
-
-	// Unsupported protocol version
-	if strings.Contains(errStr, "protocol version") ||
-		strings.Contains(errStr, "unsupported") && strings.Contains(errStr, "version") {
-		return CategoryProtocol, SeverityError
-	}
-
-	// Generic protocol errors
-	if strings.Contains(errStr, "protocol") {
+		strings.Contains(errStr, "handshake") ||
+		strings.Contains(errStr, "protocol version") ||
+		strings.Contains(errStr, "unsupported") && strings.Contains(errStr, "version") ||
+		strings.Contains(errStr, "protocol") {
 		return CategoryProtocol, SeverityError
 	}
 
@@ -310,7 +353,7 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategorySerialization, SeverityError
 	}
 
-	// Authentication errors
+	// Authentication errors: the SDK formats HTTP 401/403 as status text.
 	if strings.Contains(errStr, "auth") || strings.Contains(errStr, "unauthorized") || strings.Contains(errStr, "forbidden") {
 		return CategoryAuthentication, SeverityError
 	}
@@ -320,10 +363,10 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryServerCapability, SeverityWarning
 	}
 
-	// Validation errors (client-side parameter validation)
-	// This check comes AFTER protocol errors to avoid catching server response validation issues
+	// Validation errors (client-side parameter validation), checked after
+	// the protocol errors so a malformed server response is not blamed on
+	// the client.
 	if strings.Contains(errStr, "invalid") || strings.Contains(errStr, "validation") {
-		// Double-check this isn't a protocol/server response issue
 		if strings.Contains(errStr, "response") ||
 			strings.Contains(errStr, "server") ||
 			strings.Contains(errStr, "message") {
@@ -332,8 +375,8 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryValidation, SeverityError
 	}
 
-	// Command not found errors
-	if strings.Contains(errStr, "command not found") || strings.Contains(errStr, "executable file not found") {
+	// A shell's report of a missing command, relayed through stderr.
+	if strings.Contains(errStr, "command not found") {
 		return CategoryClientConfig, SeverityError
 	}
 
@@ -342,7 +385,7 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryClientResource, SeverityError
 	}
 
-	// HTTP status code analysis
+	// HTTP status failures, which the SDK formats as status text.
 	if strings.Contains(errStr, "500") || strings.Contains(errStr, "internal server error") {
 		return CategoryServerInternal, SeverityError
 	}
@@ -353,19 +396,17 @@ func (ec *ErrorClassifier) analyzeError(err error) (ErrorCategory, ErrorSeverity
 		return CategoryServerCapability, SeverityWarning
 	}
 
-	// Default classification
 	return CategoryUnknown, SeverityError
 }
 
-// isRecoverable determines if an error can be recovered from
-func (ec *ErrorClassifier) isRecoverable(err error, category ErrorCategory) bool {
+// isRecoverable reports whether an error of category can clear up on retry
+// or reconnection.
+func (ec *ErrorClassifier) isRecoverable(category ErrorCategory) bool {
 	switch category {
 	case CategoryTimeout, CategoryConnection, CategoryServerUnavailable:
 		return true // These can often be retried
 	case CategoryTransport:
-		// Transport errors might be recoverable depending on the specific error
-		errStr := strings.ToLower(err.Error())
-		return strings.Contains(errStr, "reset") || strings.Contains(errStr, "pipe")
+		return true // The connection was lost; a new one can be made
 	case CategoryServerInternal:
 		return true // Server might recover
 	case CategoryServerStartup:
@@ -380,8 +421,8 @@ func (ec *ErrorClassifier) isRecoverable(err error, category ErrorCategory) bool
 }
 
 // getRetryDelay calculates appropriate retry delay for recoverable errors
-func (ec *ErrorClassifier) getRetryDelay(err error, category ErrorCategory) *time.Duration {
-	if !ec.isRecoverable(err, category) {
+func (ec *ErrorClassifier) getRetryDelay(category ErrorCategory) *time.Duration {
+	if !ec.isRecoverable(category) {
 		return nil
 	}
 
@@ -428,8 +469,9 @@ func (ec *ErrorClassifier) generateUserFriendlyMessage(err error, category Error
 		return "Authentication failed - check credentials and permissions"
 
 	case CategoryProtocol:
-		// Provide specific guidance based on the error type
-		if strings.Contains(errStr, "initialize") || strings.Contains(errStr, "initialized") {
+		// Provide specific guidance based on the error type. A lost
+		// connection is only a protocol failure during the handshake.
+		if IsConnectionLost(err) || strings.Contains(errStr, "initialize") {
 			return "MCP initialization failed - server may not implement MCP protocol correctly or exited during handshake"
 		}
 		if strings.Contains(errStr, "registration") {
@@ -437,9 +479,6 @@ func (ec *ErrorClassifier) generateUserFriendlyMessage(err error, category Error
 		}
 		if strings.Contains(errStr, "protocol version") || strings.Contains(errStr, "unsupported") {
 			return "Protocol version mismatch - client and server use incompatible MCP versions"
-		}
-		if strings.Contains(errStr, "eof") {
-			return "Protocol error - server closed connection unexpectedly during initialization"
 		}
 		return "Protocol error - incompatible MCP versions or invalid handshake"
 
@@ -463,7 +502,7 @@ func (ec *ErrorClassifier) generateUserFriendlyMessage(err error, category Error
 		return "Server capability error - requested feature not supported"
 
 	case CategoryClientConfig:
-		if strings.Contains(errStr, "command not found") || strings.Contains(errStr, "executable") {
+		if errors.Is(err, exec.ErrNotFound) || strings.Contains(errStr, "command not found") {
 			return "Command not found - check if the MCP server command is installed and accessible"
 		}
 		return "Configuration error - check connection parameters"
