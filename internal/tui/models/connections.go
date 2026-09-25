@@ -123,6 +123,7 @@ func (cm *ConnectionsManager) loadFromSource(filePath string) bool {
 		return false
 	}
 
+	//nolint:gosec // G304: filePath is a well-known MCP client config location from LoadConnections.
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		cm.logger.Debug("Could not read config file", debug.F("path", filePath), debug.F("error", err))
@@ -282,6 +283,7 @@ func (cm *ConnectionsManager) getClaudeDesktopConfigPath() string {
 	appData := os.Getenv("APPDATA")
 	if appData != "" {
 		winPath := filepath.Join(appData, "Claude", "claude_desktop_config.json")
+		//nolint:gosec // G703: APPDATA is the OS-standard per-user config root; only fixed segments are joined below it.
 		if _, err := os.Stat(winPath); err == nil {
 			return winPath
 		}
@@ -326,9 +328,11 @@ func (cm *ConnectionsManager) getIconForServerType(serverType string) string {
 
 // SaveConnections saves the current connections to disk
 func (cm *ConnectionsManager) SaveConnections() error {
-	// Ensure config directory exists
+	// Ensure config directory exists. Entries can carry headers and env
+	// values (i.e. credentials), so the directory is owner-only like the
+	// OAuth token cache.
 	dir := filepath.Dir(cm.filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -339,7 +343,7 @@ func (cm *ConnectionsManager) SaveConnections() error {
 	}
 
 	// Write to file
-	if err := os.WriteFile(cm.filePath, data, 0644); err != nil {
+	if err := os.WriteFile(cm.filePath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write connections file: %w", err)
 	}
 
@@ -582,6 +586,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	}
 
 	// Try to read and parse the file
+	//nolint:gosec // G304: filePath comes from discovery over well-known MCP client config locations.
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		dc.Accessible = false

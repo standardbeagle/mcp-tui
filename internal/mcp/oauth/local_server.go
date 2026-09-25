@@ -337,9 +337,15 @@ func callbackTitle(success bool) string {
 
 // openBrowser launches the platform-appropriate browser command. Failures
 // are returned to the caller so the CLI can fall back to printing the URL.
+//
+//nolint:gosec // G204: fixed per-platform browser binary, no shell; target is URL-parsed, http(s)-only.
 func openBrowser(target string) error {
-	if _, err := url.Parse(target); err != nil {
+	u, err := url.Parse(target)
+	if err != nil {
 		return fmt.Errorf("oauth: invalid browser target %q: %w", target, err)
+	}
+	if u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS {
+		return fmt.Errorf("oauth: refusing to open browser for non-http(s) target %q", redact.RedactedURL(u))
 	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {

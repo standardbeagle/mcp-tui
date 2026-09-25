@@ -383,7 +383,10 @@ func TestLocalServerFetcher_Fetch_HappyPath(t *testing.T) {
 
 	f.browserOpener = func(target string) error {
 		go func() {
-			_, _ = http.Get(target)
+			resp, err := http.Get(target)
+			if err == nil {
+				defer resp.Body.Close()
+			}
 		}()
 		return nil
 	}
@@ -409,7 +412,12 @@ func TestLocalServerFetcher_Fetch_OAuthError(t *testing.T) {
 	defer fakeAuthSrv.Close()
 
 	f.browserOpener = func(target string) error {
-		go func() { _, _ = http.Get(target) }()
+		go func() {
+			resp, err := http.Get(target)
+			if err == nil {
+				defer resp.Body.Close()
+			}
+		}()
 		return nil
 	}
 
@@ -472,10 +480,12 @@ func installAutoApproveFetcher(t *testing.T, h *Handler) {
 			go func() {
 				// http.Client follows 302 by default, so this single GET
 				// chain authorize → callback → done.
-				_, err := http.Get(target)
+				resp, err := http.Get(target)
 				if err != nil {
 					t.Logf("auto-approve GET failed: %v", err)
+					return
 				}
+				defer resp.Body.Close()
 			}()
 			return nil
 		}

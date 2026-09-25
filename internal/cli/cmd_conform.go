@@ -265,6 +265,7 @@ func writeConformText(w io.Writer, results []conform.ScenarioResult) {
 // override the path to a temp file.
 func writeJUnitFile(path string, results []conform.ScenarioResult) error {
 	suite := conform.BuildJUnitReport("mcp-tui.conform", results)
+	//nolint:gosec // G304: path is the user's own --report-junit flag; writing there is the flag's purpose.
 	f, err := os.Create(path)
 	if err != nil {
 		return err

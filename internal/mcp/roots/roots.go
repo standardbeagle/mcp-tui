@@ -102,6 +102,7 @@ func LoadFile(path string) ([]*officialMCP.Root, error) {
 	if path == "" {
 		return nil, fmt.Errorf("roots file path is empty")
 	}
+	//nolint:gosec // G304: path is the user's own --roots-file flag; reading that file is the flag's purpose.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read roots file %q: %w", path, err)

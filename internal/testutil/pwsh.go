@@ -25,9 +25,10 @@ import (
 // platform; on Windows exec.LookPath resolves it via PATHEXT.
 const PwshExe = "pwsh"
 
-// requirePwshEnv makes a missing pwsh a hard failure rather than a skip.
-// CI sets it so that the cross-platform tests can never silently stop running.
-const requirePwshEnv = "MCP_TUI_REQUIRE_PWSH"
+// requirePowerShellEnv makes a missing pwsh a hard failure rather than a
+// skip. CI sets it so that the cross-platform tests can never silently stop
+// running.
+const requirePowerShellEnv = "MCP_TUI_REQUIRE_PWSH"
 
 // LookPwsh returns the path to pwsh, or an error if it is not installed.
 func LookPwsh() (string, error) {
@@ -40,8 +41,8 @@ func LookPwsh() (string, error) {
 func RequirePwsh(t *testing.T) {
 	t.Helper()
 	if _, err := LookPwsh(); err != nil {
-		if os.Getenv(requirePwshEnv) != "" {
-			t.Fatalf("pwsh is required (%s is set) but was not found: %v", requirePwshEnv, err)
+		if os.Getenv(requirePowerShellEnv) != "" {
+			t.Fatalf("pwsh is required (%s is set) but was not found: %v", requirePowerShellEnv, err)
 		}
 		t.Skipf("pwsh not installed; skipping cross-platform process test: %v", err)
 	}

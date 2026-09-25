@@ -35,10 +35,12 @@ func exportSession(service mcp.Service) (string, StatusLevel) {
 	jsonPath := base + ".json"
 	scriptPath := base + ".sh"
 
-	if err := os.WriteFile(jsonPath, eventsJSON, 0o644); err != nil {
+	// Session events can carry message payloads, so both files are
+	// owner-only; run the script via `sh <path>` rather than ./<path>.
+	if err := os.WriteFile(jsonPath, eventsJSON, 0o600); err != nil {
 		return fmt.Sprintf("Failed to write %s: %v", jsonPath, err), StatusError
 	}
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
 		return fmt.Sprintf("Failed to write %s: %v", scriptPath, err), StatusError
 	}
 

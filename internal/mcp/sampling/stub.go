@@ -57,6 +57,7 @@ func NewFileStubHandler(path string) (Handler, error) {
 	if path == "" {
 		return nil, fmt.Errorf("sampling stub file path is empty")
 	}
+	//nolint:gosec // G304: path is the user's own --sampling-stub-file flag; reading that file is its purpose.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read sampling stub file %q: %w", path, err)

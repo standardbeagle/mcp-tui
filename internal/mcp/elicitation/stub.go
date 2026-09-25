@@ -127,6 +127,7 @@ func NewFileStubHandler(path string) (Handler, error) {
 	if path == "" {
 		return nil, fmt.Errorf("elicitation stub file path is empty")
 	}
+	//nolint:gosec // G304: path is the user's own --elicit-stub-file flag; reading that file is its purpose.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read elicitation stub file %q: %w", path, err)

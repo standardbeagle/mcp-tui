@@ -329,7 +329,11 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", err)
 		}
-		resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// The body is already fully buffered; a close error here is not
+			// propagatable and the caller still gets the response.
+			debug.Debug("HTTP debug: response body close failed", debug.F("error", closeErr))
+		}
 
 		// Create a new ReadCloser with the buffered content
 		resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))

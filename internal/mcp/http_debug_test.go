@@ -105,6 +105,7 @@ func TestDebugRoundTripperDoesNotBufferEventStream(t *testing.T) {
 	var resp *http.Response
 	go func() {
 		defer close(done)
+		//nolint:bodyclose // the body must stay open past the select below; the outer test closes it via defer.
 		resp, err = client.Do(req)
 	}()
 

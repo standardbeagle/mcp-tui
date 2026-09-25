@@ -214,7 +214,7 @@ func (c *Config) Validate() error {
 	if err != nil {
 		return fmt.Errorf("oauth: invalid ServerURL %q: %w", c.ServerURL, err)
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
+	if u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS {
 		return fmt.Errorf("oauth: ServerURL must use http or https, got %q", u.Scheme)
 	}
 
@@ -331,10 +331,13 @@ func isHTTPSOrLoopbackURL(raw string) bool {
 	if err != nil || u.Host == "" {
 		return false
 	}
-	return u.Scheme == schemeHTTPS || (u.Scheme == "http" && isLoopbackHost(u.Hostname()))
+	return u.Scheme == schemeHTTPS || (u.Scheme == schemeHTTP && isLoopbackHost(u.Hostname()))
 }
 
-const schemeHTTPS = "https"
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
+)
 
 // isLoopbackHost reports whether host names the loopback interface:
 // "localhost" or an address in 127.0.0.0/8 or ::1. The callback listener
