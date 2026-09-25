@@ -110,8 +110,11 @@ mcp-tui [global-flags] tool <list|describe|call> [args]
   CLI cannot express (an `allOf` conflict, `anyOf`/`oneOf` alternatives with
   their own properties). Before the call the arguments are validated against
   the whole input schema (`if`/`then`/`else`, `not`, `patternProperties`,
-  value constraints, nested objects), and a call that breaks it is refused
-  with the schema path of the failure. A schema that does not resolve (such
+  value constraints, nested objects), and a call that breaks it is refused.
+  The error names the argument that broke it (`address.zip`, `targets[0]`;
+  a `*` where several values match the failing subschema, none for a rule
+  over the arguments as a whole such as `required` or `then`) and the schema
+  path. `--skip-arg-validation` sends such a call anyway. A schema that does not resolve (such
   as a remote `$ref`) fails the call. When the server needed input first
   (`2026-07-28` multi round-trip requests), the text output ends with an
   `Input rounds (SEP-2322)` section and JSON output carries `rounds`. When the
@@ -128,6 +131,7 @@ mcp-tui [global-flags] tool <list|describe|call> [args]
 | `--task` | Call the tool as an MCP task and print the task handle instead of waiting. See [`task`](#task-subcommand). Refused when the server declared no tasks. |
 | `--wait` | With `--task`: poll the task to its end (bounded by `--timeout`) and print its result exactly as a direct call would |
 | `--ttl <ms>` | With `--task`: requested task retention in milliseconds. `2025-11-25` only; refused under the `2026-07-28` extension, which has no client-requested TTL. |
+| `--skip-arg-validation` | Send arguments that break the tool's input schema, to see how the server rejects them. The arguments are still validated: the violation is printed to stderr (whatever the output format) and logged as a warning, then the call goes out as given, direct or with `--task`. |
 
 ## `task` subcommand
 

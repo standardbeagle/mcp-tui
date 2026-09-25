@@ -51,7 +51,7 @@ fetch.
 
 ## Execute a tool
 
-The input form is generated from the tool's JSON Schema. Required fields are marked. Type coercion runs automatically — numbers, booleans, and JSON literals are parsed from text. A field of several types (`integer|string`) reads the type from what you type and shows it (`integer|string → integer`). `Ctrl+N` sends null from a nullable field. `Ctrl+E` on an object field with declared properties opens it as an indented sub-form; an optional object whose fields are all empty is left out. Before a call the arguments are checked against the whole schema, including rules no field shows (`if`/`then`/`else`, `not`, `patternProperties`), and a failing call is not sent. A schema the form cannot hold opens a raw JSON editor with the reason.
+The input form is generated from the tool's JSON Schema. Required fields are marked. Type coercion runs automatically — numbers, booleans, and JSON literals are parsed from text. A field of several types (`integer|string`) reads the type from what you type and shows it (`integer|string → integer`). `Ctrl+N` sends null from a nullable field. `Ctrl+E` on an object field with declared properties opens it as an indented sub-form; an optional object whose fields are all empty is left out. Before a call the arguments are checked against the whole schema, including rules no field shows (`if`/`then`/`else`, `not`, `patternProperties`), and a failing call is not sent; the error names the argument. `Ctrl+O` sends such calls anyway, showing the violation, to see how the server rejects them. A schema the form cannot hold opens a raw JSON editor with the reason.
 
 Result panels are scrollable. `Ctrl+↑/↓`, `PgUp`/`PgDn`, `Home`/`End`, and `v` (view fields) all work.
 
