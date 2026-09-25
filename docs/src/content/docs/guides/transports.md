@@ -13,6 +13,12 @@ Best for local processes and command-launched servers. Most reliable.
 mcp-tui --cmd <executable> --args "arg1,arg2,..."
 ```
 
+`--args` splits on commas. For an argument that holds one, give each argument with its own `--arg`, which passes it as is:
+
+```bash
+mcp-tui --cmd node --arg server.js --arg --columns=id,name,owner
+```
+
 Commands are validated for safety before launch. Process lifecycle is managed cross-platform (Unix and Windows).
 
 ## HTTP / Streamable HTTP

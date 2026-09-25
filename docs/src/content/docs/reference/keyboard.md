@@ -39,7 +39,7 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 | `Ctrl+O` | Toggle sending arguments that break the input schema: by default such a call is refused; while on (`[schema violations sent]` in the title) it is sent, the violation is shown under the title, and the copied CLI command carries `--skip-arg-validation` |
 | `Ctrl+N` | On a nullable field: send null (again to go back to the typed value) |
 | `Ctrl+E` | On an object field with declared properties: open it as a sub-form, or close it back to a JSON literal |
-| `c` | Show and copy the equivalent CLI command (POSIX shell syntax; each word single-quoted as needed) |
+| `c` | Show and copy the equivalent CLI command (POSIX shell syntax; each word single-quoted as needed). Server arguments are written one `--arg` each. Raw JSON arguments are written as one `key:=<json>` per top-level key; JSON the CLI cannot take (not an object, or a key other than letters, digits, `_` and `-`) gives a `#` line naming the problem instead of a command |
 | `v` | Browse the result's fields |
 | `Esc` / `b` | Back |
 

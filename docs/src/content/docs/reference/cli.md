@@ -17,7 +17,8 @@ mcp-tui [global-flags] <subcommand> [subcommand-flags] [args]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--cmd <bin>` | | STDIO transport command |
-| `--args <a,b,...>` | | Comma-separated args for `--cmd` |
+| `--args <a,b,...>` | | Comma-separated args for `--cmd`. An arg holding a comma cannot be passed this way; use `--arg` |
+| `--arg <value>` | | One arg for `--cmd`, passed as is (commas, spaces and quotes included). Repeat it for each arg, in order: `--cmd node --arg server.js --arg --columns=id,name`. Cannot be combined with `--args`; giving both is refused, because the order across the two flags is not kept |
 | `--url <url>` | | URL for HTTP/SSE transports |
 | `--transport <stdio\|sse\|http\|streamable-http>` | `stdio` | Transport selection. `sse` (HTTP+SSE) is deprecated and negotiates at most `2025-11-25`; use `http` for `2026-07-28`. |
 | `--protocol-version <version>` | SDK latest | MCP protocol version to request: `2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26`, or `2024-11-05`. The server may negotiate down. Any other value fails before connecting. Pin `2025-11-25` when a server's tools still call the client directly (sampling, elicitation, roots) and fail under `2026-07-28`. |
