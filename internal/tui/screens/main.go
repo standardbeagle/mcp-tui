@@ -216,14 +216,23 @@ type PromptResultLoadedMsg struct {
 	Error  error
 }
 
-// BackgroundWork marks the main screen's read and get results as
-// BackgroundMsg: reading a resource or getting a prompt can raise an
-// elicitation, and that overlay must not swallow the result.
-func (ResourceContentLoadedMsg) BackgroundWork() {}
-func (PromptResultLoadedMsg) BackgroundWork()    {}
-
 // spinnerTickMsg is sent to update the spinner animation
 type spinnerTickMsg struct{}
+
+// BackgroundWork marks the main screen's reports as BackgroundMsg, so an
+// open overlay (the debug view, or an elicitation a read, a get or a list
+// raised) does not swallow them: a lost result leaves its tab or viewer
+// loading, and a lost tick or feed message stops what it re-arms.
+func (ConnectionStartedMsg) BackgroundWork()     {}
+func (ConnectionCompleteMsg) BackgroundWork()    {}
+func (ItemsLoadedMsg) BackgroundWork()           {}
+func (ToolsLoadedMsg) BackgroundWork()           {}
+func (ResourcesLoadedMsg) BackgroundWork()       {}
+func (PromptsLoadedMsg) BackgroundWork()         {}
+func (EventTickMsg) BackgroundWork()             {}
+func (ResourceContentLoadedMsg) BackgroundWork() {}
+func (PromptResultLoadedMsg) BackgroundWork()    {}
+func (spinnerTickMsg) BackgroundWork()           {}
 
 // NewMainScreen creates a new main screen
 func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *MainScreen {

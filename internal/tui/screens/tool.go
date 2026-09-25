@@ -711,6 +711,7 @@ type toolTaskProgressMsg struct {
 // overlay (an elicitation the call raised, the debug view) cannot swallow
 // them.
 func (toolExecutionCompleteMsg) BackgroundWork() {}
+func (toolSpinnerTickMsg) BackgroundWork()       {}
 func (toolTaskStartedMsg) BackgroundWork()       {}
 func (toolTaskProgressMsg) BackgroundWork()      {}
 

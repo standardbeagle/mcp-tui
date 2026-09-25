@@ -35,6 +35,12 @@ type resourceTemplateReadMsg struct {
 	err      error
 }
 
+// BackgroundWork marks the template screen's results as BackgroundMsg:
+// reading the resource can raise an elicitation, and that overlay must not
+// swallow the result.
+func (resourceTemplateCompletionsMsg) BackgroundWork() {}
+func (resourceTemplateReadMsg) BackgroundWork()        {}
+
 // ResourceTemplateScreen is the form shown when the user picks a row from
 // the resource-templates section. It renders one input field per variable
 // extracted from the URI template. Tab on a field triggers a

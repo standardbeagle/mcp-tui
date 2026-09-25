@@ -236,13 +236,22 @@ func TestScreenManagerKeepsRequestOverlayWhenConfirmArrives(t *testing.T) {
 	}
 }
 
-// Reading a resource or getting a prompt can raise an elicitation; the
-// result arrives while that overlay is still up and must reach the main
-// screen, not the overlay.
-func TestScreenManagerDeliversResourceAndPromptResultsUnderAnOverlay(t *testing.T) {
+// The main screen's background work reports while an overlay is up (the
+// debug view, or an elicitation a read or a list raised) and must reach the
+// main screen, not the overlay: a swallowed list leaves its tab loading, a
+// swallowed tick or feed message stops the timer or feed it re-arms.
+func TestScreenManagerDeliversMainScreenWorkUnderAnOverlay(t *testing.T) {
 	for _, msg := range []tea.Msg{
 		screens.ResourceContentLoadedMsg{Resource: &mcp.Resource{URI: "file:///var/log/deploy.log"}},
 		screens.PromptResultLoadedMsg{Prompt: &mcp.Prompt{Name: "code_review"}},
+		screens.ConnectionStartedMsg{},
+		screens.ConnectionCompleteMsg{Success: true},
+		screens.ToolsLoadedMsg{Tools: []mcp.Tool{{Name: "deploy"}}, ActualCount: 1},
+		screens.ResourcesLoadedMsg{Resources: []mcp.Resource{{URI: "file:///var/log/deploy.log"}}, ActualCount: 1},
+		screens.PromptsLoadedMsg{Prompts: []mcp.Prompt{{Name: "code_review"}}, ActualCount: 1},
+		screens.ItemsLoadedMsg{Tab: 3, Items: []string{"tools/list_changed"}, ActualCount: 1},
+		screens.EventTickMsg{},
+		screens.ResourceUpdatedMsg{URI: "file:///var/log/deploy.log", At: time.Now()},
 	} {
 		underneath := &recordingScreen{}
 		overlay := screens.NewRootsScreen(nil)

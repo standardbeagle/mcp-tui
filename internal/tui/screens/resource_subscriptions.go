@@ -33,6 +33,11 @@ type resourceSubscriptionChangedMsg struct {
 	Err        error
 }
 
+// BackgroundWork marks the subscription reports as BackgroundMsg: an update
+// swallowed by an open overlay would end the feed, which each one re-arms.
+func (ResourceUpdatedMsg) BackgroundWork()             {}
+func (resourceSubscriptionChangedMsg) BackgroundWork() {}
+
 // resourceUpdateBuffer bounds the updates queued between the SDK's
 // receiving goroutine and the bubbletea loop. An update that finds it full is
 // dropped: the row already carries the updated mark it would set.
