@@ -162,15 +162,28 @@ type toolField struct {
 	input           textinput.Model
 	validationError string // Real-time validation error
 
-	// path names the value from the arguments down: [name] for a
-	// top-level field, [object, ..., name] in a sub-form, depth levels down.
-	path  []string
+	// depth is how many sub-forms down the field sits; a sub-form's fields
+	// follow the field that opened it, one level deeper.
 	depth int
-	// properties are an object's own properties; Ctrl+E opens them as a
-	// sub-form (expanded), whose fields are kept in stash while closed.
-	properties []inputschema.Param
-	expanded   bool
-	stash      []toolField
+	// properties are an object's own properties, itemProperties those of an
+	// array's object items; Ctrl+E opens them as a sub-form (expanded),
+	// whose fields are kept in stash while closed. An array's sub-form is a
+	// list of element rows (element), each followed by its object's fields.
+	properties     []inputschema.Param
+	itemProperties []inputschema.Param
+	element        bool
+	expanded       bool
+	stash          []toolField
+}
+
+// hasSubForm reports whether Ctrl+E opens the field as a sub-form.
+func (f *toolField) hasSubForm() bool {
+	return !f.element && (len(f.properties) > 0 || len(f.itemProperties) > 0)
+}
+
+// isElementList reports an array of objects open as a list of elements.
+func (f *toolField) isElementList() bool {
+	return f.expanded && len(f.itemProperties) > 0
 }
 
 // resultField represents a parsed field from JSON result
@@ -452,12 +465,12 @@ func (ts *ToolScreen) parseSchema() {
 // fieldsFromSchema builds one text input per schema parameter, in name
 // order.
 func fieldsFromSchema(schema inputschema.Schema) []toolField {
-	return fieldsFromParams(schema.Params, nil, 0)
+	return fieldsFromParams(schema.Params, 0)
 }
 
-// fieldsFromParams builds one text input per parameter of the object at
-// parent (nil for the arguments themselves), depth levels down.
-func fieldsFromParams(params []inputschema.Param, parent []string, depth int) []toolField {
+// fieldsFromParams builds one text input per parameter of an object depth
+// levels down.
+func fieldsFromParams(params []inputschema.Param, depth int) []toolField {
 	fields := make([]toolField, 0, len(params))
 	for i := range params {
 		p := &params[i]
@@ -487,25 +500,35 @@ func fieldsFromParams(params []inputschema.Param, parent []string, depth int) []
 			input.Placeholder = "Enter " + p.Name
 		}
 		fields = append(fields, toolField{
-			name:        p.Name,
-			description: p.Description,
-			fieldType:   p.Kind,
-			nullable:    p.Nullable,
-			itemKind:    p.ItemKind,
-			union:       p.Union,
-			note:        p.Note,
-			required:    p.Required,
-			input:       input,
-			path:        append(slices.Clone(parent), p.Name),
-			depth:       depth,
-			properties:  p.Properties,
+			name:           p.Name,
+			description:    p.Description,
+			fieldType:      p.Kind,
+			nullable:       p.Nullable,
+			itemKind:       p.ItemKind,
+			union:          p.Union,
+			note:           p.Note,
+			required:       p.Required,
+			input:          input,
+			depth:          depth,
+			properties:     p.Properties,
+			itemProperties: p.ItemProperties,
 		})
 	}
 	return fields
 }
 
-// keyToggleSubForm opens and closes an object field's sub-form.
+// keyToggleSubForm opens and closes an object field's sub-form, or an array
+// of objects' list of elements.
 const keyToggleSubForm = "ctrl+e"
+
+// keyAddElement and keyRemoveElement add an element to the array of objects
+// the cursor is on or in, and remove the element the cursor is in. They
+// take over the text input's own Ctrl+A (line start; Home still does it)
+// only there.
+const (
+	keyAddElement    = "ctrl+a"
+	keyRemoveElement = "ctrl+x"
+)
 
 // keyToggleArgValidation switches between refusing a call whose arguments
 // break the input schema and sending it with the violation shown.
@@ -521,7 +544,7 @@ const argValidationOffBadge = "[schema violations sent]"
 // the field has a sub-form.
 func (ts *ToolScreen) toggleSubForm(index int) bool {
 	field := &ts.fields[index]
-	if len(field.properties) == 0 || field.sendNull {
+	if !field.hasSubForm() || field.sendNull {
 		return false
 	}
 	field.input.Blur()
@@ -538,30 +561,126 @@ func (ts *ToolScreen) toggleSubForm(index int) bool {
 		return true
 	}
 	children := field.stash
-	if children == nil {
-		children = fieldsFromParams(field.properties, field.path, field.depth+1)
+	if children == nil && len(field.itemProperties) > 0 {
+		children = elementFields(field, 0)
+	} else if children == nil {
+		children = fieldsFromParams(field.properties, field.depth+1)
 	}
 	field.stash = nil
 	field.expanded = true
 	field.validationError = ""
 	ts.fields = slices.Insert(ts.fields, index+1, children...)
-	ts.cursor = index + 1
-	ts.fields[index+1].input.Focus()
+	ts.focusFirstInput(index+1, index+1+len(children), index)
 	return true
 }
 
-// setArgument stores value at path in args, creating the objects on the
-// way.
-func setArgument(args map[string]interface{}, path []string, value interface{}) {
-	for _, name := range path[:len(path)-1] {
-		next, ok := args[name].(map[string]interface{})
-		if !ok {
-			next = map[string]interface{}{}
-			args[name] = next
-		}
-		args = next
+// subFormEnd is the index just past the fields of the sub-form (or element)
+// opened by fields[index].
+func (ts *ToolScreen) subFormEnd(index int) int {
+	end := index + 1
+	for end < len(ts.fields) && ts.fields[end].depth > ts.fields[index].depth {
+		end++
 	}
-	args[path[len(path)-1]] = value
+	return end
+}
+
+// focusFirstInput moves the cursor to the first field in fields[from:end]
+// that takes typing (element rows do not), or to fallback when none does.
+func (ts *ToolScreen) focusFirstInput(from, end, fallback int) {
+	ts.cursor = fallback
+	for i := from; i < end; i++ {
+		if !ts.fields[i].element {
+			ts.cursor = i
+			break
+		}
+	}
+	ts.fields[ts.cursor].input.Focus()
+}
+
+// elementFields is element n of the array of objects list: its row and its
+// object's fields.
+func elementFields(list *toolField, n int) []toolField {
+	row := toolField{
+		name:       fmt.Sprintf("[%d]", n),
+		fieldType:  inputschema.KindObject,
+		depth:      list.depth + 1,
+		properties: list.itemProperties,
+		element:    true,
+		expanded:   true,
+	}
+	return append([]toolField{row}, fieldsFromParams(list.itemProperties, list.depth+2)...)
+}
+
+// enclosingElementList finds the array of objects list the field at index
+// is on or inside: list is the array field, element the row of the element
+// holding index (-1 when index is the array field itself). list is -1 when
+// there is none.
+func (ts *ToolScreen) enclosingElementList(index int) (list, element int) {
+	if f := &ts.fields[index]; len(f.itemProperties) > 0 {
+		return index, -1
+	}
+	depth := ts.fields[index].depth
+	for i := index; i >= 0; i-- {
+		f := &ts.fields[i]
+		if i != index && f.depth >= depth {
+			continue
+		}
+		depth = f.depth
+		if !f.element {
+			continue
+		}
+		for j := i - 1; j >= 0; j-- {
+			if ts.fields[j].depth < f.depth {
+				return j, i
+			}
+		}
+	}
+	return -1, -1
+}
+
+// addElement appends an element to the array of objects the cursor is on or
+// in, opening its list first when closed, and moves the cursor into it. It
+// reports whether the cursor is on or in such an array.
+func (ts *ToolScreen) addElement() bool {
+	list, _ := ts.enclosingElementList(ts.cursor)
+	if list < 0 || ts.fields[list].sendNull {
+		return false
+	}
+	ts.fields[ts.cursor].input.Blur()
+	if !ts.fields[list].expanded {
+		return ts.toggleSubForm(list)
+	}
+	end := ts.subFormEnd(list)
+	elements := 0
+	for i := list + 1; i < end; i++ {
+		if ts.fields[i].depth == ts.fields[list].depth+1 {
+			elements++
+		}
+	}
+	added := elementFields(&ts.fields[list], elements)
+	ts.fields = slices.Insert(ts.fields, end, added...)
+	ts.focusFirstInput(end, end+len(added), list)
+	return true
+}
+
+// removeElement removes the element the cursor is in and numbers the rest
+// again. It reports whether the cursor is in an element.
+func (ts *ToolScreen) removeElement() bool {
+	list, element := ts.enclosingElementList(ts.cursor)
+	if element < 0 {
+		return false
+	}
+	ts.fields[ts.cursor].input.Blur()
+	ts.fields = slices.Delete(ts.fields, element, ts.subFormEnd(element))
+	n := 0
+	for i := list + 1; i < ts.subFormEnd(list); i++ {
+		if ts.fields[i].element && ts.fields[i].depth == ts.fields[list].depth+1 {
+			ts.fields[i].name = fmt.Sprintf("[%d]", n)
+			n++
+		}
+	}
+	ts.focusFirstInput(element, ts.subFormEnd(list), list)
+	return true
 }
 
 // commaSeparatedItems reports whether an array whose items are of kind may
@@ -569,6 +688,20 @@ func setArgument(args map[string]interface{}, path []string, value interface{}) 
 // undeclared) items qualify.
 func commaSeparatedItems(kind inputschema.Kind) bool {
 	return kind == "" || kind == inputschema.KindString
+}
+
+// typeIntoField hands msg to the focused field's text input and validates
+// what it holds. A field sent as null takes no typing until Ctrl+N again,
+// nor does an object shown as a sub-form.
+func (ts *ToolScreen) typeIntoField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	field := &ts.fields[ts.cursor]
+	if field.sendNull || field.expanded {
+		return ts, nil
+	}
+	var cmd tea.Cmd
+	field.input, cmd = field.input.Update(msg)
+	ts.validateField(ts.cursor)
+	return ts, cmd
 }
 
 // Init initializes the tool screen
@@ -884,6 +1017,18 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ts.SetStatus("", StatusInfo)
 			}
 			return ts, nil
+		case keyAddElement:
+			if ts.addElement() {
+				ts.SetStatus("", StatusInfo)
+				return ts, nil
+			}
+			return ts.typeIntoField(msg)
+		case keyRemoveElement:
+			if ts.removeElement() {
+				ts.SetStatus("", StatusInfo)
+				return ts, nil
+			}
+			return ts.typeIntoField(msg)
 		case "ctrl+n":
 			// Send null: the only way to say it for a nullable string. An
 			// open sub-form says what the object holds instead.
@@ -913,19 +1058,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ts.SetStatus("Pasted from clipboard", StatusSuccess)
 			return ts, nil
 		default:
-			// A field sent as null takes no typing until Ctrl+N again, nor
-			// does an object shown as a sub-form.
-			if field.sendNull || field.expanded {
-				return ts, nil
-			}
-			// Pass all other keys to the textinput model
-			var cmd tea.Cmd
-			field.input, cmd = field.input.Update(msg)
-
-			// Validate after input
-			ts.validateField(ts.cursor)
-
-			return ts, cmd
+			return ts.typeIntoField(msg)
 		}
 	}
 
@@ -1338,38 +1471,62 @@ func (ts *ToolScreen) formArguments() (map[string]interface{}, error) {
 	if err := ts.checkRequiredFields(); err != nil {
 		return nil, err
 	}
-	args := make(map[string]interface{})
-	for i := range ts.fields {
-		field := &ts.fields[i]
+	args, _, err := objectFromFields(ts.fields, 0, 0)
+	return args, err
+}
+
+// objectFromFields builds the object whose fields start at fields[i], depth
+// levels down, and returns it with the index of the first field past it.
+// An open sub-form builds its object (or list of elements) from its fields;
+// a nested object with nothing filled in is left out, while a required
+// top-level one is sent empty. Every element in a list is sent.
+func objectFromFields(fields []toolField, i, depth int) (map[string]interface{}, int, error) {
+	obj := make(map[string]interface{})
+	for i < len(fields) && fields[i].depth == depth {
+		field := &fields[i]
+		i++
 		switch {
-		case field.expanded:
-			// The object is built from its sub-form's fields; a required
-			// one is sent even when they are all empty.
-			if field.required && field.depth == 0 {
-				if _, ok := args[field.name]; !ok {
-					args[field.name] = map[string]interface{}{}
+		case field.isElementList():
+			elements := []interface{}{}
+			for i < len(fields) && fields[i].depth == depth+1 {
+				element, next, err := objectFromFields(fields, i+1, depth+2)
+				if err != nil {
+					return nil, 0, err
 				}
+				elements = append(elements, element)
+				i = next
 			}
-			continue
+			if len(elements) > 0 || (field.required && depth == 0) {
+				obj[field.name] = elements
+			}
+		case field.expanded:
+			sub, next, err := objectFromFields(fields, i, depth+1)
+			if err != nil {
+				return nil, 0, err
+			}
+			i = next
+			if len(sub) > 0 || (field.required && depth == 0) {
+				obj[field.name] = sub
+			}
 		case field.sendNull:
-			setArgument(args, field.path, nil)
-			continue
-		}
-		value := field.input.Value()
-		if value == "" {
-			// Include an empty array only when the field is required.
-			if field.fieldType == inputschema.KindArray && field.required && field.depth == 0 {
-				args[field.name] = []interface{}{}
+			obj[field.name] = nil
+		default:
+			value := field.input.Value()
+			if value == "" {
+				// Include an empty array only when the field is required.
+				if field.fieldType == inputschema.KindArray && field.required && depth == 0 {
+					obj[field.name] = []interface{}{}
+				}
+				continue
 			}
-			continue
+			converted, err := field.convert(value)
+			if err != nil {
+				return nil, 0, err
+			}
+			obj[field.name] = converted
 		}
-		converted, err := field.convert(value)
-		if err != nil {
-			return nil, err
-		}
-		setArgument(args, field.path, converted)
 	}
-	return args, nil
+	return obj, i, nil
 }
 
 // rawJSONArguments parses the raw JSON editor; empty means no arguments.
@@ -1725,7 +1882,7 @@ func (ts *ToolScreen) renderHeader() string {
 			if field.note != "" {
 				label += fmt.Sprintf(" (%s)", field.note)
 			}
-			if len(field.properties) > 0 && !field.expanded {
+			if field.hasSubForm() && !field.expanded {
 				label += " (Ctrl+E: sub-form)"
 			}
 			builder.WriteString(ts.labelStyle.Render(label + ":"))
@@ -1736,6 +1893,10 @@ func (ts *ToolScreen) renderHeader() string {
 			switch {
 			case field.sendNull:
 				inputView = "null (Ctrl+N to edit)"
+			case field.element:
+				inputView = "▾ element (Ctrl+X: remove)"
+			case field.isElementList():
+				inputView = "▾ elements below (Ctrl+A: add one, Ctrl+E: type as JSON)"
 			case field.expanded:
 				inputView = "▾ filled in below (Ctrl+E: type as JSON)"
 			}
@@ -2090,8 +2251,13 @@ func (ts *ToolScreen) renderFooter() string {
 		if f := ts.fields[ts.cursor]; f.nullable && !f.expanded {
 			helpText = "Ctrl+N: Null • " + helpText
 		}
-		if len(ts.fields[ts.cursor].properties) > 0 {
+		if ts.fields[ts.cursor].hasSubForm() {
 			helpText = "Ctrl+E: Sub-form • " + helpText
+		}
+		if list, element := ts.enclosingElementList(ts.cursor); element >= 0 {
+			helpText = "Ctrl+A: Add element • Ctrl+X: Remove element • " + helpText
+		} else if list >= 0 {
+			helpText = "Ctrl+A: Add element • " + helpText
 		}
 	} else if ts.cursor == len(ts.fields) {
 		helpText = "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+T: Task mode • " +

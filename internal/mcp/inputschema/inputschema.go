@@ -95,6 +95,9 @@ type Param struct {
 	// for a sub-form; nil when it declares none, or when it sits
 	// maxFormDepth levels down (a recursive schema would never end).
 	Properties []Param
+	// ItemProperties are the properties of an array's object items, for a
+	// sub-form per element; nil as for Properties.
+	ItemProperties []Param
 	// Note says what Parse could not express for this parameter and how the
 	// value is read instead; "" when the parameter is fully represented.
 	Note string
@@ -325,7 +328,13 @@ func (w walker) param(prop *jsonschema.Schema, depth int) Param {
 
 	w.setKind(&p, target)
 	if p.Kind == KindArray {
-		p.ItemKind = w.itemKind(target)
+		items := w.arrayItems(target)
+		p.ItemKind = w.itemKind(items)
+		if p.ItemKind == KindObject && depth < maxFormDepth {
+			if object := w.objectBranch(items); object != nil && len(object.Properties) > 0 {
+				p.ItemProperties = w.params(object, depth+1)
+			}
+		}
 	}
 	if p.Kind == KindObject && depth < maxFormDepth {
 		if object := w.objectBranch(target); object != nil && len(object.Properties) > 0 {
@@ -380,9 +389,10 @@ func (w walker) objectBranch(s *jsonschema.Schema) *jsonschema.Schema {
 	return nil
 }
 
-// itemKind is the single type of s's array items, looking into the array
-// branch of an anyOf/oneOf union such as [array, null]; "" when unknown.
-func (w walker) itemKind(s *jsonschema.Schema) Kind {
+// arrayItems is the schema of s's array items, $refs resolved, looking
+// into the array branch of an anyOf/oneOf union such as [array, null]; nil
+// when unknown.
+func (w walker) arrayItems(s *jsonschema.Schema) *jsonschema.Schema {
 	items := s.Items
 	for _, b := range append(append([]*jsonschema.Schema{}, s.AnyOf...), s.OneOf...) {
 		if items != nil {
@@ -393,13 +403,18 @@ func (w walker) itemKind(s *jsonschema.Schema) Kind {
 		}
 	}
 	if items == nil {
-		return ""
+		return nil
 	}
 	target, _ := w.effective(items)
-	if target == nil {
+	return target
+}
+
+// itemKind is the single type items admit; "" when unknown or mixed.
+func (w walker) itemKind(items *jsonschema.Schema) Kind {
+	if items == nil {
 		return ""
 	}
-	if types, note := w.types(target); note == "" && len(types) == 1 {
+	if types, note := w.types(items); note == "" && len(types) == 1 {
 		return Kind(types[0])
 	}
 	return ""

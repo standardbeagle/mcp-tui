@@ -52,11 +52,13 @@ func TestParse_ResolvesLocalRefsAndSimpleUnions(t *testing.T) {
 	for _, want := range []Param{
 		{Name: "assignee", Kind: KindObject, Nullable: true,
 			Properties: []Param{{Name: "login", Kind: KindString, Required: true}}},
-		{Name: "labels", Kind: KindArray, ItemKind: KindObject, Required: true},
+		{Name: "labels", Kind: KindArray, ItemKind: KindObject, Required: true,
+			ItemProperties: []Param{{Name: "color", Kind: KindString}, {Name: "name", Kind: KindString, Required: true}}},
 		{Name: "milestone", Kind: KindInteger, Nullable: true},
 		{Name: "priority", Kind: KindString, Required: true, Description: "How urgent"},
 		{Name: "title", Kind: KindString, Required: true, Description: "Issue title"},
-		{Name: "watchers", Kind: KindArray, ItemKind: KindObject, Nullable: true},
+		{Name: "watchers", Kind: KindArray, ItemKind: KindObject, Nullable: true,
+			ItemProperties: []Param{{Name: "login", Kind: KindString, Required: true}}},
 	} {
 		got, ok := s.Param(want.Name)
 		if !ok {
@@ -464,6 +466,51 @@ func TestParse_NestedObjectProperties(t *testing.T) {
 	for p, _ := s.Param("tree"); p.Properties != nil; depth++ {
 		var ok bool
 		if p, ok = (Schema{Params: p.Properties}).Param("child"); !ok {
+			break
+		}
+	}
+	if depth != maxFormDepth {
+		t.Errorf("recursive tree expanded %d levels, want %d", depth, maxFormDepth)
+	}
+}
+
+// An array of objects describes its items' properties, so each element can
+// be filled in a sub-form, through $ref and an [array, null] union, and to
+// the same depth as nested objects.
+func TestParse_ArrayOfObjectsItemProperties(t *testing.T) {
+	s, err := Parse("t", decode(t, `{
+		"$defs": {
+			"Recipient": {"type": "object", "properties": {
+				"email": {"type": "string"},
+				"cc": {"type": "boolean"}
+			}, "required": ["email"]},
+			"Node": {"type": "object", "properties": {"name": {"type": "string"}, "children": {"type": "array", "items": {"$ref": "#/$defs/Node"}}}}
+		},
+		"type": "object",
+		"properties": {
+			"recipients": {"anyOf": [{"type": "array", "items": {"$ref": "#/$defs/Recipient"}}, {"type": "null"}]},
+			"tree": {"type": "array", "items": {"$ref": "#/$defs/Node"}},
+			"tags": {"type": "array", "items": {"type": "string"}}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	recipients, _ := s.Param("recipients")
+	want := []Param{
+		{Name: "cc", Kind: KindBoolean},
+		{Name: "email", Kind: KindString, Required: true},
+	}
+	if recipients.ItemKind != KindObject || !reflect.DeepEqual(recipients.ItemProperties, want) {
+		t.Errorf("recipients = %+v, want object items with properties %+v", recipients, want)
+	}
+	if tags, _ := s.Param("tags"); tags.ItemProperties != nil {
+		t.Errorf("tags = %+v, want no item properties", tags)
+	}
+	depth := 0
+	for p, _ := s.Param("tree"); p.ItemProperties != nil; depth++ {
+		var ok bool
+		if p, ok = (Schema{Params: p.ItemProperties}).Param("children"); !ok {
 			break
 		}
 	}
