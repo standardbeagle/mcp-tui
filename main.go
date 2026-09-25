@@ -110,7 +110,11 @@ Examples:
 			// If not pre-parsed, parse now
 			if connectionConfig == nil {
 				cmdFlag, _ := cmd.Flags().GetString("cmd")
-				argsFlag, _ := cmd.Flags().GetStringSlice("args")
+				argsFlag, err := cli.ServerArgs(cmd)
+				if err != nil {
+					debug.Error("Server argument flags", debug.F("error", err))
+					os.Exit(1)
+				}
 				urlFlag, _ := cmd.Flags().GetString("url")
 
 				parsedArgs := config.ParseArgs(args, cli.SubcommandNames(cmd), cmdFlag, urlFlag, argsFlag)
@@ -193,7 +197,9 @@ Examples:
 
 	// Add persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfg.Command, "cmd", "", "Command to run MCP server (STDIO mode)")
-	rootCmd.PersistentFlags().StringSliceVar(&cfg.Args, "args", []string{}, "Arguments for MCP server command")
+	rootCmd.PersistentFlags().StringSliceVar(&cfg.Args, "args", []string{}, "Arguments for MCP server command, comma-separated")
+	rootCmd.PersistentFlags().StringArray("arg", nil,
+		"One argument for MCP server command, passed as is (commas included); repeat for each, in order. Not combinable with --args")
 	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
 	rootCmd.PersistentFlags().String("transport", "stdio",
 		"Transport type (stdio, sse, http, streamable-http); sse is deprecated and negotiates at most 2025-11-25")

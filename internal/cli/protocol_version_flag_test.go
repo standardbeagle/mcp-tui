@@ -13,6 +13,7 @@ func newCmdWithConnectionFlags(t *testing.T, args ...string) *cobra.Command {
 	root := &cobra.Command{Use: "root"}
 	root.PersistentFlags().String("cmd", "", "")
 	root.PersistentFlags().StringSlice("args", nil, "")
+	root.PersistentFlags().StringArray("arg", nil, "")
 	root.PersistentFlags().String("url", "", "")
 	root.PersistentFlags().String("transport", "stdio", "")
 	root.PersistentFlags().String("protocol-version", "", "")

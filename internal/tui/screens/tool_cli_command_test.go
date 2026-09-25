@@ -37,7 +37,7 @@ func TestToolScreen_CLICommandQuotesValuesForTheShell(t *testing.T) {
 	conn := &config.ConnectionConfig{
 		Type:    config.TransportStdio,
 		Command: "/opt/my servers/$SRV",
-		Args:    []string{"--banner=it's", "line1\nline2"},
+		Args:    []string{"--banner=it's", "line1\nline2", "--columns=id,name"},
 	}
 	ts := NewToolScreen(mcp.Tool{Name: "archive_logs", InputSchema: schema}, connectionConfigService{conn: conn})
 	values := map[string]string{
@@ -53,7 +53,8 @@ func TestToolScreen_CLICommandQuotesValuesForTheShell(t *testing.T) {
 	}
 
 	want := []string{"--porcelain", "--transport", string(config.TransportStdio),
-		"--cmd", conn.Command, "--args", strings.Join(conn.Args, ","), "tool", "call", "archive_logs"}
+		"--cmd", conn.Command, "--arg", conn.Args[0], "--arg", conn.Args[1], "--arg", conn.Args[2],
+		"tool", "call", "archive_logs"}
 	for _, field := range ts.fields {
 		// An empty field is not sent, so the command leaves it out.
 		if v := values[field.name]; v != "" {

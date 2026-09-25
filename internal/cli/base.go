@@ -146,8 +146,10 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	urlFlag, _ := cmd.Flags().GetString("url")
 	transportFlag, _ := cmd.Flags().GetString("transport")
 
-	// Get args as string slice (multiple --args flags)
-	argsFlag, _ := cmd.Flags().GetStringSlice("args")
+	argsFlag, err := ServerArgs(cmd)
+	if err != nil {
+		return nil, err
+	}
 
 	var connConfig *config.ConnectionConfig
 	if globalConnConfig := c.getGlobalConnection(); globalConnConfig != nil {

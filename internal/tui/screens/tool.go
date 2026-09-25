@@ -315,9 +315,9 @@ func (ts *ToolScreen) generateCLICommand() string {
 	if connConfig.Command != "" {
 		fmt.Fprintf(&builder, " --cmd %s", shell.Quote(connConfig.Command))
 	}
-	if len(connConfig.Args) > 0 {
-		// The CLI takes the server's arguments joined with commas.
-		fmt.Fprintf(&builder, " --args %s", shell.Quote(strings.Join(connConfig.Args, ",")))
+	// One --arg per server argument: --args would split one holding a comma.
+	for _, arg := range connConfig.Args {
+		fmt.Fprintf(&builder, " --arg %s", shell.Quote(arg))
 	}
 	if connConfig.URL != "" {
 		fmt.Fprintf(&builder, " --url %s", shell.Quote(connConfig.URL))

@@ -317,13 +317,14 @@ func TestTally(t *testing.T) {
 // --- helpers ---------------------------------------------------------------
 
 // withVerifyParentFlags adds the persistent flags that main.go normally
-// supplies on the root command (--cmd, --url, --args, --timeout). The
+// supplies on the root command (--cmd, --url, --args, --arg, --timeout). The
 // verify command reads them via cmd.Flags().GetString — which traverses
 // up the parent chain in the real binary, but in unit tests we don't have
 // a parent. Adding them locally lets RunE find them.
 func withVerifyParentFlags(cmd *cobra.Command) *cobra.Command {
 	cmd.Flags().String("cmd", "", "")
 	cmd.Flags().StringSlice("args", nil, "")
+	cmd.Flags().StringArray("arg", nil, "")
 	cmd.Flags().String("url", "", "")
 	cmd.Flags().Duration("timeout", 0, "")
 	return cmd

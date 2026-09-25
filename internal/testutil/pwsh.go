@@ -110,15 +110,14 @@ func ServerPrintsThenSleeps(t *testing.T, msg string, seconds float64) (command 
 
 // ServerFlags renders a stand-in server as mcp-tui CLI flags:
 //
-//	--cmd pwsh --args -NoProfile --args -NonInteractive --args -File --args <script>
+//	--cmd pwsh --arg -NoProfile --arg -NonInteractive --arg -File --arg <script>
 //
-// The --args flag is a StringSlice, so repeating it avoids relying on comma
-// splitting, which a Windows path could otherwise disturb.
+// Each --arg is passed as is, so a path holding a comma stays whole.
 func ServerFlags(t *testing.T, command string, args []string) []string {
 	t.Helper()
 	flags := []string{"--cmd", command}
 	for _, arg := range args {
-		flags = append(flags, "--args", arg)
+		flags = append(flags, "--arg", arg)
 	}
 	return flags
 }

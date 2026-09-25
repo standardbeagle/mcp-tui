@@ -161,7 +161,10 @@ func VerifyFailedError() error { return errVerifyFailed }
 func (c *VerifyCommand) buildTarget(cmd *cobra.Command, args []string) (verify.Target, error) {
 	cmdFlag, _ := cmd.Flags().GetString("cmd")
 	urlFlag, _ := cmd.Flags().GetString("url")
-	argsFlag, _ := cmd.Flags().GetStringSlice("args")
+	argsFlag, err := ServerArgs(cmd)
+	if err != nil {
+		return verify.Target{}, err
+	}
 
 	target := verify.Target{
 		Command: cmdFlag,

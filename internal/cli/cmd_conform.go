@@ -154,7 +154,10 @@ func ConformFailedError() error { return errConformFailed }
 func (c *ConformCommand) buildConformTarget(cmd *cobra.Command, args []string) (conform.Target, error) {
 	cmdFlag, _ := cmd.Flags().GetString("cmd")
 	urlFlag, _ := cmd.Flags().GetString("url")
-	argsFlag, _ := cmd.Flags().GetStringSlice("args")
+	argsFlag, err := ServerArgs(cmd)
+	if err != nil {
+		return conform.Target{}, err
+	}
 
 	target := conform.Target{
 		Command: cmdFlag,

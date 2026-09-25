@@ -232,6 +232,55 @@ func TestCommandValidation(t *testing.T) {
 	}
 }
 
+// TestServerArgReachesTheServerAsIs: each --arg is one argument of the
+// server process, exactly as given. --args splits on commas, so an
+// argument holding one (a CSV column list, a JSON array) could not be
+// passed at all.
+func TestServerArgReachesTheServerAsIs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration tests in short mode")
+	}
+	bin := buildTestBinary(t)
+	recorded := filepath.Join(t.TempDir(), "argv")
+	// The server writes the arguments it was given, NUL-separated, and exits.
+	serverCmd, serverArgs := testutil.Script(t, "records-args",
+		"[IO.File]::WriteAllText("+psQuoteForTest(recorded)+", [string]::Join([char]0, $args))\nexit 1\n")
+	want := []string{"--columns=id,name,owner", "two words", `it's "quoted"`, `["a","b"]`}
+
+	args := []string{"tool", "list", "--cmd", serverCmd}
+	for _, arg := range append(serverArgs, want...) {
+		args = append(args, "--arg", arg)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	require.Error(t, err, "the stand-in server does not speak MCP")
+
+	got, readErr := os.ReadFile(recorded)
+	require.NoError(t, readErr, "the server did not run; output:\n%s", output)
+	assert.Equal(t, want, strings.Split(string(got), "\x00"))
+}
+
+// TestServerArgAndArgsRefusedTogether: pflag keeps no order across two
+// flags, so mixing them would pass the arguments in a guessed order.
+func TestServerArgAndArgsRefusedTogether(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration tests in short mode")
+	}
+	bin := buildTestBinary(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, bin, "tool", "list",
+		"--cmd", "npx", "--args", "@modelcontextprotocol/server-everything", "--arg", "stdio").CombinedOutput()
+	require.Error(t, err)
+	assert.Contains(t, string(output), "--arg and --args cannot be combined")
+}
+
+// psQuoteForTest quotes s as a PowerShell single-quoted string.
+func psQuoteForTest(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
 func TestStdioServerIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration tests in short mode")

@@ -28,6 +28,7 @@ import (
 func withConformParentFlags(cmd *cobra.Command) *cobra.Command {
 	cmd.Flags().String("cmd", "", "")
 	cmd.Flags().StringSlice("args", nil, "")
+	cmd.Flags().StringArray("arg", nil, "")
 	cmd.Flags().String("url", "", "")
 	cmd.Flags().Duration("timeout", 0, "")
 	cmd.Flags().String("sampling-stub", "", "")
