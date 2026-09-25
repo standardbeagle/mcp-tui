@@ -148,6 +148,44 @@ func fetchListPages[R officialMCP.CacheableResult](
 	}
 }
 
+// fetchListed runs a paginated list RPC over the service's session and
+// converts every item. It owns the connection/session checks, the
+// per-method error wrapping, and list-cache recording; the caller supplies
+// the one-page fetch and the per-page conversion. method and noun appear
+// in errors (e.g. "resources/list", "resources").
+func fetchListed[R officialMCP.CacheableResult, I any](
+	s *service, ctx context.Context, method, noun string,
+	page func(ctx context.Context, session *officialMCP.ClientSession, cursor string) (R, string, error),
+	convert func(R) []I,
+) ([]I, error) {
+	if !s.IsConnected() {
+		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
+	}
+
+	s.mu.Lock()
+	session := s.sessionManager.GetSession()
+	s.mu.Unlock()
+
+	if session == nil {
+		return nil, fmt.Errorf("no active session available")
+	}
+
+	pages, cacheInfo, err := fetchListPages(ctx, method,
+		func(ctx context.Context, cursor string) (R, string, error) {
+			return page(ctx, session, cursor)
+		})
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate %s from MCP server: %w", noun, nameProtocolError(err, method))
+	}
+	s.recordListCache(session, cacheInfo)
+
+	var items []I
+	for _, p := range pages {
+		items = append(items, convert(p)...)
+	}
+	return items, nil
+}
+
 // recordListCache keeps info as the latest cache state of its method and
 // logs it. Sessions older than 2026-07-28 have no list caching, so their
 // state is recorded as nil.

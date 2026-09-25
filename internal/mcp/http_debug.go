@@ -171,85 +171,9 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 
 	// Capture connection details with httptrace
 	connInfo := &ConnectionInfo{}
-	var dnsStart, connectStart, tlsStart, firstByteStart time.Time
+	var firstByteStart time.Time
 
-	trace := &httptrace.ClientTrace{
-		DNSStart: func(info httptrace.DNSStartInfo) {
-			dnsStart = time.Now()
-			SetConnectionState(StageDNSLookup, "DNS lookup started", info.Host, nil)
-			if t.debugMode {
-				debug.Debug("DNS lookup started", debug.F("host", info.Host))
-			}
-		},
-		DNSDone: func(info httptrace.DNSDoneInfo) {
-			if !dnsStart.IsZero() {
-				connInfo.DNSLookupTime = time.Since(dnsStart)
-			}
-			if t.debugMode {
-				debug.Debug("DNS lookup completed",
-					debug.F("duration", connInfo.DNSLookupTime),
-					debug.F("addresses", info.Addrs))
-			}
-		},
-		ConnectStart: func(network, addr string) {
-			connectStart = time.Now()
-			SetConnectionState(StageTCPConnect, "TCP connection started", addr, nil)
-			if t.debugMode {
-				debug.Debug("TCP connection started", debug.F("addr", addr))
-			}
-		},
-		ConnectDone: func(network, addr string, err error) {
-			if !connectStart.IsZero() {
-				connInfo.ConnectTime = time.Since(connectStart)
-			}
-			connInfo.RemoteAddr = addr
-			if t.debugMode {
-				debug.Debug("TCP connection completed",
-					debug.F("duration", connInfo.ConnectTime),
-					debug.F("error", err))
-			}
-		},
-		TLSHandshakeStart: func() {
-			tlsStart = time.Now()
-			SetConnectionState(StageTLSHandshake, "TLS handshake started", req.URL.String(), nil)
-			if t.debugMode {
-				debug.Debug("TLS handshake started")
-			}
-		},
-		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
-			if !tlsStart.IsZero() {
-				connInfo.TLSTime = time.Since(tlsStart)
-			}
-			if t.debugMode {
-				debug.Debug("TLS handshake completed",
-					debug.F("duration", connInfo.TLSTime),
-					debug.F("error", err))
-			}
-		},
-		GotConn: func(info httptrace.GotConnInfo) {
-			connInfo.ConnectionReused = info.Reused
-			if info.Conn != nil {
-				connInfo.LocalAddr = info.Conn.LocalAddr().String()
-			}
-			if info.Reused && info.IdleTime > 0 {
-				connInfo.IdleTime = info.IdleTime
-			}
-			if t.debugMode {
-				debug.Debug("Got connection",
-					debug.F("reused", info.Reused),
-					debug.F("idleTime", info.IdleTime),
-					debug.F("localAddr", connInfo.LocalAddr))
-			}
-		},
-		GotFirstResponseByte: func() {
-			if !firstByteStart.IsZero() {
-				connInfo.FirstByteTime = time.Since(firstByteStart)
-			}
-			if t.debugMode {
-				debug.Debug("Got first response byte", debug.F("duration", connInfo.FirstByteTime))
-			}
-		},
-	}
+	trace := newConnectionTrace(connInfo, &firstByteStart, req.URL.String(), t.debugMode)
 
 	// Add trace to request context
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
@@ -289,122 +213,243 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	SetConnectionState(StageWaitingResponse, "Waiting for server response", req.URL.String(), nil)
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
-		SetConnectionState(StageFailed, "Request failed", req.URL.String(), err)
-		// Even on failure, capture the connection details for debugging
-		headers := make(map[string]string)
-		errorInfo := &HTTPErrorInfo{
-			Timestamp:         time.Now(),
-			Method:            req.Method,
-			URL:               req.URL.String(),
-			StatusCode:        0, // No response received
-			RequestBody:       string(requestBody),
-			RequestHeaders:    requestHeaders,
-			ResponseBody:      "HTTP Request Failed: " + redact.Error(err),
-			Headers:           headers,
-			ConnectionDetails: connInfo,
-		}
-
-		setLastHTTPError(errorInfo)
-
-		if t.debugMode {
-			debug.Error("HTTP request failed",
-				debug.F("url", redact.RedactedURL(req.URL)),
-				debug.F("error", redact.Error(err)),
-				debug.F("errorType", fmt.Sprintf("%T", err)),
-				debug.F("connectionDetails", connInfo))
-		}
+		t.recordRoundTripFailure(req, requestBody, requestHeaders, connInfo, err)
 		return nil, err
 	}
 
 	SetConnectionState(StageResponseReceived, "Response received", req.URL.String(), nil)
 
+	if err := t.captureResponse(req, resp, requestBody, requestHeaders, connInfo, firstByteStart); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+// newConnectionTrace builds the httptrace.ClientTrace that fills connInfo
+// and mirrors each stage to the connection-state tracker (and, in debug
+// mode, the debug log). firstByteStart is shared with the caller, which
+// sets it right before the request goes out.
+func newConnectionTrace(
+	connInfo *ConnectionInfo, firstByteStart *time.Time, reqURL string, debugMode bool,
+) *httptrace.ClientTrace {
+	var dnsStart, connectStart, tlsStart time.Time
+	log := func(msg string, fields ...debug.Field) {
+		if debugMode {
+			debug.Debug(msg, fields...)
+		}
+	}
+
+	return &httptrace.ClientTrace{
+		DNSStart: func(info httptrace.DNSStartInfo) {
+			dnsStart = time.Now()
+			SetConnectionState(StageDNSLookup, "DNS lookup started", info.Host, nil)
+			log("DNS lookup started", debug.F("host", info.Host))
+		},
+		DNSDone: func(info httptrace.DNSDoneInfo) {
+			if !dnsStart.IsZero() {
+				connInfo.DNSLookupTime = time.Since(dnsStart)
+			}
+			log("DNS lookup completed",
+				debug.F("duration", connInfo.DNSLookupTime),
+				debug.F("addresses", info.Addrs))
+		},
+		ConnectStart: func(network, addr string) {
+			connectStart = time.Now()
+			SetConnectionState(StageTCPConnect, "TCP connection started", addr, nil)
+			log("TCP connection started", debug.F("addr", addr))
+		},
+		ConnectDone: func(network, addr string, err error) {
+			if !connectStart.IsZero() {
+				connInfo.ConnectTime = time.Since(connectStart)
+			}
+			connInfo.RemoteAddr = addr
+			log("TCP connection completed",
+				debug.F("duration", connInfo.ConnectTime),
+				debug.F("error", err))
+		},
+		TLSHandshakeStart: func() {
+			tlsStart = time.Now()
+			SetConnectionState(StageTLSHandshake, "TLS handshake started", reqURL, nil)
+			log("TLS handshake started")
+		},
+		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
+			if !tlsStart.IsZero() {
+				connInfo.TLSTime = time.Since(tlsStart)
+			}
+			log("TLS handshake completed",
+				debug.F("duration", connInfo.TLSTime),
+				debug.F("error", err))
+		},
+		GotConn: func(info httptrace.GotConnInfo) {
+			connInfo.ConnectionReused = info.Reused
+			if info.Conn != nil {
+				connInfo.LocalAddr = info.Conn.LocalAddr().String()
+			}
+			if info.Reused && info.IdleTime > 0 {
+				connInfo.IdleTime = info.IdleTime
+			}
+			log("Got connection",
+				debug.F("reused", info.Reused),
+				debug.F("idleTime", info.IdleTime),
+				debug.F("localAddr", connInfo.LocalAddr))
+		},
+		GotFirstResponseByte: func() {
+			if !firstByteStart.IsZero() {
+				connInfo.FirstByteTime = time.Since(*firstByteStart)
+			}
+			log("Got first response byte", debug.F("duration", connInfo.FirstByteTime))
+		},
+	}
+}
+
+// recordRoundTripFailure captures the failed exchange for debugging before
+// the caller returns the transport error.
+func (t *debugRoundTripper) recordRoundTripFailure(
+	req *http.Request, requestBody []byte, requestHeaders map[string]string, connInfo *ConnectionInfo, err error,
+) {
+	SetConnectionState(StageFailed, "Request failed", req.URL.String(), err)
+	// Even on failure, capture the connection details for debugging
+	headers := make(map[string]string)
+	errorInfo := &HTTPErrorInfo{
+		Timestamp:         time.Now(),
+		Method:            req.Method,
+		URL:               req.URL.String(),
+		StatusCode:        0, // No response received
+		RequestBody:       string(requestBody),
+		RequestHeaders:    requestHeaders,
+		ResponseBody:      "HTTP Request Failed: " + redact.Error(err),
+		Headers:           headers,
+		ConnectionDetails: connInfo,
+	}
+
+	setLastHTTPError(errorInfo)
+
+	if t.debugMode {
+		debug.Error("HTTP request failed",
+			debug.F("url", redact.RedactedURL(req.URL)),
+			debug.F("error", redact.Error(err)),
+			debug.F("errorType", fmt.Sprintf("%T", err)),
+			debug.F("connectionDetails", connInfo))
+	}
+}
+
+// captureResponse buffers a non-streaming response body and, when the
+// exchange looks interesting (error, SSE, or debug mode), records it for
+// debugging.
+func (t *debugRoundTripper) captureResponse(
+	req *http.Request, resp *http.Response, requestBody []byte, requestHeaders map[string]string,
+	connInfo *ConnectionInfo, firstByteStart time.Time,
+) error {
 	// Never buffer a streaming body. An SSE response never reaches EOF, so
 	// io.ReadAll would block forever and grow without bound.
 	isStream := strings.Contains(
 		strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
 
 	// Capture response body
-	if resp.Body != nil && !isStream {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			// The body is already fully buffered; a close error here is not
-			// propagatable and the caller still gets the response.
-			debug.Debug("HTTP debug: response body close failed", debug.F("error", closeErr))
-		}
+	if resp.Body == nil || isStream {
+		return nil
+	}
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		// The body is already fully buffered; a close error here is not
+		// propagatable and the caller still gets the response.
+		debug.Debug("HTTP debug: response body close failed", debug.F("error", closeErr))
+	}
 
-		// Create a new ReadCloser with the buffered content
-		resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	// Create a new ReadCloser with the buffered content
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-		// Check if this is an error response, connection issue, or contains an error
-		isError := resp.StatusCode >= 400 ||
-			bytes.Contains(bodyBytes, []byte(`"error"`)) ||
-			bytes.Contains(bodyBytes, []byte(`"code":-`)) ||
-			strings.Contains(string(bodyBytes), "connection closed")
+	// Check if this is an error response, connection issue, or contains an error
+	isError := looksLikeErrorResponse(resp.StatusCode, bodyBytes)
 
-		// Always log detailed info for SSE connections or when debug is enabled
-		isSSE := strings.Contains(req.Header.Get("Accept"), "text/event-stream") ||
-			strings.Contains(req.URL.Path, "sse")
+	// Always log detailed info for SSE connections or when debug is enabled
+	isSSE := isSSERequest(req)
 
-		if isError || isSSE || t.debugMode {
-			// Capture comprehensive information
-			headers := make(map[string]string)
-			for key, values := range resp.Header {
-				headers[key] = strings.Join(values, ", ")
-			}
+	if !isError && !isSSE && !t.debugMode {
+		return nil
+	}
 
-			// Create SSE info if this is an SSE connection
-			var sseInfo *SSEConnectionInfo
-			if isSSE {
-				sseInfo = &SSEConnectionInfo{
-					EventsReceived: 0, // Will be updated by SSE handler
-					LastEventTime:  time.Now(),
-					StreamDuration: time.Since(firstByteStart),
-					LastEventData:  string(bodyBytes),
-				}
-			}
+	// Capture comprehensive information
+	headers := make(map[string]string)
+	for key, values := range resp.Header {
+		headers[key] = strings.Join(values, ", ")
+	}
 
-			errorInfo := &HTTPErrorInfo{
-				Timestamp:         time.Now(),
-				Method:            req.Method,
-				URL:               req.URL.String(),
-				StatusCode:        resp.StatusCode,
-				RequestBody:       string(requestBody),
-				RequestHeaders:    requestHeaders,
-				ResponseBody:      string(bodyBytes),
-				Headers:           headers,
-				ConnectionDetails: connInfo,
-				SSEInfo:           sseInfo,
-			}
-
-			setLastHTTPError(errorInfo)
-
-			if t.debugMode {
-				debug.Debug("HTTP Response Captured",
-					debug.F("url", redact.RedactedURL(req.URL)),
-					debug.F("statusCode", resp.StatusCode),
-					debug.F("isError", isError),
-					debug.F("isSSE", isSSE),
-					debug.F("connectionReused", connInfo.ConnectionReused),
-					debug.F("dnsTime", connInfo.DNSLookupTime),
-					debug.F("connectTime", connInfo.ConnectTime),
-					debug.F("tlsTime", connInfo.TLSTime),
-					debug.F("firstByteTime", connInfo.FirstByteTime),
-					debug.F("responseLength", len(bodyBytes)),
-					debug.F("responseHeaders", RedactHeaders(headers, GetShowHeaderOverrides())))
-
-				if isError {
-					debug.Error("HTTP Error Details",
-						debug.F("response", tryPrettyPrintJSON(
-							redact.Body(resp.Header.Get("Content-Type"), bodyBytes))))
-				}
-			}
+	// Create SSE info if this is an SSE connection
+	var sseInfo *SSEConnectionInfo
+	if isSSE {
+		sseInfo = &SSEConnectionInfo{
+			EventsReceived: 0, // Will be updated by SSE handler
+			LastEventTime:  time.Now(),
+			StreamDuration: time.Since(firstByteStart),
+			LastEventData:  string(bodyBytes),
 		}
 	}
 
-	return resp, nil
+	errorInfo := &HTTPErrorInfo{
+		Timestamp:         time.Now(),
+		Method:            req.Method,
+		URL:               req.URL.String(),
+		StatusCode:        resp.StatusCode,
+		RequestBody:       string(requestBody),
+		RequestHeaders:    requestHeaders,
+		ResponseBody:      string(bodyBytes),
+		Headers:           headers,
+		ConnectionDetails: connInfo,
+		SSEInfo:           sseInfo,
+	}
+
+	setLastHTTPError(errorInfo)
+
+	if t.debugMode {
+		logCapturedResponse(req, resp, headers, connInfo, isError, isSSE, bodyBytes)
+	}
+	return nil
+}
+
+// looksLikeErrorResponse reports whether a buffered response's status or
+// body suggests an error worth recording for debugging.
+func looksLikeErrorResponse(statusCode int, body []byte) bool {
+	return statusCode >= 400 ||
+		bytes.Contains(body, []byte(`"error"`)) ||
+		bytes.Contains(body, []byte(`"code":-`)) ||
+		strings.Contains(string(body), "connection closed")
+}
+
+// isSSERequest reports whether the request asks for (or targets) an SSE
+// stream.
+func isSSERequest(req *http.Request) bool {
+	return strings.Contains(req.Header.Get("Accept"), "text/event-stream") ||
+		strings.Contains(req.URL.Path, "sse")
+}
+
+// logCapturedResponse writes the captured exchange to the debug log.
+func logCapturedResponse(
+	req *http.Request, resp *http.Response, headers map[string]string,
+	connInfo *ConnectionInfo, isError, isSSE bool, bodyBytes []byte,
+) {
+	debug.Debug("HTTP Response Captured",
+		debug.F("url", redact.RedactedURL(req.URL)),
+		debug.F("statusCode", resp.StatusCode),
+		debug.F("isError", isError),
+		debug.F("isSSE", isSSE),
+		debug.F("connectionReused", connInfo.ConnectionReused),
+		debug.F("dnsTime", connInfo.DNSLookupTime),
+		debug.F("connectTime", connInfo.ConnectTime),
+		debug.F("tlsTime", connInfo.TLSTime),
+		debug.F("firstByteTime", connInfo.FirstByteTime),
+		debug.F("responseLength", len(bodyBytes)),
+		debug.F("responseHeaders", RedactHeaders(headers, GetShowHeaderOverrides())))
+
+	if isError {
+		debug.Error("HTTP Error Details",
+			debug.F("response", tryPrettyPrintJSON(
+				redact.Body(resp.Header.Get("Content-Type"), bodyBytes))))
+	}
 }
 
 // FormatHTTPError formats the HTTP error information for display, applying

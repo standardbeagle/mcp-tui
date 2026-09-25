@@ -44,27 +44,45 @@ func AnalyzeJSONError(err error, rawData string) map[string]interface{} {
 	}
 
 	// Try to parse the raw data to provide more context
-	if rawData != "" {
-		var rawJSON interface{}
-		if err := json.Unmarshal([]byte(rawData), &rawJSON); err == nil {
-			// Successfully parsed, analyze structure
-			if v, ok := rawJSON.(map[string]interface{}); ok {
-				if tools, ok := v["tools"].([]interface{}); ok {
-					details["tools_count"] = len(tools)
-					// Check first tool structure if available
-					if len(tools) > 0 {
-						if tool, ok := tools[0].(map[string]interface{}); ok {
-							if inputSchema, ok := tool["inputSchema"].(map[string]interface{}); ok {
-								if props, ok := inputSchema["properties"]; ok {
-									details["first_tool_properties_type"] = fmt.Sprintf("%T", props)
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
+	analyzeRawJSONData(rawData, details)
 
 	return details
+}
+
+// analyzeRawJSONData inspects the raw response that failed to unmarshal and
+// records structural observations (tools count, first tool's properties
+// type) in details. A no-op when rawData is empty or not parseable JSON.
+func analyzeRawJSONData(rawData string, details map[string]interface{}) {
+	if rawData == "" {
+		return
+	}
+	var rawJSON interface{}
+	if err := json.Unmarshal([]byte(rawData), &rawJSON); err != nil {
+		return
+	}
+	// Successfully parsed, analyze structure
+	v, ok := rawJSON.(map[string]interface{})
+	if !ok {
+		return
+	}
+	tools, ok := v["tools"].([]interface{})
+	if !ok {
+		return
+	}
+	details["tools_count"] = len(tools)
+	// Check first tool structure if available
+	if len(tools) == 0 {
+		return
+	}
+	tool, ok := tools[0].(map[string]interface{})
+	if !ok {
+		return
+	}
+	inputSchema, ok := tool["inputSchema"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if props, ok := inputSchema["properties"]; ok {
+		details["first_tool_properties_type"] = fmt.Sprintf("%T", props)
+	}
 }

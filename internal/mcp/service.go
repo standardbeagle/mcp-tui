@@ -434,23 +434,9 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 	transportConfig := transports.FromConnectionConfig(config, s.debugMode, 30*time.Second)
 
-	// Build an OAuth handler when the connection config carried one. Type
-	// asserting via interface{} keeps the config package free of an
-	// oauth-package dependency. SDK-side, only StreamableClientTransport
-	// honors OAuthHandler; validateOAuthTransport refused the others.
-	if oauthCfg, ok := config.OAuth.(*oauth.Config); ok && oauthCfg != nil && oauthCfg.Mode() != oauth.ModeNone {
-		cache, cacheErr := oauth.NewFileTokenCache(oauthCfg.CachePath)
-		if cacheErr != nil {
-			s.mu.Unlock()
-			return fmt.Errorf("failed to init oauth token cache: %w", cacheErr)
-		}
-		handler, handlerErr := oauth.NewHandler(oauthCfg, nil, cache)
-		if handlerErr != nil {
-			s.mu.Unlock()
-			return fmt.Errorf("failed to init oauth handler: %w", handlerErr)
-		}
-		s.oauthHandler = handler
-		transportConfig.OAuthHandler = handler
+	if prepErr := s.prepareOAuthHandler(config, transportConfig); prepErr != nil {
+		s.mu.Unlock()
+		return prepErr
 	}
 
 	s.logConnectionDetails(config)
@@ -477,24 +463,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	sessionOptions := &officialMCP.ClientSessionOptions{ProtocolVersion: config.ProtocolVersion}
 	err = sessionManager.Connect(ctx, client, linkedTransport, contextStrategy, transportConfig.Type, sessionOptions)
 	if err != nil {
-		// A stdio server that dies during startup fails the handshake with an
-		// opaque EOF. Its stderr says what actually went wrong, so prefer that.
-		var startupErr error
-		if diagnoser, ok := transport.(transports.StartupDiagnoser); ok {
-			startupErr = diagnoser.StartupError(ctx)
-		}
-		// A server whose handshake ran out of time never became a session;
-		// kill it rather than leave it to the graceful close in the
-		// background, which a caller exiting now (the CLI) would cut short.
-		if killer, ok := transport.(transports.ServerKiller); ok && ctx.Err() != nil {
-			if killErr := killer.KillServer(); killErr != nil {
-				debug.Error("Failed to kill server after handshake deadline", debug.F("error", killErr))
-			}
-		}
-		if startupErr != nil {
-			return startupErr
-		}
-		return fmt.Errorf("failed to connect to MCP server: %w", err)
+		return connectFailureError(ctx, transport, err)
 	}
 
 	if clientSession := sessionManager.GetSession(); clientSession != nil {
@@ -506,6 +475,54 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	}
 
 	return s.commitConnection(epoch, sessionManager)
+}
+
+// prepareOAuthHandler builds the OAuth handler when the connection config
+// carried one and wires it into transportConfig. Type asserting via
+// interface{} keeps the config package free of an oauth-package dependency.
+// SDK-side, only StreamableClientTransport honors OAuthHandler;
+// validateOAuthTransport refused the others. Callers hold s.mu.
+func (s *service) prepareOAuthHandler(
+	config *configPkg.ConnectionConfig, transportConfig *transports.TransportConfig,
+) error {
+	oauthCfg, ok := config.OAuth.(*oauth.Config)
+	if !ok || oauthCfg == nil || oauthCfg.Mode() == oauth.ModeNone {
+		return nil
+	}
+	cache, cacheErr := oauth.NewFileTokenCache(oauthCfg.CachePath)
+	if cacheErr != nil {
+		return fmt.Errorf("failed to init oauth token cache: %w", cacheErr)
+	}
+	handler, handlerErr := oauth.NewHandler(oauthCfg, nil, cache)
+	if handlerErr != nil {
+		return fmt.Errorf("failed to init oauth handler: %w", handlerErr)
+	}
+	s.oauthHandler = handler
+	transportConfig.OAuthHandler = handler
+	return nil
+}
+
+// connectFailureError turns a failed session handshake into the error the
+// caller should see, killing a stdio server whose handshake ran out of time.
+func connectFailureError(ctx context.Context, transport officialMCP.Transport, err error) error {
+	// A stdio server that dies during startup fails the handshake with an
+	// opaque EOF. Its stderr says what actually went wrong, so prefer that.
+	var startupErr error
+	if diagnoser, ok := transport.(transports.StartupDiagnoser); ok {
+		startupErr = diagnoser.StartupError(ctx)
+	}
+	// A server whose handshake ran out of time never became a session;
+	// kill it rather than leave it to the graceful close in the
+	// background, which a caller exiting now (the CLI) would cut short.
+	if killer, ok := transport.(transports.ServerKiller); ok && ctx.Err() != nil {
+		if killErr := killer.KillServer(); killErr != nil {
+			debug.Error("Failed to kill server after handshake deadline", debug.F("error", killErr))
+		}
+	}
+	if startupErr != nil {
+		return startupErr
+	}
+	return fmt.Errorf("failed to connect to MCP server: %w", err)
 }
 
 // logMethodHeadersSuperseded explains why --mcp-method-headers does nothing
@@ -1372,52 +1389,45 @@ func (s *service) lookupOutputSchema(ctx context.Context, toolName string) map[s
 
 // ListResources returns available resources using the official SDK's natural iterator pattern
 func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
-	if !s.IsConnected() {
-		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
-	}
-
-	s.mu.Lock()
-	session := s.sessionManager.GetSession()
-	s.mu.Unlock()
-
-	if session == nil {
-		return nil, fmt.Errorf("no active session available")
-	}
-
-	pages, cacheInfo, err := fetchListPages(ctx, "resources/list",
-		func(ctx context.Context, cursor string) (*officialMCP.ListResourcesResult, string, error) {
-			res, err := session.ListResources(ctx, &officialMCP.ListResourcesParams{Cursor: cursor})
-			if err != nil {
-				return nil, "", err
-			}
-			return res, res.NextCursor, nil
-		})
+	resources, err := fetchListed(s, ctx, "resources/list", "resources", fetchResourcePage, convertResourcePage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to iterate resources from MCP server: %w", nameProtocolError(err, "resources/list"))
-	}
-	s.recordListCache(session, cacheInfo)
-
-	var resources []Resource
-	for _, page := range pages {
-		for _, resource := range page.Resources {
-			if resource == nil {
-				continue
-			}
-			resources = append(resources, Resource{
-				URI:         resource.URI,
-				Name:        resource.Name,
-				Title:       resource.Title,
-				Description: resource.Description,
-				MimeType:    resource.MIMEType,
-				Icons:       append([]officialMCP.Icon(nil), resource.Icons...),
-			})
-		}
+		return nil, err
 	}
 
 	debug.Debug("Listed resources successfully",
 		debug.F("count", len(resources)))
 
 	return resources, nil
+}
+
+// fetchResourcePage fetches one page of resources/list.
+func fetchResourcePage(
+	ctx context.Context, session *officialMCP.ClientSession, cursor string,
+) (*officialMCP.ListResourcesResult, string, error) {
+	res, err := session.ListResources(ctx, &officialMCP.ListResourcesParams{Cursor: cursor})
+	if err != nil {
+		return nil, "", err
+	}
+	return res, res.NextCursor, nil
+}
+
+// convertResourcePage converts one page of resources/list results.
+func convertResourcePage(page *officialMCP.ListResourcesResult) []Resource {
+	var resources []Resource
+	for _, resource := range page.Resources {
+		if resource == nil {
+			continue
+		}
+		resources = append(resources, Resource{
+			URI:         resource.URI,
+			Name:        resource.Name,
+			Title:       resource.Title,
+			Description: resource.Description,
+			MimeType:    resource.MIMEType,
+			Icons:       append([]officialMCP.Icon(nil), resource.Icons...),
+		})
+	}
+	return resources
 }
 
 // ListResourceTemplates returns the URI-template descriptions surfaced by
@@ -1427,53 +1437,47 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 // to surface them; the TUI uses isUnsupportedCapabilityError to suppress the
 // expected case (server with resources capability but no templates registered).
 func (s *service) ListResourceTemplates(ctx context.Context) ([]ResourceTemplate, error) {
-	if !s.IsConnected() {
-		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
-	}
-
-	s.mu.Lock()
-	session := s.sessionManager.GetSession()
-	s.mu.Unlock()
-
-	if session == nil {
-		return nil, fmt.Errorf("no active session available")
-	}
-
-	pages, cacheInfo, err := fetchListPages(ctx, "resources/templates/list",
-		func(ctx context.Context, cursor string) (*officialMCP.ListResourceTemplatesResult, string, error) {
-			res, err := session.ListResourceTemplates(ctx, &officialMCP.ListResourceTemplatesParams{Cursor: cursor})
-			if err != nil {
-				return nil, "", err
-			}
-			return res, res.NextCursor, nil
-		})
+	templates, err := fetchListed(s, ctx, "resources/templates/list", "resource templates",
+		fetchResourceTemplatePage, convertResourceTemplatePage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to iterate resource templates from MCP server: %w",
-			nameProtocolError(err, "resources/templates/list"))
-	}
-	s.recordListCache(session, cacheInfo)
-
-	var templates []ResourceTemplate
-	for _, page := range pages {
-		for _, tpl := range page.ResourceTemplates {
-			if tpl == nil {
-				continue
-			}
-			templates = append(templates, ResourceTemplate{
-				URITemplate: tpl.URITemplate,
-				Name:        tpl.Name,
-				Title:       tpl.Title,
-				Description: tpl.Description,
-				MimeType:    tpl.MIMEType,
-				Icons:       append([]officialMCP.Icon(nil), tpl.Icons...),
-			})
-		}
+		return nil, err
 	}
 
 	debug.Debug("Listed resource templates successfully",
 		debug.F("count", len(templates)))
 
 	return templates, nil
+}
+
+// fetchResourceTemplatePage fetches one page of resources/templates/list.
+func fetchResourceTemplatePage(
+	ctx context.Context, session *officialMCP.ClientSession, cursor string,
+) (*officialMCP.ListResourceTemplatesResult, string, error) {
+	res, err := session.ListResourceTemplates(ctx, &officialMCP.ListResourceTemplatesParams{Cursor: cursor})
+	if err != nil {
+		return nil, "", err
+	}
+	return res, res.NextCursor, nil
+}
+
+// convertResourceTemplatePage converts one page of resources/templates/list
+// results.
+func convertResourceTemplatePage(page *officialMCP.ListResourceTemplatesResult) []ResourceTemplate {
+	var templates []ResourceTemplate
+	for _, tpl := range page.ResourceTemplates {
+		if tpl == nil {
+			continue
+		}
+		templates = append(templates, ResourceTemplate{
+			URITemplate: tpl.URITemplate,
+			Name:        tpl.Name,
+			Title:       tpl.Title,
+			Description: tpl.Description,
+			MimeType:    tpl.MIMEType,
+			Icons:       append([]officialMCP.Icon(nil), tpl.Icons...),
+		})
+	}
+	return templates
 }
 
 // Complete dispatches a completion/complete request and translates the SDK
@@ -1604,68 +1608,61 @@ func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceRe
 
 // ListPrompts returns available prompts using the official SDK's natural iterator pattern
 func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
-	if !s.IsConnected() {
-		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
-	}
-
-	s.mu.Lock()
-	session := s.sessionManager.GetSession()
-	s.mu.Unlock()
-
-	if session == nil {
-		return nil, fmt.Errorf("no active session available")
-	}
-
-	pages, cacheInfo, err := fetchListPages(ctx, "prompts/list",
-		func(ctx context.Context, cursor string) (*officialMCP.ListPromptsResult, string, error) {
-			res, err := session.ListPrompts(ctx, &officialMCP.ListPromptsParams{Cursor: cursor})
-			if err != nil {
-				return nil, "", err
-			}
-			return res, res.NextCursor, nil
-		})
+	prompts, err := fetchListed(s, ctx, "prompts/list", "prompts", fetchPromptPage, convertPromptPage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to iterate prompts from MCP server: %w", nameProtocolError(err, "prompts/list"))
-	}
-	s.recordListCache(session, cacheInfo)
-
-	var prompts []Prompt
-	for _, page := range pages {
-		for _, prompt := range page.Prompts {
-			if prompt == nil {
-				continue
-			}
-			// Convert PromptArgument slice to map[string]interface{}
-			argumentsMap := make(map[string]interface{})
-			for _, arg := range prompt.Arguments {
-				if arg != nil {
-					// Validate argument name is not empty
-					if arg.Name == "" {
-						debug.Error("Prompt argument has empty name",
-							debug.F("prompt", prompt.Name))
-						continue
-					}
-					argumentsMap[arg.Name] = map[string]interface{}{
-						"description": arg.Description,
-						"required":    arg.Required,
-					}
-				}
-			}
-
-			prompts = append(prompts, Prompt{
-				Name:        prompt.Name,
-				Title:       prompt.Title,
-				Description: prompt.Description,
-				Arguments:   argumentsMap,
-				Icons:       append([]officialMCP.Icon(nil), prompt.Icons...),
-			})
-		}
+		return nil, err
 	}
 
 	debug.Debug("Listed prompts successfully",
 		debug.F("count", len(prompts)))
 
 	return prompts, nil
+}
+
+// fetchPromptPage fetches one page of prompts/list.
+func fetchPromptPage(
+	ctx context.Context, session *officialMCP.ClientSession, cursor string,
+) (*officialMCP.ListPromptsResult, string, error) {
+	res, err := session.ListPrompts(ctx, &officialMCP.ListPromptsParams{Cursor: cursor})
+	if err != nil {
+		return nil, "", err
+	}
+	return res, res.NextCursor, nil
+}
+
+// convertPromptPage converts one page of prompts/list results.
+func convertPromptPage(page *officialMCP.ListPromptsResult) []Prompt {
+	var prompts []Prompt
+	for _, prompt := range page.Prompts {
+		if prompt == nil {
+			continue
+		}
+		// Convert PromptArgument slice to map[string]interface{}
+		argumentsMap := make(map[string]interface{})
+		for _, arg := range prompt.Arguments {
+			if arg != nil {
+				// Validate argument name is not empty
+				if arg.Name == "" {
+					debug.Error("Prompt argument has empty name",
+						debug.F("prompt", prompt.Name))
+					continue
+				}
+				argumentsMap[arg.Name] = map[string]interface{}{
+					"description": arg.Description,
+					"required":    arg.Required,
+				}
+			}
+		}
+
+		prompts = append(prompts, Prompt{
+			Name:        prompt.Name,
+			Title:       prompt.Title,
+			Description: prompt.Description,
+			Arguments:   argumentsMap,
+			Icons:       append([]officialMCP.Icon(nil), prompt.Icons...),
+		})
+	}
+	return prompts
 }
 
 // GetPrompt gets a prompt

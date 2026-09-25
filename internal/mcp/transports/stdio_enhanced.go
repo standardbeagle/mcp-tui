@@ -207,24 +207,8 @@ func generateSuggestion(output string) string {
 
 	// Environment variable suggestions
 	if strings.Contains(lower, "environment variable") && strings.Contains(lower, "required") {
-		// Try to extract the variable name
-		lines := strings.Split(output, "\n")
-		for _, line := range lines {
-			if strings.Contains(strings.ToLower(line), "environment variable") {
-				// Look for patterns like "VARIABLE_NAME environment variable is required"
-				words := strings.Fields(line)
-				for i, word := range words {
-					// Look for uppercase words that could be environment variable names
-					if strings.ToUpper(word) == word && len(word) > 2 &&
-						!strings.Contains(word, " ") && !strings.Contains(word, ":") {
-						// Check if the next few words mention "environment variable"
-						remainingWords := strings.Join(words[i+1:], " ")
-						if strings.Contains(strings.ToLower(remainingWords), "environment variable") {
-							return fmt.Sprintf("Set the %s environment variable before starting the server", word)
-						}
-					}
-				}
-			}
+		if varName := extractRequiredEnvVar(output); varName != "" {
+			return fmt.Sprintf("Set the %s environment variable before starting the server", varName)
 		}
 		return "Set the required environment variable before starting the server"
 	}
@@ -254,6 +238,32 @@ func generateSuggestion(output string) string {
 
 	// Generic suggestion
 	return "Review the error output above and check the server's documentation for setup requirements"
+}
+
+// extractRequiredEnvVar pulls the name of a required environment variable
+// out of error output like "VARIABLE_NAME environment variable is
+// required". Returns "" when no line names one.
+func extractRequiredEnvVar(output string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if !strings.Contains(strings.ToLower(line), "environment variable") {
+			continue
+		}
+		// Look for patterns like "VARIABLE_NAME environment variable is required"
+		words := strings.Fields(line)
+		for i, word := range words {
+			// Look for uppercase words that could be environment variable names
+			if strings.ToUpper(word) == word && len(word) > 2 &&
+				!strings.Contains(word, " ") && !strings.Contains(word, ":") {
+				// Check if the next few words mention "environment variable"
+				remainingWords := strings.Join(words[i+1:], " ")
+				if strings.Contains(strings.ToLower(remainingWords), "environment variable") {
+					return word
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // Implement the Transport interface by delegating to the wrapped transport

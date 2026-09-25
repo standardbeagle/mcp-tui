@@ -463,44 +463,9 @@ func (ec *ErrorClassifier) generateUserFriendlyMessage(err error, category Error
 
 	switch category {
 	case CategoryConnection:
-		if strings.Contains(errStr, "refused") {
-			return "Connection refused - server may not be running or accessible"
-		}
-		if strings.Contains(errStr, timeoutKeyword) {
-			return "Connection timed out - check server availability and network"
-		}
-		return "Connection failed - verify server address and network connectivity"
-
-	case CategoryTransport:
-		return "Transport error - connection was interrupted or lost"
-
-	case CategoryTimeout:
-		return "Operation timed out - server may be overloaded or unresponsive"
-
-	case CategoryAuthentication:
-		return "Authentication failed - check credentials and permissions"
-
+		return connectionMessage(errStr)
 	case CategoryProtocol:
-		// Provide specific guidance based on the error type. A lost
-		// connection is only a protocol failure during the handshake.
-		if IsConnectionLost(err) || strings.Contains(errStr, "initialize") {
-			return "MCP initialization failed - server may not implement MCP protocol correctly or exited during handshake"
-		}
-		if strings.Contains(errStr, "registration") {
-			return "MCP registration failed - server rejected client registration"
-		}
-		if strings.Contains(errStr, "protocol version") || strings.Contains(errStr, "unsupported") {
-			return "Protocol version mismatch - client and server use incompatible MCP versions"
-		}
-		return "Protocol error - incompatible MCP versions or invalid handshake"
-
-	case CategorySerialization:
-		return "Data format error - invalid JSON or message structure"
-
-	case CategoryValidation:
-		// More specific message for client-side validation issues
-		return "Client validation error - invalid parameters or configuration in request"
-
+		return protocolMessage(err, errStr)
 	case CategoryServerStartup:
 		// The server's own output says what went wrong; keep it.
 		var startupErr *ServerStartupError
@@ -508,31 +473,60 @@ func (ec *ErrorClassifier) generateUserFriendlyMessage(err error, category Error
 			return startupErr.Error()
 		}
 		return "Server startup failed - check server configuration and dependencies"
-
-	case CategoryServerInternal:
-		return "Server internal error - the MCP server encountered an error"
-
-	case CategoryServerUnavailable:
-		return "Server unavailable - service may be temporarily down"
-
-	case CategoryServerCapability:
-		return "Server capability error - requested feature not supported"
-
 	case CategoryClientConfig:
 		if errors.Is(err, exec.ErrNotFound) || strings.Contains(errStr, "command not found") {
 			return "Command not found - check if the MCP server command is installed and accessible"
 		}
 		return "Configuration error - check connection parameters"
-
-	case CategoryClientUsage:
-		return "Client usage error - check command parameters and usage"
-
-	case CategoryClientResource:
-		return "Resource error - insufficient memory or system resources"
-
 	default:
+		if msg, ok := categoryMessages[category]; ok {
+			return msg
+		}
 		return fmt.Sprintf("Unexpected error: %s", err.Error())
 	}
+}
+
+// categoryMessages holds the fixed user-facing message for each error
+// category that does not depend on the underlying error's text.
+var categoryMessages = map[ErrorCategory]string{
+	CategoryTransport:      "Transport error - connection was interrupted or lost",
+	CategoryTimeout:        "Operation timed out - server may be overloaded or unresponsive",
+	CategoryAuthentication: "Authentication failed - check credentials and permissions",
+	CategorySerialization:  "Data format error - invalid JSON or message structure",
+	// More specific message for client-side validation issues.
+	CategoryValidation:        "Client validation error - invalid parameters or configuration in request",
+	CategoryServerInternal:    "Server internal error - the MCP server encountered an error",
+	CategoryServerUnavailable: "Server unavailable - service may be temporarily down",
+	CategoryServerCapability:  "Server capability error - requested feature not supported",
+	CategoryClientUsage:       "Client usage error - check command parameters and usage",
+	CategoryClientResource:    "Resource error - insufficient memory or system resources",
+}
+
+// connectionMessage picks the user-facing message for a connection error
+// from the error text.
+func connectionMessage(errStr string) string {
+	if strings.Contains(errStr, "refused") {
+		return "Connection refused - server may not be running or accessible"
+	}
+	if strings.Contains(errStr, timeoutKeyword) {
+		return "Connection timed out - check server availability and network"
+	}
+	return "Connection failed - verify server address and network connectivity"
+}
+
+// protocolMessage picks the user-facing message for a protocol error. A
+// lost connection is only a protocol failure during the handshake.
+func protocolMessage(err error, errStr string) string {
+	if IsConnectionLost(err) || strings.Contains(errStr, "initialize") {
+		return "MCP initialization failed - server may not implement MCP protocol correctly or exited during handshake"
+	}
+	if strings.Contains(errStr, "registration") {
+		return "MCP registration failed - server rejected client registration"
+	}
+	if strings.Contains(errStr, "protocol version") || strings.Contains(errStr, "unsupported") {
+		return "Protocol version mismatch - client and server use incompatible MCP versions"
+	}
+	return "Protocol error - incompatible MCP versions or invalid handshake"
 }
 
 // GetRecoveryActions returns suggested recovery actions for an error

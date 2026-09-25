@@ -137,20 +137,7 @@ func VariableAtCursor(uri string, cursor int) (name, prefix string, ok bool) {
 	if cursor < 0 || cursor > len(uri) {
 		return "", "", false
 	}
-	// Find the last open brace at or before the cursor with no close brace
-	// between it and the cursor.
-	open := -1
-	for i := cursor - 1; i >= 0; i-- {
-		switch uri[i] {
-		case '}':
-			return "", "", false
-		case '{':
-			open = i
-		}
-		if open >= 0 {
-			break
-		}
-	}
+	open := openBraceBefore(uri, cursor)
 	if open < 0 {
 		return "", "", false
 	}
@@ -175,13 +162,7 @@ func VariableAtCursor(uri string, cursor int) (name, prefix string, ok bool) {
 	// Variable name is everything up to a `:` or `*`; the rest of the typed
 	// text after the name is the prefix being completed.
 	expr = strings.TrimLeft(expr, " ")
-	splitIdx := -1
-	for i := 0; i < len(expr); i++ {
-		if expr[i] == ':' || expr[i] == '*' {
-			splitIdx = i
-			break
-		}
-	}
+	splitIdx := strings.IndexAny(expr, ":*")
 
 	// For mcp-tui completion, the variable name is the entire expression up
 	// to the first modifier character. Anything after that is unrelated to
@@ -206,6 +187,25 @@ func VariableAtCursor(uri string, cursor int) (name, prefix string, ok bool) {
 		prefix = expr[splitIdx+1:]
 	}
 	return name, prefix, true
+}
+
+// openBraceBefore returns the index of the last '{' at or before cursor
+// with no '}' between it and the cursor, or -1 when the cursor is outside
+// any expression.
+func openBraceBefore(uri string, cursor int) int {
+	open := -1
+	for i := cursor - 1; i >= 0; i-- {
+		switch uri[i] {
+		case '}':
+			return -1
+		case '{':
+			open = i
+		}
+		if open >= 0 {
+			break
+		}
+	}
+	return open
 }
 
 // Expand performs a level-1 simple string expansion of uri, replacing each
@@ -237,34 +237,29 @@ func Expand(uri string, values map[string]string) string {
 			break
 		}
 		expr := rest[open+1 : open+closeIdx]
-		// Refuse anything that has an operator or modifier — leave intact.
-		simple := true
-		for i := 0; i < len(expr); i++ {
-			c := expr[i]
-			if c == '+' || c == '#' || c == '.' || c == '/' ||
-				c == ';' || c == '?' || c == '&' || c == '*' ||
-				c == ':' || c == ',' {
-				simple = false
-				break
-			}
-		}
 		b.WriteString(rest[:open])
-		if simple {
-			name := strings.TrimSpace(expr)
-			// Empty-string values are treated as "no value provided" so the
-			// template marker stays intact. Callers typically pass a partial
-			// values map; treating "" as "filled in" would silently produce
-			// URIs like users:///profile when only userId was meant to be
-			// resolved.
-			if v, found := values[name]; found && v != "" {
-				b.WriteString(v)
-			} else {
-				b.WriteString(rest[open : open+closeIdx+1])
-			}
-		} else {
-			b.WriteString(rest[open : open+closeIdx+1])
-		}
+		b.WriteString(expandExpression(expr, rest[open:open+closeIdx+1], values))
 		rest = rest[open+closeIdx+1:]
 	}
 	return b.String()
+}
+
+// expandExpression returns the replacement for one `{...}` expression, or
+// the intact expression text (including braces) when the expression is not
+// a level-1 variable reference or has no usable value.
+func expandExpression(expr, original string, values map[string]string) string {
+	// Refuse anything that has an operator or modifier — leave intact.
+	if strings.ContainsAny(expr, "+#./;?&*:,") {
+		return original
+	}
+	name := strings.TrimSpace(expr)
+	// Empty-string values are treated as "no value provided" so the
+	// template marker stays intact. Callers typically pass a partial
+	// values map; treating "" as "filled in" would silently produce
+	// URIs like users:///profile when only userId was meant to be
+	// resolved.
+	if v, found := values[name]; found && v != "" {
+		return v
+	}
+	return original
 }
