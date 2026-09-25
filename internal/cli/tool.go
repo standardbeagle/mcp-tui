@@ -25,29 +25,18 @@ type ToolCommand struct {
 	*BaseCommand
 }
 
-// validateToolArgument validates a tool argument for security
-func validateToolArgument(key, value string) error {
-	// Check for reasonable length limits
-	if len(key) > 1000 {
-		return fmt.Errorf("argument key too long (max 1000 characters)")
+// validateArgument checks a key=value argument of tool call or prompt get:
+// the key by inputschema.CheckArgumentKey, the value for length, UTF-8 and,
+// when it looks like JSON, well-formedness.
+func validateArgument(key, value string) error {
+	if err := inputschema.CheckArgumentKey(key); err != nil {
+		return err
 	}
 	if len(value) > 10000 {
 		return fmt.Errorf("argument value too long (max 10000 characters)")
 	}
-
-	// Check for valid UTF-8
-	if !utf8.ValidString(key) {
-		return fmt.Errorf("argument key contains invalid UTF-8")
-	}
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("argument value contains invalid UTF-8")
-	}
-
-	// Check for dangerous characters in key (should be alphanumeric/underscore/dash)
-	for _, r := range key {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
-			return fmt.Errorf("argument key contains invalid character: %c", r)
-		}
 	}
 
 	// If value looks like JSON, validate it's well-formed
@@ -481,7 +470,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		value := parts[1]
 
 		// Validate argument for security
-		if err := validateToolArgument(key, value); err != nil {
+		if err := validateArgument(key, value); err != nil {
 			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
 			}

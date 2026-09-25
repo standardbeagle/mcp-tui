@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -15,42 +14,6 @@ import (
 // PromptCommand handles prompt-related CLI operations
 type PromptCommand struct {
 	*BaseCommand
-}
-
-// validatePromptArgument validates a prompt argument for security
-func validatePromptArgument(key, value string) error {
-	// Check for reasonable length limits
-	if len(key) > 1000 {
-		return fmt.Errorf("argument key too long (max 1000 characters)")
-	}
-	if len(value) > 10000 {
-		return fmt.Errorf("argument value too long (max 10000 characters)")
-	}
-
-	// Check for valid UTF-8
-	if !utf8.ValidString(key) {
-		return fmt.Errorf("argument key contains invalid UTF-8")
-	}
-	if !utf8.ValidString(value) {
-		return fmt.Errorf("argument value contains invalid UTF-8")
-	}
-
-	// Check for dangerous characters in key (should be alphanumeric/underscore/dash)
-	for _, r := range key {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
-			return fmt.Errorf("argument key contains invalid character: %c", r)
-		}
-	}
-
-	// If value looks like JSON, validate it's well-formed
-	if strings.HasPrefix(strings.TrimSpace(value), "{") || strings.HasPrefix(strings.TrimSpace(value), "[") {
-		var temp interface{}
-		if err := json.Unmarshal([]byte(value), &temp); err != nil {
-			return fmt.Errorf("argument value appears to be JSON but is malformed: %w", err)
-		}
-	}
-
-	return nil
 }
 
 // NewPromptCommand creates a new prompt command
@@ -429,7 +392,7 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 
 	// Validate arguments
 	for key, value := range promptArgs {
-		if err := validatePromptArgument(key, value); err != nil {
+		if err := validateArgument(key, value); err != nil {
 			return fmt.Errorf("invalid argument %s: %w", key, err)
 		}
 	}

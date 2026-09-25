@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-func TestValidatePromptArgument(t *testing.T) {
+// Prompt and tool arguments share one rule set.
+func TestValidateArgument(t *testing.T) {
 	tests := []struct {
 		name      string
 		key       string
@@ -23,6 +24,12 @@ func TestValidatePromptArgument(t *testing.T) {
 			key:       "config",
 			value:     `{"setting": "value"}`,
 			expectErr: false,
+		},
+		{
+			name:      "empty key",
+			key:       "",
+			value:     "test",
+			expectErr: true,
 		},
 		{
 			name:      "key too long",
@@ -52,7 +59,7 @@ func TestValidatePromptArgument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePromptArgument(tt.key, tt.value)
+			err := validateArgument(tt.key, tt.value)
 			if tt.expectErr && err == nil {
 				t.Errorf("expected error but got none")
 			}

@@ -140,6 +140,8 @@ func TestToolScreen_CLICommandRefusesRawJSONTheCLICannotPass(t *testing.T) {
 	for _, tc := range []struct{ raw, want string }{
 		{`{"id": 7`, "invalid JSON"},
 		{`{"bad key": 1}`, `"bad key"`},
+		{`{"": 1}`, "empty"},
+		{`{"` + strings.Repeat("k", 1001) + `": 1}`, "too long"},
 	} {
 		ts := rawJSONToolScreen(t, &config.ConnectionConfig{Type: config.TransportStdio, Command: "tagger"})
 		ts.rawJSONInput.SetValue(tc.raw)

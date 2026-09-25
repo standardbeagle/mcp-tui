@@ -1548,8 +1548,8 @@ func (ts *ToolScreen) rawJSONArguments() (map[string]interface{}, error) {
 // rawJSONArgumentWords spells the raw JSON editor's arguments as the CLI's
 // key:=<json> words, in key order. Each value keeps the text it was typed
 // with (compacted), so a large integer is not rounded through float64. An
-// error names JSON the CLI cannot take: not an object, or a key outside the
-// letters, digits, _ and - that tool call accepts.
+// error names JSON the CLI cannot take: not an object, or a key
+// inputschema.CheckArgumentKey rejects.
 func (ts *ToolScreen) rawJSONArgumentWords() ([]string, error) {
 	rawValue := strings.TrimSpace(ts.rawJSONInput.Value())
 	if rawValue == "" {
@@ -1561,8 +1561,8 @@ func (ts *ToolScreen) rawJSONArgumentWords() ([]string, error) {
 	}
 	keys := make([]string, 0, len(args))
 	for key := range args {
-		if !isCLIArgumentKey(key) {
-			return nil, fmt.Errorf("argument %q: tool call takes only keys of letters, digits, _ and -", key)
+		if err := inputschema.CheckArgumentKey(key); err != nil {
+			return nil, fmt.Errorf("argument %q: tool call cannot take it: %w", key, err)
 		}
 		keys = append(keys, key)
 	}
@@ -1576,21 +1576,6 @@ func (ts *ToolScreen) rawJSONArgumentWords() ([]string, error) {
 		words = append(words, key+":="+value.String())
 	}
 	return words, nil
-}
-
-// isCLIArgumentKey mirrors the key rule of the CLI's tool call
-// (validateToolArgument in internal/cli).
-func isCLIArgumentKey(key string) bool {
-	if key == "" {
-		return false
-	}
-	for _, r := range key {
-		allowed := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
-		if !allowed {
-			return false
-		}
-	}
-	return true
 }
 
 // checkRequiredFields reports the first empty required top-level field. A
