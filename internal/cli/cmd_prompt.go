@@ -67,50 +67,8 @@ func (pc *PromptCommand) createCompleteCommand() *cobra.Command {
 // resource complete command structure so users only have to learn the format
 // once.
 func (pc *PromptCommand) runCompleteCommand(cmd *cobra.Command, args []string) error {
-	promptName := args[0]
-	varName, prefix, err := parseVarPrefixArg(args[1])
-	if err != nil {
-		return err
-	}
-
-	if connErr := pc.ValidateConnection(); connErr != nil {
-		return pc.HandleError(connErr, "validate connection")
-	}
-
-	ctx, cancel := pc.WithContext()
-	defer cancel()
-
-	porcelainMode := flagBool(cmd, "porcelain")
-	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "🔍 Requesting completions for prompt=%s arg=%s prefix=%q...\n", promptName, varName, prefix)
-	}
-
-	result, err := pc.GetService().Complete(ctx, &mcp.CompleteRequest{
-		Ref:           mcp.PromptRef(promptName),
-		ArgumentName:  varName,
-		ArgumentValue: prefix,
-	})
-	if err != nil {
-		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Completion request failed\n")
-		}
-		return pc.HandleError(err, "completion/complete")
-	}
-
-	out := map[string]interface{}{
-		"prompt":     promptName,
-		argumentWord: varName,
-		"prefix":     prefix,
-		"values":     result.Values,
-		"hasMore":    result.HasMore,
-		"total":      result.Total,
-	}
-	jsonBytes, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal completion result to JSON: %w", err)
-	}
-	fmt.Println(string(jsonBytes))
-	return nil
+	return pc.BaseCommand.runCompleteCommand(cmd, args[0], args[1], mcp.PromptRef(args[0]),
+		"prompt", "🔍 Requesting completions for prompt=%s arg=%s prefix=%q...\n")
 }
 
 // createListCommand creates the prompt list command
@@ -165,48 +123,17 @@ func (pc *PromptCommand) createExecuteCommand() *cobra.Command {
 
 // runListCommand executes the prompt list command
 func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error {
-	if err := pc.ValidateConnection(); err != nil {
-		return pc.HandleError(err, "validate connection")
-	}
-
-	ctx, cancel := pc.WithContext()
-	defer cancel()
-
-	// Check if porcelain mode is enabled
-	porcelainMode := flagBool(cmd, "porcelain")
-
-	// Only show progress messages for text output and not porcelain mode
-	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "📋 Fetching available prompts...\n")
-	}
-
-	service := pc.GetService()
-	prompts, err := service.ListPrompts(ctx)
-	if err != nil {
-		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve prompts\n")
-		}
-		return pc.HandleError(err, "list prompts")
-	}
-
-	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "✅ Prompts retrieved successfully\n\n")
-	}
-
-	// Handle JSON output format
-	if pc.GetOutputFormat() == OutputFormatJSON {
-		outputData := map[string]interface{}{
-			"prompts": prompts,
-			docCount:  len(prompts),
-		}
-
-		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal prompts to JSON: %w", err)
-		}
-
-		fmt.Println(string(jsonBytes))
-		return nil
+	prompts, jsonDone, err := runListFetch(pc.BaseCommand, cmd, listSpec[mcp.Prompt]{
+		docKey:        "prompts",
+		fetch:         pc.GetService().ListPrompts,
+		progressFetch: "📋 Fetching available prompts...\n",
+		progressFail:  "❌ Failed to retrieve prompts\n",
+		progressOK:    "✅ Prompts retrieved successfully\n\n",
+		errOp:         "list prompts",
+		errNoun:       "prompts",
+	})
+	if err != nil || jsonDone {
+		return err
 	}
 
 	// Text output format
@@ -214,7 +141,13 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 		fmt.Println("No prompts available from this MCP server")
 		return nil
 	}
+	printPromptListText(prompts)
+	return nil
+}
 
+// printPromptListText renders the `prompt list` text output: a header, then
+// one block per prompt (name, description, icons, argument count).
+func printPromptListText(prompts []mcp.Prompt) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -266,8 +199,6 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 			}
 		}
 	}
-
-	return nil
 }
 
 // runGetCommand executes the prompt get command
@@ -300,13 +231,7 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 		return pc.HandleError(err, "list prompts")
 	}
 
-	var prompt *mcp.Prompt
-	for _, p := range prompts {
-		if p.Name == promptName {
-			prompt = &p
-			break
-		}
-	}
+	prompt := findPrompt(prompts, promptName)
 
 	if prompt == nil {
 		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -331,6 +256,13 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 	}
 
 	// Text output format
+	printPromptDetailText(prompt)
+	return nil
+}
+
+// printPromptDetailText renders the `prompt get` text output: name,
+// description and the argument list of one prompt.
+func printPromptDetailText(prompt *mcp.Prompt) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -377,7 +309,16 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 			fmt.Println(argumentStyle.Render(fmt.Sprintf("• %s: %v", key, value)))
 		}
 	}
+}
 
+// findPrompt returns the named prompt, or nil when the server did not
+// advertise it.
+func findPrompt(prompts []mcp.Prompt, name string) *mcp.Prompt {
+	for i := range prompts {
+		if prompts[i].Name == name {
+			return &prompts[i]
+		}
+	}
 	return nil
 }
 
@@ -385,17 +326,9 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) error {
 	promptName := args[0]
 
-	// Get arguments from flags
-	promptArgs, err := cmd.Flags().GetStringToString("arg")
+	promptArgs, err := validatedPromptArgs(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to get arguments: %w", err)
-	}
-
-	// Validate arguments
-	for key, value := range promptArgs {
-		if err = validateArgument(key, value); err != nil {
-			return fmt.Errorf("invalid argument %s: %w", key, err)
-		}
+		return err
 	}
 
 	if connErr := pc.ValidateConnection(); connErr != nil {
@@ -451,6 +384,31 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 	}
 
 	// Text output format
+	printPromptResultText(promptName, result)
+	writeRoundTrace(os.Stdout, result.Rounds)
+	writeRespondingServer(os.Stdout, result.Server)
+	return nil
+}
+
+// validatedPromptArgs reads the --arg key=value flags of `prompt execute`
+// and validates each pair with validateArgument.
+func validatedPromptArgs(cmd *cobra.Command) (map[string]string, error) {
+	promptArgs, err := cmd.Flags().GetStringToString("arg")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get arguments: %w", err)
+	}
+
+	for key, value := range promptArgs {
+		if err = validateArgument(key, value); err != nil {
+			return nil, fmt.Errorf("invalid argument %s: %w", key, err)
+		}
+	}
+	return promptArgs, nil
+}
+
+// printPromptResultText renders the `prompt execute` text output: a header
+// followed by each message's role and content.
+func printPromptResultText(promptName string, result *mcp.GetPromptResult) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -488,8 +446,4 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 			fmt.Println(messageContentStyle.Render(fmt.Sprintf("Content: %v", message.Content)))
 		}
 	}
-
-	writeRoundTrace(os.Stdout, result.Rounds)
-	writeRespondingServer(os.Stdout, result.Server)
-	return nil
 }

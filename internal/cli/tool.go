@@ -228,7 +228,14 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		fmt.Println("No tools available from this MCP server")
 		return nil
 	}
+	printToolListText(tools)
+	return nil
+}
 
+// printToolListText renders the `tool list` text output: a header, one
+// block per tool (name with badges, schema problem, description, icons),
+// then the total count.
+func printToolListText(tools []mcp.Tool) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -281,8 +288,6 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	// Footer
 	fmt.Println()
 	fmt.Println(countStyle.Render(fmt.Sprintf("Total: %d tools", len(tools))))
-
-	return nil
 }
 
 // printIcons prints one indented "Icon:" line per icon (SEP-973); icons are
@@ -337,15 +342,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 		return tc.HandleError(err, "list tools")
 	}
 
-	// Find the specific tool
-	var foundTool *mcp.Tool
-	for _, tool := range tools {
-		if tool.Name == toolName {
-			foundTool = &tool
-			break
-		}
-	}
-
+	foundTool := findTool(tools, toolName)
 	if foundTool == nil {
 		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Tool not found\n")
@@ -369,6 +366,24 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "✅ Tool found\n\n")
 	}
 
+	printToolDetailText(foundTool)
+	return nil
+}
+
+// findTool returns the named tool, or nil when the server did not advertise
+// it.
+func findTool(tools []mcp.Tool, name string) *mcp.Tool {
+	for i := range tools {
+		if tools[i].Name == name {
+			return &tools[i]
+		}
+	}
+	return nil
+}
+
+// printToolDetailText renders the `tool describe` text output: the display
+// name with annotation badges, description, and the input schema.
+func printToolDetailText(foundTool *mcp.Tool) {
 	// Define styles for tool details
 	labelStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -421,8 +436,6 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-
-	return nil
 }
 
 // handleCall implements the tool call functionality
@@ -436,49 +449,19 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	}
 
 	toolName := args[0]
-	toolArgs := make(map[string]interface{})
 
 	// Check if porcelain mode is enabled
 	porcelainMode := flagBool(cmd, "porcelain")
+	showNotes := tc.GetOutputFormat() == OutputFormatText && !porcelainMode
 
 	// Only show progress messages for text output and not porcelain mode
-	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+	if showNotes {
 		fmt.Fprintf(os.Stderr, "🛠️  Preparing to call tool '%s'...\n", toolName)
 	}
 
-	// Split the key=value and key:=<json> pairs. Type conversion is deferred
-	// until the tool's input schema is known, below.
-	type rawArg struct {
-		key, value string
-		// literal: key:=<json>, sent as the JSON value it spells.
-		literal bool
-	}
-	rawArgs := make([]rawArg, 0, len(args)-1)
-
-	if len(args) > 1 && tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "📝 Parsing arguments...\n")
-	}
-	for _, arg := range args[1:] {
-		parts := strings.SplitN(arg, "=", 2)
-		if len(parts) != 2 {
-			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-				fmt.Fprintf(os.Stderr, "❌ Invalid argument format\n")
-			}
-			return fmt.Errorf("invalid argument format: %s (expected key=value)", arg)
-		}
-
-		key, literal := strings.CutSuffix(parts[0], ":")
-		value := parts[1]
-
-		// Validate argument for security
-		if err := validateArgument(key, value); err != nil {
-			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
-			}
-			return fmt.Errorf("argument validation failed: %w", err)
-		}
-
-		rawArgs = append(rawArgs, rawArg{key: key, value: value, literal: literal})
+	rawArgs, err := parseRawCallArgs(args[1:], showNotes)
+	if err != nil {
+		return err
 	}
 
 	taskMode, err := parseTaskFlags(cmd)
@@ -495,25 +478,9 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	// corrupts values, so the schema is fetched even under --no-confirm.
 	skipConfirm := flagBool(cmd, "no-confirm")
 
-	tools, listErr := tc.GetService().ListTools(ctx)
-	if listErr != nil {
-		// Without the schema we cannot convert arguments correctly, and without
-		// annotations we cannot determine destructiveness. Refusing to run is
-		// the safer default in both cases.
-		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Failed to fetch tool metadata before call\n")
-		}
-		return tc.HandleError(listErr, "list tools before call")
-	}
-	var matchedTool *mcp.Tool
-	for i := range tools {
-		if tools[i].Name == toolName {
-			matchedTool = &tools[i]
-			break
-		}
-	}
-	if matchedTool == nil {
-		return fmt.Errorf("tool %q not found on the server", toolName)
+	matchedTool, err := tc.lookupCallTool(ctx, toolName, showNotes)
+	if err != nil {
+		return err
 	}
 
 	if !skipConfirm {
@@ -522,17 +489,147 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Convert each argument to the type the tool declares for it. A schema
-	// that does not resolve (a remote $ref, a dangling local one) is
-	// reported rather than treated as permissive.
+	toolArgs, err := convertCallArguments(cmd, toolName, matchedTool, rawArgs, showNotes)
+	if err != nil {
+		return err
+	}
+
+	out, err := tc.toolResultOutput(cmd, toolName, toolArgs, porcelainMode)
+	if err != nil {
+		return err
+	}
+	if taskMode.asTask {
+		return tc.callAsTask(ctx, mcp.CallToolRequest{Name: toolName, Arguments: toolArgs}, taskMode, out)
+	}
+
+	return tc.callAndPrint(ctx, toolName, toolArgs, out, showNotes)
+}
+
+// callAndPrint runs the tool call and prints its result as out describes.
+func (tc *ToolCommand) callAndPrint(
+	ctx context.Context, toolName string, toolArgs map[string]interface{}, out resultOutput, showNotes bool,
+) error {
+	if showNotes {
+		fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
+	}
+
+	// Call the tool
+	progressCtx, endProgress := callProgress(ctx, tc.GetOutputFormat(), out.porcelain)
+	result, err := tc.GetService().CallTool(progressCtx, mcp.CallToolRequest{
+		Name:      toolName,
+		Arguments: toolArgs,
+	})
+	endProgress()
+	if err != nil {
+		if showNotes {
+			fmt.Fprintf(os.Stderr, "❌ Tool execution failed\n")
+		}
+		return tc.HandleError(err, "call tool")
+	}
+
+	return printToolResult(out, result)
+}
+
+// toolResultOutput reads the --strict-output/--strict-errors flags and
+// builds the resultOutput for a tool call.
+func (tc *ToolCommand) toolResultOutput(
+	cmd *cobra.Command, toolName string, toolArgs map[string]interface{}, porcelainMode bool,
+) (resultOutput, error) {
+	strictOutput, err := cmd.Flags().GetBool("strict-output")
+	if err != nil {
+		return resultOutput{}, err
+	}
+	strictErrors, err := cmd.Flags().GetBool("strict-errors")
+	if err != nil {
+		return resultOutput{}, err
+	}
+	return resultOutput{
+		format: tc.GetOutputFormat(), porcelain: porcelainMode,
+		strictOutput: strictOutput, strictErrors: strictErrors,
+		document: map[string]interface{}{toolWord: toolName, "arguments": toolArgs},
+	}, nil
+}
+
+// rawCallArg is one key=value (or key:=<json>) argument of `tool call`
+// before its value is converted to the tool's declared type. literal marks
+// key:=<json>, sent as the JSON value it spells.
+type rawCallArg struct {
+	key, value string
+	literal    bool
+}
+
+// parseRawCallArgs splits the key=value and key:=<json> pairs of a tool
+// call. Type conversion is deferred until the tool's input schema is known.
+// showNotes gates the progress/failure notes on stderr.
+func parseRawCallArgs(args []string, showNotes bool) ([]rawCallArg, error) {
+	if len(args) > 0 && showNotes {
+		fmt.Fprintf(os.Stderr, "📝 Parsing arguments...\n")
+	}
+	rawArgs := make([]rawCallArg, 0, len(args))
+	for _, arg := range args {
+		parts := strings.SplitN(arg, "=", 2)
+		if len(parts) != 2 {
+			if showNotes {
+				fmt.Fprintf(os.Stderr, "❌ Invalid argument format\n")
+			}
+			return nil, fmt.Errorf("invalid argument format: %s (expected key=value)", arg)
+		}
+
+		key, literal := strings.CutSuffix(parts[0], ":")
+		value := parts[1]
+
+		// Validate argument for security
+		if err := validateArgument(key, value); err != nil {
+			if showNotes {
+				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
+			}
+			return nil, fmt.Errorf("argument validation failed: %w", err)
+		}
+
+		rawArgs = append(rawArgs, rawCallArg{key: key, value: value, literal: literal})
+	}
+	return rawArgs, nil
+}
+
+// lookupCallTool resolves the tool to call from tools/list. Without the
+// schema we cannot convert arguments correctly, and without annotations we
+// cannot determine destructiveness, so a failed lookup refuses the call.
+func (tc *ToolCommand) lookupCallTool(ctx context.Context, toolName string, showNotes bool) (*mcp.Tool, error) {
+	tools, listErr := tc.GetService().ListTools(ctx)
+	if listErr != nil {
+		// Refusing to run is the safer default in both cases.
+		if showNotes {
+			fmt.Fprintf(os.Stderr, "❌ Failed to fetch tool metadata before call\n")
+		}
+		return nil, tc.HandleError(listErr, "list tools before call")
+	}
+	matchedTool := findTool(tools, toolName)
+	if matchedTool == nil {
+		return nil, fmt.Errorf("tool %q not found on the server", toolName)
+	}
+	return matchedTool, nil
+}
+
+// convertCallArguments converts each raw argument to the type the tool
+// declares for it and checks the result against the whole input schema
+// (including what no key=value argument expresses: if/then/else, not,
+// patternProperties, nested structure) before the call goes out.
+// --skip-arg-validation still checks, and reports, but sends: this is a
+// test client, and a server's answer to bad arguments is worth seeing.
+func convertCallArguments(
+	cmd *cobra.Command, toolName string, matchedTool *mcp.Tool, rawArgs []rawCallArg, showNotes bool,
+) (map[string]interface{}, error) {
+	// A schema that does not resolve (a remote $ref, a dangling local one)
+	// is reported rather than treated as permissive.
 	inputSchema, schemaErr := inputschema.Parse(toolName, matchedTool.InputSchema)
 	if schemaErr != nil {
-		return fmt.Errorf("tool %q: %w", toolName, schemaErr)
+		return nil, fmt.Errorf("tool %q: %w", toolName, schemaErr)
 	}
-	showNotes := tc.GetOutputFormat() == OutputFormatText && !porcelainMode
 	if inputSchema.Note != "" && showNotes {
 		fmt.Fprintf(os.Stderr, "ℹ️  Input schema: %s; values are read as JSON\n", inputSchema.Note)
 	}
+
+	toolArgs := make(map[string]interface{}, len(rawArgs))
 	for _, raw := range rawArgs {
 		if p, ok := inputSchema.Param(raw.key); ok && p.Note != "" && showNotes {
 			fmt.Fprintf(os.Stderr, "ℹ️  Argument %q: %s\n", raw.key, p.Note)
@@ -545,71 +642,31 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 			parsedValue, convErr = coerceToolArgument(&inputSchema, raw.key, raw.value)
 		}
 		if convErr != nil {
-			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+			if showNotes {
 				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
 			}
-			return convErr
+			return nil, convErr
 		}
 		toolArgs[raw.key] = parsedValue
 	}
-	// Check the whole schema, including what no key=value argument
-	// expresses (if/then/else, not, patternProperties, nested structure),
-	// before the call goes out.
-	// --skip-arg-validation still checks, and reports, but sends: this is a
-	// test client, and a server's answer to bad arguments is worth seeing.
+
 	skipArgValidation, err := cmd.Flags().GetBool(flagSkipArgValidation)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if validateErr := inputSchema.Validate(toolArgs); validateErr != nil {
 		if !skipArgValidation {
-			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+			if showNotes {
 				fmt.Fprintf(os.Stderr, "❌ Arguments do not match the tool's input schema\n")
 			}
-			return fmt.Errorf("tool %q: %w (--%s sends them anyway)", toolName, validateErr, flagSkipArgValidation)
+			return nil, fmt.Errorf("tool %q: %w (--%s sends them anyway)", toolName, validateErr, flagSkipArgValidation)
 		}
 		debug.Warn("Sending tool arguments that do not match the input schema",
 			debug.F("tool", toolName), debug.F("violation", validateErr.Error()))
 		// On stderr whatever the output format, like the other warnings.
 		fmt.Fprintf(os.Stderr, "⚠ Sending anyway (--%s): %v\n", flagSkipArgValidation, validateErr)
 	}
-
-	strictOutput, err := cmd.Flags().GetBool("strict-output")
-	if err != nil {
-		return err
-	}
-	strictErrors, err := cmd.Flags().GetBool("strict-errors")
-	if err != nil {
-		return err
-	}
-	out := resultOutput{
-		format: tc.GetOutputFormat(), porcelain: porcelainMode,
-		strictOutput: strictOutput, strictErrors: strictErrors,
-		document: map[string]interface{}{toolWord: toolName, "arguments": toolArgs},
-	}
-	if taskMode.asTask {
-		return tc.callAsTask(ctx, mcp.CallToolRequest{Name: toolName, Arguments: toolArgs}, taskMode, out)
-	}
-
-	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "🚀 Executing tool...\n")
-	}
-
-	// Call the tool
-	progressCtx, endProgress := callProgress(ctx, tc.GetOutputFormat(), porcelainMode)
-	result, err := tc.GetService().CallTool(progressCtx, mcp.CallToolRequest{
-		Name:      toolName,
-		Arguments: toolArgs,
-	})
-	endProgress()
-	if err != nil {
-		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Tool execution failed\n")
-		}
-		return tc.HandleError(err, "call tool")
-	}
-
-	return printToolResult(out, result)
+	return toolArgs, nil
 }
 
 // flagTask is tool call's --task flag.

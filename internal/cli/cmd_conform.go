@@ -12,7 +12,6 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/cli/conform"
 	"github.com/standardbeagle/mcp-tui/internal/cli/verify"
-	"github.com/standardbeagle/mcp-tui/internal/config"
 )
 
 // ConformCommand exposes the end-to-end conformance suite as a CLI
@@ -154,48 +153,30 @@ var errConformFailed = fmt.Errorf("one or more conform scenarios failed")
 func ConformFailedError() error { return errConformFailed }
 
 // buildConformTarget resolves the conform command's target from positional/
-// --url/--cmd. Mirrors verify.buildTarget — see that for the precedence
-// rules. Adds the conform-specific stub/trigger flags by reading them from
-// the command flags.
+// --url/--cmd. Mirrors verify.buildTarget — see resolveCLITarget for the
+// precedence rules. Adds the conform-specific stub/trigger flags by reading
+// them from the command flags.
 func (c *ConformCommand) buildConformTarget(cmd *cobra.Command, args []string) (conform.Target, error) {
-	cmdFlag := flagString(cmd, "cmd")
-	urlFlag := flagString(cmd, "url")
-	argsFlag, err := ServerArgs(cmd)
+	url, command, cmdArgs, err := resolveCLITarget(cmd, args)
 	if err != nil {
 		return conform.Target{}, err
 	}
 
-	target := conform.Target{
-		Command: cmdFlag,
-		Args:    argsFlag,
-	}
-	if urlFlag != "" {
-		target.URL = urlFlag
-	}
-	if len(args) > 0 && target.URL == "" {
-		parsed := config.ParseArgs(args, SubcommandNames(cmd.Root()), cmdFlag, urlFlag, argsFlag)
-		if parsed.Connection != nil {
-			switch parsed.Connection.Type {
-			case config.TransportHTTP, config.TransportSSE, config.TransportStreamableHTTP:
-				target.URL = parsed.Connection.URL
-			case config.TransportStdio:
-				if target.Command == "" {
-					target.Command = parsed.Connection.Command
-					target.Args = parsed.Connection.Args
-				}
-			}
-		}
-		if target.URL == "" && (strings.HasPrefix(args[0], "http://") || strings.HasPrefix(args[0], "https://")) {
-			target.URL = args[0]
-		}
-	}
+	target := conform.Target{URL: url, Command: command, Args: cmdArgs}
 	if target.URL == "" && target.Command == "" {
 		return target, fmt.Errorf("no conform target specified — supply <url>, --url, or --cmd")
 	}
 
-	// Persistent flags inherited from the root command. We don't fail when
-	// the root command isn't present (unit tests sometimes register a bare
-	// command without parents) — empty values just skip the optional path.
+	applyConformFlags(cmd, &target)
+	return target, nil
+}
+
+// applyConformFlags mirrors the conform-specific stub/trigger/completion
+// flags onto target. Persistent flags inherited from the root command are
+// included; we don't fail when the root command isn't present (unit tests
+// sometimes register a bare command without parents) — empty values just
+// skip the optional path.
+func applyConformFlags(cmd *cobra.Command, target *conform.Target) {
 	if v := flagString(cmd, "sampling-stub"); v != "" {
 		target.SamplingStub = v
 	}
@@ -220,8 +201,6 @@ func (c *ConformCommand) buildConformTarget(cmd *cobra.Command, args []string) (
 	if v := flagString(cmd, "completion-prefix"); v != "" {
 		target.CompletionArgumentValue = v
 	}
-
-	return target, nil
 }
 
 // writeConformText prints a deterministic human-friendly summary. Each

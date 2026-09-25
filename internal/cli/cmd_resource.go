@@ -86,48 +86,17 @@ func (rc *ResourceCommand) createGetCommand() *cobra.Command {
 
 // runListCommand executes the resource list command
 func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) error {
-	if err := rc.ValidateConnection(); err != nil {
-		return rc.HandleError(err, "validate connection")
-	}
-
-	ctx, cancel := rc.WithContext()
-	defer cancel()
-
-	// Check if porcelain mode is enabled
-	porcelainMode := flagBool(cmd, "porcelain")
-
-	// Only show progress messages for text output and not porcelain mode
-	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "📁 Fetching available resources...\n")
-	}
-
-	service := rc.GetService()
-	resources, err := service.ListResources(ctx)
-	if err != nil {
-		if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve resources\n")
-		}
-		return rc.HandleError(err, "list resources")
-	}
-
-	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "✅ Resources retrieved successfully\n\n")
-	}
-
-	// Handle JSON output format
-	if rc.GetOutputFormat() == OutputFormatJSON {
-		outputData := map[string]interface{}{
-			"resources": resources,
-			docCount:    len(resources),
-		}
-
-		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal resources to JSON: %w", err)
-		}
-
-		fmt.Println(string(jsonBytes))
-		return nil
+	resources, jsonDone, err := runListFetch(rc.BaseCommand, cmd, listSpec[mcp.Resource]{
+		docKey:        "resources",
+		fetch:         rc.GetService().ListResources,
+		progressFetch: "📁 Fetching available resources...\n",
+		progressFail:  "❌ Failed to retrieve resources\n",
+		progressOK:    "✅ Resources retrieved successfully\n\n",
+		errOp:         "list resources",
+		errNoun:       "resources",
+	})
+	if err != nil || jsonDone {
+		return err
 	}
 
 	// Text output format
@@ -135,7 +104,13 @@ func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) err
 		fmt.Println("No resources available from this MCP server")
 		return nil
 	}
+	printResourceListText(resources)
+	return nil
+}
 
+// printResourceListText renders the `resource list` text output: a header,
+// then one block per resource (URI, name, description, MIME type, icons).
+func printResourceListText(resources []mcp.Resource) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -185,8 +160,6 @@ func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) err
 		}
 		printIcons(resource.Icons)
 	}
-
-	return nil
 }
 
 // runGetCommand executes the resource get command
@@ -246,6 +219,17 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 		return nil
 	}
 
+	printResourceContentText(resourceURI, contents)
+	writeRoundTrace(os.Stdout, result.Rounds)
+	writeRespondingServer(os.Stdout, result.Server)
+	writeReadCache(os.Stdout, result.Cache)
+	return nil
+}
+
+// printResourceContentText renders the `resource get` text output: a header,
+// the resource URI, then one block per content item (text, or a hex dump
+// for binary content).
+func printResourceContentText(resourceURI string, contents []mcp.ResourceContents) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -316,11 +300,6 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 			fmt.Println(contentStyle.Render("(No content data available)"))
 		}
 	}
-
-	writeRoundTrace(os.Stdout, result.Rounds)
-	writeRespondingServer(os.Stdout, result.Server)
-	writeReadCache(os.Stdout, result.Cache)
-	return nil
 }
 
 // resourceReadOutput is the `resource read --format json` document. rounds,
@@ -386,48 +365,31 @@ func (rc *ResourceCommand) createCompleteCommand() *cobra.Command {
 // are surfaced explicitly so users can tell "server returned zero templates"
 // apart from "command silently succeeded".
 func (rc *ResourceCommand) runTemplatesCommand(cmd *cobra.Command, _ []string) error {
-	if err := rc.ValidateConnection(); err != nil {
-		return rc.HandleError(err, "validate connection")
-	}
-
-	ctx, cancel := rc.WithContext()
-	defer cancel()
-
-	porcelainMode := flagBool(cmd, "porcelain")
-	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "🧩 Fetching resource templates...\n")
-	}
-
-	templates, err := rc.GetService().ListResourceTemplates(ctx)
-	if err != nil {
-		if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve resource templates\n")
-		}
-		return rc.HandleError(err, "list resource templates")
-	}
-
-	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "✅ Resource templates retrieved\n\n")
-	}
-
-	if rc.GetOutputFormat() == OutputFormatJSON {
-		out := map[string]interface{}{
-			"resourceTemplates": templates,
-			docCount:            len(templates),
-		}
-		jsonBytes, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal resource templates to JSON: %w", err)
-		}
-		fmt.Println(string(jsonBytes))
-		return nil
+	templates, jsonDone, err := runListFetch(rc.BaseCommand, cmd, listSpec[mcp.ResourceTemplate]{
+		docKey:        "resourceTemplates",
+		fetch:         rc.GetService().ListResourceTemplates,
+		progressFetch: "🧩 Fetching resource templates...\n",
+		progressFail:  "❌ Failed to retrieve resource templates\n",
+		progressOK:    "✅ Resource templates retrieved\n\n",
+		errOp:         "list resource templates",
+		errNoun:       "resource templates",
+	})
+	if err != nil || jsonDone {
+		return err
 	}
 
 	if len(templates) == 0 {
 		fmt.Println("No resource templates available from this MCP server")
 		return nil
 	}
+	printResourceTemplatesText(templates)
+	return nil
+}
 
+// printResourceTemplatesText renders the `resource templates` text output:
+// a header, then one block per template (URI template, display name,
+// description, MIME type, icons).
+func printResourceTemplatesText(templates []mcp.ResourceTemplate) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).MarginBottom(1)
 	uriStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")) // Bright Blue
 	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).MarginLeft(2)
@@ -453,8 +415,6 @@ func (rc *ResourceCommand) runTemplatesCommand(cmd *cobra.Command, _ []string) e
 		}
 		printIcons(tpl.Icons)
 	}
-
-	return nil
 }
 
 // parseVarPrefixArg splits a `<var>=<prefix>` argument. The prefix may be
@@ -474,50 +434,8 @@ func parseVarPrefixArg(arg string) (name, prefix string, err error) {
 // always JSON because the suggestions list is most useful piped to other
 // tools; text-mode users get the same payload, just on stdout.
 func (rc *ResourceCommand) runCompleteCommand(cmd *cobra.Command, args []string) error {
-	uriTemplate := args[0]
-	varName, prefix, err := parseVarPrefixArg(args[1])
-	if err != nil {
-		return err
-	}
-
-	if connErr := rc.ValidateConnection(); connErr != nil {
-		return rc.HandleError(connErr, "validate connection")
-	}
-
-	ctx, cancel := rc.WithContext()
-	defer cancel()
-
-	porcelainMode := flagBool(cmd, "porcelain")
-	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-		fmt.Fprintf(os.Stderr, "🔍 Requesting completions for %s={%s|prefix=%q}...\n", uriTemplate, varName, prefix)
-	}
-
-	result, err := rc.GetService().Complete(ctx, &mcp.CompleteRequest{
-		Ref:           mcp.ResourceRef(uriTemplate),
-		ArgumentName:  varName,
-		ArgumentValue: prefix,
-	})
-	if err != nil {
-		if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Completion request failed\n")
-		}
-		return rc.HandleError(err, "completion/complete")
-	}
-
-	out := map[string]interface{}{
-		"uriTemplate": uriTemplate,
-		argumentWord:  varName,
-		"prefix":      prefix,
-		"values":      result.Values,
-		"hasMore":     result.HasMore,
-		"total":       result.Total,
-	}
-	jsonBytes, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal completion result to JSON: %w", err)
-	}
-	fmt.Println(string(jsonBytes))
-	return nil
+	return rc.BaseCommand.runCompleteCommand(cmd, args[0], args[1], mcp.ResourceRef(args[0]),
+		"uriTemplate", "🔍 Requesting completions for %s={%s|prefix=%q}...\n")
 }
 
 // createWatchCommand creates the resource watch command.

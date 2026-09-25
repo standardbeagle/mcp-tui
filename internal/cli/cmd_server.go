@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -57,6 +58,29 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(os.Stderr, "✅ Connected to server\n\n")
 
+	c.printServerHeader(info)
+
+	// Get counts of available items
+	ctx, cancel := c.WithContext()
+	defer cancel()
+
+	fmt.Fprintf(os.Stderr, "📋 Querying available features...\n")
+
+	printFeatureCount(ctx, "Available Tools:     ", "  • Fetching tools...\n",
+		c.service.ListTools, func(t mcp.Tool) string { return t.Name })
+	printFeatureCount(ctx, "Available Resources: ", "  • Fetching resources...\n",
+		c.service.ListResources, func(r mcp.Resource) string { return r.Name })
+	printFeatureCount(ctx, "Available Prompts:   ", "  • Fetching prompts...\n",
+		c.service.ListPrompts, func(p mcp.Prompt) string { return p.Name })
+
+	fmt.Fprintf(os.Stderr, "\n✅ Server information complete\n")
+
+	return nil
+}
+
+// printServerHeader prints the server information block: name, version,
+// negotiated protocol, declared identity and capability names.
+func (c *ServerCommand) printServerHeader(info *mcp.ServerInfo) {
 	// Print server information
 	fmt.Printf("Server Information\n")
 	fmt.Printf("==================\n\n")
@@ -82,61 +106,28 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 	fmt.Printf("\n")
+}
 
-	// Get counts of available items
-	ctx, cancel := c.WithContext()
-	defer cancel()
-
-	fmt.Fprintf(os.Stderr, "📋 Querying available features...\n")
-
-	// Count tools
-	fmt.Fprintf(os.Stderr, "  • Fetching tools...\n")
-	tools, err := c.service.ListTools(ctx)
-	if err == nil {
-		fmt.Printf("Available Tools:     %d\n", len(tools))
-		if len(tools) > 0 && len(tools) <= 5 {
-			// Show tool names if there are only a few
-			for _, tool := range tools {
-				fmt.Printf("  - %s\n", tool.Name)
-			}
-		}
-	} else {
-		fmt.Printf("Available Tools:     Error: %v\n", err)
+// printFeatureCount queries one feature list and prints its count under
+// label (which carries its column padding), naming the items when there
+// are five or fewer. A failed list is reported inline, not fatal.
+func printFeatureCount[T any](
+	ctx context.Context, label, progress string,
+	fetch func(context.Context) ([]T, error), name func(T) string,
+) {
+	fmt.Fprint(os.Stderr, progress)
+	items, err := fetch(ctx)
+	if err != nil {
+		fmt.Printf("%s Error: %v\n", label, err)
+		return
 	}
-
-	// Count resources
-	fmt.Fprintf(os.Stderr, "  • Fetching resources...\n")
-	resources, err := c.service.ListResources(ctx)
-	if err == nil {
-		fmt.Printf("Available Resources: %d\n", len(resources))
-		if len(resources) > 0 && len(resources) <= 5 {
-			// Show resource names if there are only a few
-			for _, resource := range resources {
-				fmt.Printf("  - %s\n", resource.Name)
-			}
+	fmt.Printf("%s %d\n", label, len(items))
+	if len(items) > 0 && len(items) <= 5 {
+		// Show item names if there are only a few
+		for _, item := range items {
+			fmt.Printf("  - %s\n", name(item))
 		}
-	} else {
-		fmt.Printf("Available Resources: Error: %v\n", err)
 	}
-
-	// Count prompts
-	fmt.Fprintf(os.Stderr, "  • Fetching prompts...\n")
-	prompts, err := c.service.ListPrompts(ctx)
-	if err == nil {
-		fmt.Printf("Available Prompts:   %d\n", len(prompts))
-		if len(prompts) > 0 && len(prompts) <= 5 {
-			// Show prompt names if there are only a few
-			for _, prompt := range prompts {
-				fmt.Printf("  - %s\n", prompt.Name)
-			}
-		}
-	} else {
-		fmt.Printf("Available Prompts:   Error: %v\n", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "\n✅ Server information complete\n")
-
-	return nil
 }
 
 // printServerIdentity prints what the server declared about itself beyond

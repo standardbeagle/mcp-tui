@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/standardbeagle/mcp-tui/internal/cli/verify"
-	"github.com/standardbeagle/mcp-tui/internal/config"
 )
 
 // VerifyCommand exposes the behavior probes from internal/cli/verify as a
@@ -160,46 +159,12 @@ func VerifyFailedError() error { return errVerifyFailed }
 // If both are set, both fields populate Target — RunAll will run HTTP
 // probes against URL and the stdio probe against Command.
 func (c *VerifyCommand) buildTarget(cmd *cobra.Command, args []string) (verify.Target, error) {
-	cmdFlag := flagString(cmd, "cmd")
-	urlFlag := flagString(cmd, "url")
-	argsFlag, err := ServerArgs(cmd)
+	url, command, cmdArgs, err := resolveCLITarget(cmd, args)
 	if err != nil {
 		return verify.Target{}, err
 	}
 
-	target := verify.Target{
-		Command: cmdFlag,
-		Args:    argsFlag,
-	}
-
-	// URL precedence: explicit --url, then first positional arg.
-	if urlFlag != "" {
-		target.URL = urlFlag
-	}
-	if len(args) > 0 && target.URL == "" {
-		// The positional may be either a URL or a "command-line"
-		// connection string per ParseArgs. Use the unified parser so we
-		// honor the same shapes the other CLI commands accept.
-		parsed := config.ParseArgs(args, SubcommandNames(cmd.Root()), cmdFlag, urlFlag, argsFlag)
-		if parsed.Connection != nil {
-			switch parsed.Connection.Type {
-			case config.TransportHTTP, config.TransportSSE, config.TransportStreamableHTTP:
-				target.URL = parsed.Connection.URL
-			case config.TransportStdio:
-				if target.Command == "" {
-					target.Command = parsed.Connection.Command
-					target.Args = parsed.Connection.Args
-				}
-			}
-		}
-		// Even after parsing, a bare URL-shaped argument should populate
-		// URL — ParseArgs may not flag custom URLs without a recognized
-		// path. Fall back to a substring check.
-		if target.URL == "" && (strings.HasPrefix(args[0], "http://") || strings.HasPrefix(args[0], "https://")) {
-			target.URL = args[0]
-		}
-	}
-
+	target := verify.Target{URL: url, Command: command, Args: cmdArgs}
 	if target.URL == "" && target.Command == "" {
 		return target, fmt.Errorf("no verify target specified — supply <url>, --url, or --cmd")
 	}

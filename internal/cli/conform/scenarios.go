@@ -383,27 +383,7 @@ func (r *Runner) scenarioToolsCall(ctx context.Context, expectIsError bool) Scen
 		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: server has no tools"}
 	}
 
-	var pick *mcp.Tool
-	for i, t := range tools {
-		t := t
-		if expectIsError {
-			// Heuristic: tools whose name suggests failure-by-design.
-			lc := strings.ToLower(t.Name)
-			if strings.Contains(lc, "error") || strings.Contains(lc, "fail") || strings.Contains(lc, "invalid") {
-				pick = &tools[i]
-				break
-			}
-		} else if !t.IsDestructive() {
-			// Prefer non-destructive (or unannotated, since mcp-tui treats
-			// nil destructiveHint as not-destructive — see Tool.IsDestructive).
-			pick = &tools[i]
-			break
-		}
-	}
-	if pick == nil {
-		// Fallback: take the first tool but report what we did.
-		pick = &tools[0]
-	}
+	pick := pickScenarioTool(tools, expectIsError)
 
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -420,35 +400,62 @@ func (r *Runner) scenarioToolsCall(ctx context.Context, expectIsError bool) Scen
 	if res == nil {
 		return failResult(fmt.Sprintf("CallTool(%q) returned nil result", pick.Name), "")
 	}
+	return checkScenarioToolResult(pick.Name, res, expectIsError)
+}
+
+// pickScenarioTool chooses the tool a tools.call scenario invokes. When
+// expectIsError is true it prefers tools whose name suggests
+// failure-by-design; otherwise it prefers a non-destructive tool (or an
+// unannotated one, since mcp-tui treats nil destructiveHint as
+// not-destructive — see Tool.IsDestructive). The first tool is the
+// fallback when nothing matches.
+func pickScenarioTool(tools []mcp.Tool, expectIsError bool) *mcp.Tool {
+	for i, t := range tools {
+		if expectIsError {
+			// Heuristic: tools whose name suggests failure-by-design.
+			lc := strings.ToLower(t.Name)
+			if strings.Contains(lc, "error") || strings.Contains(lc, "fail") || strings.Contains(lc, "invalid") {
+				return &tools[i]
+			}
+		} else if !t.IsDestructive() {
+			return &tools[i]
+		}
+	}
+	return &tools[0]
+}
+
+// checkScenarioToolResult evaluates the tools.call result against the
+// scenario variant: expectIsError=true asserts the v1.6.0 contract
+// (IsError=true with non-empty Content), expectIsError=false accepts any
+// answered call.
+func checkScenarioToolResult(toolName string, res *mcp.CallToolResult, expectIsError bool) ScenarioResult {
 	if expectIsError {
 		if !res.IsError {
 			return ScenarioResult{
 				Pass:    true,
 				Skipped: true,
-				Error:   fmt.Sprintf("skipped: tool %q did not return IsError=true (no failing tool found)", pick.Name),
+				Error:   fmt.Sprintf("skipped: tool %q did not return IsError=true (no failing tool found)", toolName),
 			}
 		}
 		if len(res.Content) == 0 {
 			return failResult(
-				fmt.Sprintf("tool %q returned IsError=true with empty Content", pick.Name),
+				fmt.Sprintf("tool %q returned IsError=true with empty Content", toolName),
 				"SDK v1.6.0 contract requires Content payload on isError responses",
 			)
 		}
 		return ScenarioResult{Pass: true,
-			Detail: fmt.Sprintf("tool %q returned IsError=true with %d content blocks", pick.Name, len(res.Content))}
+			Detail: fmt.Sprintf("tool %q returned IsError=true with %d content blocks", toolName, len(res.Content))}
 	}
 	if res.IsError {
 		return ScenarioResult{
 			Pass: true,
 			Detail: fmt.Sprintf("tool %q returned IsError=true "+
-				"(acceptable for happy-path scenario — server reported a tool-level error rather than crashing)", pick.Name),
+				"(acceptable for happy-path scenario — server reported a tool-level error rather than crashing)", toolName),
 		}
 	}
 	return ScenarioResult{Pass: true,
-		Detail: fmt.Sprintf("tool %q returned %d content blocks", pick.Name, len(res.Content))}
+		Detail: fmt.Sprintf("tool %q returned %d content blocks", toolName, len(res.Content))}
 }
-
-// scenarioResourcesList drives resources/list. Empty list is allowed.
 func (r *Runner) scenarioResourcesList(ctx context.Context) ScenarioResult {
 	svc, err := r.ensureConnected(ctx)
 	if err != nil {

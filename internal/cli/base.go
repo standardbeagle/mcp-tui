@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -237,12 +238,22 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		return nil, c.connectionConfigError()
 	}
 
+	if err := applyConnectionFlags(cmd, connConfig); err != nil {
+		return nil, err
+	}
+	return connConfig, nil
+}
+
+// applyConnectionFlags mirrors every remaining connection-affecting flag
+// onto connConfig: --oauth-*, --protocol-version, --server-log-level,
+// --traceparent, --mcp-method-headers, --header and --show-headers.
+func applyConnectionFlags(cmd *cobra.Command, connConfig *config.ConnectionConfig) error {
 	// Attach OAuth config when the user supplied any OAuth flag. We only
 	// build the *oauth.Config here — handler construction and cache init
 	// happen inside the mcp service at Connect time so the same code path
 	// covers both CLI and TUI invocations.
 	if oauthCfg, oauthErr := BuildOAuthConfig(cmd, connConfig); oauthErr != nil {
-		return nil, oauthErr
+		return oauthErr
 	} else if oauthCfg != nil {
 		connConfig.OAuth = oauthCfg
 	}
@@ -263,7 +274,7 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	// Mirror --traceparent (SEP-414); the service validates it at Connect.
 	traceparent, err := cmd.Flags().GetString("traceparent")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	connConfig.Traceparent = traceparent
 
@@ -275,24 +286,8 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		connConfig.MCPMethodHeaders = true
 	}
 
-	// Mirror repeatable --header KEY=VALUE flags into the connection config.
-	// The flag is parsed in one place (transports.ParseHeaderFlags) so the
-	// CLI and TUI launchers reject the same set of malformed inputs. Static
-	// JSON-saved Headers survive when the flag is absent — we merge the two
-	// sources with flag values winning, which matches how users expect ad-hoc
-	// CLI overrides to behave.
-	if headerFlags := flagStringArray(cmd, "header"); len(headerFlags) > 0 {
-		extras, err := transports.ParseHeaderFlags(headerFlags)
-		if err != nil {
-			return nil, err
-		}
-		if connConfig.Headers == nil {
-			connConfig.Headers = extras
-		} else {
-			for k, v := range extras {
-				connConfig.Headers[k] = v
-			}
-		}
+	if err := mergeHeaderFlags(cmd, connConfig); err != nil {
+		return err
 	}
 
 	// Plumb --show-headers into the global redaction-override list used by
@@ -303,7 +298,128 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		mcp.SetShowHeaderOverrides(mcp.ParseShowHeadersCSV(showHeaders))
 	}
 
-	return connConfig, nil
+	return nil
+}
+
+// mergeHeaderFlags folds repeatable --header KEY=VALUE flags into
+// connConfig.Headers. The flag is parsed in one place
+// (transports.ParseHeaderFlags) so the CLI and TUI launchers reject the
+// same set of malformed inputs. Static JSON-saved Headers survive when the
+// flag is absent — we merge the two sources with flag values winning,
+// which matches how users expect ad-hoc CLI overrides to behave.
+func mergeHeaderFlags(cmd *cobra.Command, connConfig *config.ConnectionConfig) error {
+	headerFlags := flagStringArray(cmd, "header")
+	if len(headerFlags) == 0 {
+		return nil
+	}
+	extras, err := transports.ParseHeaderFlags(headerFlags)
+	if err != nil {
+		return err
+	}
+	if connConfig.Headers == nil {
+		connConfig.Headers = extras
+	} else {
+		for k, v := range extras {
+			connConfig.Headers[k] = v
+		}
+	}
+	return nil
+}
+
+// resolveCLITarget resolves the CLI connection flags (--url/--cmd/--args)
+// plus positional args into a URL or stdio command triple. Shared by
+// verify.buildTarget and conform.buildConformTarget; each caller decides
+// what "neither set" means for its command.
+func resolveCLITarget(cmd *cobra.Command, args []string) (url, command string, cmdArgs []string, err error) {
+	cmdFlag := flagString(cmd, "cmd")
+	urlFlag := flagString(cmd, "url")
+	argsFlag, err := ServerArgs(cmd)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	url, command, cmdArgs = urlFlag, cmdFlag, argsFlag
+	if len(args) == 0 || url != "" {
+		return url, command, cmdArgs, nil
+	}
+
+	// The positional may be either a URL or a "command-line" connection
+	// string per ParseArgs. Use the unified parser so we honor the same
+	// shapes the other CLI commands accept.
+	parsed := config.ParseArgs(args, SubcommandNames(cmd.Root()), cmdFlag, urlFlag, argsFlag)
+	if parsed.Connection != nil {
+		switch parsed.Connection.Type {
+		case config.TransportHTTP, config.TransportSSE, config.TransportStreamableHTTP:
+			url = parsed.Connection.URL
+		case config.TransportStdio:
+			if command == "" {
+				command = parsed.Connection.Command
+				cmdArgs = parsed.Connection.Args
+			}
+		}
+	}
+	// Even after parsing, a bare URL-shaped argument should populate URL —
+	// ParseArgs may not flag custom URLs without a recognized path. Fall
+	// back to a substring check.
+	if url == "" && (strings.HasPrefix(args[0], "http://") || strings.HasPrefix(args[0], "https://")) {
+		url = args[0]
+	}
+	return url, command, cmdArgs, nil
+}
+
+// runCompleteCommand implements `prompt complete` and `resource complete`:
+// it parses the <var>=<prefix> argument, drives completion/complete for
+// ref, and prints the JSON suggestion list on stdout. refKey is the output
+// document key naming the ref target ("prompt" or "uriTemplate") and
+// progressFormat the stderr progress line, formatted with (target,
+// varName, prefix).
+func (c *BaseCommand) runCompleteCommand(
+	cmd *cobra.Command, target, varPrefixArg string,
+	ref mcp.CompleteReference, refKey, progressFormat string,
+) error {
+	varName, prefix, err := parseVarPrefixArg(varPrefixArg)
+	if err != nil {
+		return err
+	}
+
+	if connErr := c.ValidateConnection(); connErr != nil {
+		return c.HandleError(connErr, "validate connection")
+	}
+
+	ctx, cancel := c.WithContext()
+	defer cancel()
+
+	porcelainMode := flagBool(cmd, "porcelain")
+	if c.GetOutputFormat() == OutputFormatText && !porcelainMode {
+		fmt.Fprintf(os.Stderr, progressFormat, target, varName, prefix)
+	}
+
+	result, err := c.GetService().Complete(ctx, &mcp.CompleteRequest{
+		Ref:           ref,
+		ArgumentName:  varName,
+		ArgumentValue: prefix,
+	})
+	if err != nil {
+		if c.GetOutputFormat() == OutputFormatText && !porcelainMode {
+			fmt.Fprintf(os.Stderr, "❌ Completion request failed\n")
+		}
+		return c.HandleError(err, "completion/complete")
+	}
+
+	out := map[string]interface{}{
+		refKey:       target,
+		argumentWord: varName,
+		"prefix":     prefix,
+		"values":     result.Values,
+		"hasMore":    result.HasMore,
+		"total":      result.Total,
+	}
+	jsonBytes, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal completion result to JSON: %w", err)
+	}
+	fmt.Println(string(jsonBytes))
+	return nil
 }
 
 func cloneConnectionConfig(source *config.ConnectionConfig) *config.ConnectionConfig {
@@ -708,4 +824,70 @@ func (c *BaseCommand) ValidateConnection() error {
 // GetService returns the MCP service
 func (c *BaseCommand) GetService() mcp.Service {
 	return c.service
+}
+
+// listSpec describes one list subcommand's fetch and output wording.
+// Shared by `prompt list`, `resource list` and `resource templates` so the
+// fetch-progress-JSON prologue exists once.
+type listSpec[T any] struct {
+	// docKey is the JSON document key for the items ("prompts", ...).
+	docKey string
+	// fetch performs the list RPC.
+	fetch func(ctx context.Context) ([]T, error)
+	// progressFetch / progressFail / progressOK are the stderr progress
+	// lines for the text, non-porcelain path.
+	progressFetch string
+	progressFail  string
+	progressOK    string
+	// errOp is the HandleError operation ("list prompts").
+	errOp string
+	// errNoun is the marshal error noun ("prompts").
+	errNoun string
+}
+
+// runListFetch runs a list command's shared prologue: validate the
+// connection, announce progress, fetch the items, and print the
+// {"<docKey>": items, "count": n} JSON document when --format json is in
+// effect. It returns (items, false, nil) for the text path; the caller
+// renders the items (or the empty-list note) itself. jsonDone=true means
+// the command is finished.
+func runListFetch[T any](c *BaseCommand, cmd *cobra.Command, spec listSpec[T]) (items []T, jsonDone bool, err error) {
+	if verr := c.ValidateConnection(); verr != nil {
+		return nil, false, c.HandleError(verr, "validate connection")
+	}
+
+	ctx, cancel := c.WithContext()
+	defer cancel()
+
+	porcelainMode := flagBool(cmd, "porcelain")
+	if c.GetOutputFormat() == OutputFormatText && !porcelainMode {
+		fmt.Fprint(os.Stderr, spec.progressFetch)
+	}
+
+	items, err = spec.fetch(ctx)
+	if err != nil {
+		if c.GetOutputFormat() == OutputFormatText && !porcelainMode {
+			fmt.Fprint(os.Stderr, spec.progressFail)
+		}
+		return nil, false, c.HandleError(err, spec.errOp)
+	}
+
+	if c.GetOutputFormat() == OutputFormatText && !porcelainMode {
+		fmt.Fprint(os.Stderr, spec.progressOK)
+	}
+
+	if c.GetOutputFormat() != OutputFormatJSON {
+		return items, false, nil
+	}
+
+	outputData := map[string]interface{}{
+		spec.docKey: items,
+		docCount:    len(items),
+	}
+	jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal %s to JSON: %w", spec.errNoun, err)
+	}
+	fmt.Println(string(jsonBytes))
+	return nil, true, nil
 }
