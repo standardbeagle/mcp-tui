@@ -150,14 +150,14 @@ func (s *RootsScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (s *RootsScreen) handleListKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
-	case "esc", "q":
+	case keyEsc, "q":
 		return s, func() tea.Msg { return BackMsg{} }
-	case "up", "k":
+	case keyUp, "k":
 		if s.cursor > 0 {
 			s.cursor--
 		}
 		return s, nil
-	case "down", "j":
+	case keyDown, "j":
 		if s.cursor < len(s.rootsList)-1 {
 			s.cursor++
 		}
@@ -165,7 +165,7 @@ func (s *RootsScreen) handleListKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a", "n":
 		s.beginEdit(-1)
 		return s, textinput.Blink
-	case "e", "enter":
+	case "e", keyEnter:
 		if s.cursor >= 0 && s.cursor < len(s.rootsList) {
 			s.beginEdit(s.cursor)
 			return s, textinput.Blink
@@ -213,19 +213,19 @@ func (s *RootsScreen) beginEdit(idx int) {
 
 func (s *RootsScreen) handleEditKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
-	case "esc":
+	case keyEsc:
 		s.mode = rootsEditorModeList
 		s.helpText = ""
 		s.nameInput.Blur()
 		s.pathInput.Blur()
 		return s, nil
-	case "tab":
+	case keyTab:
 		s.toggleField()
 		return s, nil
-	case "shift+tab":
+	case keyShiftTab:
 		s.toggleField()
 		return s, nil
-	case "ctrl+s":
+	case keyCtrlS:
 		return s.saveEdit()
 	}
 

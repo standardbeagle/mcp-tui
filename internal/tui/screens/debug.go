@@ -241,10 +241,10 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// If showing detail view, handle those keys first
 	if ds.showDetail {
 		switch msg.String() {
-		case "b", "alt+left", "enter":
+		case "b", keyAltLeft, keyEnter:
 			ds.showDetail = false
 			return ds, nil
-		case "ctrl+c", "esc":
+		case keyCtrlC, keyEsc:
 			// Even in detail view, escape/ctrl+c should quit
 			return ds, tea.Quit
 		case "c", "y":
@@ -264,27 +264,27 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "ctrl+c", "esc":
+	case keyCtrlC, keyEsc:
 		// Quit the app
 		return ds, tea.Quit
 
-	case "b", "alt+left", "ctrl+d", "ctrl+l", "f12":
+	case "b", keyAltLeft, keyCtrlD, keyCtrlL, keyF12:
 		// Go back to main screen (toggle off the overlay)
 		return ds, func() tea.Msg { return BackMsg{} }
 
-	case "tab", "right":
+	case keyTab, keyRight:
 		ds.activeTab = (ds.activeTab + 1) % numDebugTabs
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
 
-	case "shift+tab", "left":
+	case keyShiftTab, keyLeft:
 		ds.activeTab = (ds.activeTab - 1 + numDebugTabs) % numDebugTabs
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
 
-	case "up", "k":
+	case keyUp, "k":
 		if ds.activeTab != tabStatistics && ds.activeTab != tabCapabilities { // Not in stats or capabilities tab
 			currentList := ds.getCurrentList()
 			if len(currentList) > 0 {
@@ -296,7 +296,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ds, nil
 
-	case "down", "j":
+	case keyDown, "j":
 		if ds.activeTab != tabStatistics && ds.activeTab != tabCapabilities { // Not in stats or capabilities tab
 			currentList := ds.getCurrentList()
 			if len(currentList) > 0 {
@@ -379,12 +379,12 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ds, nil
 
-	case "home", "g":
+	case keyHome, "g":
 		ds.selectedIndex = 0
 		ds.scrollOffset = 0
 		return ds, nil
 
-	case "end", "G":
+	case keyEnd, "G":
 		currentList := ds.getCurrentList()
 		if len(currentList) > 0 {
 			ds.selectedIndex = len(currentList) - 1
@@ -443,7 +443,7 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ds, nil
 
-	case "enter":
+	case keyEnter:
 		// Show detail view for MCP logs
 		if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
 			ds.showDetail = true

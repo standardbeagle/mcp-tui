@@ -61,7 +61,7 @@ func NewToolCommand() *ToolCommand {
 // CreateCommand creates the cobra command for tools
 func (tc *ToolCommand) CreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "tool",
+		Use:   toolWord,
 		Short: "Interact with MCP server tools",
 		Long:  "List, describe, and call tools provided by the MCP server",
 	}
@@ -81,7 +81,7 @@ func (tc *ToolCommand) CreateCommand() *cobra.Command {
 // createListCommand creates the tool list subcommand
 func (tc *ToolCommand) createListCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:      "list",
+		Use:      subcommandList,
 		Short:    "List available tools",
 		Long:     "List all tools available from the MCP server",
 		PreRunE:  tc.PreRunE,
@@ -205,8 +205,8 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	// Handle JSON output format
 	if tc.GetOutputFormat() == OutputFormatJSON {
 		outputData := map[string]interface{}{
-			"tools": tools,
-			"count": len(tools),
+			"tools":  tools,
+			docCount: len(tools),
 		}
 		if len(dropped) > 0 {
 			outputData["droppedTools"] = dropped
@@ -302,7 +302,7 @@ func writeDroppedTools(w io.Writer, dropped []mcp.DroppedTool) {
 	}
 	noun := "tools"
 	if len(dropped) == 1 {
-		noun = "tool"
+		noun = toolWord
 	}
 	fmt.Fprintf(w, "⚠️  %d %s dropped by the SDK from tools/list:\n", len(dropped), noun)
 	for _, d := range dropped {
@@ -585,7 +585,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	out := resultOutput{
 		format: tc.GetOutputFormat(), porcelain: porcelainMode,
 		strictOutput: strictOutput, strictErrors: strictErrors,
-		document: map[string]interface{}{"tool": toolName, "arguments": toolArgs},
+		document: map[string]interface{}{toolWord: toolName, "arguments": toolArgs},
 	}
 	if taskMode.asTask {
 		return tc.callAsTask(ctx, mcp.CallToolRequest{Name: toolName, Arguments: toolArgs}, taskMode, out)

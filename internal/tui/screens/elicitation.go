@@ -118,7 +118,7 @@ func (s *ElicitationScreen) initFieldStates() {
 			}
 			s.textInputs[i] = ti
 		case elicitation.FieldBool:
-			s.boolValues[i] = f.Default == "true"
+			s.boolValues[i] = f.Default == boolTrueLiteral
 		case elicitation.FieldEnumSingle:
 			// Seed the cursor at the default's index, or 0 when no default.
 			s.enumCursor[i] = indexOf(f.EnumValues, f.Default)
@@ -199,18 +199,18 @@ func (s *ElicitationScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handled first; remaining keys go to the focused field's controller.
 func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
-	case "esc":
+	case keyEsc:
 		// Esc cancels per the MCP spec (user dismissed without choice).
 		return s.cancel()
-	case "ctrl+c":
+	case keyCtrlC:
 		return s.cancel()
-	case "ctrl+s":
+	case keyCtrlS:
 		// Ctrl+S submits the form (Action="accept").
 		return s.submit()
-	case "tab", "down":
+	case keyTab, keyDown:
 		s.advanceFocus(+1)
 		return s, nil
-	case "shift+tab", "up":
+	case keyShiftTab, keyUp:
 		s.advanceFocus(-1)
 		return s, nil
 	case "alt+d":
@@ -218,7 +218,7 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return s.decline()
 	}
 	if s.isURLMode() {
-		if m.String() == "enter" || m.String() == "ctrl+s" {
+		if m.String() == keyEnter || m.String() == keyCtrlS {
 			return s.submit()
 		}
 		return s, nil
@@ -226,7 +226,7 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if s.focused < 0 || s.focused >= len(s.form.Fields) {
 		// Empty form: Enter or Ctrl+S accepts an empty content map.
-		if m.String() == "enter" {
+		if m.String() == keyEnter {
 			return s.submit()
 		}
 		return s, nil
@@ -238,7 +238,7 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Enter on the last field submits; Enter on an earlier field
 		// advances focus. This matches the convention used elsewhere in
 		// mcp-tui forms (connection screen).
-		if m.String() == "enter" {
+		if m.String() == keyEnter {
 			if s.focused == len(s.form.Fields)-1 {
 				return s.submit()
 			}
@@ -249,23 +249,23 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		s.textInputs[s.focused], cmd = s.textInputs[s.focused].Update(m)
 		return s, cmd
 	case elicitation.FieldBool:
-		if m.String() == "enter" || m.String() == " " {
+		if m.String() == keyEnter || m.String() == " " {
 			s.boolValues[s.focused] = !s.boolValues[s.focused]
 			return s, nil
 		}
 	case elicitation.FieldEnumSingle:
 		switch m.String() {
-		case "left", "h":
+		case keyLeft, "h":
 			if s.enumCursor[s.focused] > 0 {
 				s.enumCursor[s.focused]--
 			}
 			return s, nil
-		case "right", "l":
+		case keyRight, "l":
 			if s.enumCursor[s.focused] < len(f.EnumValues)-1 {
 				s.enumCursor[s.focused]++
 			}
 			return s, nil
-		case "enter":
+		case keyEnter:
 			if s.focused == len(s.form.Fields)-1 {
 				return s.submit()
 			}
@@ -274,12 +274,12 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case elicitation.FieldEnumMulti:
 		switch m.String() {
-		case "left", "h":
+		case keyLeft, "h":
 			if s.enumCursor[s.focused] > 0 {
 				s.enumCursor[s.focused]--
 			}
 			return s, nil
-		case "right", "l":
+		case keyRight, "l":
 			if s.enumCursor[s.focused] < len(f.EnumValues)-1 {
 				s.enumCursor[s.focused]++
 			}
@@ -291,7 +291,7 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				s.enumMultiMask[s.focused][cur] = !s.enumMultiMask[s.focused][cur]
 			}
 			return s, nil
-		case "enter":
+		case keyEnter:
 			// Enter on multi-select advances focus / submits rather than
 			// toggling — toggling is space, which is the same convention
 			// as bubbles' list multi-select.
@@ -662,7 +662,7 @@ func indexOf(haystack []string, needle string) int {
 // boolDisplay returns a human-readable rendering of a bool value.
 func boolDisplay(v bool) string {
 	if v {
-		return "true"
+		return boolTrueLiteral
 	}
 	return "false"
 }

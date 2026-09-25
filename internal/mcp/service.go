@@ -29,6 +29,15 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
+// reportKeyError is the key carrying the error message in the diagnostic
+// report maps (GetErrorStatistics, GetErrorReport, GetTracingStatistics,
+// GetRecentEvents, GetConfiguration).
+const reportKeyError = "error"
+
+// reportNoSessionManager is the reportKeyError value in diagnostic report
+// maps, and the error text, when the service has no session manager.
+const reportNoSessionManager = "no session manager available"
+
 // service implements the Service interface using the official MCP Go SDK
 type service struct {
 	info      *ServerInfo
@@ -1725,7 +1734,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 func convertContent(content officialMCP.Content) Content {
 	switch value := content.(type) {
 	case *officialMCP.TextContent:
-		return Content{Type: "text", Text: value.Text}
+		return Content{Type: ContentTypeText, Text: value.Text}
 	case *officialMCP.ImageContent:
 		return Content{Type: "image", Data: string(value.Data), MimeType: value.MIMEType}
 	case *officialMCP.AudioContent:
@@ -1745,9 +1754,9 @@ func convertContent(content officialMCP.Content) Content {
 	default:
 		contentJSON, err := json.Marshal(content)
 		if err != nil {
-			return Content{Type: "text", Text: fmt.Sprintf("%v", content)}
+			return Content{Type: ContentTypeText, Text: fmt.Sprintf("%v", content)}
 		}
-		return Content{Type: "text", Text: string(contentJSON)}
+		return Content{Type: ContentTypeText, Text: string(contentJSON)}
 	}
 }
 
@@ -1834,14 +1843,14 @@ func (s *service) GetErrorStatistics() map[string]interface{} {
 
 	if s.sessionManager == nil {
 		return map[string]interface{}{
-			"error": "no session manager available",
+			reportKeyError: reportNoSessionManager,
 		}
 	}
 
 	stats := s.sessionManager.GetErrorStatistics()
 	if stats == nil {
 		return map[string]interface{}{
-			"error": "no error statistics available",
+			reportKeyError: "no error statistics available",
 		}
 	}
 
@@ -1890,7 +1899,7 @@ func (s *service) GetErrorReport() map[string]interface{} {
 
 	if s.sessionManager == nil {
 		return map[string]interface{}{
-			"error": "no session manager available",
+			reportKeyError: reportNoSessionManager,
 		}
 	}
 
@@ -1914,7 +1923,7 @@ func (s *service) GetTracingStatistics() map[string]interface{} {
 
 	if s.sessionManager == nil {
 		return map[string]interface{}{
-			"error": "no session manager available",
+			reportKeyError: reportNoSessionManager,
 		}
 	}
 
@@ -1928,14 +1937,14 @@ func (s *service) GetRecentEvents(count int) interface{} {
 
 	if s.sessionManager == nil {
 		return map[string]interface{}{
-			"error": "no session manager available",
+			reportKeyError: reportNoSessionManager,
 		}
 	}
 
 	events := s.sessionManager.GetRecentEvents(count)
 	if events == nil {
 		return map[string]interface{}{
-			"error": "no events available",
+			reportKeyError: "no events available",
 		}
 	}
 
@@ -1948,7 +1957,7 @@ func (s *service) ExportEvents() ([]byte, error) {
 	defer s.mu.Unlock()
 
 	if s.sessionManager == nil {
-		return nil, fmt.Errorf("no session manager available")
+		return nil, fmt.Errorf("%s", reportNoSessionManager)
 	}
 
 	return s.sessionManager.ExportEvents()
@@ -1963,7 +1972,7 @@ func (s *service) ExportReplayScript() (string, error) {
 	defer s.mu.Unlock()
 
 	if s.sessionManager == nil {
-		return "", fmt.Errorf("no session manager available")
+		return "", fmt.Errorf("%s", reportNoSessionManager)
 	}
 	tracer := s.sessionManager.GetEventTracer()
 	if tracer == nil {
@@ -1998,7 +2007,7 @@ func (s *service) GetConfiguration() map[string]interface{} {
 
 	if s.config == nil {
 		return map[string]interface{}{
-			"error": "no configuration available",
+			reportKeyError: "no configuration available",
 		}
 	}
 
@@ -2006,14 +2015,14 @@ func (s *service) GetConfiguration() map[string]interface{} {
 	configJSON, err := json.Marshal(s.config)
 	if err != nil {
 		return map[string]interface{}{
-			"error": fmt.Sprintf("failed to serialize configuration: %v", err),
+			reportKeyError: fmt.Sprintf("failed to serialize configuration: %v", err),
 		}
 	}
 
 	var configMap map[string]interface{}
 	if err := json.Unmarshal(configJSON, &configMap); err != nil {
 		return map[string]interface{}{
-			"error": fmt.Sprintf("failed to deserialize configuration: %v", err),
+			reportKeyError: fmt.Sprintf("failed to deserialize configuration: %v", err),
 		}
 	}
 

@@ -17,6 +17,13 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// Message keywords matched against error text by messageRules and the
+// user-friendly message generator.
+const (
+	timeoutKeyword    = "timeout"
+	validationKeyword = "validation"
+)
+
 // ErrorCategory represents different types of MCP errors
 type ErrorCategory int
 
@@ -360,8 +367,8 @@ func (r messageRule) matches(errStr string) bool {
 // unsupportedProtocolVersionError, HTTP status failures such as "failed to
 // connect: Unauthorized"), and errors other layers flattened to strings.
 var messageRules = []messageRule{
-	{[][]string{{"timeout"}, {"connection"}}, CategoryConnection, SeverityError},
-	{[][]string{{"timeout"}}, CategoryTimeout, SeverityWarning},
+	{[][]string{{timeoutKeyword}, {"connection"}}, CategoryConnection, SeverityError},
+	{[][]string{{timeoutKeyword}}, CategoryTimeout, SeverityWarning},
 	// Network faults whose type was lost to a layer formatting with %v.
 	// "connection closed" and "broken pipe" are absent on purpose: as bare
 	// strings they do not say whether a session ever existed; a typed lost
@@ -381,9 +388,9 @@ var messageRules = []messageRule{
 	{[][]string{{"auth", "unauthorized", "forbidden"}}, CategoryAuthentication, SeverityError},
 	{[][]string{{"not supported", "capability"}}, CategoryServerCapability, SeverityWarning},
 	// A malformed server response is not blamed on the client.
-	{[][]string{{"invalid", "validation"}, {"response", "server", "message"}}, //nolint:goconst // phrases, not keys
+	{[][]string{{"invalid", validationKeyword}, {"response", "server", "message"}},
 		CategoryProtocol, SeverityError},
-	{[][]string{{"invalid", "validation"}}, CategoryValidation, SeverityError},
+	{[][]string{{"invalid", validationKeyword}}, CategoryValidation, SeverityError},
 	// A shell's report of a missing command, relayed through stderr.
 	{[][]string{{"command not found"}}, CategoryClientConfig, SeverityError},
 	{[][]string{{"resource", "memory", "disk"}}, CategoryClientResource, SeverityError},
@@ -459,7 +466,7 @@ func (ec *ErrorClassifier) generateUserFriendlyMessage(err error, category Error
 		if strings.Contains(errStr, "refused") {
 			return "Connection refused - server may not be running or accessible"
 		}
-		if strings.Contains(errStr, "timeout") {
+		if strings.Contains(errStr, timeoutKeyword) {
 			return "Connection timed out - check server availability and network"
 		}
 		return "Connection failed - verify server address and network connectivity"

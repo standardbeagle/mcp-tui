@@ -24,13 +24,6 @@ type TaskService interface {
 	AwaitTask(ctx context.Context, id string, onUpdate func(tasks.Task)) (*mcp.CallToolResult, error)
 }
 
-// Keys the tasks screen binds.
-const (
-	keyEsc   = "esc"
-	keyDown  = "down"
-	keyEnter = "enter"
-)
-
 // taskRequestTimeout bounds one refresh or cancel; fetching a result waits
 // for the task instead.
 const taskRequestTimeout = 15 * time.Second
@@ -198,7 +191,7 @@ func (s *TasksScreen) listKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
 	case keyEsc, "q":
 		return s, func() tea.Msg { return BackMsg{} }
-	case "up", "k":
+	case keyUp, "k":
 		if s.cursor > 0 {
 			s.cursor--
 		}
@@ -382,7 +375,7 @@ func (s *TasksScreen) renderResult(b *strings.Builder) {
 	}
 	b.WriteString(s.labelStyle.Render(label) + "\n")
 	for _, c := range s.result.Content {
-		if c.Type == "text" {
+		if c.Type == mcp.ContentTypeText {
 			b.WriteString(c.Text + "\n")
 			continue
 		}

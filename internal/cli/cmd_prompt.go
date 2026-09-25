@@ -98,12 +98,12 @@ func (pc *PromptCommand) runCompleteCommand(cmd *cobra.Command, args []string) e
 	}
 
 	out := map[string]interface{}{
-		"prompt":   promptName,
-		"argument": varName,
-		"prefix":   prefix,
-		"values":   result.Values,
-		"hasMore":  result.HasMore,
-		"total":    result.Total,
+		"prompt":     promptName,
+		argumentWord: varName,
+		"prefix":     prefix,
+		"values":     result.Values,
+		"hasMore":    result.HasMore,
+		"total":      result.Total,
 	}
 	jsonBytes, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -116,7 +116,7 @@ func (pc *PromptCommand) runCompleteCommand(cmd *cobra.Command, args []string) e
 // createListCommand creates the prompt list command
 func (pc *PromptCommand) createListCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:      "list",
+		Use:      subcommandList,
 		Short:    "List available prompts",
 		Long:     "List all prompts available from the MCP server",
 		PreRunE:  pc.PreRunE,
@@ -197,7 +197,7 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 	if pc.GetOutputFormat() == OutputFormatJSON {
 		outputData := map[string]interface{}{
 			"prompts": prompts,
-			"count":   len(prompts),
+			docCount:  len(prompts),
 		}
 
 		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
@@ -258,7 +258,7 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 		if prompt.Arguments != nil {
 			argCount := len(prompt.Arguments)
 			if argCount > 0 {
-				argText := "argument"
+				argText := argumentWord
 				if argCount > 1 {
 					argText = "arguments"
 				}

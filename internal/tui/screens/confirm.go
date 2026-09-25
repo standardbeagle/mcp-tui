@@ -90,10 +90,10 @@ func (c *ConfirmScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (c *ConfirmScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
-	case "y", "Y", "enter":
+	case "y", "Y", keyEnter:
 		cmd := c.decision(true)
 		return c, cmd
-	case "n", "N", "esc", "q":
+	case "n", "N", keyEsc, "q":
 		cmd := c.decision(false)
 		return c, cmd
 	}

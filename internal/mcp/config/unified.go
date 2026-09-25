@@ -118,6 +118,13 @@ type SSETransportConfig struct {
 	IgnoreEvents []string `json:"ignore_events,omitempty" yaml:"ignore_events,omitempty"`
 }
 
+// Backoff strategy names for ReconnectBackoff and RetryBackoff.
+const (
+	BackoffNone        = "none"
+	BackoffLinear      = "linear"
+	BackoffExponential = "exponential"
+)
+
 // SessionConfig holds session management settings
 type SessionConfig struct {
 	// Health monitoring
@@ -241,7 +248,7 @@ func Default() *UnifiedConfig {
 			HealthCheckTimeout:   5 * time.Second,
 			MaxReconnectAttempts: 3,
 			ReconnectDelay:       2 * time.Second,
-			ReconnectBackoff:     "exponential",
+			ReconnectBackoff:     BackoffExponential,
 			MaxReconnectDelay:    60 * time.Second,
 			PersistenceInterval:  60 * time.Second,
 		},
@@ -252,7 +259,7 @@ func Default() *UnifiedConfig {
 			EnableRetry:          true,
 			MaxRetryAttempts:     3,
 			RetryDelay:           1 * time.Second,
-			RetryBackoff:         "exponential",
+			RetryBackoff:         BackoffExponential,
 		},
 		Debug: DebugConfig{
 			Enabled:         false,
@@ -380,7 +387,7 @@ func (c *UnifiedConfig) validateSession() error {
 
 	// Validate backoff strategy
 	switch session.ReconnectBackoff {
-	case "none", "linear", "exponential":
+	case BackoffNone, BackoffLinear, BackoffExponential:
 		// Valid
 	default:
 		return fmt.Errorf("invalid reconnect backoff strategy: %s", session.ReconnectBackoff)

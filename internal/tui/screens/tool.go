@@ -964,7 +964,7 @@ func (ts *ToolScreen) startTaskCmd(args map[string]interface{}) tea.Cmd {
 func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Don't process keys while executing
 	if ts.executing {
-		if msg.String() == "ctrl+c" {
+		if msg.String() == keyCtrlC {
 			// Allow canceling during execution
 			return ts, func() tea.Msg { return BackMsg{} }
 		}
@@ -974,19 +974,19 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle raw JSON mode input
 	if ts.rawJSONMode && ts.cursor == 0 {
 		switch msg.String() {
-		case "tab", "down":
+		case keyTab, keyDown:
 			// Move to execute button
 			ts.rawJSONInput.Blur()
 			ts.cursor = 1
 			return ts, nil
-		case "enter":
+		case keyEnter:
 			// If on input, move to button; if on button, execute
 			if ts.cursor == 0 {
 				ts.rawJSONInput.Blur()
 				ts.cursor = 1
 				return ts, nil
 			}
-		case "esc":
+		case keyEsc:
 			return ts, func() tea.Msg { return BackMsg{} }
 		case keyToggleArgValidation:
 			ts.toggleArgValidation()
@@ -1005,9 +1005,9 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Handle navigation keys before passing to textinput
 		switch msg.String() {
-		case "tab", "down", "enter":
+		case keyTab, keyDown, keyEnter:
 			// Don't pass these to textinput, handle navigation
-		case "shift+tab", "up":
+		case keyShiftTab, keyUp:
 			// Don't pass these to textinput, handle navigation
 		case "ctrl+t":
 			// Task mode toggle, handled below
@@ -1045,7 +1045,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return ts, nil
-		case "esc":
+		case keyEsc:
 			// Don't pass to textinput, handle escape
 		case "ctrl+v":
 			// Paste clipboard contents into the focused field. The help text
@@ -1084,7 +1084,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return ts, nil
 
-		case "pgup":
+		case keyPgUp:
 			// Page up in result
 			pageSize := max(1, availableHeight-2)
 			ts.resultScroll -= pageSize
@@ -1093,7 +1093,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return ts, nil
 
-		case "pgdown":
+		case keyPgDown:
 			// Page down in result
 			pageSize := max(1, availableHeight-2)
 			maxScroll := max(0, ts.resultLineCount-availableHeight)
@@ -1103,12 +1103,12 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return ts, nil
 
-		case "home":
+		case keyHome:
 			// Jump to top of result
 			ts.resultScroll = 0
 			return ts, nil
 
-		case "end":
+		case keyEnd:
 			// Jump to bottom of result
 			ts.resultScroll = max(0, ts.resultLineCount-availableHeight)
 			return ts, nil
@@ -1118,19 +1118,19 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Special handling for result viewing mode
 	if ts.viewingResult && ts.result != nil {
 		switch msg.String() {
-		case "up", "k":
+		case keyUp, "k":
 			if ts.resultCursor > 0 {
 				ts.resultCursor--
 			}
 			return ts, nil
 
-		case "down", "j":
+		case keyDown, "j":
 			if ts.resultCursor < len(ts.resultFields)-1 {
 				ts.resultCursor++
 			}
 			return ts, nil
 
-		case "enter", "c", "y":
+		case keyEnter, "c", "y":
 			// Copy selected field value
 			if ts.resultCursor < len(ts.resultFields) {
 				field := ts.resultFields[ts.resultCursor]
@@ -1148,7 +1148,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ts.SetStatus("", StatusInfo)
 			return ts, nil
 
-		case "ctrl+c":
+		case keyCtrlC:
 			// Copy entire result
 			if err := ts.copyToClipboard(ts.resultJSON); err == nil {
 				ts.SetStatus("Copied entire result to clipboard!", StatusSuccess)
@@ -1157,7 +1157,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return ts, nil
 
-		case "esc", "q":
+		case keyEsc, "q":
 			// Exit result viewing mode
 			ts.viewingResult = false
 			ts.SetStatus("", StatusInfo)
@@ -1193,7 +1193,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 
-	case "ctrl+c":
+	case keyCtrlC:
 		// Copy result to clipboard if available
 		switch {
 		case ts.result != nil && ts.resultJSON != "":
@@ -1224,15 +1224,15 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 
-	case "esc":
+	case keyEsc:
 		// Go back to previous screen
 		return ts, func() tea.Msg { return BackMsg{} }
 
-	case "b", "alt+left":
+	case "b", keyAltLeft:
 		// Go back to previous screen
 		return ts, func() tea.Msg { return BackMsg{} }
 
-	case "ctrl+l", "ctrl+d", "f12":
+	case keyCtrlL, keyCtrlD, keyF12:
 		// Show debug logs. Wire the snapshot + notifications providers when
 		// a service exists so the Capabilities and Notifications tabs render
 		// live data. Tests instantiate ToolScreen with a nil service, so the
@@ -1248,7 +1248,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "tab", "down":
+	case keyTab, keyDown:
 		// Calculate total items based on mode
 		var totalItems int
 		var inputCount int
@@ -1279,7 +1279,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 
-	case "shift+tab", "up":
+	case keyShiftTab, keyUp:
 		// Calculate total items based on mode
 		var totalItems int
 		var inputCount int
@@ -1309,7 +1309,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 
-	case "enter":
+	case keyEnter:
 		// Calculate button positions based on mode
 		var executePos, cliPos, backPos int
 		if ts.rawJSONMode {
@@ -1733,7 +1733,7 @@ func (ts *ToolScreen) validateField(index int) {
 		}
 	case "boolean":
 		if value != "" {
-			if value != "true" && value != "false" {
+			if value != boolTrueLiteral && value != "false" {
 				field.validationError = "Must be 'true' or 'false'"
 			}
 		}

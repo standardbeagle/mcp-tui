@@ -15,7 +15,14 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/tui/models"
 )
 
-// ConnectionScreen handles MCP server connection setup
+// Connection screen view modes: the viewMode field and its tab names.
+const (
+	viewModeSaved     = "saved"
+	viewModeManual    = "manual"
+	viewModeDiscovery = "discovery"
+)
+
+// ConnectionScreenConnectionScreen handles MCP server connection setup
 type ConnectionScreen struct {
 	*BaseScreen
 	config *config.Config
@@ -30,7 +37,7 @@ type ConnectionScreen struct {
 	discoveryIndex  int
 
 	// UI state
-	viewMode        string // "saved", "manual", or "discovery"
+	viewMode        string // viewModeSaved, viewModeManual, or viewModeDiscovery
 	transportType   config.TransportType
 	connectionsList []string
 	connectionIndex int
@@ -140,7 +147,7 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 		config:             cfg,
 		logger:             debug.Component("connection-screen"),
 		connectionsManager: models.NewConnectionsManager(),
-		viewMode:           "saved",
+		viewMode:           viewModeSaved,
 		transportType:      config.TransportStdio,
 		usesCombined:       true, // Default to combined command input
 		maxFocus:           4,    // will be updated based on mode
@@ -188,7 +195,7 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 
 		// Set transport type
 		switch prevConfig.Type {
-		case "stdio":
+		case config.TransportStdio:
 			cs.transportType = config.TransportStdio
 		case "sse":
 			cs.transportType = config.TransportSSE
@@ -247,7 +254,7 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 		cs.tabFocused = true
 		cs.focusIndex = 0
 	} else {
-		cs.viewMode = "manual"
+		cs.viewMode = viewModeManual
 		cs.focusIndex = 0
 	}
 	cs.updateMaxFocus()
@@ -265,7 +272,7 @@ func (cs *ConnectionScreen) buildConnectionsList() {
 
 // getCurrentConnection returns the currently selected saved connection
 func (cs *ConnectionScreen) getCurrentConnection() *models.ConnectionEntry {
-	if cs.viewMode != "saved" || len(cs.connectionsList) == 0 {
+	if cs.viewMode != viewModeSaved || len(cs.connectionsList) == 0 {
 		return nil
 	}
 	if cs.connectionIndex < 0 || cs.connectionIndex >= len(cs.connectionsList) {
@@ -286,12 +293,12 @@ func (cs *ConnectionScreen) buildAvailableTabs() {
 	cs.availableTabs = nil
 
 	if len(cs.savedConnections) > 0 {
-		cs.availableTabs = append(cs.availableTabs, "saved")
+		cs.availableTabs = append(cs.availableTabs, viewModeSaved)
 	}
 	if len(cs.discoveredFiles) > 0 {
-		cs.availableTabs = append(cs.availableTabs, "discovery")
+		cs.availableTabs = append(cs.availableTabs, viewModeDiscovery)
 	}
-	cs.availableTabs = append(cs.availableTabs, "manual")
+	cs.availableTabs = append(cs.availableTabs, viewModeManual)
 }
 
 // Update handles messages for the connection screen
@@ -320,7 +327,7 @@ func (cs *ConnectionScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// First, check for global keys that should work regardless of focus
 	switch msg.String() {
-	case "ctrl+c":
+	case keyCtrlC:
 		return cs, tea.Quit
 
 	case "q":
@@ -331,7 +338,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return cs, tea.Quit
 
-	case "ctrl+l", "ctrl+d", "f12":
+	case keyCtrlL, keyCtrlD, keyF12:
 		// Show debug logs
 		debugScreen := NewDebugScreen()
 		return cs, func() tea.Msg {
@@ -354,7 +361,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "left":
+	case keyLeft:
 		// Check if any text input is currently focused
 		if cs.isAnyInputFocused() {
 			// Let text input handle the key
@@ -371,7 +378,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Other left arrow behavior falls through to the mode-specific handler
 
-	case "right":
+	case keyRight:
 		// Check if any text input is currently focused
 		if cs.isAnyInputFocused() {
 			// Let text input handle the key
@@ -395,7 +402,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		// Toggle between combined and separate command inputs (only in manual STDIO mode)
-		if cs.viewMode == "manual" && cs.transportType == config.TransportStdio {
+		if cs.viewMode == viewModeManual && cs.transportType == config.TransportStdio {
 			cs.usesCombined = !cs.usesCombined
 			cs.blurAllInputs()
 			cs.focusIndex = 1 // Focus on first input field
@@ -404,7 +411,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return cs, nil
 
-	case "tab":
+	case keyTab:
 		// If tabs are focused, move to content focus
 		if cs.tabFocused && len(cs.availableTabs) > 0 {
 			cs.tabFocused = false
@@ -413,7 +420,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Otherwise the mode-specific handler takes it
 
-	case "shift+tab":
+	case keyShiftTab:
 		// Return to tab focus if we have multiple tabs
 		if !cs.tabFocused && len(cs.availableTabs) > 1 {
 			cs.tabFocused = true
@@ -424,12 +431,12 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Handle saved connections mode
-	if cs.viewMode == "saved" && len(cs.savedConnections) > 0 {
+	if cs.viewMode == viewModeSaved && len(cs.savedConnections) > 0 {
 		return cs.handleSavedConnectionsInput(msg)
 	}
 
 	// Handle file discovery mode
-	if cs.viewMode == "discovery" && len(cs.discoveredFiles) > 0 {
+	if cs.viewMode == viewModeDiscovery && len(cs.discoveredFiles) > 0 {
 		return cs.handleDiscoveryInput(msg)
 	}
 
@@ -440,32 +447,32 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleSavedConnectionsInput handles input for saved connections mode
 func (cs *ConnectionScreen) handleSavedConnectionsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc":
+	case keyEsc:
 		return cs, tea.Quit
 
-	case "tab", "down":
+	case keyTab, keyDown:
 		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
 		return cs, nil
 
-	case "shift+tab", "up":
+	case keyShiftTab, keyUp:
 		cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
 		return cs, nil
 
-	case "left":
+	case keyLeft:
 		if cs.focusIndex == 0 && len(cs.connectionsList) > 0 {
 			// Navigate saved connections
 			cs.connectionIndex = (cs.connectionIndex - 1 + len(cs.connectionsList)) % len(cs.connectionsList)
 		}
 		return cs, nil
 
-	case "right":
+	case keyRight:
 		if cs.focusIndex == 0 && len(cs.connectionsList) > 0 {
 			// Navigate saved connections
 			cs.connectionIndex = (cs.connectionIndex + 1) % len(cs.connectionsList)
 		}
 		return cs, nil
 
-	case "enter":
+	case keyEnter:
 		switch cs.focusIndex {
 		case 0:
 			// Select current saved connection and connect
@@ -483,32 +490,32 @@ func (cs *ConnectionScreen) handleSavedConnectionsInput(msg tea.KeyMsg) (tea.Mod
 // handleDiscoveryInput handles input for file discovery mode
 func (cs *ConnectionScreen) handleDiscoveryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc":
+	case keyEsc:
 		return cs, tea.Quit
 
-	case "tab", "down":
+	case keyTab, keyDown:
 		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
 		return cs, nil
 
-	case "shift+tab", "up":
+	case keyShiftTab, keyUp:
 		cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
 		return cs, nil
 
-	case "left":
+	case keyLeft:
 		if cs.focusIndex == 0 && len(cs.discoveredFiles) > 0 {
 			// Navigate discovered files
 			cs.discoveryIndex = (cs.discoveryIndex - 1 + len(cs.discoveredFiles)) % len(cs.discoveredFiles)
 		}
 		return cs, nil
 
-	case "right":
+	case keyRight:
 		if cs.focusIndex == 0 && len(cs.discoveredFiles) > 0 {
 			// Navigate discovered files
 			cs.discoveryIndex = (cs.discoveryIndex + 1) % len(cs.discoveredFiles)
 		}
 		return cs, nil
 
-	case "enter":
+	case keyEnter:
 		if cs.focusIndex == 0 {
 			// Load selected discovered file
 			return cs.handleDiscoveredFileLoad()
@@ -543,18 +550,18 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 	if isInTextInput {
 		// Check for navigation keys
 		switch msg.String() {
-		case "esc":
+		case keyEsc:
 			// Unfocus current input and go back to transport selection
 			cs.blurAllInputs()
 			cs.focusIndex = 0
 			return cs, nil
-		case "tab", "enter":
+		case keyTab, keyEnter:
 			// Move to next field
 			cs.blurAllInputs()
 			cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
 			cs.updateInputFocus()
 			return cs, nil
-		case "shift+tab":
+		case keyShiftTab:
 			// Move to previous field
 			cs.blurAllInputs()
 			cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
@@ -587,28 +594,28 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 
 	// Handle non-text-input navigation
 	switch msg.String() {
-	case "esc":
+	case keyEsc:
 		return cs, tea.Quit
 
-	case "tab", "down":
+	case keyTab, keyDown:
 		cs.blurAllInputs()
 		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
 		cs.updateInputFocus()
 		return cs, nil
 
-	case "shift+tab", "up":
+	case keyShiftTab, keyUp:
 		cs.blurAllInputs()
 		cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
 		cs.updateInputFocus()
 		return cs, nil
 
-	case "enter":
+	case keyEnter:
 		if cs.focusIndex == cs.maxFocus-1 { // Connect button
 			return cs.handleConnect()
 		}
 		return cs, nil
 
-	case "left":
+	case keyLeft:
 		if cs.focusIndex == 0 { // Transport type selection
 			cs.blurAllInputs()
 			switch cs.transportType {
@@ -622,7 +629,7 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 		}
 		return cs, nil
 
-	case "right":
+	case keyRight:
 		if cs.focusIndex == 0 { // Transport type selection
 			cs.blurAllInputs()
 			switch cs.transportType {
@@ -663,15 +670,15 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 // updateMaxFocus updates the max focus based on current mode and transport
 func (cs *ConnectionScreen) updateMaxFocus() {
 	switch cs.viewMode {
-	case "saved":
+	case viewModeSaved:
 		if len(cs.savedConnections) > 0 {
 			cs.maxFocus = 2 // saved connections, connect button
 		} else {
 			cs.maxFocus = 1 // just connect button
 		}
-	case "discovery":
+	case viewModeDiscovery:
 		cs.maxFocus = 1 // discovered files selection only
-	default: // "manual"
+	default: // viewModeManual
 		// Manual entry mode
 		if cs.transportType == config.TransportStdio {
 			if cs.usesCombined {
@@ -758,7 +765,7 @@ func (cs *ConnectionScreen) handleDiscoveredFileLoad() (tea.Model, tea.Cmd) {
 
 	// Switch to saved connections mode if we loaded any
 	if len(cs.savedConnections) > 0 {
-		cs.viewMode = "saved"
+		cs.viewMode = viewModeSaved
 		cs.focusIndex = 0
 		cs.connectionIndex = 0
 		cs.updateMaxFocus()
@@ -843,7 +850,7 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 	switch cs.transportType {
 	case config.TransportStdio:
 		cs.logger.Info("Connecting to MCP server",
-			debug.F("transport", "stdio"),
+			debug.F("transport", string(config.TransportStdio)),
 			debug.F("command", command),
 			debug.F("args", args))
 	case config.TransportHTTP, config.TransportSSE:
@@ -921,24 +928,24 @@ func (cs *ConnectionScreen) View() string {
 
 	// Render based on current mode
 	switch cs.viewMode {
-	case "saved":
+	case viewModeSaved:
 		if len(cs.savedConnections) > 0 {
 			builder.WriteString(cs.renderSavedConnections())
 		} else {
 			builder.WriteString("No saved connections available")
 		}
-	case "discovery":
+	case viewModeDiscovery:
 		if len(cs.discoveredFiles) > 0 {
 			builder.WriteString(cs.renderDiscoveredFiles())
 		} else {
 			builder.WriteString("No configuration files found")
 		}
-	default: // "manual"
+	default: // viewModeManual
 		builder.WriteString(cs.renderManualEntry())
 	}
 
 	// Connect button (only for saved connections and manual entry)
-	if cs.viewMode != "discovery" {
+	if cs.viewMode != viewModeDiscovery {
 		builder.WriteString("\n")
 		builder.WriteString(cs.renderConnectButton())
 	}
@@ -967,11 +974,11 @@ func (cs *ConnectionScreen) renderModeSelector() string {
 	for i, tabMode := range cs.availableTabs {
 		var tabText string
 		switch tabMode {
-		case "saved":
+		case viewModeSaved:
 			tabText = fmt.Sprintf("📋 Saved (%d)", len(cs.savedConnections))
-		case "discovery":
+		case viewModeDiscovery:
 			tabText = fmt.Sprintf("📁 Discovered (%d)", len(cs.discoveredFiles))
-		case "manual":
+		case viewModeManual:
 			tabText = "⌨️  Manual Entry"
 		}
 
@@ -1172,11 +1179,11 @@ func (cs *ConnectionScreen) renderHelpText() string {
 	var helpText string
 
 	switch cs.viewMode {
-	case "saved":
+	case viewModeSaved:
 		helpText = "←/→: Navigate connections • Enter: Connect • M: Switch mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
-	case "discovery":
+	case viewModeDiscovery:
 		helpText = "←/→: Navigate files • Enter: Load config • M: Switch mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
-	default: // "manual"
+	default: // viewModeManual
 		helpText = "←/→: Switch transport • 1/2/3: Select transport • Tab/Shift+Tab: Navigate • Enter: Connect"
 		if cs.transportType == config.TransportStdio {
 			helpText += " • C: Toggle command mode"

@@ -10,9 +10,9 @@ import (
 
 // listCacheKinds names each list method in a multi-list header.
 var listCacheKinds = map[string]string{
-	"tools/list":               "tools",
-	"prompts/list":             "prompts",
-	"resources/list":           "resources",
+	"tools/list":               tabTools,
+	"prompts/list":             tabPrompts,
+	"resources/list":           tabResources,
 	"resources/templates/list": "templates",
 }
 

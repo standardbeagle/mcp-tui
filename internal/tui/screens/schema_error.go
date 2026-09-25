@@ -101,19 +101,19 @@ func (ses *SchemaErrorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc", "q", "b":
+		case keyEsc, "q", "b":
 			return ses, func() tea.Msg { return BackMsg{} }
-		case "up", "k":
+		case keyUp, "k":
 			ses.viewport.ScrollUp(1)
-		case "down", "j":
+		case keyDown, "j":
 			ses.viewport.ScrollDown(1)
-		case "pgup":
+		case keyPgUp:
 			ses.viewport.HalfPageUp()
-		case "pgdown":
+		case keyPgDown:
 			ses.viewport.HalfPageDown()
-		case "home":
+		case keyHome:
 			ses.viewport.GotoTop()
-		case "end":
+		case keyEnd:
 			ses.viewport.GotoBottom()
 		}
 	}

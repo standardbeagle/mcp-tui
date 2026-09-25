@@ -16,6 +16,13 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// Elicitation Action values from the MCP spec.
+const (
+	ActionAccept  = "accept"
+	ActionDecline = "decline"
+	ActionCancel  = "cancel"
+)
+
 // Handler is invoked when an MCP server sends an elicitation/create request.
 // Implementations decide how to produce the reply: ask the user via the TUI,
 // return a fixed stubbed response in CLI mode, or anything else.

@@ -40,6 +40,10 @@ func SessionLabel(cs *officialMCP.ClientSession) string {
 // maxReconnectDelay caps the exponential backoff between reconnection attempts.
 const maxReconnectDelay = 30 * time.Second
 
+// transportTypeKey is the key carrying the session's transport type in
+// error-handling, tracing, and health maps.
+const transportTypeKey = "transport_type"
+
 // State represents the current state of a session
 type State int
 
@@ -242,7 +246,7 @@ func (m *Manager) Connect(
 
 		// Classify and handle the error
 		classified := m.errorHandler.HandleError(connectCtx, err, errors.OperationSessionConnect, map[string]interface{}{
-			"transport_type": transportType,
+			transportTypeKey: transportType,
 			"session_state":  "connecting",
 		})
 
@@ -274,9 +278,9 @@ func (m *Manager) Connect(
 	if transportDebugger != nil {
 		transportDebugger.TraceConnectionEnd(connectionStartEvent, true, "")
 		m.eventTracer.SetSessionID(m.info.SessionID)
-		m.eventTracer.TraceSessionState("connected", map[string]interface{}{
+		m.eventTracer.TraceSessionState(StateConnected.String(), map[string]interface{}{
 			"session_id":     m.info.SessionID,
-			"transport_type": transportType,
+			transportTypeKey: transportType,
 			"connected_at":   m.info.ConnectedAt,
 		})
 	}
@@ -426,7 +430,7 @@ func (m *Manager) GetConnectionHealth() map[string]interface{} {
 		"reconnect_count":        m.info.ReconnectCount,
 		"max_reconnect_attempts": m.maxReconnectAttempts,
 		"health_check_interval":  m.healthCheckInterval.String(),
-		"transport_type":         string(m.info.TransportType),
+		transportTypeKey:         string(m.info.TransportType),
 	}
 
 	if !m.info.ConnectedAt.IsZero() {
@@ -700,8 +704,8 @@ func (m *Manager) handleConnectionFailure(session *officialMCP.ClientSession, er
 
 	// Classify the error
 	classified := m.errorHandler.HandleError(context.Background(), err, "health_check", map[string]interface{}{
-		"transport_type": m.info.TransportType,
-		"session_state":  "connected",
+		transportTypeKey: m.info.TransportType,
+		"session_state":  StateConnected.String(),
 		"session_id":     m.info.SessionID,
 	})
 
@@ -885,7 +889,7 @@ func (m *Manager) attemptReconnection() {
 
 		if err != nil {
 			classified := m.errorHandler.HandleError(connectCtx, err, "session_reconnect", map[string]interface{}{
-				"transport_type": transportType,
+				transportTypeKey: transportType,
 				"attempt":        attempt,
 			})
 			m.info.LastError = classified

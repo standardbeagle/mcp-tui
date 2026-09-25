@@ -137,10 +137,14 @@ func (et *EventTracer) TraceConnectionEnd(startEvent *Event, success bool, errSt
 	return event
 }
 
+// dataKeyDirection is the event data key recording whether an MCP message
+// was sent ("outgoing") or received ("incoming").
+const dataKeyDirection = "direction"
+
 // TraceRequestSent records an outgoing MCP request
 func (et *EventTracer) TraceRequestSent(method string, requestID, params interface{}) *Event {
 	data := map[string]interface{}{
-		"direction": "outgoing",
+		dataKeyDirection: "outgoing",
 	}
 
 	if params != nil {
@@ -168,7 +172,7 @@ func (et *EventTracer) TraceRequestSent(method string, requestID, params interfa
 // TraceResponseReceived records an incoming MCP response
 func (et *EventTracer) TraceResponseReceived(requestID, result, errVal interface{}) *Event {
 	data := map[string]interface{}{
-		"direction": "incoming",
+		dataKeyDirection: "incoming",
 	}
 
 	if result != nil {
@@ -211,7 +215,7 @@ func (et *EventTracer) TraceResponseReceived(requestID, result, errVal interface
 // TraceNotificationReceived records an incoming MCP notification
 func (et *EventTracer) TraceNotificationReceived(method string, params interface{}) *Event {
 	data := map[string]interface{}{
-		"direction": "incoming",
+		dataKeyDirection: "incoming",
 	}
 
 	if params != nil {

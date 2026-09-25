@@ -37,9 +37,9 @@ type stubReply struct {
 
 // validActions are the Actions allowed by the MCP elicitation spec.
 var validActions = map[string]struct{}{
-	"accept":  {},
-	"decline": {},
-	"cancel":  {},
+	ActionAccept:  {},
+	ActionDecline: {},
+	ActionCancel:  {},
 }
 
 // parseStubJSON decodes a canned elicitation reply. The accepted shapes are
@@ -76,17 +76,17 @@ func parseStubJSON(data []byte) (action string, content map[string]any, err erro
 		action = spec.Action
 		content = spec.Content
 	} else {
-		action = "accept"
+		action = ActionAccept
 		content = raw
 	}
 
 	if action == "" {
-		action = "accept"
+		action = ActionAccept
 	}
 	if _, ok := validActions[action]; !ok {
 		return "", nil, fmt.Errorf("elicitation stub: invalid _action %q (must be accept, decline, or cancel)", action)
 	}
-	if action != "accept" {
+	if action != ActionAccept {
 		// The MCP spec says Content is only meaningful for "accept" replies;
 		// non-accept replies must not carry content. The SDK does not enforce
 		// this server-side but downstream tests rely on the wire shape, so we

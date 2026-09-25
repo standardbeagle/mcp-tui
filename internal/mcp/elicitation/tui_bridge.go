@@ -55,21 +55,21 @@ func (p *PendingRequest) ResolveAccept(content map[string]any) {
 	if content == nil {
 		content = map[string]any{}
 	}
-	p.Resolve(&officialMCP.ElicitResult{Action: "accept", Content: content})
+	p.Resolve(&officialMCP.ElicitResult{Action: ActionAccept, Content: content})
 }
 
 // ResolveDecline resolves the pending request with Action="decline". The
 // MCP spec says decline indicates the user explicitly rejected the action;
 // servers may treat this as a signal to abort the operation.
 func (p *PendingRequest) ResolveDecline() {
-	p.Resolve(&officialMCP.ElicitResult{Action: "decline"})
+	p.Resolve(&officialMCP.ElicitResult{Action: ActionDecline})
 }
 
 // ResolveCancel resolves the pending request with Action="cancel". Per the
 // MCP spec, cancel means the user dismissed without making an explicit
 // choice (e.g. closed the overlay).
 func (p *PendingRequest) ResolveCancel() {
-	p.Resolve(&officialMCP.ElicitResult{Action: "cancel"})
+	p.Resolve(&officialMCP.ElicitResult{Action: ActionCancel})
 }
 
 // Reject completes the pending request with the given error. The SDK

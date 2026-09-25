@@ -70,15 +70,33 @@ type Target struct {
 	HTTPClient *http.Client
 }
 
+// Probe names matching the --probe flag values.
+const (
+	crossOriginProbe      = "cross-origin"
+	dnsRebindProbe        = "dns-rebind"
+	contentTypeProbe      = "content-type"
+	originHeaderProbe     = "origin-header"
+	mcpMethodHeadersProbe = "mcp-method-headers"
+)
+
+// Shared failure text for HTTP probes whose target URL is absent,
+// malformed, or unreachable.
+const (
+	errMissingURL     = "missing URL"
+	fixMissingURL     = "supply <url> on the verify command"
+	fixMalformedURL   = "verify the URL is well-formed"
+	fixUnreachableURL = "confirm the server is reachable on <url>"
+)
+
 // AllProbes is the canonical list of probe names in display order. Drives
 // the --probe flag's allowed values, the --json output ordering, and the
 // conformance suite's iteration plan.
 var AllProbes = []string{
-	"cross-origin",
-	"dns-rebind",
-	"content-type",
-	"origin-header",
-	"mcp-method-headers",
+	crossOriginProbe,
+	dnsRebindProbe,
+	contentTypeProbe,
+	originHeaderProbe,
+	mcpMethodHeadersProbe,
 	"seterror-content",
 	toolNamesProbe,
 	listOrderProbe,
@@ -89,7 +107,7 @@ var AllProbes = []string{
 // target shape before invoking probes.
 func IsHTTPProbe(name string) bool {
 	switch name {
-	case "cross-origin", "dns-rebind", "content-type", "origin-header", "mcp-method-headers":
+	case crossOriginProbe, dnsRebindProbe, contentTypeProbe, originHeaderProbe, mcpMethodHeadersProbe:
 		return true
 	default:
 		return false
@@ -119,15 +137,15 @@ func TargetProblem(name string, target *Target) string {
 // rather than an error so callers don't have to handle two paths.
 func Run(ctx context.Context, name string, target *Target) ProbeResult {
 	switch name {
-	case "cross-origin":
+	case crossOriginProbe:
 		return ProbeCrossOrigin(ctx, target)
-	case "dns-rebind":
+	case dnsRebindProbe:
 		return ProbeDNSRebind(ctx, target)
-	case "content-type":
+	case contentTypeProbe:
 		return ProbeContentType(ctx, target)
-	case "origin-header":
+	case originHeaderProbe:
 		return ProbeOriginHeader(ctx, target)
-	case "mcp-method-headers":
+	case mcpMethodHeadersProbe:
 		return ProbeMCPMethodHeaders(ctx, target)
 	case "seterror-content":
 		return ProbeSetErrorContent(ctx, target)
@@ -236,14 +254,14 @@ func drainBody(resp *http.Response) {
 // CrossOriginProtection middleware shipped with go-sdk, compliant servers
 // reject such requests with 403 Forbidden.
 func ProbeCrossOrigin(ctx context.Context, t *Target) ProbeResult {
-	const name = "cross-origin"
+	name := crossOriginProbe
 	if t.URL == "" {
-		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
+		return ProbeResult{Name: name, Pass: false, Error: errMissingURL, Fix: fixMissingURL}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.URL, strings.NewReader(jsonRPCInitBody))
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "verify the URL is well-formed"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixMalformedURL}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -252,7 +270,7 @@ func ProbeCrossOrigin(ctx context.Context, t *Target) ProbeResult {
 
 	resp, err := httpClient(t).Do(req)
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "confirm the server is reachable on <url>"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixUnreachableURL}
 	}
 	defer drainBody(resp)
 
@@ -272,14 +290,14 @@ func ProbeCrossOrigin(ctx context.Context, t *Target) ProbeResult {
 // (PR #760) added DisableLocalhostProtection=false default; compliant
 // streamable-HTTP servers reject with 403/421.
 func ProbeDNSRebind(ctx context.Context, t *Target) ProbeResult {
-	const name = "dns-rebind"
+	name := dnsRebindProbe
 	if t.URL == "" {
-		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
+		return ProbeResult{Name: name, Pass: false, Error: errMissingURL, Fix: fixMissingURL}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.URL, strings.NewReader(jsonRPCInitBody))
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "verify the URL is well-formed"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixMalformedURL}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -288,7 +306,7 @@ func ProbeDNSRebind(ctx context.Context, t *Target) ProbeResult {
 
 	resp, err := httpClient(t).Do(req)
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "confirm the server is reachable on <url>"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixUnreachableURL}
 	}
 	defer drainBody(resp)
 
@@ -308,14 +326,14 @@ func ProbeDNSRebind(ctx context.Context, t *Target) ProbeResult {
 // Content-Type application/json; SDK servers respond with 415 Unsupported
 // Media Type or 400 Bad Request when the payload doesn't match.
 func ProbeContentType(ctx context.Context, t *Target) ProbeResult {
-	const name = "content-type"
+	name := contentTypeProbe
 	if t.URL == "" {
-		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
+		return ProbeResult{Name: name, Pass: false, Error: errMissingURL, Fix: fixMissingURL}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.URL, strings.NewReader(jsonRPCInitBody))
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "verify the URL is well-formed"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixMalformedURL}
 	}
 	// Wrong content-type — must be rejected.
 	req.Header.Set("Content-Type", "text/plain")
@@ -323,7 +341,7 @@ func ProbeContentType(ctx context.Context, t *Target) ProbeResult {
 
 	resp, err := httpClient(t).Do(req)
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "confirm the server is reachable on <url>"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixUnreachableURL}
 	}
 	defer drainBody(resp)
 
@@ -349,9 +367,9 @@ func ProbeContentType(ctx context.Context, t *Target) ProbeResult {
 //     care about is "GET without Origin is NOT rejected with 403").
 //  2. POST without Origin — expected: 4xx (rejection on the POST path).
 func ProbeOriginHeader(ctx context.Context, t *Target) ProbeResult {
-	const name = "origin-header"
+	name := originHeaderProbe
 	if t.URL == "" {
-		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
+		return ProbeResult{Name: name, Pass: false, Error: errMissingURL, Fix: fixMissingURL}
 	}
 
 	client := httpClient(t)
@@ -360,7 +378,7 @@ func ProbeOriginHeader(ctx context.Context, t *Target) ProbeResult {
 	// indicate over-broad enforcement).
 	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, t.URL, http.NoBody)
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "verify the URL is well-formed"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixMalformedURL}
 	}
 	getReq.Header.Set("Accept", "text/event-stream")
 	getResp, getErr := client.Do(getReq)
@@ -397,15 +415,15 @@ func ProbeOriginHeader(ctx context.Context, t *Target) ProbeResult {
 // --mcp-method-headers feature set them on the wire?), but framed as a
 // "verify" probe so it shares the dispatcher with the security probes.
 func ProbeMCPMethodHeaders(ctx context.Context, t *Target) ProbeResult {
-	const name = "mcp-method-headers"
+	name := mcpMethodHeadersProbe
 	if t.URL == "" {
-		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
+		return ProbeResult{Name: name, Pass: false, Error: errMissingURL, Fix: fixMissingURL}
 	}
 
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{}}}`
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.URL, strings.NewReader(body))
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "verify the URL is well-formed"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixMalformedURL}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -417,7 +435,7 @@ func ProbeMCPMethodHeaders(ctx context.Context, t *Target) ProbeResult {
 
 	resp, err := httpClient(t).Do(req)
 	if err != nil {
-		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "confirm the server is reachable on <url>"}
+		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: fixUnreachableURL}
 	}
 	defer drainBody(resp)
 

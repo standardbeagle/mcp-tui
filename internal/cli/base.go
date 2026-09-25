@@ -38,6 +38,20 @@ const (
 	FormatJSON = "json"
 )
 
+// Literals shared across CLI commands.
+const (
+	// subcommandList is the Use name of the list subcommand.
+	subcommandList = "list"
+	// docCount is the JSON document key for the number of listed items.
+	docCount = "count"
+	// toolWord is the word "tool": the tool command's Use name, the JSON
+	// document key for a tool name, and the singular noun in text output.
+	toolWord = "tool"
+	// argumentWord is the word "argument": the JSON document key for a
+	// completion argument name and the singular noun in prompt list output.
+	argumentWord = "argument"
+)
+
 // Connection message constants
 const (
 	ConnectionCreating   = "🔄 Creating MCP service...\n"

@@ -11,6 +11,13 @@ import (
 )
 
 // ErrorHandler provides centralized error handling with classification and reporting
+// Keys for the classified-error fields in debug logs and JSON reports.
+const (
+	fieldCategory = "category"
+	fieldSeverity = "severity"
+	fieldMessage  = "message"
+)
+
 type ErrorHandler struct {
 	classifier *ErrorClassifier
 	stats      *ErrorStatistics
@@ -85,7 +92,7 @@ func (eh *ErrorHandler) HandleErrorWithRetry(
 		eh.mu.Unlock()
 
 		debug.Info("Error handler: Retry recommended",
-			debug.F("category", classified.Category),
+			debug.F(fieldCategory, classified.Category),
 			debug.F("attempt", attempt),
 			debug.F("retryAfter", classified.RetryAfter))
 	}
@@ -156,10 +163,10 @@ func (eh *ErrorHandler) updateStatistics(classified *ClassifiedError) {
 // logClassifiedError logs the error with appropriate level and detail
 func (eh *ErrorHandler) logClassifiedError(classified *ClassifiedError) {
 	fields := []debug.Field{
-		debug.F("category", classified.Category),
-		debug.F("severity", classified.Severity),
+		debug.F(fieldCategory, classified.Category),
+		debug.F(fieldSeverity, classified.Severity),
 		debug.F("recoverable", classified.Recoverable),
-		debug.F("message", classified.Message),
+		debug.F(fieldMessage, classified.Message),
 	}
 
 	if classified.Context != nil {
@@ -247,9 +254,9 @@ func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 	// Add last error details
 	if stats.LastError != nil {
 		lastError := map[string]interface{}{
-			"category":    stats.LastError.Category.String(),
-			"severity":    stats.LastError.Severity.String(),
-			"message":     stats.LastError.Message,
+			fieldCategory: stats.LastError.Category.String(),
+			fieldSeverity: stats.LastError.Severity.String(),
+			fieldMessage:  stats.LastError.Message,
 			"recoverable": stats.LastError.Recoverable,
 		}
 		report["last_error"] = lastError
@@ -264,9 +271,9 @@ func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 		recentErrors := make([]map[string]interface{}, 0, len(stats.ErrorHistory))
 		for _, err := range stats.ErrorHistory {
 			recentErrors = append(recentErrors, map[string]interface{}{
-				"category": err.Category.String(),
-				"severity": err.Severity.String(),
-				"message":  err.Message,
+				fieldCategory: err.Category.String(),
+				fieldSeverity: err.Severity.String(),
+				fieldMessage:  err.Message,
 			})
 		}
 		report["recent_errors"] = recentErrors
@@ -346,9 +353,9 @@ func (eh *ErrorHandler) FormatErrorForJSON(classified *ClassifiedError) map[stri
 	}
 
 	result := map[string]interface{}{
-		"category":    classified.Category.String(),
-		"severity":    classified.Severity.String(),
-		"message":     classified.Message,
+		fieldCategory: classified.Category.String(),
+		fieldSeverity: classified.Severity.String(),
+		fieldMessage:  classified.Message,
 		"recoverable": classified.Recoverable,
 	}
 

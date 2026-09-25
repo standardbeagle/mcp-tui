@@ -20,22 +20,22 @@ func NewNavigationHandler(screen *MainScreen) *NavigationHandler {
 func (nh *NavigationHandler) HandleKey(msg tea.KeyMsg) (handled bool, model tea.Model, cmd tea.Cmd) {
 	// List navigation keys
 	switch msg.String() {
-	case "up", "k":
+	case keyUp, "k":
 		return true, nh.moveSelection(-1), nil
 
-	case "down", "j":
+	case keyDown, "j":
 		return true, nh.moveSelection(1), nil
 
-	case "pgup":
+	case keyPgUp:
 		return true, nh.moveSelection(-10), nil
 
-	case "pgdown":
+	case keyPgDown:
 		return true, nh.moveSelection(10), nil
 
-	case "home":
+	case keyHome:
 		return true, nh.jumpToFirst(), nil
 
-	case "end":
+	case keyEnd:
 		return true, nh.jumpToLast(), nil
 
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":

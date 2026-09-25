@@ -57,7 +57,7 @@ func (rc *ResourceCommand) CreateCommand() *cobra.Command {
 // createListCommand creates the resource list command
 func (rc *ResourceCommand) createListCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:      "list",
+		Use:      subcommandList,
 		Short:    "List available resources",
 		Long:     "List all resources available from the MCP server",
 		PreRunE:  rc.PreRunE,
@@ -118,7 +118,7 @@ func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) err
 	if rc.GetOutputFormat() == OutputFormatJSON {
 		outputData := map[string]interface{}{
 			"resources": resources,
-			"count":     len(resources),
+			docCount:    len(resources),
 		}
 
 		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
@@ -330,7 +330,7 @@ func resourceReadOutput(uri string, result *mcp.ReadResourceResult) map[string]i
 	out := map[string]interface{}{
 		"uri":      uri,
 		"contents": result.Contents,
-		"count":    len(result.Contents),
+		docCount:   len(result.Contents),
 	}
 	if len(result.Rounds) > 0 {
 		out["rounds"] = result.Rounds
@@ -412,7 +412,7 @@ func (rc *ResourceCommand) runTemplatesCommand(cmd *cobra.Command, _ []string) e
 	if rc.GetOutputFormat() == OutputFormatJSON {
 		out := map[string]interface{}{
 			"resourceTemplates": templates,
-			"count":             len(templates),
+			docCount:            len(templates),
 		}
 		jsonBytes, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
@@ -505,7 +505,7 @@ func (rc *ResourceCommand) runCompleteCommand(cmd *cobra.Command, args []string)
 
 	out := map[string]interface{}{
 		"uriTemplate": uriTemplate,
-		"argument":    varName,
+		argumentWord:  varName,
 		"prefix":      prefix,
 		"values":      result.Values,
 		"hasMore":     result.HasMore,

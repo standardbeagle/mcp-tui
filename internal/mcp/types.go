@@ -469,6 +469,9 @@ type PromptMessage struct {
 	Content []Content `json:"content"`
 }
 
+// ContentTypeText is the MCP wire content type for text (Content.Type).
+const ContentTypeText = "text"
+
 // Content represents various types of content
 type Content struct {
 	Type     string             `json:"type"`

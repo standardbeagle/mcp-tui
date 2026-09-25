@@ -59,7 +59,7 @@ The negotiated protocol version picks the form:
 	cmd.AddCommand(tc.subcommand("cancel <task-id>",
 		"Ask the server to cancel a task (tasks/cancel)", cobra.ExactArgs(1), tc.handleCancel))
 
-	list := tc.subcommand("list",
+	list := tc.subcommand(subcommandList,
 		"List the server's tasks (tasks/list, 2025-11-25 only)", cobra.NoArgs, tc.handleList)
 	list.Flags().String("cursor", "", "Continue from the nextCursor of a previous page")
 	cmd.AddCommand(list)

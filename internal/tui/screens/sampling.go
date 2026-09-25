@@ -136,7 +136,7 @@ func (s *SamplingScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch s.mode {
 	case samplingModeChoice:
 		switch m.String() {
-		case "esc", "q":
+		case keyEsc, "q":
 			return s.abort("user dismissed sampling request")
 		case "1", "m":
 			s.mode = samplingModeManual
@@ -157,11 +157,11 @@ func (s *SamplingScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case samplingModeManual:
 		switch m.String() {
-		case "esc":
+		case keyEsc:
 			s.mode = samplingModeChoice
 			s.input.Blur()
 			return s, nil
-		case "ctrl+s":
+		case keyCtrlS:
 			text := strings.TrimSpace(s.input.Value())
 			if text == "" {
 				s.helpText = "(reply is empty — type something or press Esc)"
@@ -176,20 +176,20 @@ func (s *SamplingScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case samplingModeToolPick:
 		tools := s.tools()
 		switch m.String() {
-		case "esc", "q":
+		case keyEsc, "q":
 			s.mode = samplingModeChoice
 			return s, nil
-		case "up", "k":
+		case keyUp, "k":
 			if s.toolCursor > 0 {
 				s.toolCursor--
 			}
 			return s, nil
-		case "down", "j":
+		case keyDown, "j":
 			if s.toolCursor < len(tools)-1 {
 				s.toolCursor++
 			}
 			return s, nil
-		case "enter", " ":
+		case keyEnter, " ":
 			if s.toolCursor >= 0 && s.toolCursor < len(tools) {
 				return s.resolveToolUse(tools[s.toolCursor])
 			}
@@ -209,6 +209,13 @@ func (s *SamplingScreen) tools() []*officialMCP.Tool {
 	return s.pending.RequestWithTools.Params.Tools
 }
 
+// samplingUserModel is the model name reported when the TUI answers a
+// sampling request as the user.
+const samplingUserModel = "mcp-tui-user"
+
+// nonePlaceholder renders absent content in sampling summaries.
+const nonePlaceholder = "(none)"
+
 // hasTools reports whether the request has at least one tool to pick from.
 func (s *SamplingScreen) hasTools() bool {
 	return len(s.tools()) > 0
@@ -221,14 +228,14 @@ func (s *SamplingScreen) resolveText(text string) (tea.Model, tea.Cmd) {
 	if s.pending.IsWithTools() {
 		s.pending.ResolveWithTools(&officialMCP.CreateMessageWithToolsResult{
 			Content:    []officialMCP.Content{&officialMCP.TextContent{Text: text}},
-			Model:      "mcp-tui-user",
+			Model:      samplingUserModel,
 			Role:       officialMCP.Role("assistant"),
 			StopReason: "endTurn",
 		})
 	} else {
 		s.pending.Resolve(&officialMCP.CreateMessageResult{
 			Content:    &officialMCP.TextContent{Text: text},
-			Model:      "mcp-tui-user",
+			Model:      samplingUserModel,
 			Role:       officialMCP.Role("assistant"),
 			StopReason: "endTurn",
 		})
@@ -253,7 +260,7 @@ func (s *SamplingScreen) resolveToolUse(tool *officialMCP.Tool) (tea.Model, tea.
 				Input: map[string]any{},
 			},
 		},
-		Model:      "mcp-tui-user",
+		Model:      samplingUserModel,
 		Role:       officialMCP.Role("assistant"),
 		StopReason: "toolUse",
 	})
@@ -485,7 +492,7 @@ func summarizeContent(c officialMCP.Content) string {
 		}
 		return fmt.Sprintf("<tool_result toolUseId=%s%s>", v.ToolUseID, errMark)
 	case nil:
-		return "(none)"
+		return nonePlaceholder
 	default:
 		return fmt.Sprintf("<%T>", v)
 	}
@@ -494,7 +501,7 @@ func summarizeContent(c officialMCP.Content) string {
 // formatModelPrefs returns a single-line summary of model selection hints.
 func formatModelPrefs(p *officialMCP.ModelPreferences) string {
 	if p == nil {
-		return "(none)"
+		return nonePlaceholder
 	}
 	parts := []string{}
 	if len(p.Hints) > 0 {
@@ -519,7 +526,7 @@ func formatModelPrefs(p *officialMCP.ModelPreferences) string {
 		parts = append(parts, fmt.Sprintf("intel=%.2f", p.IntelligencePriority))
 	}
 	if len(parts) == 0 {
-		return "(none)"
+		return nonePlaceholder
 	}
 	return strings.Join(parts, " ")
 }

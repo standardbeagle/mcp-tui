@@ -246,7 +246,7 @@ func (cm *ConnectionsManager) loadVSCodeFormat(data []byte) bool {
 
 		// Map transport type
 		switch server.Type {
-		case "stdio":
+		case string(config.TransportStdio):
 			entry.Transport = config.TransportStdio
 		case "sse":
 			entry.Transport = config.TransportSSE
@@ -497,6 +497,15 @@ func (cm *ConnectionsManager) GetRecentConnections() []*ConnectionEntry {
 	return recent
 }
 
+// Discovered config file formats (DiscoveredConfigFile.Format).
+const (
+	formatClaudeDesktop = "claude-desktop"
+	formatVSCode        = "vscode"
+	formatMCPtui        = "mcp-tui"
+	formatPackageJSON   = "package.json"
+	formatUnknown       = "unknown"
+)
+
 // DiscoveredConfigFile represents a configuration file found in the filesystem
 type DiscoveredConfigFile struct {
 	Path        string       `json:"path"`
@@ -602,7 +611,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 		MCPServers map[string]interface{} `json:"mcpServers"`
 	}
 	if err := json.Unmarshal(data, &claudeConfig); err == nil && claudeConfig.MCPServers != nil && len(claudeConfig.MCPServers) > 0 {
-		dc.Format = "claude-desktop"
+		dc.Format = formatClaudeDesktop
 		serverCount = len(claudeConfig.MCPServers)
 		dc.Servers = cm.extractClaudeDesktopServers(claudeConfig.MCPServers)
 	} else {
@@ -611,18 +620,18 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 			Servers map[string]interface{} `json:"servers"`
 		}
 		if err := json.Unmarshal(data, &vscodeConfig); err == nil && vscodeConfig.Servers != nil && len(vscodeConfig.Servers) > 0 {
-			dc.Format = "vscode"
+			dc.Format = formatVSCode
 			serverCount = len(vscodeConfig.Servers)
 			dc.Servers = cm.extractVSCodeServers(vscodeConfig.Servers)
 		} else {
 			// Try MCP-TUI native format - must have servers node with content
 			var nativeConfig ConnectionsConfig
 			if err := json.Unmarshal(data, &nativeConfig); err == nil && nativeConfig.Servers != nil && len(nativeConfig.Servers) > 0 {
-				dc.Format = "mcp-tui"
+				dc.Format = formatMCPtui
 				serverCount = len(nativeConfig.Servers)
 				dc.Servers = cm.extractNativeServers(nativeConfig.Servers)
 			} else {
-				dc.Format = "unknown"
+				dc.Format = formatUnknown
 			}
 		}
 	}
@@ -630,7 +639,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	dc.ServerCount = serverCount
 
 	// Only return files with valid MCP configuration (serverCount > 0)
-	if serverCount == 0 || dc.Format == "unknown" {
+	if serverCount == 0 || dc.Format == formatUnknown {
 		return nil
 	}
 
@@ -648,7 +657,7 @@ func (cm *ConnectionsManager) extractClaudeDesktopServers(mcpServers map[string]
 		}
 		server := ServerInfo{
 			Name:      name,
-			Transport: "stdio", // Claude Desktop format is typically stdio
+			Transport: string(config.TransportStdio), // Claude Desktop format is typically stdio
 		}
 
 		if command, ok := serverMap["command"].(string); ok {
@@ -685,7 +694,7 @@ func (cm *ConnectionsManager) extractVSCodeServers(vscodeServers map[string]inte
 		}
 		server := ServerInfo{
 			Name:      name,
-			Transport: "stdio", // VS Code format is typically stdio
+			Transport: string(config.TransportStdio), // VS Code format is typically stdio
 		}
 
 		if command, ok := serverMap["command"].(string); ok {
@@ -722,7 +731,7 @@ func (cm *ConnectionsManager) extractNativeServers(nativeServers map[string]*Con
 			Transport:   string(entry.Transport),
 		}
 
-		if entry.Transport == "stdio" {
+		if entry.Transport == config.TransportStdio {
 			server.Command = entry.Command
 			server.Args = entry.Args
 		}
@@ -782,11 +791,11 @@ func (cm *ConnectionsManager) isMoreRelevant(a, b *DiscoveredConfigFile) bool {
 
 	// Format priority: mcp-tui > claude-desktop > vscode > package.json > unknown
 	formatPriority := map[string]int{
-		"mcp-tui":        1,
-		"claude-desktop": 2,
-		"vscode":         3,
-		"package.json":   4,
-		"unknown":        5,
+		formatMCPtui:        1,
+		formatClaudeDesktop: 2,
+		formatVSCode:        3,
+		formatPackageJSON:   4,
+		formatUnknown:       5,
 	}
 
 	aPrio, aExists := formatPriority[a.Format]

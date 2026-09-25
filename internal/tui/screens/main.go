@@ -805,7 +805,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ms.connected {
 		// Handle special keys when not connected
 		switch msg.String() {
-		case "ctrl+c", "q", "esc":
+		case keyCtrlC, "q", keyEsc:
 			return ms, tea.Quit
 		case "r":
 			// Retry connection
@@ -819,7 +819,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return spinnerTickMsg{}
 				}),
 			)
-		case "ctrl+l", "ctrl+d", "f12":
+		case keyCtrlL, keyCtrlD, keyF12:
 			// Show debug logs even when disconnected. Wire the snapshot
 			// provider so the Capabilities tab can render the negotiated
 			// state from the most recent successful Connect. mcpService can
@@ -850,10 +850,10 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "ctrl+c":
+	case keyCtrlC:
 		return ms, tea.Quit
 
-	case "q", "esc":
+	case "q", keyEsc:
 		// If we're in a viewer, close it first
 		if ms.resourceViewerOpen {
 			ms.resourceViewerOpen = false
@@ -873,17 +873,17 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Otherwise quit
 		return ms, tea.Quit
 
-	case "tab":
+	case keyTab:
 		ms.activeTab = (ms.activeTab + 1) % 4
 		ms.ensureInitialFocus(ms.activeTab)
 		return ms, nil
 
-	case "shift+tab":
+	case keyShiftTab:
 		ms.activeTab = (ms.activeTab - 1 + 4) % 4
 		ms.ensureInitialFocus(ms.activeTab)
 		return ms, nil
 
-	case "right":
+	case keyRight:
 		// In events tab with detail view, switch panes
 		if ms.activeTab == 3 && ms.showEventDetail {
 			ms.eventPaneFocus = 1
@@ -892,7 +892,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ms, nil
 
-	case "left":
+	case keyLeft:
 		// In events tab with detail view, switch panes
 		if ms.activeTab == 3 && ms.showEventDetail {
 			ms.eventPaneFocus = 0
@@ -920,7 +920,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ms, nil
 
-	case "b", "alt+left":
+	case "b", keyAltLeft:
 		// In events tab with detail view, close detail
 		if ms.activeTab == 3 && ms.showEventDetail {
 			ms.showEventDetail = false
@@ -929,7 +929,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ms, nil
 
-	case "enter":
+	case keyEnter:
 		// Execute/show details of selected item
 		return ms.handleItemSelection()
 
@@ -951,7 +951,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ms, nil
 
-	case "ctrl+l", "ctrl+d", "f12":
+	case keyCtrlL, keyCtrlD, keyF12:
 		// Show debug logs. Wire the snapshot provider so the Capabilities
 		// tab can read the negotiated state from the live service, and the
 		// notifications provider so the Notifications tab streams server
@@ -1368,11 +1368,11 @@ func (ms *MainScreen) View() string {
 			"←/→: Switch panes",
 			"↑↓: Navigate",
 			"b/Alt+←: Close detail",
-			"r: Refresh",
-			"d: Disconnect",
+			helpRefresh,
+			helpDisconnect,
 			"Ctrl+D/F12: Debug Log",
-			"Ctrl+E: Export session",
-			"q: Quit",
+			helpExportSession,
+			helpQuit,
 		}
 	case ms.activeTab == 0 && ms.toolCount > 0:
 		helpItems = []string{
@@ -1381,33 +1381,33 @@ func (ms *MainScreen) View() string {
 			"Enter: Execute",
 			"PgUp/Dn: Page",
 			"T: Tasks",
-			"r: Refresh",
-			"d: Disconnect",
+			helpRefresh,
+			helpDisconnect,
 			"Tab: Switch tabs",
 			"Ctrl+D/F12: Debug Log",
-			"Ctrl+E: Export session",
-			"q: Quit",
+			helpExportSession,
+			helpQuit,
 		}
 	case ms.activeTab == 1 && ms.resourceCount > 0:
 		helpItems = []string{
 			"Tab/↑↓: Navigate",
 			"Enter: Read",
 			"s: Watch/unwatch",
-			"r: Refresh",
-			"d: Disconnect",
+			helpRefresh,
+			helpDisconnect,
 			"Ctrl+L: Debug",
-			"Ctrl+E: Export session",
-			"q: Quit",
+			helpExportSession,
+			helpQuit,
 		}
 	default:
 		helpItems = []string{
 			"Tab/↑↓: Navigate",
 			"Enter: Select",
-			"r: Refresh",
-			"d: Disconnect",
+			helpRefresh,
+			helpDisconnect,
 			"Ctrl+L: Debug",
-			"Ctrl+E: Export session",
-			"q: Quit",
+			helpExportSession,
+			helpQuit,
 		}
 	}
 
@@ -1461,10 +1461,33 @@ func (ms *MainScreen) renderTabs() string {
 	return strings.Join(renderedTabs, separatorStyle.Render(" │ "))
 }
 
+// Tab names; also the list kinds shown in cache labels.
+const (
+	tabTools     = "tools"
+	tabResources = "resources"
+	tabPrompts   = "prompts"
+	tabEvents    = "events"
+)
+
+// Help lines shared by the main screen's tab help blocks.
+const (
+	helpRefresh       = "r: Refresh"
+	helpDisconnect    = "d: Disconnect"
+	helpExportSession = "Ctrl+E: Export session"
+	helpQuit          = "q: Quit"
+)
+
+// notConnectedItem is the placeholder list item shown when there is no MCP
+// connection; noDescription is the fallback for entries without one.
+const (
+	notConnectedItem = "Not connected to MCP server"
+	noDescription    = "No description"
+)
+
 // renderCurrentList renders the current tab's list
 func (ms *MainScreen) renderCurrentList() string {
 	currentList := ms.getCurrentList()
-	tabNames := []string{"tools", "resources", "prompts", "events"}
+	tabNames := []string{tabTools, tabResources, tabPrompts, tabEvents}
 
 	// Check if we're loading first
 	var isLoading bool
@@ -1885,7 +1908,7 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 		if !ms.mcpService.IsConnected() {
 			return ToolsLoadedMsg{
 				Tools:       []mcp.Tool{},
-				Items:       []string{"Not connected to MCP server"},
+				Items:       []string{notConnectedItem},
 				ActualCount: 0,
 				Error:       fmt.Errorf("service not connected"),
 			}
@@ -1923,7 +1946,7 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 			for _, tool := range tools {
 				description := tool.Description
 				if description == "" {
-					description = "No description"
+					description = noDescription
 				}
 				toolList = append(toolList, fmt.Sprintf("%s%s%s - %s",
 					toolNameMarker(tool.Name), iconMarker(len(tool.Icons)), tool.DisplayName(), description))
@@ -1956,7 +1979,7 @@ func (ms *MainScreen) loadResources() tea.Cmd {
 		if !ms.mcpService.IsConnected() {
 			return ItemsLoadedMsg{
 				Tab:         1,
-				Items:       []string{"Not connected to MCP server"},
+				Items:       []string{notConnectedItem},
 				ActualCount: 0,
 				Error:       fmt.Errorf("service not connected"),
 			}
@@ -2028,7 +2051,7 @@ func buildResourceListItems(
 	for _, r := range resources {
 		desc := r.Description
 		if desc == "" {
-			desc = "No description"
+			desc = noDescription
 		}
 		out = append(out, fmt.Sprintf("%s%s%s - %s", marks[r.URI], iconMarker(len(r.Icons)), r.DisplayName(), desc))
 	}
@@ -2037,7 +2060,7 @@ func buildResourceListItems(
 		for _, t := range templates {
 			desc := t.Description
 			if desc == "" {
-				desc = "No description"
+				desc = noDescription
 			}
 			out = append(out, fmt.Sprintf("%s%s - %s", iconMarker(len(t.Icons)), t.DisplayName(), desc))
 		}
@@ -2066,7 +2089,7 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 		if !ms.mcpService.IsConnected() {
 			return ItemsLoadedMsg{
 				Tab:         2,
-				Items:       []string{"Not connected to MCP server"},
+				Items:       []string{notConnectedItem},
 				ActualCount: 0,
 				Error:       fmt.Errorf("service not connected"),
 			}
@@ -2104,7 +2127,7 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 			for _, prompt := range prompts {
 				description := prompt.Description
 				if description == "" {
-					description = "No description"
+					description = noDescription
 				}
 				promptList = append(promptList, fmt.Sprintf("%s%s - %s", iconMarker(len(prompt.Icons)), prompt.DisplayName(), description))
 			}
@@ -2644,7 +2667,7 @@ func renderDroppedTools(dropped []mcp.DroppedTool) string {
 	if len(dropped) == 0 {
 		return ""
 	}
-	noun := "tools"
+	noun := tabTools
 	if len(dropped) == 1 {
 		noun = "tool"
 	}

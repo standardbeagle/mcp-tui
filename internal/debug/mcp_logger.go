@@ -82,7 +82,7 @@ func (e *MCPLogEntry) DetailedString() string {
 	case MCPMessageResponse:
 		if e.Error != nil {
 			typeIcon = "❌"
-			typeText = "ERROR"
+			typeText = string(MCPMessageError)
 		} else {
 			typeIcon = "✅"
 			typeText = "RESPONSE"
@@ -92,7 +92,7 @@ func (e *MCPLogEntry) DetailedString() string {
 		typeText = "NOTIFICATION"
 	case MCPMessageError:
 		typeIcon = "⚠️"
-		typeText = "ERROR"
+		typeText = string(MCPMessageError)
 	}
 
 	// Build enhanced display with method and context
