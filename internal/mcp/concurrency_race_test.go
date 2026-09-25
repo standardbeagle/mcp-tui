@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -409,77 +410,62 @@ func TestDataRaceDetection(t *testing.T) {
 func TestMemoryConsistencyUnderConcurrency(t *testing.T) {
 	requireLocalListener(t)
 
+	// Each iteration connects once and disconnects once, so every observer
+	// must see IsConnected go false→true→false at most once: true after a
+	// fall would mean a reader saw a torn or stale state.
 	t.Run("Service_Connection_State_Consistency", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			time.Sleep(50 * time.Millisecond) // Add delay to increase contention
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"protocolVersion": "2024-11-05",
-				"serverInfo": map[string]interface{}{
-					"name":    "consistency-server",
-					"version": "1.0.0",
-				},
-				"capabilities": map[string]interface{}{},
-			})
-		}))
-		defer server.Close()
+		server := officialMCP.NewServer(&officialMCP.Implementation{Name: "consistency-server", Version: "1.0.0"}, nil)
+		url := testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, ""))
+		connConfig := &config.ConnectionConfig{Type: config.TransportHTTP, URL: url}
 
-		service := NewService()
-		connConfig := &config.ConnectionConfig{
-			Type: config.TransportHTTP,
-			URL:  server.URL,
-		}
-
-		const numIterations = 100
-		var inconsistencies int64
+		const numIterations = 20
+		const numObservers = 5
+		var sawConnected atomic.Bool
 
 		for i := 0; i < numIterations; i++ {
+			service := NewService()
+			done := make(chan struct{})
 			var wg sync.WaitGroup
-			var connectionStates []bool
-			var statesMutex sync.Mutex
 
-			// Multiple goroutines checking connection state during connect/disconnect
-			for j := 0; j < 5; j++ {
+			for j := 0; j < numObservers; j++ {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					for k := 0; k < 10; k++ {
+					fell := false
+					prev := service.IsConnected()
+					for {
+						select {
+						case <-done:
+							return
+						default:
+						}
 						state := service.IsConnected()
-						statesMutex.Lock()
-						connectionStates = append(connectionStates, state)
-						statesMutex.Unlock()
-						time.Sleep(1 * time.Millisecond)
+						if state {
+							sawConnected.Store(true)
+						}
+						if prev && !state {
+							fell = true
+						}
+						if fell && state {
+							t.Errorf("iteration %d: IsConnected rose again after falling", i)
+							return
+						}
+						prev = state
+						runtime.Gosched()
 					}
 				}()
 			}
 
-			// Connect and disconnect in parallel with state checking
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-
-				service.Connect(ctx, connConfig)
-				time.Sleep(25 * time.Millisecond)
-				service.Disconnect()
-			}()
-
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := service.Connect(ctx, connConfig)
+			cancel()
+			require.NoError(t, err, "iteration %d: connect", i)
+			require.NoError(t, service.Disconnect(), "iteration %d: disconnect", i)
+			close(done)
 			wg.Wait()
-
-			// Check for impossible state transitions
-			statesMutex.Lock()
-			for j := 1; j < len(connectionStates); j++ {
-				// Note: This is a simplified check. In practice, you'd need more
-				// sophisticated consistency checks based on your specific requirements
-				_ = connectionStates[j]
-			}
-			statesMutex.Unlock()
 		}
 
-		inconsistencyCount := atomic.LoadInt64(&inconsistencies)
-		assert.Equal(t, int64(0), inconsistencyCount,
-			"Should not detect memory consistency issues")
+		assert.True(t, sawConnected.Load(), "no observer ever saw the connected state; the test observed nothing")
 	})
 
 	t.Run("Server_Info_Memory_Consistency", func(t *testing.T) {
