@@ -112,12 +112,16 @@ type Schema struct {
 
 	// resolved is the whole schema, for Validate; nil for an empty one.
 	resolved *jsonschema.Resolved
+	// document is the schema as decoded JSON, which Validate walks to say
+	// which argument a violation is about.
+	document any
 }
 
 // Validate checks args, as they will be sent, against the whole input
 // schema, including the keywords no form or CLI argument expresses
 // (if/then/else, not, patternProperties, value constraints, the structure
-// of nested objects). An empty schema accepts anything.
+// of nested objects). A violation is an *ArgumentError naming the
+// argument. An empty schema accepts anything.
 func (s Schema) Validate(args map[string]any) error {
 	if s.resolved == nil {
 		return nil
@@ -133,9 +137,31 @@ func (s Schema) Validate(args map[string]any) error {
 		return fmt.Errorf("arguments: %w", err)
 	}
 	if err := s.resolved.Validate(instance); err != nil {
-		return fmt.Errorf("arguments do not match the input schema: %w", err)
+		return argumentError(err, s.document, instance)
 	}
 	return nil
+}
+
+// ArgumentError is a violation of the input schema by the arguments: which
+// argument broke it, where in the schema, and how.
+type ArgumentError struct {
+	// Argument is the path of the offending value in the arguments:
+	// address.zip, targets[0]. A * stands for a key or index the schema
+	// path does not pin down (several values match the failing subschema).
+	// "" means the arguments as a whole (a required, then or not rule).
+	Argument string
+	// SchemaPath is the JSON pointer of the subschema the value failed, as
+	// jsonschema-go reports it; "root" is the root schema.
+	SchemaPath string
+	// Reason is jsonschema-go's message for the failed keyword.
+	Reason string
+}
+
+func (e *ArgumentError) Error() string {
+	if e.Argument == "" {
+		return fmt.Sprintf("arguments do not match the input schema at %s: %s", e.SchemaPath, e.Reason)
+	}
+	return fmt.Sprintf("argument %q does not match the input schema at %s: %s", e.Argument, e.SchemaPath, e.Reason)
 }
 
 // UnionKind picks the alternative of a KindUnion parameter that value's
@@ -211,7 +237,12 @@ func Parse(toolName string, inputSchema map[string]any) (Schema, error) {
 		return Schema{}, fmt.Errorf("input schema: %w", err)
 	}
 
-	out := Schema{Dialect: root.Schema, resolved: resolved}
+	var document any
+	if err := json.Unmarshal(data, &document); err != nil {
+		return Schema{}, fmt.Errorf("input schema: %w", err)
+	}
+
+	out := Schema{Dialect: root.Schema, resolved: resolved, document: document}
 	if out.Dialect != "" && strings.TrimSuffix(out.Dialect, "#") != Dialect2020 {
 		debug.Info("Tool input schema declares a dialect other than JSON Schema 2020-12",
 			debug.F("tool", toolName), debug.F("dialect", out.Dialect))

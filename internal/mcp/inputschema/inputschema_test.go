@@ -471,3 +471,56 @@ func TestParse_NestedObjectProperties(t *testing.T) {
 		t.Errorf("recursive tree expanded %d levels, want %d", depth, maxFormDepth)
 	}
 }
+
+// A violation names the argument that broke the schema, not only the
+// schema's own path: jsonschema-go reports where in the schema validation
+// failed, and Validate maps that back onto the arguments.
+func TestSchema_ValidateNamesTheArgument(t *testing.T) {
+	s, err := Parse("ship", decode(t, `{
+		"$defs": {"Target": {"type": "object", "properties": {"host": {"type": "string"}}, "required": ["host"]}},
+		"type": "object",
+		"properties": {
+			"mode": {"type": "string"},
+			"path": {"type": "string"},
+			"address": {"type": "object", "properties": {"zip": {"type": "string"}}},
+			"targets": {"type": "array", "items": {"$ref": "#/$defs/Target"}},
+			"pair": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]},
+			"labels": {"type": "object", "additionalProperties": {"type": "string"}}
+		},
+		"patternProperties": {"^x-": {"type": "integer"}},
+		"if": {"properties": {"mode": {"const": "file"}}, "required": ["mode"]},
+		"then": {"required": ["path"]}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for _, c := range []struct {
+		args               map[string]any
+		argument, atSchema string
+	}{
+		{map[string]any{"x-retries": "three"}, "x-retries", "/patternProperties/^x-"},
+		{map[string]any{"address": map[string]any{"zip": 94107}}, "address.zip", "/properties/address/properties/zip"},
+		{map[string]any{"targets": []any{map[string]any{"port": 8443}}}, "targets[0]", "/$defs/Target"},
+		{map[string]any{"pair": []any{"eu-1", "two"}}, "pair[1]", "/properties/pair/prefixItems/1"},
+		{map[string]any{"labels": map[string]any{"team": 7}}, "labels.team", "/properties/labels/additionalProperties"},
+		// Two elements match the same subschema: which one failed is not
+		// reported, so the path says any.
+		{map[string]any{"targets": []any{map[string]any{"host": "eu-1"}, map[string]any{"port": 8443}}}, "targets[*]", "/$defs/Target"},
+		// A rule over the arguments as a whole names no single one.
+		{map[string]any{"mode": "file"}, "", "/then"},
+	} {
+		err := s.Validate(c.args)
+		var argErr *ArgumentError
+		if !errors.As(err, &argErr) {
+			t.Errorf("%v: error = %v, want an *ArgumentError", c.args, err)
+			continue
+		}
+		if argErr.Argument != c.argument || argErr.SchemaPath != c.atSchema {
+			t.Errorf("%v: argument %q at schema %q, want %q at %q (%v)",
+				c.args, argErr.Argument, argErr.SchemaPath, c.argument, c.atSchema, err)
+		}
+		if c.argument != "" && !strings.Contains(err.Error(), `argument "`+c.argument+`"`) {
+			t.Errorf("%v: error text %q does not name the argument", c.args, err)
+		}
+	}
+}
