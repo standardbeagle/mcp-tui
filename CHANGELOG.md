@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`verify` and `conform` report warnings**: a SHOULD-level finding prints `WARN` and does not fail the run. The summaries read `N passed, N warned, N failed` (`conform` adds `, N skipped`), `--json` results carry `"warn": true`, and a JUnit report puts the warning in the passing case's `system-out`.
 - **Fast tool results** show at once in the TUI; a 500ms minimum display time held them back.
 
+- **`--arg <value>`**: pass one server argument as is; repeat it for more. Unlike `--args`, it keeps commas, spaces and quotes intact. It cannot be combined with `--args`.
+- **Arrays of objects in the TUI tool form**: Ctrl+E opens a list of elements, each an object sub-form (Ctrl+A adds, Ctrl+X removes), with the same depth limit as nested objects. The CLI keeps the `key:=<json>` literal.
+- **Untyped parameters**: a parameter with no `type` takes its type from `const` or a non-null `default` (with a note); otherwise the note says any JSON value is accepted.
+
 ### Fixed
 - **Automatic reconnection**: a session whose server went away stayed dead. A stdio server that exits, an SSE stream that ends, or a streamable HTTP server that refuses or resets requests now starts reconnection (a stdio server is started again). A server that breaks the protocol (malformed JSON-RPC, an unsupported version) still fails the session instead of being retried.
 - **State after reconnection**: an automatic reconnection re-read only task support, so `server`, the Capabilities tab and the protocol version kept the old server's values, the list cache labels described the dead connection, and resource subscriptions and the `--server-log-level` level were silently gone on the new server. All of them now come from, or are set up again on, the new handshake.
@@ -80,6 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Concurrent server requests in the TUI**: an elicitation, sampling or confirm request arriving while another was open replaced it or was dropped; they now queue and show one after another.
 - **`conform` skipped the `tool-names` probe**; it now runs every `verify` probe.
 - **Debug screen copy**: copying from the Auth tab (and the tabs after it) reported the wrong tab name.
+- **TUI main screen under a tool screen**: while a tool screen was open, the main screen stopped refreshing events and lost resource updates and list results, and returning did not restart them. They now keep reaching the main screen.
+- **TUI "copy CLI command" and raw JSON**: arguments typed in the raw JSON editor were left out of the copied command; it now writes one `key:=<json>` per key, or a `#` line naming what the CLI cannot take.
+- **TUI "copy CLI command" and server arguments**: a server argument containing a comma was split in two; each server argument is now its own `--arg`.
 
 ## [0.9.1] - 2026-07-09
 
