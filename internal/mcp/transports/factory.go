@@ -27,9 +27,7 @@ func (f *factory) CreateTransport(config *TransportConfig) (officialMCP.Transpor
 		return createEnhancedSTDIOTransport(config, strategy)
 	case TransportSSE:
 		return f.createSSETransport(config, strategy)
-	case TransportHTTP:
-		return f.createHTTPTransport(config, strategy)
-	case TransportStreamableHTTP:
+	case TransportHTTP, TransportStreamableHTTP:
 		return f.createStreamableHTTPTransport(config, strategy)
 	default:
 		return nil, nil, fmt.Errorf("unsupported transport type: %s", config.Type)
@@ -49,27 +47,13 @@ func (f *factory) createSSETransport(config *TransportConfig, strategy ContextSt
 	return transport, strategy, nil
 }
 
-// createHTTPTransport creates an HTTP transport
-func (f *factory) createHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
-	httpClient := GetHTTPClientForTransportFull(TransportHTTP, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
-
-	// Create HTTP transport using official SDK (direct struct initialization).
-	// OAuthHandler is wired through when the user supplied OAuth flags;
-	// the SDK transport calls Authorize() on the first 401/403 response.
-	transport := &officialMCP.StreamableClientTransport{
-		Endpoint:     config.URL,
-		HTTPClient:   httpClient,
-		OAuthHandler: config.OAuthHandler,
-	}
-
-	return transport, strategy, nil
-}
-
-// createStreamableHTTPTransport creates a streamable HTTP transport
+// createStreamableHTTPTransport creates the SDK's streamable HTTP client, which
+// serves both "http" and "streamable-http": they are the same transport.
+// OAuthHandler is wired through when the user supplied OAuth flags; the SDK
+// transport calls Authorize() on the first 401/403 response.
 func (f *factory) createStreamableHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
-	httpClient := GetHTTPClientForTransportFull(TransportStreamableHTTP, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
+	httpClient := GetHTTPClientForTransportFull(config.Type, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
 
-	// Create streamable HTTP transport using official SDK (direct struct initialization).
 	transport := &officialMCP.StreamableClientTransport{
 		Endpoint:     config.URL,
 		HTTPClient:   httpClient,
