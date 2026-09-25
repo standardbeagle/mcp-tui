@@ -184,8 +184,8 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	// build the *oauth.Config here — handler construction and cache init
 	// happen inside the mcp service at Connect time so the same code path
 	// covers both CLI and TUI invocations.
-	if oauthCfg, err := BuildOAuthConfig(cmd, connConfig); err != nil {
-		return nil, err
+	if oauthCfg, oauthErr := BuildOAuthConfig(cmd, connConfig); oauthErr != nil {
+		return nil, oauthErr
 	} else if oauthCfg != nil {
 		connConfig.OAuth = oauthCfg
 	}

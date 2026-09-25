@@ -1757,10 +1757,10 @@ func (ms *MainScreen) renderCurrentList() string {
 		case 3: // Events
 			// Parse event format: "[timestamp] direction method"
 			if strings.HasPrefix(item, "[") {
-				endIdx := strings.Index(item, "]")
-				if endIdx > 0 && endIdx < len(item)-1 {
-					timestamp := eventTimeStyle.Render(item[:endIdx+1])
-					rest := item[endIdx+1:]
+				closeIdx := strings.Index(item, "]")
+				if closeIdx > 0 && closeIdx < len(item)-1 {
+					timestamp := eventTimeStyle.Render(item[:closeIdx+1])
+					rest := item[closeIdx+1:]
 					// Extract method if present
 					parts := strings.Fields(rest)
 					if len(parts) >= 2 {

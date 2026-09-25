@@ -94,8 +94,8 @@ func resolveSchema(schema any) (*jsonschema.Resolved, error) {
 	}
 
 	var s jsonschema.Schema
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, fmt.Errorf("unmarshal: %w", err)
+	if unmarshalErr := json.Unmarshal(data, &s); unmarshalErr != nil {
+		return nil, fmt.Errorf("unmarshal: %w", unmarshalErr)
 	}
 	resolved, err := s.Resolve(nil)
 	if err != nil {

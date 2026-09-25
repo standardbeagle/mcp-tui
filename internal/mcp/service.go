@@ -430,15 +430,15 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// oauth-package dependency. SDK-side, only StreamableClientTransport
 	// honors OAuthHandler; validateOAuthTransport refused the others.
 	if oauthCfg, ok := config.OAuth.(*oauth.Config); ok && oauthCfg != nil && oauthCfg.Mode() != oauth.ModeNone {
-		cache, err := oauth.NewFileTokenCache(oauthCfg.CachePath)
-		if err != nil {
+		cache, cacheErr := oauth.NewFileTokenCache(oauthCfg.CachePath)
+		if cacheErr != nil {
 			s.mu.Unlock()
-			return fmt.Errorf("failed to init oauth token cache: %w", err)
+			return fmt.Errorf("failed to init oauth token cache: %w", cacheErr)
 		}
-		handler, err := oauth.NewHandler(oauthCfg, nil, cache)
-		if err != nil {
+		handler, handlerErr := oauth.NewHandler(oauthCfg, nil, cache)
+		if handlerErr != nil {
 			s.mu.Unlock()
-			return fmt.Errorf("failed to init oauth handler: %w", err)
+			return fmt.Errorf("failed to init oauth handler: %w", handlerErr)
 		}
 		s.oauthHandler = handler
 		transportConfig.OAuthHandler = handler

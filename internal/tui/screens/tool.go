@@ -2062,8 +2062,8 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 			Foreground(lipgloss.Color("220"))
 		bulletStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("220"))
-		header := fmt.Sprintf("⚠ Output schema violations (%d):", len(violations))
-		builder.WriteString(warnStyle.Render(header))
+		violationsHeader := fmt.Sprintf("⚠ Output schema violations (%d):", len(violations))
+		builder.WriteString(warnStyle.Render(violationsHeader))
 		builder.WriteString("\n")
 		for _, v := range violations {
 			builder.WriteString(bulletStyle.Render("  • " + v))

@@ -181,9 +181,9 @@ func TestEndToEnd_ToolUseStub_RoundTripFollowUp(t *testing.T) {
 					for _, c := range m.Content {
 						if _, ok := c.(*officialMCP.ToolResultContent); ok {
 							sawToolResult = true
-							res, err := textStub.HandleCreateMessage(ctx, &officialMCP.CreateMessageRequest{Params: &officialMCP.CreateMessageParams{}})
-							if err != nil {
-								return nil, err
+							res, stubErr := textStub.HandleCreateMessage(ctx, &officialMCP.CreateMessageRequest{Params: &officialMCP.CreateMessageParams{}})
+							if stubErr != nil {
+								return nil, stubErr
 							}
 							return &officialMCP.CreateMessageWithToolsResult{
 								Content:    []officialMCP.Content{res.Content},

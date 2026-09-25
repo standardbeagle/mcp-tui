@@ -87,8 +87,8 @@ func TestService_CallTool_IsErrorVsJSONRPCError(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
@@ -170,8 +170,8 @@ func TestService_CallTool_IsError_VsHappyPath(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
@@ -214,8 +214,8 @@ func TestService_CallTool_IsError_NotFoundIsJSONRPC(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 

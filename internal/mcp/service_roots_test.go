@@ -49,8 +49,8 @@ func TestService_SetInitialRoots_RoundTrip(t *testing.T) {
 
 	// Connect via the same path real callers use.
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: legacyProtocolVersion}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
@@ -111,8 +111,8 @@ func TestService_AddRoots_FiresListChangedNotification(t *testing.T) {
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop", ProtocolVersion: legacyProtocolVersion}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 

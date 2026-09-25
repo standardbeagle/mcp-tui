@@ -230,8 +230,8 @@ func Parse(toolName string, inputSchema map[string]any) (Schema, error) {
 		return Schema{}, fmt.Errorf("input schema: %w", err)
 	}
 	var root jsonschema.Schema
-	if err := json.Unmarshal(data, &root); err != nil {
-		return Schema{}, fmt.Errorf("input schema: %w", err)
+	if unmarshalErr := json.Unmarshal(data, &root); unmarshalErr != nil {
+		return Schema{}, fmt.Errorf("input schema: %w", unmarshalErr)
 	}
 	// Resolve validates the schema and every $ref in it; the loader turns
 	// any $ref outside the document into ErrRemoteRef.

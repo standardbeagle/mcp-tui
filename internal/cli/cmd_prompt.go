@@ -73,8 +73,8 @@ func (pc *PromptCommand) runCompleteCommand(cmd *cobra.Command, args []string) e
 		return err
 	}
 
-	if err := pc.ValidateConnection(); err != nil {
-		return pc.HandleError(err, "validate connection")
+	if connErr := pc.ValidateConnection(); connErr != nil {
+		return pc.HandleError(connErr, "validate connection")
 	}
 
 	ctx, cancel := pc.WithContext()
@@ -398,8 +398,8 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 		}
 	}
 
-	if err := pc.ValidateConnection(); err != nil {
-		return pc.HandleError(err, "validate connection")
+	if connErr := pc.ValidateConnection(); connErr != nil {
+		return pc.HandleError(connErr, "validate connection")
 	}
 
 	ctx, cancel := pc.WithContext()

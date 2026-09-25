@@ -50,8 +50,8 @@ func TestService_ListResourceTemplates_RoundTrip(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
@@ -143,8 +143,8 @@ func TestService_Complete_PromptArgument_Roundtrip(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
@@ -217,8 +217,8 @@ func TestService_Complete_ResourceTemplate_Roundtrip(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
@@ -271,8 +271,8 @@ func TestService_Complete_ContextArguments(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
@@ -311,8 +311,8 @@ func TestService_Complete_ValidatesInput(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 

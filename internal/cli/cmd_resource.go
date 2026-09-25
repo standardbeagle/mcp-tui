@@ -479,8 +479,8 @@ func (rc *ResourceCommand) runCompleteCommand(cmd *cobra.Command, args []string)
 		return err
 	}
 
-	if err := rc.ValidateConnection(); err != nil {
-		return rc.HandleError(err, "validate connection")
+	if connErr := rc.ValidateConnection(); connErr != nil {
+		return rc.HandleError(connErr, "validate connection")
 	}
 
 	ctx, cancel := rc.WithContext()

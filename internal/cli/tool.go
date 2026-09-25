@@ -517,8 +517,8 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	}
 
 	if !skipConfirm {
-		if err := confirmDestructiveCall(os.Stdin, os.Stderr, matchedTool, skipConfirm); err != nil {
-			return err
+		if confirmErr := confirmDestructiveCall(os.Stdin, os.Stderr, matchedTool, skipConfirm); confirmErr != nil {
+			return confirmErr
 		}
 	}
 

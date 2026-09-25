@@ -67,8 +67,8 @@ func TestService_CallTool_OutputSchemaValidation_ViolationSurfaced(t *testing.T)
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
@@ -159,13 +159,13 @@ func TestService_CallTool_OutputSchemaValidation_ValidPasses(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
-	if _, err := svc.ListTools(ctx); err != nil {
-		t.Fatalf("ListTools: %v", err)
+	if _, listErr := svc.ListTools(ctx); listErr != nil {
+		t.Fatalf("ListTools: %v", listErr)
 	}
 
 	result, err := svc.CallTool(ctx, CallToolRequest{Name: "good"})
@@ -234,13 +234,13 @@ func TestService_CallTool_NoOutputSchema_NoViolations(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 
-	if _, err := svc.ListTools(ctx); err != nil {
-		t.Fatalf("ListTools: %v", err)
+	if _, listErr := svc.ListTools(ctx); listErr != nil {
+		t.Fatalf("ListTools: %v", listErr)
 	}
 
 	result, err := svc.CallTool(ctx, CallToolRequest{Name: "plain"})
@@ -295,8 +295,8 @@ func TestService_CallTool_ColdCache_LookupFallback(t *testing.T) {
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
 	connCfg := &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}
-	if err := svc.Connect(ctx, connCfg); err != nil {
-		t.Fatalf("svc.Connect: %v", err)
+	if connErr := svc.Connect(ctx, connCfg); connErr != nil {
+		t.Fatalf("svc.Connect: %v", connErr)
 	}
 	defer func() { _ = svc.Disconnect() }()
 

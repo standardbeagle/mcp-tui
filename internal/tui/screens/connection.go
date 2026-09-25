@@ -869,9 +869,9 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 // transport, reading from whichever input the user is actually editing.
 func (cs *ConnectionScreen) resolveCommand() (command string, args []string, err error) {
 	if cs.transportType == config.TransportStdio && cs.usesCombined {
-		fields, err := config.ParseCommandLine(cs.combinedInput.Value())
-		if err != nil {
-			return "", nil, err
+		fields, parseErr := config.ParseCommandLine(cs.combinedInput.Value())
+		if parseErr != nil {
+			return "", nil, parseErr
 		}
 		if len(fields) > 0 {
 			command = fields[0]
