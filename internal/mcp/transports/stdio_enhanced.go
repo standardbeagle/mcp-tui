@@ -3,6 +3,7 @@ package transports
 import (
 	"bytes"
 	"context"
+	stderrors "errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,7 +21,14 @@ import (
 // StartupDiagnoser is implemented by transports that can explain, after a
 // failed connection, why the server process never completed startup.
 type StartupDiagnoser interface {
-	StartupError() error
+	// StartupError waits for the server's diagnostics no longer than ctx.
+	StartupError(ctx context.Context) error
+}
+
+// ServerKiller is implemented by transports that run the server as a child
+// process and can kill it outright.
+type ServerKiller interface {
+	KillServer() error
 }
 
 // ServerStartupError represents a server startup failure with captured output
@@ -54,6 +62,7 @@ type EnhancedSTDIOTransport struct {
 	env     []string // nil inherits the environment
 
 	mu       sync.Mutex
+	cmd      *exec.Cmd   // the most recently started process
 	stderr   *syncBuffer // stderr of the most recently started process
 	startErr error       // set when the process could not be started at all
 }
@@ -274,7 +283,7 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 	e.mu.Lock()
-	e.stderr, e.startErr = stderr, nil
+	e.cmd, e.stderr, e.startErr = cmd, stderr, nil
 	e.mu.Unlock()
 
 	conn, err := (&officialMCP.CommandTransport{Command: cmd}).Connect(ctx)
@@ -305,10 +314,30 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 // handshake fails, but os/exec copies stderr on a goroutine we do not join.
 const startupDiagnosticWait = 500 * time.Millisecond
 
+// KillServer kills the most recently started server process. It is for a
+// handshake abandoned at its deadline: that server never became a session to
+// shut down gracefully, and the SDK's graceful close would give it seconds,
+// longer than a CLI that exits at once lets it run, leaving it behind.
+func (e *EnhancedSTDIOTransport) KillServer() error {
+	e.mu.Lock()
+	cmd := e.cmd
+	e.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	if err := cmd.Process.Kill(); err != nil && !stderrors.Is(err, os.ErrProcessDone) {
+		return fmt.Errorf("killing server process %d: %w", cmd.Process.Pid, err)
+	}
+	debug.Info("Enhanced STDIO: Killed server process", debug.F("pid", cmd.Process.Pid))
+	return nil
+}
+
 // StartupError inspects the server's stderr after a failed handshake and, when
 // it looks like a startup failure, reports it as a diagnosable
-// *ServerStartupError. Returns nil when stderr reveals nothing useful.
-func (e *EnhancedSTDIOTransport) StartupError() error {
+// *ServerStartupError. Returns nil when stderr reveals nothing useful. It
+// waits for stderr at most startupDiagnosticWait, and not past ctx: after a
+// deadline the server is still running, and stderr is read once.
+func (e *EnhancedSTDIOTransport) StartupError(ctx context.Context) error {
 	// The process never started: that error is already precise.
 	e.mu.Lock()
 	startErr, stderr := e.startErr, e.stderr
@@ -328,7 +357,7 @@ func (e *EnhancedSTDIOTransport) StartupError() error {
 				Suggestion: generateSuggestion(output),
 			}
 		}
-		if time.Now().After(deadline) {
+		if time.Now().After(deadline) || ctx.Err() != nil {
 			return nil
 		}
 		time.Sleep(20 * time.Millisecond)

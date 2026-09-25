@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -17,9 +20,9 @@ import (
 )
 
 // connectDeadline is the caller's deadline in the connect-deadline tests,
-// and connectSlack how far past it Connect may return: scheduling on a
-// loaded race run, far below the seconds the bugs cost (a 5s stdio close,
-// an SSE dial that hung for minutes).
+// and connectSlack how far past it (or past the caller giving up) Connect may
+// return: scheduling on a loaded race run, far below the seconds the bugs
+// cost (a 5s stdio close, an SSE dial that hung for minutes).
 const (
 	connectDeadline = time.Second
 	connectSlack    = 2 * time.Second
@@ -113,4 +116,54 @@ func TestService_SSEStreamOutlivesConnectDeadline(t *testing.T) {
 	res, err := svc.CallTool(context.Background(), CallToolRequest{Name: "uptime"})
 	require.NoError(t, err, "the SSE stream must survive the connect deadline")
 	require.Equal(t, "41d", res.Content[0].Text)
+}
+
+// A stdio server that never answers the handshake and ignores its stdin
+// closing makes the SDK's close wait 5s before signaling it. When the caller
+// gives up, Connect must return at once, kill the server (it never became a
+// session), and leave no process behind.
+func TestService_StdioConnectReturnsWhenCallerGivesUp(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	command, env := testutil.StdioServer(t, testutil.StdioServerOptions{Silent: true, PIDFile: pidFile})
+	svc := NewService().(*service)
+	t.Cleanup(func() { _ = svc.Disconnect() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Connect(ctx, &configPkg.ConnectionConfig{
+			Type: configPkg.TransportStdio, Command: command, Environment: env,
+		})
+	}()
+
+	// Give up once the server is certainly running: it has recorded its PID.
+	var pid int
+	require.Eventually(t, func() bool {
+		data, err := os.ReadFile(pidFile)
+		if err != nil || len(data) == 0 {
+			return false
+		}
+		pid, err = strconv.Atoi(string(data))
+		return err == nil
+	}, reconnectWait, 5*time.Millisecond, "the server never started")
+	t.Cleanup(func() {
+		// Only matters when the test fails: a silent server lives an hour.
+		if proc, err := os.FindProcess(pid); err == nil && !testutil.ProcessExited(pid) {
+			_ = proc.Kill()
+		}
+	})
+	cancel()
+	start := time.Now()
+
+	select {
+	case err := <-errCh:
+		require.Error(t, err)
+		require.Less(t, time.Since(start), connectSlack, "Connect must return when its caller gives up")
+	case <-time.After(2 * connectSlack):
+		t.Fatalf("Connect still blocked %s after its caller gave up", 2*connectSlack)
+	}
+	require.Eventually(t, func() bool { return testutil.ProcessExited(pid) }, connectSlack, 5*time.Millisecond,
+		"the server must be killed, not left to a graceful close")
+	svc.sessionManager.WaitForBackgroundCloses()
 }

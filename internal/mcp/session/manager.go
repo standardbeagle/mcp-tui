@@ -214,7 +214,7 @@ func (m *Manager) Connect(
 	// never answers holding Connect far past any deadline. Until the
 	// handshake ends, the caller's ctx ending cancels the connection.
 	stopWatchdog := context.AfterFunc(ctx, cancel)
-	session, err := client.Connect(connectCtx, transport, sessionOptions)
+	session, err := m.handshake(connectCtx, client, transport, sessionOptions)
 	if !stopWatchdog() {
 		// The caller's ctx ended and cancelled the connection. Report that,
 		// not the cancellation it caused.
@@ -292,6 +292,47 @@ func (m *Manager) Connect(
 	}
 
 	return nil
+}
+
+// handshake runs client.Connect and returns when it finishes or when
+// connectCtx ends, whichever comes first. The SDK closes a failed
+// connection before its Connect returns, and closing a stdio server that
+// ignores its stdin closing waits 5s before signaling it; that wait must
+// not hold the caller past its deadline. An abandoned Connect finishes in
+// the background (WaitForBackgroundCloses) and closes whatever it opened.
+func (m *Manager) handshake(
+	connectCtx context.Context,
+	client *officialMCP.Client,
+	transport officialMCP.Transport,
+	sessionOptions *officialMCP.ClientSessionOptions,
+) (*officialMCP.ClientSession, error) {
+	type outcome struct {
+		session *officialMCP.ClientSession
+		err     error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		session, err := client.Connect(connectCtx, transport, sessionOptions)
+		done <- outcome{session, err}
+	}()
+	select {
+	case o := <-done:
+		return o.session, o.err
+	case <-connectCtx.Done():
+	}
+
+	m.backgroundCloses.Add(1)
+	go func() {
+		defer m.backgroundCloses.Done()
+		start := time.Now()
+		o := <-done
+		if o.session != nil {
+			closeAbandoned(o.session)
+		}
+		debug.Info("Session manager: Abandoned handshake finished closing",
+			debug.F("duration", time.Since(start)), debug.F("error", o.err))
+	}()
+	return nil, fmt.Errorf("handshake abandoned: %w", context.Cause(connectCtx))
 }
 
 // closeAbandoned closes a session that completed its handshake for nobody.
@@ -693,8 +734,16 @@ func (m *Manager) handleConnectionFailure(session *officialMCP.ClientSession, er
 	go m.attemptReconnection()
 }
 
+// WaitForBackgroundCloses blocks until every session the manager is closing
+// in the background has closed: dead sessions released for a reconnection,
+// and handshakes abandoned at their deadline. Call it before exiting so no
+// server process is left behind.
+func (m *Manager) WaitForBackgroundCloses() {
+	m.backgroundCloses.Wait()
+}
+
 // closeInBackground closes session without waiting for it, logging the
-// outcome. Tests wait for these closes with waitBackgroundCloses.
+// outcome. WaitForBackgroundCloses waits for it.
 func (m *Manager) closeInBackground(session *officialMCP.ClientSession, what string) {
 	m.backgroundCloses.Add(1)
 	go func() {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -28,6 +29,12 @@ const (
 	// stdioServerDowngradeEnv makes every start after the first answer
 	// initialize with this protocol version instead of the client's.
 	stdioServerDowngradeEnv = "MCP_TUI_TEST_STDIO_SERVER_DOWNGRADE"
+	// stdioServerPIDFileEnv names a file the server writes its process ID to
+	// before anything else.
+	stdioServerPIDFileEnv = "MCP_TUI_TEST_STDIO_SERVER_PIDFILE"
+	// stdioServerSilent, as the value of stdioServerEnv, makes the server
+	// never answer and ignore its stdin closing.
+	stdioServerSilent = "silent"
 )
 
 // StdioServerName is the serverInfo name of the stdio test server.
@@ -60,6 +67,11 @@ type StdioServerOptions struct {
 	// initialize with, whatever the client asked for: a restarted server
 	// that speaks an older version.
 	DowngradeTo string
+	// PIDFile, when set, receives the server's process ID as it starts.
+	PIDFile string
+	// Silent makes a server that never answers the handshake and ignores
+	// its stdin closing, so only a signal stops it.
+	Silent bool
 }
 
 // StdioServer returns the command and environment that start the stdio test
@@ -80,6 +92,12 @@ func StdioServer(t *testing.T, opts StdioServerOptions) (command string, env map
 	if opts.DowngradeTo != "" {
 		env[stdioServerDowngradeEnv] = opts.DowngradeTo
 	}
+	if opts.PIDFile != "" {
+		env[stdioServerPIDFileEnv] = opts.PIDFile
+	}
+	if opts.Silent {
+		env[stdioServerEnv] = stdioServerSilent
+	}
 	return exe, env
 }
 
@@ -87,8 +105,23 @@ func StdioServer(t *testing.T, opts StdioServerOptions) (command string, env map
 // when StdioServer started it, and exits when the client disconnects. Call
 // it first thing in TestMain.
 func ServeStdioIfRequested() {
-	if os.Getenv(stdioServerEnv) == "" {
+	mode := os.Getenv(stdioServerEnv)
+	if mode == "" {
 		return
+	}
+	if path := os.Getenv(stdioServerPIDFileEnv); path != "" {
+		//nolint:gosec // G703: the path is the test's own temp file, set by StdioServer
+		if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, "stdio test server:", err)
+			os.Exit(1)
+		}
+	}
+	if mode == stdioServerSilent {
+		// Stdin is never read, so its closing goes unnoticed. Sleeping, not
+		// an empty select: a program with every goroutine blocked forever is
+		// killed by the runtime's deadlock detector.
+		time.Sleep(time.Hour)
+		os.Exit(0)
 	}
 	if err := serveStdio(); err != nil {
 		fmt.Fprintln(os.Stderr, "stdio test server:", err)

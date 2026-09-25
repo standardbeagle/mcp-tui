@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,8 @@ var testBinary struct {
 }
 
 func TestMain(m *testing.M) {
+	// Tests start this binary as a stdio MCP server (testutil.StdioServer).
+	testutil.ServeStdioIfRequested()
 	code := m.Run()
 	if testBinary.dir != "" {
 		if err := os.RemoveAll(testBinary.dir); err != nil {
@@ -352,4 +355,42 @@ func TestOutputFormats(t *testing.T) {
 		}
 		assert.True(t, hasEmojiOutput, "Should have user-friendly output with emojis")
 	})
+}
+
+// A CLI run whose server never answers the handshake exits at --timeout. The
+// server must not outlive it: the SDK's graceful close gives a server that
+// ignores its stdin closing seconds before signaling it, and the CLI exits
+// long before, which used to orphan the server for good.
+func TestCLIConnectTimeoutLeavesNoServerBehind(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration tests in short mode")
+	}
+	bin := buildTestBinary(t)
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	command, env := testutil.StdioServer(t, testutil.StdioServerOptions{Silent: true, PIDFile: pidFile})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// Long enough for the server (this test binary) to start and record its
+	// PID under a loaded race run; the CLI exits when it runs out.
+	cmd := exec.CommandContext(ctx, bin, "tool", "list", "--cmd", command, "--timeout", "5s")
+	cmd.Env = os.Environ()
+	for key, value := range env {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
+	output, err := cmd.CombinedOutput()
+	require.Error(t, err, "the handshake must time out:\n%s", output)
+
+	data, err := os.ReadFile(pidFile)
+	require.NoError(t, err, "the server never started:\n%s", output)
+	pid, err := strconv.Atoi(string(data))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if proc, findErr := os.FindProcess(pid); findErr == nil {
+			_ = proc.Kill()
+		}
+	})
+	// The killed server is an orphan once the CLI is gone; init reaps it.
+	require.Eventually(t, func() bool { return testutil.ProcessExited(pid) }, 5*time.Second, 10*time.Millisecond,
+		"the server process outlived the CLI")
 }

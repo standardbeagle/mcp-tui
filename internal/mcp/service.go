@@ -467,10 +467,20 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	if err != nil {
 		// A stdio server that dies during startup fails the handshake with an
 		// opaque EOF. Its stderr says what actually went wrong, so prefer that.
+		var startupErr error
 		if diagnoser, ok := transport.(transports.StartupDiagnoser); ok {
-			if startupErr := diagnoser.StartupError(); startupErr != nil {
-				return startupErr
+			startupErr = diagnoser.StartupError(ctx)
+		}
+		// A server whose handshake ran out of time never became a session;
+		// kill it rather than leave it to the graceful close in the
+		// background, which a caller exiting now (the CLI) would cut short.
+		if killer, ok := transport.(transports.ServerKiller); ok && ctx.Err() != nil {
+			if killErr := killer.KillServer(); killErr != nil {
+				debug.Error("Failed to kill server after handshake deadline", debug.F("error", killErr))
 			}
+		}
+		if startupErr != nil {
+			return startupErr
 		}
 		return fmt.Errorf("failed to connect to MCP server: %w", err)
 	}

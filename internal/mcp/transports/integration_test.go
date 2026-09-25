@@ -225,7 +225,7 @@ func TestEnhancedSTDIOStartupDiagnostics(t *testing.T) {
 		var startupErr error
 		deadline := time.Now().Add(20 * time.Second)
 		for {
-			if startupErr = diagnoser.StartupError(); startupErr != nil {
+			if startupErr = diagnoser.StartupError(context.Background()); startupErr != nil {
 				break
 			}
 			if time.Now().After(deadline) {
