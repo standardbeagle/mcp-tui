@@ -72,6 +72,7 @@ docs/                    Astro docs site（dev.standardbeagle.com）
 
 **SSE**（deprecated）：`officialMCP.SSEClientTransport`。最高協商 2025-11-25，連時記 Warn。SDK SSE client 無 OAuthHandler，故 OAuth 於 SSE（及 stdio）連線時即拒（`validateOAuthTransport`）。
 - **CRITICAL**：connection context 必為 `context.Background()`（`sseContextStrategy`），勿用 CLI timeout context，否則殺 hanging GET。Operation context 可用呼者之 ctx。
+- 握手（至首 `endpoint` event 與 initialize 回應）仍受呼者期限：期限先至，session manager 即取消連線而返；握手既成，流續用 Background 長開。
 - HTTP client `Timeout: 0`（`transports/http_config.go`）。
 - 流程：GET /sse → 首 event `endpoint` 帶 session URL → POST 至該 endpoint（202）→ responses 經 SSE stream 回。
 - Infinite redirect loops 多示 server bug，非 SDK。

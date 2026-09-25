@@ -207,7 +207,24 @@ func (m *Manager) Connect(
 
 	// Attempt connection without holding the lock. Disconnect may run
 	// concurrently; it cancels connectCtx via closeFunc, which aborts this call.
+	//
+	// The caller's ctx bounds the handshake even when the connection context
+	// does not derive from it: SSE runs on context.Background() so its
+	// hanging GET outlives this call, which left a server that accepts and
+	// never answers holding Connect far past any deadline. Until the
+	// handshake ends, the caller's ctx ending cancels the connection.
+	stopWatchdog := context.AfterFunc(ctx, cancel)
 	session, err := client.Connect(connectCtx, transport, sessionOptions)
+	if !stopWatchdog() {
+		// The caller's ctx ended and cancelled the connection. Report that,
+		// not the cancellation it caused.
+		if err == nil {
+			closeAbandoned(session)
+			err = fmt.Errorf("handshake finished after the deadline: %w", context.Cause(ctx))
+		} else {
+			err = fmt.Errorf("handshake cut off: %w: %w", context.Cause(ctx), err)
+		}
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -241,10 +258,7 @@ func (m *Manager) Connect(
 
 	if aborted {
 		// The connection landed after Disconnect. Close it rather than leak it.
-		if closeErr := session.Close(); closeErr != nil {
-			debug.Error("Session manager: Failed to close session abandoned by disconnect",
-				debug.F("error", closeErr))
-		}
+		closeAbandoned(session)
 		cancel()
 		return fmt.Errorf("session connection aborted: manager disconnected during connect")
 	}
@@ -278,6 +292,13 @@ func (m *Manager) Connect(
 	}
 
 	return nil
+}
+
+// closeAbandoned closes a session that completed its handshake for nobody.
+func closeAbandoned(session *officialMCP.ClientSession) {
+	if err := session.Close(); err != nil {
+		debug.Error("Session manager: Failed to close abandoned session", debug.F("error", err))
+	}
 }
 
 // Disconnect cleanly closes the session with proper resource cleanup.
