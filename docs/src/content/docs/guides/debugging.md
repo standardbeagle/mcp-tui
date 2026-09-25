@@ -9,7 +9,12 @@ description: Find and fix MCP server problems with HTTP timing, MCP message trac
 mcp-tui --debug ...
 ```
 
-Raises the log level to `debug` and writes the log to stderr. The log carries
+Raises the log level to `debug` and writes the log to stderr. `--log-level`
+sets the level without it (default `error`). At `info` a routine connection
+logs two lines, that it connected and the negotiated protocol version, plus
+warnings, errors and reconnections; every step of the connection (state
+transitions, traced events, transport setup, each request) is logged at
+`debug`. At `debug` the log carries
 one line per MCP HTTP exchange:
 method, URL, status, duration, content type, the `WWW-Authenticate` challenge,
 DNS/connect/TLS/first-byte timings, connection reuse, and the `Mcp-*`
@@ -40,7 +45,9 @@ only when asked, with `--server-log-level <level>`.
 
 `Ctrl+D` (also `Ctrl+L` or `F12`) opens a debug overlay with seven tabs:
 
-- **General** — every internal event with category, severity, and timestamp.
+- **General** — every internal event with category, severity, and timestamp,
+  at every level: the TUI keeps the full `debug` trace here whatever
+  `--log-level` says, since it writes nothing to stderr.
 - **MCP Protocol** — every JSON-RPC message in both directions, including
   server requests (sampling, elicitation, roots), their answers, and
   notifications (`Enter` for detail).
@@ -48,7 +55,7 @@ only when asked, with `--server-log-level <level>`.
   `Mcp-Param-*` on `2026-07-28` included) and its response, read from the
   same HTTP trace as the `--debug` log.
 - **Auth** — only the `oauth` and `oauth-http` lines, so a failed sign-in
-  reads top to bottom. Filtered by `--log-level` like General.
+  reads top to bottom. Every level, like General.
 - **Statistics** — aggregate counters for the session.
 - **Capabilities** — the negotiated server/client capabilities and the
   server's description, website and icons (`c`/`y` copies the JSON).

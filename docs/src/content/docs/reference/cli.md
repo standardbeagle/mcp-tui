@@ -36,7 +36,7 @@ mcp-tui [global-flags] <subcommand> [subcommand-flags] [args]
 | `--format`, `-f <text\|json>` | `text` | Output format |
 | `--porcelain` | `false` | Machine-readable output (suppresses progress messages) |
 | `--debug` | `false` | Print extra diagnostics to stderr (e.g. negotiated protocol version) |
-| `--log-level <debug\|info\|warn\|error>` | `error` | Log level |
+| `--log-level <debug\|info\|warn\|error>` | `error` | Level of the stderr log. `info` adds the connection and negotiated version; `debug` (or `--debug`) traces every step. The TUI Logs tab shows every level regardless |
 | `--show-headers <a,b,...>` | | Comma-separated header names to show verbatim in the debug HTTP tab (otherwise `Authorization`, `Cookie`, and `Set-Cookie` are redacted) |
 
 > There is no `--json` global flag. Use `--format json` (or `-f json`). The

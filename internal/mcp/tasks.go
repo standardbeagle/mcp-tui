@@ -52,7 +52,7 @@ func (s *service) startTaskSession(session *officialMCP.ClientSession) {
 		ts.Meta = s.extensionRequestMeta(res.ProtocolVersion)
 	}
 	s.tasks.SetSession(ts)
-	debug.Info("Tasks support", debug.F("form", support.Form), debug.F("declared", support.Declared),
+	debug.Debug("Tasks support", debug.F("form", support.Form), debug.F("declared", support.Declared),
 		debug.F("toolCall", support.ToolCall), debug.F("list", support.List), debug.F("cancel", support.Cancel))
 }
 

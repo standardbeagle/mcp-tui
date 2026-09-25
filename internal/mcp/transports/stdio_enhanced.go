@@ -63,7 +63,7 @@ func createEnhancedSTDIOTransport(config *TransportConfig, strategy ContextStrat
 		return nil, nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
-	debug.Info("Enhanced STDIO: Creating transport",
+	debug.Debug("Enhanced STDIO: Creating transport",
 		debug.F("command", config.Command),
 		debug.F("args", config.Args))
 
@@ -255,7 +255,7 @@ func generateSuggestion(output string) string {
 // Implement the Transport interface by delegating to the wrapped transport
 
 func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Connection, error) {
-	debug.Info("Enhanced STDIO: Establishing MCP connection",
+	debug.Debug("Enhanced STDIO: Establishing MCP connection",
 		debug.F("command", e.command))
 
 	// A new process per connection. The SDK wires stdin/stdout; stderr is
@@ -287,7 +287,7 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 		return nil, startErr
 	}
 
-	debug.Info("Enhanced STDIO: MCP connection established successfully")
+	debug.Debug("Enhanced STDIO: MCP connection established successfully")
 	return conn, nil
 }
 

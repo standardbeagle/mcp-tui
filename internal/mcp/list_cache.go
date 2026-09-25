@@ -158,7 +158,7 @@ func (s *service) recordListCache(session *officialMCP.ClientSession, info *List
 		s.mu.Unlock()
 		return
 	}
-	debug.Info("List cache",
+	debug.Debug("List cache",
 		debug.F("method", info.Method),
 		debug.F("cached_pages", info.CachedPages),
 		debug.F("pages", info.Pages),

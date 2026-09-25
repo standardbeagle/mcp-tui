@@ -716,7 +716,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		MultiRoundTrip: &officialMCP.MultiRoundTripOptions{Disabled: true},
 		// Add progress notification handler for long-running operations
 		ProgressNotificationHandler: func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
-			debug.Info("Progress notification",
+			debug.Debug("Progress notification",
 				debug.F("progressToken", req.Params.ProgressToken),
 				debug.F("progress", req.Params.Progress))
 		},
@@ -737,7 +737,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		// stream by captureNotificationsMiddleware like every notification.
 		ResourceUpdatedHandler: func(_ context.Context, req *officialMCP.ResourceUpdatedNotificationRequest) {
 			if req != nil && req.Params != nil {
-				debug.Info("Subscribed resource updated", debug.F("uri", req.Params.URI))
+				debug.Debug("Subscribed resource updated", debug.F("uri", req.Params.URI))
 			}
 		},
 	}
@@ -756,12 +756,12 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 			clientOptions.CreateMessageWithToolsHandler = func(ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error) {
 				return wt.HandleCreateMessageWithTools(ctx, req)
 			}
-			debug.Info("Sampling handler (with tools) registered with MCP client")
+			debug.Debug("Sampling handler (with tools) registered with MCP client")
 		} else {
 			clientOptions.CreateMessageHandler = func(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
 				return handler.HandleCreateMessage(ctx, req)
 			}
-			debug.Info("Sampling handler registered with MCP client")
+			debug.Debug("Sampling handler registered with MCP client")
 		}
 	}
 	if s.elicitationHandler != nil {
@@ -781,7 +781,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 				debug.Info("URL elicitation completed", debug.F("elicitationID", req.Params.ElicitationID))
 			}
 		}
-		debug.Info("Elicitation handler registered with MCP client")
+		debug.Debug("Elicitation handler registered with MCP client")
 	}
 	// Advertise explicit capabilities rather than the SDK defaults: the SDK
 	// claims roots listChanged on every protocol and never adds URL
@@ -855,7 +855,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 	// that path is exercised by AddRoots / RemoveRoots on the service.
 	if len(s.roots) > 0 {
 		client.AddRoots(s.roots...)
-		debug.Info("Seeded client roots", debug.F("count", len(s.roots)))
+		debug.Debug("Seeded client roots", debug.F("count", len(s.roots)))
 	}
 
 	// Capture the client so post-connect AddRoots / RemoveRoots calls on the
@@ -870,13 +870,13 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 // Headers carry --header credentials and its Environment carries API keys.
 func (s *service) logConnectionDetails(config *configPkg.ConnectionConfig) {
 	if config.Type == configPkg.TransportStdio {
-		debug.Info("Connecting to MCP server",
+		debug.Debug("Connecting to MCP server",
 			debug.F("transport", "stdio"),
 			debug.F("command", config.Command),
 			debug.F("args", config.Args))
 		return
 	}
-	debug.Info("Connecting to MCP server",
+	debug.Debug("Connecting to MCP server",
 		debug.F("transport", config.Type),
 		debug.F("url", redact.URL(config.URL)))
 	if config.Type == configPkg.TransportSSE {
@@ -1113,7 +1113,7 @@ func (s *service) ListTools(ctx context.Context) ([]Tool, error) {
 	}
 	s.mu.Unlock()
 
-	debug.Info("Listed tools successfully",
+	debug.Debug("Listed tools successfully",
 		debug.F("count", len(tools)))
 
 	return tools, nil
@@ -1291,7 +1291,7 @@ func (s *service) toolResult(
 			debug.F("violations", len(violations)))
 	}
 
-	debug.Info("Called tool successfully",
+	debug.Debug("Called tool successfully",
 		debug.F("tool", toolName),
 		debug.F("isError", result.IsError),
 		debug.F("contentCount", len(content)),
@@ -1390,7 +1390,7 @@ func (s *service) ListResources(ctx context.Context) ([]Resource, error) {
 		}
 	}
 
-	debug.Info("Listed resources successfully",
+	debug.Debug("Listed resources successfully",
 		debug.F("count", len(resources)))
 
 	return resources, nil
@@ -1446,7 +1446,7 @@ func (s *service) ListResourceTemplates(ctx context.Context) ([]ResourceTemplate
 		}
 	}
 
-	debug.Info("Listed resource templates successfully",
+	debug.Debug("Listed resource templates successfully",
 		debug.F("count", len(templates)))
 
 	return templates, nil
@@ -1501,7 +1501,7 @@ func (s *service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		HasMore: result.Completion.HasMore,
 		Total:   result.Completion.Total,
 	}
-	debug.Info("Completed successfully",
+	debug.Debug("Completed successfully",
 		debug.F("refType", req.Ref.Type),
 		debug.F("argument", req.ArgumentName),
 		debug.F("count", len(out.Values)),
@@ -1571,7 +1571,7 @@ func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceRe
 		fields = append(fields, debug.F("from_cache", cache.FromCache), debug.F("ttl_ms", cache.TTLMs),
 			debug.F("cache_scope", cache.CacheScope))
 	}
-	debug.Info("Read resource successfully", fields...)
+	debug.Debug("Read resource successfully", fields...)
 
 	return &ReadResourceResult{
 		Contents: contents, Rounds: rounds, Server: respondingServer(result.Meta), Cache: cache,
@@ -1638,7 +1638,7 @@ func (s *service) ListPrompts(ctx context.Context) ([]Prompt, error) {
 		}
 	}
 
-	debug.Info("Listed prompts successfully",
+	debug.Debug("Listed prompts successfully",
 		debug.F("count", len(prompts)))
 
 	return prompts, nil
@@ -1707,7 +1707,7 @@ func (s *service) GetPrompt(ctx context.Context, req GetPromptRequest) (*GetProm
 		}
 	}
 
-	debug.Info("Got prompt successfully",
+	debug.Debug("Got prompt successfully",
 		debug.F("prompt", req.Name),
 		debug.F("messagesCount", len(messages)))
 

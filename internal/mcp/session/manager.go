@@ -140,7 +140,7 @@ func (m *Manager) SetDebugEnabled(enabled bool) {
 		m.eventTracer.SetEnabled(enabled)
 	}
 
-	debug.Info("Session manager debug mode changed", debug.F("enabled", enabled))
+	debug.Debug("Session manager debug mode changed", debug.F("enabled", enabled))
 }
 
 // Connect establishes a new session with proper lifecycle management
@@ -192,7 +192,7 @@ func (m *Manager) Connect(
 		m.transportDebugger = mcpDebug.NewTransportDebugger(m.eventTracer, string(transportType))
 	}
 
-	debug.Info("Session manager: Starting connection",
+	debug.Debug("Session manager: Starting connection",
 		debug.F("transport", transportType),
 		debug.F("sessionState", m.info.State))
 
@@ -280,7 +280,7 @@ func (m *Manager) Connect(
 		})
 	}
 
-	debug.Info("Session manager: Connection established",
+	debug.Debug("Session manager: Connection established",
 		debug.F("sessionID", m.info.SessionID),
 		debug.F("connectedAt", m.info.ConnectedAt))
 
@@ -329,7 +329,7 @@ func (m *Manager) handshake(
 		if o.session != nil {
 			closeAbandoned(o.session)
 		}
-		debug.Info("Session manager: Abandoned handshake finished closing",
+		debug.Debug("Session manager: Abandoned handshake finished closing",
 			debug.F("duration", time.Since(start)), debug.F("error", o.err))
 	}()
 	return nil, fmt.Errorf("handshake abandoned: %w", context.Cause(connectCtx))
@@ -355,7 +355,7 @@ func (m *Manager) Disconnect() error {
 		return nil // Already disconnected
 	}
 
-	debug.Info("Session manager: Starting disconnection",
+	debug.Debug("Session manager: Starting disconnection",
 		debug.F("currentState", m.info.State),
 		debug.F("sessionID", m.info.SessionID))
 
@@ -380,7 +380,7 @@ func (m *Manager) Disconnect() error {
 		}
 	}
 
-	debug.Info("Session manager: Disconnection complete", debug.F("finalState", StateClosed))
+	debug.Debug("Session manager: Disconnection complete", debug.F("finalState", StateClosed))
 	return lastErr
 }
 
@@ -454,7 +454,7 @@ func (m *Manager) SetReconnectionPolicy(maxAttempts int, delay time.Duration) {
 	m.maxReconnectAttempts = maxAttempts
 	m.reconnectDelay = delay
 
-	debug.Info("Session manager: Reconnection policy updated",
+	debug.Debug("Session manager: Reconnection policy updated",
 		debug.F("maxAttempts", maxAttempts),
 		debug.F("delay", delay))
 }
@@ -466,7 +466,7 @@ func (m *Manager) SetHealthCheckInterval(interval time.Duration) {
 
 	m.healthCheckInterval = interval
 
-	debug.Info("Session manager: Health check interval updated",
+	debug.Debug("Session manager: Health check interval updated",
 		debug.F("interval", interval))
 }
 
@@ -576,7 +576,7 @@ func (m *Manager) setState(newState State) {
 	m.info.State = newState
 
 	if oldState != newState {
-		debug.Info("Session manager: State transition",
+		debug.Debug("Session manager: State transition",
 			debug.F("from", oldState),
 			debug.F("to", newState))
 	}
@@ -591,13 +591,13 @@ func (m *Manager) startHealthMonitoring(ctx context.Context) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	debug.Info("Session manager: Starting health monitoring",
+	debug.Debug("Session manager: Starting health monitoring",
 		debug.F("interval", interval))
 
 	for {
 		select {
 		case <-ctx.Done():
-			debug.Info("Session manager: Health monitoring stopped (context cancelled)")
+			debug.Debug("Session manager: Health monitoring stopped (context cancelled)")
 			return
 		case <-ticker.C:
 			m.performHealthCheck(ctx)
@@ -750,7 +750,7 @@ func (m *Manager) closeInBackground(session *officialMCP.ClientSession, what str
 		defer m.backgroundCloses.Done()
 		start := time.Now()
 		err := session.Close()
-		debug.Info("Session manager: Background close finished",
+		debug.Debug("Session manager: Background close finished",
 			debug.F("session", what), debug.F("duration", time.Since(start)), debug.F("error", err))
 	}()
 }

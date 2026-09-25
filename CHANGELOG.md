@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On `2026-07-28` mcp-tui no longer advertises or sends `roots/list_changed`; roots edits change what later input requests are answered with.
 - **`verify` and `conform` report warnings**: a SHOULD-level finding prints `WARN` and does not fail the run. The summaries read `N passed, N warned, N failed` (`conform` adds `, N skipped`), `--json` results carry `"warn": true`, and a JUnit report puts the warning in the passing case's `system-out`.
 - **Fast tool results** show at once in the TUI; a 500ms minimum display time held them back.
+- **Quieter `info` log**: a routine connection logged about 20 `INFO` lines (every state transition, traced event and transport step). At `--log-level info` it now logs two, the connection and the negotiated protocol version, plus warnings, errors and reconnections; the step-by-step trace moved to `debug` (`--debug`). The TUI Logs tab now shows every level whatever `--log-level` says; before, it showed only what `--log-level` let through (errors, by default).
 
 - **`--arg <value>`**: pass one server argument as is; repeat it for more. Unlike `--args`, it keeps commas, spaces and quotes intact. It cannot be combined with `--args`.
 - **Arrays of objects in the TUI tool form**: Ctrl+E opens a list of elements, each an object sub-form (Ctrl+A adds, Ctrl+X removes), with the same depth limit as nested objects. The CLI keeps the `key:=<json>` literal.

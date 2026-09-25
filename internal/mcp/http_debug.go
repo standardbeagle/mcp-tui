@@ -178,7 +178,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			dnsStart = time.Now()
 			SetConnectionState(StageDNSLookup, "DNS lookup started", info.Host, nil)
 			if t.debugMode {
-				debug.Info("DNS lookup started", debug.F("host", info.Host))
+				debug.Debug("DNS lookup started", debug.F("host", info.Host))
 			}
 		},
 		DNSDone: func(info httptrace.DNSDoneInfo) {
@@ -186,7 +186,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 				connInfo.DNSLookupTime = time.Since(dnsStart)
 			}
 			if t.debugMode {
-				debug.Info("DNS lookup completed",
+				debug.Debug("DNS lookup completed",
 					debug.F("duration", connInfo.DNSLookupTime),
 					debug.F("addresses", info.Addrs))
 			}
@@ -195,7 +195,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			connectStart = time.Now()
 			SetConnectionState(StageTCPConnect, "TCP connection started", addr, nil)
 			if t.debugMode {
-				debug.Info("TCP connection started", debug.F("addr", addr))
+				debug.Debug("TCP connection started", debug.F("addr", addr))
 			}
 		},
 		ConnectDone: func(network, addr string, err error) {
@@ -204,7 +204,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			}
 			connInfo.RemoteAddr = addr
 			if t.debugMode {
-				debug.Info("TCP connection completed",
+				debug.Debug("TCP connection completed",
 					debug.F("duration", connInfo.ConnectTime),
 					debug.F("error", err))
 			}
@@ -213,7 +213,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			tlsStart = time.Now()
 			SetConnectionState(StageTLSHandshake, "TLS handshake started", req.URL.String(), nil)
 			if t.debugMode {
-				debug.Info("TLS handshake started")
+				debug.Debug("TLS handshake started")
 			}
 		},
 		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
@@ -221,7 +221,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 				connInfo.TLSTime = time.Since(tlsStart)
 			}
 			if t.debugMode {
-				debug.Info("TLS handshake completed",
+				debug.Debug("TLS handshake completed",
 					debug.F("duration", connInfo.TLSTime),
 					debug.F("error", err))
 			}
@@ -235,7 +235,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 				connInfo.IdleTime = info.IdleTime
 			}
 			if t.debugMode {
-				debug.Info("Got connection",
+				debug.Debug("Got connection",
 					debug.F("reused", info.Reused),
 					debug.F("idleTime", info.IdleTime),
 					debug.F("localAddr", connInfo.LocalAddr))
@@ -246,7 +246,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 				connInfo.FirstByteTime = time.Since(firstByteStart)
 			}
 			if t.debugMode {
-				debug.Info("Got first response byte", debug.F("duration", connInfo.FirstByteTime))
+				debug.Debug("Got first response byte", debug.F("duration", connInfo.FirstByteTime))
 			}
 		},
 	}
@@ -279,7 +279,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		// Apply --show-headers redaction policy to the debug log too — the
 		// log file is just as exposable as the on-screen pane, so the same
 		// redaction rules apply.
-		debug.Info("Starting HTTP request",
+		debug.Debug("Starting HTTP request",
 			debug.F("method", req.Method),
 			debug.F("url", redact.RedactedURL(req.URL)),
 			debug.F("headers", RedactHeaders(requestHeaders, GetShowHeaderOverrides())))
@@ -378,7 +378,7 @@ func (t *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			setLastHTTPError(errorInfo)
 
 			if t.debugMode {
-				debug.Info("HTTP Response Captured",
+				debug.Debug("HTTP Response Captured",
 					debug.F("url", redact.RedactedURL(req.URL)),
 					debug.F("statusCode", resp.StatusCode),
 					debug.F("isError", isError),

@@ -173,7 +173,7 @@ func (eh *ErrorHandler) logClassifiedError(classified *ClassifiedError) {
 	case SeverityInfo:
 		debug.Info("Classified error: "+classified.Message, fields...)
 	case SeverityWarning:
-		debug.Info("Classified warning: "+classified.Message, fields...)
+		debug.Warn("Classified warning: "+classified.Message, fields...)
 	case SeverityError, SeverityCritical:
 		debug.Error("Classified error: "+classified.Message, fields...)
 	}

@@ -439,7 +439,7 @@ func (c *Client) record(t *Task, via string) {
 		return
 	}
 	if tn.Changed() {
-		debug.Info("Task status", debug.F("task", Fingerprint(t.ID)), debug.F("via", via),
+		debug.Debug("Task status", debug.F("task", Fingerprint(t.ID)), debug.F("via", via),
 			debug.F("from", tn.From), debug.F("to", tn.To))
 	}
 }

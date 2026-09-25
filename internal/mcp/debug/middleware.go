@@ -55,7 +55,7 @@ func (tm *TracingMiddleware) TraceNotificationReceived(method string, params int
 	// Trace notification received
 	tm.tracer.TraceNotificationReceived(method, params)
 
-	debug.Info("MCP Notification received via tracing middleware",
+	debug.Debug("MCP Notification received via tracing middleware",
 		debug.F("method", method))
 }
 
@@ -65,7 +65,7 @@ func (tm *TracingMiddleware) CreateProgressHandler() func(ctx context.Context, r
 		// Trace progress notification
 		tm.tracer.TraceProgress(req.Params.ProgressToken, req.Params.Progress, "progress_notification")
 
-		debug.Info("Progress notification traced",
+		debug.Debug("Progress notification traced",
 			debug.F("progress_token", req.Params.ProgressToken),
 			debug.F("progress", req.Params.Progress))
 	}
@@ -120,7 +120,7 @@ func CreateDebugClient(impl *officialMCP.Implementation, tracer *EventTracer, ex
 	middleware := NewTracingMiddleware(tracer)
 	client.AddSendingMiddleware(middleware.CreateSendingMiddleware())
 
-	debug.Info("Debug client created with event tracing",
+	debug.Debug("Debug client created with event tracing",
 		debug.F("implementation", impl.Name),
 		debug.F("version", impl.Version))
 

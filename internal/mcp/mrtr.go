@@ -66,12 +66,12 @@ func (s *service) runInputRounds(
 		}
 		if requests == nil {
 			if round > 1 {
-				debug.Info("MRTR complete",
+				debug.Debug("MRTR complete",
 					debug.F("method", method), debug.F("target", target), debug.F("rounds", round))
 			}
 			return rounds, nil
 		}
-		debug.Info("MRTR input required",
+		debug.Debug("MRTR input required",
 			debug.F("method", method),
 			debug.F("target", target),
 			debug.F("round", round),
@@ -136,7 +136,7 @@ func (s *service) fulfillInputRequests(
 					debug.F("kind", inputRequestKind(request)), debug.F("error", err))
 				return fmt.Errorf("fulfilling input request %q: %w", key, err)
 			}
-			debug.Info("MRTR input fulfilled",
+			debug.Debug("MRTR input fulfilled",
 				debug.F("method", method), debug.F("round", round), debug.F("key", key),
 				debug.F("kind", inputRequestKind(request)), debug.F("response", describeInputResponse(response)))
 			mu.Lock()

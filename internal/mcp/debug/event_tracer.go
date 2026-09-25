@@ -95,7 +95,7 @@ func (et *EventTracer) SetEnabled(enabled bool) {
 	defer et.mu.Unlock()
 
 	et.enabled = enabled
-	debug.Info("Event tracer state changed", debug.F("enabled", enabled))
+	debug.Debug("Event tracer state changed", debug.F("enabled", enabled))
 }
 
 // SetSessionID sets the current session ID for event correlation
@@ -104,7 +104,7 @@ func (et *EventTracer) SetSessionID(sessionID string) {
 	defer et.mu.Unlock()
 
 	et.sessionID = sessionID
-	debug.Info("Event tracer session ID updated", debug.F("sessionID", sessionID))
+	debug.Debug("Event tracer session ID updated", debug.F("sessionID", sessionID))
 }
 
 // TraceConnectionStart records a connection start event
@@ -361,7 +361,7 @@ func (et *EventTracer) logEvent(event *Event) {
 		}
 	}
 
-	debug.Info("MCP Event Traced", fields...)
+	debug.Debug("MCP Event Traced", fields...)
 }
 
 // GetEvents returns a copy of all traced events
@@ -448,7 +448,7 @@ func (et *EventTracer) Clear() {
 	et.requestTracker = make(map[interface{}]*Event)
 	et.eventCounter = 0
 
-	debug.Info("Event tracer cleared")
+	debug.Debug("Event tracer cleared")
 }
 
 // ExportEvents exports events in JSON format
