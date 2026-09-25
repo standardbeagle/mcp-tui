@@ -19,6 +19,12 @@ var (
 	rpcServerClosing = &jsonrpc.Error{Code: -32004, Message: "server is closing"}
 )
 
+// operationKey is the Classify context key naming the failed operation.
+const operationKey = "operation"
+
+// healthCheck is the Classify context of a failure on an established session.
+var healthCheck = map[string]interface{}{operationKey: "health_check"}
+
 // An established session that loses its connection must be reconnected:
 // every way the SDK reports a dropped connection classifies as a
 // recoverable transport error, whatever its message says.
@@ -36,7 +42,7 @@ func TestClassifyLostConnectionIsRecoverable(t *testing.T) {
 		{"use of closed connection", fmt.Errorf("write: %w", net.ErrClosed)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			classified := NewErrorClassifier().Classify(tt.err, map[string]interface{}{"operation": "health_check"})
+			classified := NewErrorClassifier().Classify(tt.err, healthCheck)
 			assert.Equal(t, CategoryTransport, classified.Category)
 			assert.True(t, classified.Recoverable, "a lost connection must trigger reconnection")
 		})
@@ -47,7 +53,7 @@ func TestClassifyLostConnectionIsRecoverable(t *testing.T) {
 // the server exited or does not speak MCP. That is reported, not retried.
 func TestClassifyConnectionLostDuringHandshakeIsProtocolFailure(t *testing.T) {
 	err := fmt.Errorf("calling %q: %w", "initialize", io.EOF)
-	classified := NewErrorClassifier().Classify(err, map[string]interface{}{"operation": OperationSessionConnect})
+	classified := NewErrorClassifier().Classify(err, map[string]interface{}{operationKey: OperationSessionConnect})
 	assert.Equal(t, CategoryProtocol, classified.Category)
 	assert.False(t, classified.Recoverable)
 	assert.Contains(t, classified.Message, "MCP initialization failed")
@@ -82,7 +88,7 @@ func TestClassifyProtocolErrorsAreNotRecoverable(t *testing.T) {
 		&jsonrpc.Error{Code: jsonrpc.CodeParseError, Message: "parse error"},
 		&jsonrpc.Error{Code: officialMCP.CodeUnsupportedProtocolVersion, Message: "unsupported protocol version"},
 	} {
-		classified := NewErrorClassifier().Classify(err, map[string]interface{}{"operation": "health_check"})
+		classified := NewErrorClassifier().Classify(err, healthCheck)
 		assert.False(t, classified.Recoverable, "%v must not trigger reconnection", err)
 	}
 }

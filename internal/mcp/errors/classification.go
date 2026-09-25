@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -159,7 +160,10 @@ func (ec *ErrorClassifier) Classify(err error, context map[string]interface{}) *
 		return classified
 	}
 
-	operation, _ := context["operation"].(string)
+	var operation string
+	if op, ok := context["operation"].(string); ok {
+		operation = op
+	}
 
 	// Analyze error type and content
 	category, severity := ec.analyzeError(err, operation)
@@ -222,51 +226,8 @@ func (ec *ErrorClassifier) analyzeError(err error, operation string) (ErrorCateg
 		return CategoryTransport, SeverityWarning
 	}
 
-	// errors.As, not a type assertion: transports wrap their failures
-	// (fmt.Errorf("%w"), jsonrpc), and an assertion on the outermost error
-	// misses every wrapped one.
-
-	// DNS resolution errors (checked before net.Error: *net.DNSError is one).
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		if dnsErr.IsNotFound {
-			return CategoryConnection, SeverityError
-		}
-		return CategoryConnection, SeverityWarning
-	}
-
-	// Syscall errors (checked before net.OpError, which usually wraps one).
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		switch errno {
-		case syscall.ECONNREFUSED:
-			return CategoryConnection, SeverityError
-		case syscall.ECONNRESET:
-			return CategoryConnection, SeverityWarning
-		case syscall.EPIPE:
-			return CategoryTransport, SeverityWarning
-		case syscall.ENOENT:
-			return CategoryClientConfig, SeverityError
-		}
-		return CategoryTransport, SeverityError
-	}
-
-	// Operation errors
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		if opErr.Op == "dial" {
-			return CategoryConnection, SeverityError
-		}
-		return CategoryTransport, SeverityError
-	}
-
-	// Any other network error
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		if netErr.Timeout() {
-			return CategoryTimeout, SeverityWarning
-		}
-		return CategoryConnection, SeverityError
+	if category, severity, ok := classifyNetworkError(err); ok {
+		return category, severity
 	}
 
 	// A server command that is not on PATH.
@@ -280,122 +241,146 @@ func (ec *ErrorClassifier) analyzeError(err error, operation string) (ErrorCateg
 		return CategoryServerInternal, SeverityError
 	}
 
-	// A JSON-RPC error response: the code says what went wrong; the
-	// message is the server's own words and decides nothing.
-	var rpcErr *jsonrpc.Error
-	if errors.As(err, &rpcErr) {
-		switch rpcErr.Code {
-		case jsonrpc.CodeParseError, jsonrpc.CodeInvalidRequest, officialMCP.CodeUnsupportedProtocolVersion:
-			return CategoryProtocol, SeverityError
-		case jsonrpc.CodeMethodNotFound:
-			return CategoryServerCapability, SeverityWarning
-		case jsonrpc.CodeInvalidParams:
-			return CategoryValidation, SeverityError
-		case jsonrpc.CodeInternalError:
-			return CategoryServerInternal, SeverityError
-		}
+	if category, severity, ok := classifyRPCError(err); ok {
+		return category, severity
 	}
 
-	return ec.analyzeErrorMessage(strings.ToLower(err.Error()))
+	return classifyErrorMessage(strings.ToLower(err.Error()))
 }
 
-// analyzeErrorMessage classifies an error that carries no type to inspect,
-// by its text. What reaches here: server stderr captured at startup (plain
+// classifyNetworkError classifies network and syscall errors. errors.As, not
+// a type assertion: transports wrap their failures (fmt.Errorf("%w"),
+// jsonrpc), and an assertion on the outermost error misses every wrapped one.
+func classifyNetworkError(err error) (ErrorCategory, ErrorSeverity, bool) {
+	// DNS resolution errors (checked before net.Error: *net.DNSError is one).
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		if dnsErr.IsNotFound {
+			return CategoryConnection, SeverityError, true
+		}
+		return CategoryConnection, SeverityWarning, true
+	}
+
+	// Syscall errors (checked before net.OpError, which usually wraps one).
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		switch errno {
+		case syscall.ECONNREFUSED:
+			return CategoryConnection, SeverityError, true
+		case syscall.ECONNRESET:
+			return CategoryConnection, SeverityWarning, true
+		case syscall.EPIPE:
+			return CategoryTransport, SeverityWarning, true
+		case syscall.ENOENT:
+			return CategoryClientConfig, SeverityError, true
+		}
+		return CategoryTransport, SeverityError, true
+	}
+
+	// Operation errors
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		if opErr.Op == "dial" {
+			return CategoryConnection, SeverityError, true
+		}
+		return CategoryTransport, SeverityError, true
+	}
+
+	// Any other network error
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			return CategoryTimeout, SeverityWarning, true
+		}
+		return CategoryConnection, SeverityError, true
+	}
+	return CategoryUnknown, SeverityError, false
+}
+
+// classifyRPCError classifies a JSON-RPC error response by its code. The
+// message is the server's own words and decides nothing.
+func classifyRPCError(err error) (ErrorCategory, ErrorSeverity, bool) {
+	var rpcErr *jsonrpc.Error
+	if !errors.As(err, &rpcErr) {
+		return CategoryUnknown, SeverityError, false
+	}
+	switch rpcErr.Code {
+	case jsonrpc.CodeParseError, jsonrpc.CodeInvalidRequest, officialMCP.CodeUnsupportedProtocolVersion:
+		return CategoryProtocol, SeverityError, true
+	case jsonrpc.CodeMethodNotFound:
+		return CategoryServerCapability, SeverityWarning, true
+	case jsonrpc.CodeInvalidParams:
+		return CategoryValidation, SeverityError, true
+	case jsonrpc.CodeInternalError:
+		return CategoryServerInternal, SeverityError, true
+	}
+	return CategoryUnknown, SeverityError, false
+}
+
+// messageRule matches an error message holding at least one phrase of every
+// group.
+type messageRule struct {
+	groups   [][]string
+	category ErrorCategory
+	severity ErrorSeverity
+}
+
+func (r messageRule) matches(errStr string) bool {
+	for _, group := range r.groups {
+		if !slices.ContainsFunc(group, func(phrase string) bool { return strings.Contains(errStr, phrase) }) {
+			return false
+		}
+	}
+	return true
+}
+
+// messageRules classify, first match wins, the errors that carry no type
+// to inspect. What reaches them: server stderr captured at startup (plain
 // text by nature), SDK errors built with %v or unexported types (the SDK's
 // unsupportedProtocolVersionError, HTTP status failures such as "failed to
 // connect: Unauthorized"), and errors other layers flattened to strings.
-func (ec *ErrorClassifier) analyzeErrorMessage(errStr string) (ErrorCategory, ErrorSeverity) {
-	if strings.Contains(errStr, "timeout") {
-		if strings.Contains(errStr, "connection") {
-			return CategoryConnection, SeverityError
-		}
-		return CategoryTimeout, SeverityWarning
-	}
-
-	// Network faults whose type was lost on the way through a layer that
-	// formats with %v. "connection closed" and "broken pipe" are absent on
-	// purpose: as bare strings they do not say whether a session ever
-	// existed, and a typed lost connection is caught by IsConnectionLost.
-	if strings.Contains(errStr, "connection refused") ||
-		strings.Contains(errStr, "connection reset") ||
-		strings.Contains(errStr, "no such host") ||
-		strings.Contains(errStr, "network is unreachable") {
-		return CategoryConnection, SeverityError
-	}
-
-	// Server startup failures, recognised in the server's stderr output.
-	if strings.Contains(errStr, "environment variable") && strings.Contains(errStr, "required") {
-		return CategoryServerStartup, SeverityError
-	}
-	if strings.Contains(errStr, "usage:") || strings.Contains(errStr, "error: missing") {
-		return CategoryServerStartup, SeverityError
-	}
-	if strings.Contains(errStr, "npm error 404") || strings.Contains(errStr, "package not found") {
-		return CategoryServerStartup, SeverityError
-	}
-	if strings.Contains(errStr, "module not found") || strings.Contains(errStr, "cannot find module") {
-		return CategoryServerStartup, SeverityError
-	}
-
-	// Handshake and version failures. The SDK reports a server-chosen
+var messageRules = []messageRule{
+	{[][]string{{"timeout"}, {"connection"}}, CategoryConnection, SeverityError},
+	{[][]string{{"timeout"}}, CategoryTimeout, SeverityWarning},
+	// Network faults whose type was lost to a layer formatting with %v.
+	// "connection closed" and "broken pipe" are absent on purpose: as bare
+	// strings they do not say whether a session ever existed; a typed lost
+	// connection is caught by IsConnectionLost.
+	{[][]string{{"connection refused", "connection reset", "no such host", "network is unreachable"}},
+		CategoryConnection, SeverityError},
+	// Server startup failures, recognized in the server's stderr output.
+	{[][]string{{"environment variable"}, {"required"}}, CategoryServerStartup, SeverityError},
+	{[][]string{{"usage:", "error: missing", "npm error 404", "package not found", "module not found",
+		"cannot find module"}}, CategoryServerStartup, SeverityError},
+	// Handshake and version failures; the SDK reports a server-chosen
 	// version it cannot speak with an unexported error type.
-	if strings.Contains(errStr, `calling "initialize"`) ||
-		strings.Contains(errStr, "registration") ||
-		strings.Contains(errStr, "handshake") ||
-		strings.Contains(errStr, "protocol version") ||
-		strings.Contains(errStr, "unsupported") && strings.Contains(errStr, "version") ||
-		strings.Contains(errStr, "protocol") {
-		return CategoryProtocol, SeverityError
-	}
-
-	// JSON/serialization errors
-	if strings.Contains(errStr, "json") || strings.Contains(errStr, "unmarshal") || strings.Contains(errStr, "marshal") {
-		return CategorySerialization, SeverityError
-	}
-
-	// Authentication errors: the SDK formats HTTP 401/403 as status text.
-	if strings.Contains(errStr, "auth") || strings.Contains(errStr, "unauthorized") || strings.Contains(errStr, "forbidden") {
-		return CategoryAuthentication, SeverityError
-	}
-
-	// Server capability errors
-	if strings.Contains(errStr, "not supported") || strings.Contains(errStr, "capability") {
-		return CategoryServerCapability, SeverityWarning
-	}
-
-	// Validation errors (client-side parameter validation), checked after
-	// the protocol errors so a malformed server response is not blamed on
-	// the client.
-	if strings.Contains(errStr, "invalid") || strings.Contains(errStr, "validation") {
-		if strings.Contains(errStr, "response") ||
-			strings.Contains(errStr, "server") ||
-			strings.Contains(errStr, "message") {
-			return CategoryProtocol, SeverityError
-		}
-		return CategoryValidation, SeverityError
-	}
-
+	{[][]string{{`calling "initialize"`, "registration", "handshake", "protocol"}}, CategoryProtocol, SeverityError},
+	{[][]string{{"unsupported"}, {"version"}}, CategoryProtocol, SeverityError},
+	{[][]string{{"json", "unmarshal", "marshal"}}, CategorySerialization, SeverityError},
+	// The SDK formats HTTP 401/403 as status text.
+	{[][]string{{"auth", "unauthorized", "forbidden"}}, CategoryAuthentication, SeverityError},
+	{[][]string{{"not supported", "capability"}}, CategoryServerCapability, SeverityWarning},
+	// A malformed server response is not blamed on the client.
+	{[][]string{{"invalid", "validation"}, {"response", "server", "message"}}, //nolint:goconst // phrases, not keys
+		CategoryProtocol, SeverityError},
+	{[][]string{{"invalid", "validation"}}, CategoryValidation, SeverityError},
 	// A shell's report of a missing command, relayed through stderr.
-	if strings.Contains(errStr, "command not found") {
-		return CategoryClientConfig, SeverityError
-	}
-
-	// Resource errors
-	if strings.Contains(errStr, "resource") || strings.Contains(errStr, "memory") || strings.Contains(errStr, "disk") {
-		return CategoryClientResource, SeverityError
-	}
-
+	{[][]string{{"command not found"}}, CategoryClientConfig, SeverityError},
+	{[][]string{{"resource", "memory", "disk"}}, CategoryClientResource, SeverityError},
 	// HTTP status failures, which the SDK formats as status text.
-	if strings.Contains(errStr, "500") || strings.Contains(errStr, "internal server error") {
-		return CategoryServerInternal, SeverityError
-	}
-	if strings.Contains(errStr, "503") || strings.Contains(errStr, "service unavailable") {
-		return CategoryServerUnavailable, SeverityError
-	}
-	if strings.Contains(errStr, "404") || strings.Contains(errStr, "not found") {
-		return CategoryServerCapability, SeverityWarning
-	}
+	{[][]string{{"500", "internal server error"}}, CategoryServerInternal, SeverityError},
+	{[][]string{{"503", "service unavailable"}}, CategoryServerUnavailable, SeverityError},
+	{[][]string{{"404", "not found"}}, CategoryServerCapability, SeverityWarning},
+}
 
+// classifyErrorMessage classifies an error that carries no type to inspect,
+// by its lower-cased text.
+func classifyErrorMessage(errStr string) (ErrorCategory, ErrorSeverity) {
+	for _, rule := range messageRules {
+		if rule.matches(errStr) {
+			return rule.category, rule.severity
+		}
+	}
 	return CategoryUnknown, SeverityError
 }
 
