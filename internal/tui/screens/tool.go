@@ -106,6 +106,11 @@ type ToolScreen struct {
 	// against it before a call. Zero (accepting anything) when it did not
 	// parse.
 	inputSchema inputschema.Schema
+	// skipArgValidation (Ctrl+O) sends a call whose arguments break the
+	// input schema instead of refusing it; argumentViolation is what the
+	// last call sent broke, "" when it broke nothing.
+	skipArgValidation bool
+	argumentViolation string
 	// schemaNote says why the input schema's root is not shown as a form
 	// (the raw JSON editor is used instead).
 	schemaNote string
@@ -129,6 +134,7 @@ type ToolScreen struct {
 	selectedButtonStyle lipgloss.Style
 	resultStyle         lipgloss.Style
 	errorStyle          lipgloss.Style
+	warningStyle        lipgloss.Style
 	helpStyle           lipgloss.Style
 }
 
@@ -318,6 +324,9 @@ func (ts *ToolScreen) generateCLICommand() string {
 
 	// Add the tool command
 	fmt.Fprintf(&builder, " tool call %s", shell.Quote(ts.tool.Name))
+	if ts.skipArgValidation {
+		builder.WriteString(" --skip-arg-validation")
+	}
 
 	// Add arguments from form fields; an object filled in as a sub-form is
 	// written as the JSON the form builds for it.
@@ -389,6 +398,9 @@ func (ts *ToolScreen) initStyles() {
 	ts.errorStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("9")).
 		Bold(true)
+
+	ts.warningStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("11"))
 
 	ts.helpStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241"))
@@ -482,6 +494,14 @@ func fieldsFromParams(params []inputschema.Param, parent []string, depth int) []
 
 // keyToggleSubForm opens and closes an object field's sub-form.
 const keyToggleSubForm = "ctrl+e"
+
+// keyToggleArgValidation switches between refusing a call whose arguments
+// break the input schema and sending it with the violation shown.
+const keyToggleArgValidation = "ctrl+o"
+
+// argValidationOffBadge marks the title while calls that break the input
+// schema are sent.
+const argValidationOffBadge = "[schema violations sent]"
 
 // toggleSubForm opens the object field at index as a sub-form of its
 // properties, inserted below it, or closes an open one, keeping its fields
@@ -750,6 +770,18 @@ func (ts *ToolScreen) toggleTaskMode() {
 	ts.SetStatus("Task mode on: Execute runs the tool as an MCP task", StatusInfo)
 }
 
+// toggleArgValidation switches between refusing a call whose arguments
+// break the input schema (the default) and sending it with the violation
+// shown: a test client needs to see how a server rejects a bad call.
+func (ts *ToolScreen) toggleArgValidation() {
+	ts.skipArgValidation = !ts.skipArgValidation
+	if ts.skipArgValidation {
+		ts.SetStatus("Arguments that break the input schema are sent, with the violation shown", StatusWarning)
+		return
+	}
+	ts.SetStatus("Arguments that break the input schema are refused", StatusInfo)
+}
+
 // startTaskCmd calls the tool as a task. A created task is followed in the
 // background until it ends; a direct answer completes at once.
 func (ts *ToolScreen) startTaskCmd(args map[string]interface{}) tea.Cmd {
@@ -809,6 +841,9 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case "esc":
 			return ts, func() tea.Msg { return BackMsg{} }
+		case keyToggleArgValidation:
+			ts.toggleArgValidation()
+			return ts, nil
 		default:
 			// Pass to raw JSON input
 			var cmd tea.Cmd
@@ -829,6 +864,9 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Don't pass these to textinput, handle navigation
 		case "ctrl+t":
 			// Task mode toggle, handled below
+		case keyToggleArgValidation:
+			ts.toggleArgValidation()
+			return ts, nil
 		case keyToggleSubForm:
 			if ts.toggleSubForm(ts.cursor) {
 				ts.SetStatus("", StatusInfo)
@@ -986,6 +1024,10 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+t":
 		ts.toggleTaskMode()
+		return ts, nil
+
+	case keyToggleArgValidation:
+		ts.toggleArgValidation()
 		return ts, nil
 
 	case "c":
@@ -1256,14 +1298,21 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 
 // buildArguments turns the form (or the raw JSON editor) into tool call
 // arguments, converting each field to the type its schema declares, and
-// validates them against the whole input schema.
+// validates them against the whole input schema: a violation refuses the
+// call, or with Ctrl+O is kept in argumentViolation and the call goes out.
 func (ts *ToolScreen) buildArguments() (map[string]interface{}, error) {
+	ts.argumentViolation = ""
 	args, err := ts.formArguments()
 	if err != nil {
 		return nil, err
 	}
 	if err := ts.inputSchema.Validate(args); err != nil {
-		return nil, err
+		if !ts.skipArgValidation {
+			return nil, fmt.Errorf("%w (Ctrl+O sends them anyway)", err)
+		}
+		ts.logger.Warn("Sending tool arguments that do not match the input schema",
+			debug.F("tool", ts.tool.Name), debug.F("violation", err.Error()))
+		ts.argumentViolation = err.Error()
 	}
 	return args, nil
 }
@@ -1529,7 +1578,15 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString("  ")
 		builder.WriteString(ts.selectedStyle.Render("[task mode]"))
 	}
+	if ts.skipArgValidation {
+		builder.WriteString("  ")
+		builder.WriteString(ts.warningStyle.Render(argValidationOffBadge))
+	}
 	builder.WriteString("\n")
+	if ts.argumentViolation != "" {
+		builder.WriteString(ts.warningStyle.Render("⚠ Sent despite the input schema: " + ts.argumentViolation))
+		builder.WriteString("\n")
+	}
 	if ts.runningTask != nil {
 		builder.WriteString(ts.labelStyle.Render(taskProgressLine(ts.runningTask)))
 		builder.WriteString("\n")
@@ -1970,7 +2027,7 @@ func (ts *ToolScreen) renderFooter() string {
 		}
 	} else if ts.cursor < len(ts.fields) {
 		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+T: Task mode • " +
-			"Ctrl+L: Debug Log • b: Back • Esc: Back"
+			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b: Back • Esc: Back"
 		if f := ts.fields[ts.cursor]; f.nullable && !f.expanded {
 			helpText = "Ctrl+N: Null • " + helpText
 		}
@@ -1979,7 +2036,7 @@ func (ts *ToolScreen) renderFooter() string {
 		}
 	} else if ts.cursor == len(ts.fields) {
 		helpText = "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+T: Task mode • " +
-			"Ctrl+L: Debug Log • b: Back • Esc: Back"
+			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b: Back • Esc: Back"
 	} else if ts.cursor == len(ts.fields)+1 {
 		helpText = "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b: Back • Esc: Back"
 	} else {
