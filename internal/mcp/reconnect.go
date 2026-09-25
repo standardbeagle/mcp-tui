@@ -2,9 +2,11 @@ package mcp
 
 import (
 	"context"
+	"slices"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 	sessionPkg "github.com/standardbeagle/mcp-tui/internal/mcp/session"
 )
 
@@ -23,6 +25,42 @@ func connectionFailureMiddleware(sessionManager *sessionPkg.Manager) officialMCP
 				}
 			}
 			return res, err
+		}
+	}
+}
+
+// onReconnected rebuilds, from the handshake an automatic reconnection just
+// made, everything the service read from or set up on the previous one. The
+// new session may be a different server process: it reports its own server
+// info and capabilities, may negotiate another protocol version, and holds
+// none of the old connection's state (list cache, log level, resource
+// subscriptions). The SDK itself reopens the list_changed stream.
+func (s *service) onReconnected(session *officialMCP.ClientSession) {
+	s.startTaskSession(session)
+
+	s.mu.Lock()
+	subscribed := make([]string, 0, len(s.subscribedResources))
+	for uri := range s.subscribedResources {
+		subscribed = append(subscribed, uri)
+	}
+	slices.Sort(subscribed)
+	var logLevel string
+	if s.connectionConfig != nil {
+		logLevel = s.connectionConfig.ServerLogLevel
+	}
+	err := s.updateServerInfo(session)
+	s.mu.Unlock()
+	if err != nil {
+		debug.Error("Reconnected session has no usable handshake", debug.F("error", err))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), subscriptionsAckTimeout)
+	defer cancel()
+	applyServerLogLevel(ctx, session, logLevel)
+	for _, uri := range subscribed {
+		if err := s.SubscribeResource(ctx, uri); err != nil {
+			debug.Warn("Resource subscription lost on reconnection", debug.F("uri", uri), debug.F("error", err))
 		}
 	}
 }

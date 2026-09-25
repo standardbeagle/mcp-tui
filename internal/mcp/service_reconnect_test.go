@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	sessionPkg "github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
@@ -45,10 +46,16 @@ func awaitReconnection(t *testing.T, reconnected <-chan *officialMCP.ClientSessi
 // connectStdioServer connects svc to a fresh stdio test server process.
 func connectStdioServer(t *testing.T, svc *service, opts testutil.StdioServerOptions, protocolVersion string) {
 	t.Helper()
-	command, env := testutil.StdioServer(t, opts)
-	require.NoError(t, svc.Connect(context.Background(), &configPkg.ConnectionConfig{
-		Type: configPkg.TransportStdio, Command: command, Environment: env, ProtocolVersion: protocolVersion,
-	}))
+	connectStdioServerWith(t, svc, opts, &configPkg.ConnectionConfig{ProtocolVersion: protocolVersion})
+}
+
+// connectStdioServerWith connects svc to a fresh stdio test server process
+// with the connection settings in cfg.
+func connectStdioServerWith(t *testing.T, svc *service, opts testutil.StdioServerOptions, cfg *configPkg.ConnectionConfig) {
+	t.Helper()
+	cfg.Type = configPkg.TransportStdio
+	cfg.Command, cfg.Environment = testutil.StdioServer(t, opts)
+	require.NoError(t, svc.Connect(context.Background(), cfg))
 	t.Cleanup(func() { _ = svc.Disconnect() })
 	svc.ConfigureReconnection(10, 10*time.Millisecond)
 }
@@ -139,4 +146,96 @@ func TestService_DoesNotReconnectAfterMalformedJSONRPC(t *testing.T) {
 	data, err := os.ReadFile(starts)
 	require.NoError(t, err)
 	require.Len(t, data, 1, "the server must not have been started again")
+}
+
+// serverSubscriptions asks the stdio test server which resource URIs it
+// holds subscriptions for.
+func serverSubscriptions(t *testing.T, svc *service) string {
+	t.Helper()
+	res, err := svc.CallTool(context.Background(), CallToolRequest{Name: testutil.StdioToolSubscriptions})
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Content)
+	return res.Content[0].Text
+}
+
+// killStdioServer kills the stdio test server svc is connected to and
+// waits for the automatic reconnection to a new one.
+func killStdioServer(t *testing.T, svc *service) {
+	t.Helper()
+	reconnected := reconnections(svc)
+	proc, err := os.FindProcess(serverPID(t, svc))
+	require.NoError(t, err)
+	require.NoError(t, proc.Kill())
+	awaitReconnection(t, reconnected)
+}
+
+// Reconnecting is a new handshake with what may be a different server: a
+// restarted one reports a new version, may negotiate an older protocol, and
+// holds none of the old connection's subscriptions. Everything the service
+// read from the first handshake must come from the new one.
+func TestService_ReconnectionRefreshesServerState(t *testing.T) {
+	const downgraded = "2025-06-18"
+	starts := filepath.Join(t.TempDir(), "starts")
+	svc := NewService().(*service)
+	connectStdioServer(t, svc, testutil.StdioServerOptions{StartsFile: starts, DowngradeTo: downgraded},
+		legacyProtocolVersion)
+	require.Equal(t, "1", svc.GetServerInfo().Version)
+	require.Equal(t, legacyProtocolVersion, svc.GetServerInfo().ProtocolVersion)
+	require.NoError(t, svc.SubscribeResource(context.Background(), testutil.StdioResourceURI))
+
+	killStdioServer(t, svc)
+
+	info := svc.GetServerInfo()
+	require.Equal(t, "2", info.Version, "server info must come from the new server")
+	require.Equal(t, downgraded, info.ProtocolVersion, "the protocol version must be the newly negotiated one")
+	require.Equal(t, downgraded, svc.GetCapabilitiesSnapshot().ProtocolVersion)
+	require.Equal(t, "2", svc.GetCapabilitiesSnapshot().ServerInfo.Version)
+	require.Equal(t, []string{testutil.StdioResourceURI}, svc.ResourceSubscriptions())
+	require.Equal(t, testutil.StdioResourceURI, serverSubscriptions(t, svc),
+		"the resource subscription must be made again on the new server")
+}
+
+// On 2026-07-28 list results carry cache metadata and a subscription is a
+// subscriptions/listen stream; both belong to the connection that ended.
+func TestService_ReconnectionResetsStatelessSessionState(t *testing.T) {
+	svc := NewService().(*service)
+	connectStdioServer(t, svc, testutil.StdioServerOptions{}, "")
+	require.Equal(t, testutil.MRTRProtocolVersion, svc.GetServerInfo().ProtocolVersion)
+	_, err := svc.ListTools(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, svc.ListCache("tools/list"))
+	require.NoError(t, svc.SubscribeResource(context.Background(), testutil.StdioResourceURI))
+
+	killStdioServer(t, svc)
+
+	require.Nil(t, svc.ListCache("tools/list"), "cache state of the old connection's lists must be dropped")
+	require.Equal(t, testutil.StdioResourceURI, serverSubscriptions(t, svc),
+		"the subscriptions/listen stream must be opened again on the new server")
+}
+
+// Before 2026-07-28 the server log level is per connection, set once with
+// logging/setLevel after the handshake. A restarted server has no level
+// and sends no log notifications until it is set again.
+func TestService_ReconnectionRestoresServerLogLevel(t *testing.T) {
+	// At or below the info level the test server logs at.
+	const level = "debug"
+	svc := NewService().(*service)
+	logs := make(chan notifications.Entry, 4)
+	svc.AddNotificationObserver(func(e notifications.Entry) {
+		if e.Type == notifications.TypeMessage {
+			logs <- e
+		}
+	})
+	connectStdioServerWith(t, svc, testutil.StdioServerOptions{},
+		&configPkg.ConnectionConfig{ProtocolVersion: legacyProtocolVersion, ServerLogLevel: level})
+
+	killStdioServer(t, svc)
+
+	_, err := svc.CallTool(context.Background(), CallToolRequest{Name: testutil.StdioToolLog})
+	require.NoError(t, err)
+	select {
+	case <-logs:
+	case <-time.After(reconnectWait):
+		t.Fatal("the new server sent no log notification: logging/setLevel was not sent again")
+	}
 }

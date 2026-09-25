@@ -563,7 +563,7 @@ func (s *service) commitConnection(epoch uint64, sessionManager *sessionPkg.Mana
 		return fmt.Errorf("connection aborted: disconnected during connect")
 	}
 
-	return s.updateServerInfo()
+	return s.updateServerInfo(sessionManager.GetSession())
 }
 
 // initializeConnection initializes connection components
@@ -571,9 +571,9 @@ func (s *service) initializeConnection() error {
 	// Initialize session manager if not already done
 	if s.sessionManager == nil {
 		s.sessionManager = sessionPkg.NewManager()
-		// Task support is read from the handshake, which an automatic
-		// reconnection repeats; the new server may declare tasks differently.
-		s.sessionManager.OnReconnected(s.startTaskSession)
+		// An automatic reconnection repeats the handshake, possibly with a
+		// different server; see onReconnected.
+		s.sessionManager.OnReconnected(s.onReconnected)
 
 		// Configure session manager based on unified config
 		if s.config != nil {
@@ -885,8 +885,9 @@ func (s *service) logConnectionDetails(config *configPkg.ConnectionConfig) {
 // initialize, or from server/discover under 2026-07-28), so a missing one is
 // a broken handshake, not something to paper over with a guessed version.
 // Name/Version placeholders remain because servers may omit serverInfo.
-func (s *service) updateServerInfo() error {
-	clientSession := s.sessionManager.GetSession()
+//
+// Callers hold s.mu.
+func (s *service) updateServerInfo(clientSession *officialMCP.ClientSession) error {
 	if clientSession == nil {
 		return fmt.Errorf("session manager connected but no session available")
 	}
