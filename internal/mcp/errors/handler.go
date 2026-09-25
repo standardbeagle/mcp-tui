@@ -42,20 +42,22 @@ func NewErrorHandler() *ErrorHandler {
 }
 
 // HandleError processes an error with full classification and logging
-func (eh *ErrorHandler) HandleError(ctx context.Context, err error, operation string, context map[string]interface{}) *ClassifiedError {
+func (eh *ErrorHandler) HandleError(
+	ctx context.Context, err error, operation string, errContext map[string]interface{},
+) *ClassifiedError {
 	if err == nil {
 		return nil
 	}
 
 	// Add operation context
-	if context == nil {
-		context = make(map[string]interface{})
+	if errContext == nil {
+		errContext = make(map[string]interface{})
 	}
-	context["operation"] = operation
-	context["timestamp"] = time.Now().Format(time.RFC3339)
+	errContext["operation"] = operation
+	errContext["timestamp"] = time.Now().Format(time.RFC3339)
 
 	// Classify the error
-	classified := eh.classifier.Classify(err, context)
+	classified := eh.classifier.Classify(err, errContext)
 
 	// Update statistics
 	eh.updateStatistics(classified)
@@ -67,8 +69,10 @@ func (eh *ErrorHandler) HandleError(ctx context.Context, err error, operation st
 }
 
 // HandleErrorWithRetry handles an error and provides retry logic if appropriate
-func (eh *ErrorHandler) HandleErrorWithRetry(ctx context.Context, err error, operation string, context map[string]interface{}, attempt int) (*ClassifiedError, bool) {
-	classified := eh.HandleError(ctx, err, operation, context)
+func (eh *ErrorHandler) HandleErrorWithRetry(
+	ctx context.Context, err error, operation string, errContext map[string]interface{}, attempt int,
+) (*ClassifiedError, bool) {
+	classified := eh.HandleError(ctx, err, operation, errContext)
 	if classified == nil {
 		return nil, false
 	}
@@ -323,8 +327,8 @@ func (eh *ErrorHandler) CreateUserFriendlyError(classified *ClassifiedError) err
 	}
 
 	// Add context information if available
-	if context := classified.Context; context != nil {
-		if operation, ok := context["operation"].(string); ok {
+	if errContext := classified.Context; errContext != nil {
+		if operation, ok := errContext["operation"].(string); ok {
 			message = fmt.Sprintf("Operation '%s' failed: %s", operation, message)
 		}
 	}

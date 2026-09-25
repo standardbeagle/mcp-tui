@@ -61,7 +61,7 @@ func TestProbeCrossOrigin_RejectsForeignOrigin(t *testing.T) {
 	})
 	defer srv.Close()
 
-	res := ProbeCrossOrigin(context.Background(), Target{URL: srv.URL})
+	res := ProbeCrossOrigin(context.Background(), &Target{URL: srv.URL})
 	if !res.Pass {
 		t.Fatalf("expected pass, got fail: %+v", res)
 	}
@@ -74,7 +74,7 @@ func TestProbeCrossOrigin_AcceptsForeignOrigin_Fails(t *testing.T) {
 	srv := alwaysAcceptServer(t)
 	defer srv.Close()
 
-	res := ProbeCrossOrigin(context.Background(), Target{URL: srv.URL})
+	res := ProbeCrossOrigin(context.Background(), &Target{URL: srv.URL})
 	if res.Pass {
 		t.Fatalf("expected fail when server accepts foreign Origin, got pass: %+v", res)
 	}
@@ -87,7 +87,7 @@ func TestProbeCrossOrigin_AcceptsForeignOrigin_Fails(t *testing.T) {
 }
 
 func TestProbeCrossOrigin_MissingURL(t *testing.T) {
-	res := ProbeCrossOrigin(context.Background(), Target{})
+	res := ProbeCrossOrigin(context.Background(), &Target{})
 	if res.Pass {
 		t.Fatal("expected fail for empty URL")
 	}
@@ -111,7 +111,7 @@ func TestProbeDNSRebind_RejectsForeignHost(t *testing.T) {
 	})
 	defer srv.Close()
 
-	res := ProbeDNSRebind(context.Background(), Target{URL: srv.URL})
+	res := ProbeDNSRebind(context.Background(), &Target{URL: srv.URL})
 	if !res.Pass {
 		t.Fatalf("expected pass, got fail: %+v", res)
 	}
@@ -121,7 +121,7 @@ func TestProbeDNSRebind_AcceptsForeignHost_Fails(t *testing.T) {
 	srv := alwaysAcceptServer(t)
 	defer srv.Close()
 
-	res := ProbeDNSRebind(context.Background(), Target{URL: srv.URL})
+	res := ProbeDNSRebind(context.Background(), &Target{URL: srv.URL})
 	if res.Pass {
 		t.Fatalf("expected fail when server accepts foreign Host, got pass: %+v", res)
 	}
@@ -136,7 +136,7 @@ func TestProbeContentType_RejectsTextPlain(t *testing.T) {
 	})
 	defer srv.Close()
 
-	res := ProbeContentType(context.Background(), Target{URL: srv.URL})
+	res := ProbeContentType(context.Background(), &Target{URL: srv.URL})
 	if !res.Pass {
 		t.Fatalf("expected pass, got fail: %+v", res)
 	}
@@ -146,7 +146,7 @@ func TestProbeContentType_AcceptsTextPlain_Fails(t *testing.T) {
 	srv := alwaysAcceptServer(t)
 	defer srv.Close()
 
-	res := ProbeContentType(context.Background(), Target{URL: srv.URL})
+	res := ProbeContentType(context.Background(), &Target{URL: srv.URL})
 	if res.Pass {
 		t.Fatalf("expected fail when server accepts text/plain, got pass: %+v", res)
 	}
@@ -170,7 +170,7 @@ func TestProbeOriginHeader_GetWithoutOriginAccepted(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res := ProbeOriginHeader(context.Background(), Target{URL: srv.URL})
+	res := ProbeOriginHeader(context.Background(), &Target{URL: srv.URL})
 	if !res.Pass {
 		t.Fatalf("expected pass on 405 GET, got fail: %+v", res)
 	}
@@ -190,7 +190,7 @@ func TestProbeOriginHeader_GetReturns403_Fails(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res := ProbeOriginHeader(context.Background(), Target{URL: srv.URL})
+	res := ProbeOriginHeader(context.Background(), &Target{URL: srv.URL})
 	if res.Pass {
 		t.Fatalf("expected fail when GET without Origin returns 403, got pass: %+v", res)
 	}
@@ -215,7 +215,7 @@ func TestProbeMCPMethodHeaders_TolerantServerPasses(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res := ProbeMCPMethodHeaders(context.Background(), Target{URL: srv.URL})
+	res := ProbeMCPMethodHeaders(context.Background(), &Target{URL: srv.URL})
 	if !res.Pass {
 		t.Fatalf("expected pass, got fail: %+v", res)
 	}
@@ -240,7 +240,7 @@ func TestProbeMCPMethodHeaders_HostileServerFails(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res := ProbeMCPMethodHeaders(context.Background(), Target{URL: srv.URL})
+	res := ProbeMCPMethodHeaders(context.Background(), &Target{URL: srv.URL})
 	if res.Pass {
 		t.Fatalf("expected fail when server rejects MCP-Method, got pass: %+v", res)
 	}
@@ -262,7 +262,7 @@ func TestProbeMCPMethodHeaders_4xxWithoutHeaderRefPasses(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res := ProbeMCPMethodHeaders(context.Background(), Target{URL: srv.URL})
+	res := ProbeMCPMethodHeaders(context.Background(), &Target{URL: srv.URL})
 	if !res.Pass {
 		t.Fatalf("expected pass when 4xx is unrelated to advisory headers, got fail: %+v", res)
 	}
@@ -293,7 +293,7 @@ func TestProbeMCPMethodHeaders_4xxWithoutHeaderRefPasses(t *testing.T) {
 // in-memory transport and asserts the probe passes. Uses the same
 // in-memory pattern as service_iserror_test.go.
 func TestProbeSetErrorContent_MissingCommand(t *testing.T) {
-	res := ProbeSetErrorContent(context.Background(), Target{})
+	res := ProbeSetErrorContent(context.Background(), &Target{})
 	if res.Pass {
 		t.Fatal("expected fail for empty Command")
 	}
@@ -372,7 +372,7 @@ func TestProbeSetErrorContent_PassFail_Logic(t *testing.T) {
 // --- RunAll / Run dispatcher -----------------------------------------------
 
 func TestRun_UnknownProbe(t *testing.T) {
-	res := Run(context.Background(), "made-up-probe", Target{URL: "http://example.com"})
+	res := Run(context.Background(), "made-up-probe", &Target{URL: "http://example.com"})
 	if res.Pass {
 		t.Fatal("unknown probe should fail")
 	}
@@ -386,7 +386,7 @@ func TestRunAll_SkipsProbesThatNeedMissingTarget(t *testing.T) {
 	// server would stall until the connect timeout.
 	url := toolNamesServer(t, "get_weather")
 
-	results := RunAll(context.Background(), Target{URL: url})
+	results := RunAll(context.Background(), &Target{URL: url})
 	// Every HTTP probe should run; seterror-content should be present
 	// with a Pass=false and a "stdio command target" error.
 	if len(results) != len(AllProbes) {
@@ -413,7 +413,7 @@ func TestRunAll_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	results := RunAll(ctx, Target{URL: "http://127.0.0.1:1"})
+	results := RunAll(ctx, &Target{URL: "http://127.0.0.1:1"})
 	// Should produce at most one result with the context error; AllProbes
 	// processing stops at the cancellation check.
 	if len(results) == 0 {
@@ -457,7 +457,7 @@ func TestProbeContentType_AgainstSDKHandler(t *testing.T) {
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
-	res := ProbeContentType(context.Background(), Target{URL: srv.URL})
+	res := ProbeContentType(context.Background(), &Target{URL: srv.URL})
 	if !res.Pass {
 		t.Fatalf("SDK handler should reject text/plain; probe failed: %+v", res)
 	}
@@ -475,7 +475,7 @@ func TestProbeMCPMethodHeaders_AgainstSDKHandler(t *testing.T) {
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
-	res := ProbeMCPMethodHeaders(context.Background(), Target{URL: srv.URL})
+	res := ProbeMCPMethodHeaders(context.Background(), &Target{URL: srv.URL})
 	if !res.Pass {
 		t.Fatalf("SDK handler should tolerate SEP-2243 headers; probe failed: %+v", res)
 	}
@@ -528,7 +528,7 @@ func TestTruncate(t *testing.T) {
 
 func TestProbeCrossOrigin_NetworkError(t *testing.T) {
 	// Use a TCP port that's almost certainly closed.
-	res := ProbeCrossOrigin(context.Background(), Target{
+	res := ProbeCrossOrigin(context.Background(), &Target{
 		URL:        "http://127.0.0.1:1",
 		HTTPClient: &http.Client{Timeout: 200 * time.Millisecond},
 	})

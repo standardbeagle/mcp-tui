@@ -150,18 +150,18 @@ func (cm *ConnectionsManager) loadFromSource(filePath string) bool {
 
 // loadNativeFormat loads MCP-TUI native format
 func (cm *ConnectionsManager) loadNativeFormat(data []byte) bool {
-	var config ConnectionsConfig
-	if err := json.Unmarshal(data, &config); err != nil {
+	var nativeCfg ConnectionsConfig
+	if err := json.Unmarshal(data, &nativeCfg); err != nil {
 		return false
 	}
 
 	// Validate that it's our format by checking for version field
-	if config.Version == "" {
+	if nativeCfg.Version == "" {
 		return false
 	}
 
-	cm.config = &config
-	cm.logger.Debug("Loaded native format", debug.F("serverCount", len(config.Servers)))
+	cm.config = &nativeCfg
+	cm.logger.Debug("Loaded native format", debug.F("serverCount", len(nativeCfg.Servers)))
 	return true
 }
 
@@ -527,9 +527,9 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 	for _, pattern := range currentDirPatterns {
 		fullPath := filepath.Join(cwd, pattern)
 		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-			config := cm.analyzeConfigFile(fullPath)
-			if config != nil { // Only include files with valid MCP config
-				discovered = append(discovered, config)
+			analyzed := cm.analyzeConfigFile(fullPath)
+			if analyzed != nil { // Only include files with valid MCP config
+				discovered = append(discovered, analyzed)
 			}
 		}
 	}
@@ -543,9 +543,9 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 
 		for _, path := range userConfigPaths {
 			if info, err := os.Stat(path); err == nil && !info.IsDir() {
-				config := cm.analyzeConfigFile(path)
-				if config != nil { // Only include files with valid MCP config
-					discovered = append(discovered, config)
+				analyzed := cm.analyzeConfigFile(path)
+				if analyzed != nil { // Only include files with valid MCP config
+					discovered = append(discovered, analyzed)
 				}
 			}
 		}
@@ -554,9 +554,9 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 		claudePath := cm.getClaudeDesktopConfigPath()
 		if claudePath != "" {
 			if info, err := os.Stat(claudePath); err == nil && !info.IsDir() {
-				config := cm.analyzeConfigFile(claudePath)
-				if config != nil { // Only include files with valid MCP config
-					discovered = append(discovered, config)
+				analyzed := cm.analyzeConfigFile(claudePath)
+				if analyzed != nil { // Only include files with valid MCP config
+					discovered = append(discovered, analyzed)
 				}
 			}
 		}
@@ -568,7 +568,7 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 
 // analyzeConfigFile analyzes a configuration file to determine its type and contents
 func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConfigFile {
-	config := &DiscoveredConfigFile{
+	dc := &DiscoveredConfigFile{
 		Path:       filePath,
 		Name:       filepath.Base(filePath),
 		Accessible: true,
@@ -577,9 +577,9 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	// Try to read and parse the file
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		config.Accessible = false
-		config.Error = err.Error()
-		return config
+		dc.Accessible = false
+		dc.Error = err.Error()
+		return dc
 	}
 
 	// Determine format by trying to parse
@@ -590,39 +590,39 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 		MCPServers map[string]interface{} `json:"mcpServers"`
 	}
 	if err := json.Unmarshal(data, &claudeConfig); err == nil && claudeConfig.MCPServers != nil && len(claudeConfig.MCPServers) > 0 {
-		config.Format = "claude-desktop"
+		dc.Format = "claude-desktop"
 		serverCount = len(claudeConfig.MCPServers)
-		config.Servers = cm.extractClaudeDesktopServers(claudeConfig.MCPServers)
+		dc.Servers = cm.extractClaudeDesktopServers(claudeConfig.MCPServers)
 	} else {
 		// Try VS Code format - must have servers node
 		var vscodeConfig struct {
 			Servers map[string]interface{} `json:"servers"`
 		}
 		if err := json.Unmarshal(data, &vscodeConfig); err == nil && vscodeConfig.Servers != nil && len(vscodeConfig.Servers) > 0 {
-			config.Format = "vscode"
+			dc.Format = "vscode"
 			serverCount = len(vscodeConfig.Servers)
-			config.Servers = cm.extractVSCodeServers(vscodeConfig.Servers)
+			dc.Servers = cm.extractVSCodeServers(vscodeConfig.Servers)
 		} else {
 			// Try MCP-TUI native format - must have servers node with content
 			var nativeConfig ConnectionsConfig
 			if err := json.Unmarshal(data, &nativeConfig); err == nil && nativeConfig.Servers != nil && len(nativeConfig.Servers) > 0 {
-				config.Format = "mcp-tui"
+				dc.Format = "mcp-tui"
 				serverCount = len(nativeConfig.Servers)
-				config.Servers = cm.extractNativeServers(nativeConfig.Servers)
+				dc.Servers = cm.extractNativeServers(nativeConfig.Servers)
 			} else {
-				config.Format = "unknown"
+				dc.Format = "unknown"
 			}
 		}
 	}
 
-	config.ServerCount = serverCount
+	dc.ServerCount = serverCount
 
 	// Only return files with valid MCP configuration (serverCount > 0)
-	if serverCount == 0 || config.Format == "unknown" {
+	if serverCount == 0 || dc.Format == "unknown" {
 		return nil
 	}
 
-	return config
+	return dc
 }
 
 // extractClaudeDesktopServers extracts server information from Claude Desktop format
@@ -630,31 +630,33 @@ func (cm *ConnectionsManager) extractClaudeDesktopServers(mcpServers map[string]
 	var servers []ServerInfo
 
 	for name, serverData := range mcpServers {
-		if serverMap, ok := serverData.(map[string]interface{}); ok {
-			server := ServerInfo{
-				Name:      name,
-				Transport: "stdio", // Claude Desktop format is typically stdio
-			}
+		serverMap, ok := serverData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		server := ServerInfo{
+			Name:      name,
+			Transport: "stdio", // Claude Desktop format is typically stdio
+		}
 
-			if command, ok := serverMap["command"].(string); ok {
-				server.Command = command
-			}
+		if command, ok := serverMap["command"].(string); ok {
+			server.Command = command
+		}
 
-			if args, ok := serverMap["args"].([]interface{}); ok {
-				for _, arg := range args {
-					if argStr, ok := arg.(string); ok {
-						server.Args = append(server.Args, argStr)
-					}
+		if args, ok := serverMap["args"].([]interface{}); ok {
+			for _, arg := range args {
+				if argStr, ok := arg.(string); ok {
+					server.Args = append(server.Args, argStr)
 				}
 			}
-
-			// Try to generate a description
-			if server.Command != "" {
-				server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
-			}
-
-			servers = append(servers, server)
 		}
+
+		// Try to generate a description
+		if server.Command != "" {
+			server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
+		}
+
+		servers = append(servers, server)
 	}
 
 	return servers
@@ -665,31 +667,33 @@ func (cm *ConnectionsManager) extractVSCodeServers(vscodeServers map[string]inte
 	var servers []ServerInfo
 
 	for name, serverData := range vscodeServers {
-		if serverMap, ok := serverData.(map[string]interface{}); ok {
-			server := ServerInfo{
-				Name:      name,
-				Transport: "stdio", // VS Code format is typically stdio
-			}
+		serverMap, ok := serverData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		server := ServerInfo{
+			Name:      name,
+			Transport: "stdio", // VS Code format is typically stdio
+		}
 
-			if command, ok := serverMap["command"].(string); ok {
-				server.Command = command
-			}
+		if command, ok := serverMap["command"].(string); ok {
+			server.Command = command
+		}
 
-			if args, ok := serverMap["args"].([]interface{}); ok {
-				for _, arg := range args {
-					if argStr, ok := arg.(string); ok {
-						server.Args = append(server.Args, argStr)
-					}
+		if args, ok := serverMap["args"].([]interface{}); ok {
+			for _, arg := range args {
+				if argStr, ok := arg.(string); ok {
+					server.Args = append(server.Args, argStr)
 				}
 			}
-
-			// Try to generate a description
-			if server.Command != "" {
-				server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
-			}
-
-			servers = append(servers, server)
 		}
+
+		// Try to generate a description
+		if server.Command != "" {
+			server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
+		}
+
+		servers = append(servers, server)
 	}
 
 	return servers

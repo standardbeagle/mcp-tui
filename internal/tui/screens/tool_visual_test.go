@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
-	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 func TestToolReExecutionVisual(t *testing.T) {
@@ -25,7 +24,7 @@ func TestToolReExecutionVisual(t *testing.T) {
 			},
 		}
 
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		ts.fields[0].input.SetValue("New York")
 
 		fmt.Println("\n=== Initial Tool Screen ===")
@@ -33,8 +32,8 @@ func TestToolReExecutionVisual(t *testing.T) {
 
 		// First execution
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
 					{
 						Type: "text",
 						Text: `{"temp": "72°F", "condition": "Sunny"}`,
@@ -48,8 +47,8 @@ func TestToolReExecutionVisual(t *testing.T) {
 
 		// Second execution - same result
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
 					{
 						Type: "text",
 						Text: `{"temp": "72°F", "condition": "Sunny"}`,
@@ -63,8 +62,8 @@ func TestToolReExecutionVisual(t *testing.T) {
 
 		// Third execution - different result
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
 					{
 						Type: "text",
 						Text: `{"temp": "75°F", "condition": "Partly Cloudy"}`,

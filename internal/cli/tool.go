@@ -263,7 +263,7 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		// Badges are rendered with renderCLIBadges so the color palette
 		// matches the TUI tool list.
 		header := toolNameStyle.Render(tool.DisplayName())
-		if badges := renderCLIBadges(tool); badges != "" {
+		if badges := renderCLIBadges(&tool); badges != "" {
 			header = header + " " + badges
 		}
 		fmt.Println(header)
@@ -388,7 +388,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	// Display tool details. The header line shows the human title (DisplayName)
 	// followed by annotation badges so the operator sees risk hints up front.
 	header := toolNameStyle.Render(foundTool.DisplayName())
-	if badges := renderCLIBadges(*foundTool); badges != "" {
+	if badges := renderCLIBadges(foundTool); badges != "" {
 		header = header + " " + badges
 	}
 	fmt.Println(labelStyle.Render("Tool:"), header)
@@ -517,7 +517,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	}
 
 	if !skipConfirm {
-		if err := confirmDestructiveCall(os.Stdin, os.Stderr, *matchedTool, skipConfirm); err != nil {
+		if err := confirmDestructiveCall(os.Stdin, os.Stderr, matchedTool, skipConfirm); err != nil {
 			return err
 		}
 	}
@@ -542,7 +542,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 		if raw.literal {
 			parsedValue, convErr = jsonLiteralArgument(raw.key, raw.value)
 		} else {
-			parsedValue, convErr = coerceToolArgument(inputSchema, raw.key, raw.value)
+			parsedValue, convErr = coerceToolArgument(&inputSchema, raw.key, raw.value)
 		}
 		if convErr != nil {
 			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -849,7 +849,7 @@ func reportOutputViolations(w *os.File, violations []string, strict bool) error 
 // renderCLIBadges produces a colored annotation badge string for terminal
 // output. Mirrors the TUI tool list palette so users see the same hints
 // regardless of which surface they list tools from.
-func renderCLIBadges(tool mcp.Tool) string {
+func renderCLIBadges(tool *mcp.Tool) string {
 	var out strings.Builder
 	dStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))   // red
 	rStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))  // green
@@ -883,7 +883,7 @@ func renderCLIBadges(tool mcp.Tool) string {
 // The non-TTY refusal is a guardrail for pipelines: a script that pipes input
 // to mcp-tui (or runs without a TTY) must explicitly opt out of confirmation
 // so an inadvertent destructive tool call is impossible.
-func confirmDestructiveCall(in *os.File, out *os.File, tool mcp.Tool, skipConfirm bool) error {
+func confirmDestructiveCall(in, out *os.File, tool *mcp.Tool, skipConfirm bool) error {
 	if !tool.IsDestructive() || skipConfirm {
 		return nil
 	}

@@ -74,9 +74,9 @@ func (f *fakeCompletionService) ListPrompts(context.Context) ([]mcp.Prompt, erro
 func (f *fakeCompletionService) GetPrompt(context.Context, mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	return nil, nil
 }
-func (f *fakeCompletionService) Complete(_ context.Context, req mcp.CompleteRequest) (*mcp.CompleteResult, error) {
+func (f *fakeCompletionService) Complete(_ context.Context, req *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
 	f.completeCalls++
-	f.completeReq = req
+	f.completeReq = *req
 	if f.completeErr != nil {
 		return nil, f.completeErr
 	}
@@ -143,7 +143,7 @@ func TestNewResourceTemplateScreen_ExtractsVariables(t *testing.T) {
 	tpl := mcp.ResourceTemplate{URITemplate: "users://{userId}/posts/{postId}"}
 	svc := &fakeCompletionService{}
 
-	s := NewResourceTemplateScreen(tpl, svc)
+	s := NewResourceTemplateScreen(&tpl, svc)
 
 	wantVars := []string{"userId", "postId"}
 	if len(s.variables) != len(wantVars) {
@@ -170,7 +170,7 @@ func TestResourceTemplateScreen_TabFiresCompletion(t *testing.T) {
 		completeResult: &mcp.CompleteResult{Values: []string{"42", "43"}},
 	}
 	s := NewResourceTemplateScreen(
-		mcp.ResourceTemplate{URITemplate: "users://{userId}"},
+		&mcp.ResourceTemplate{URITemplate: "users://{userId}"},
 		svc,
 	)
 
@@ -211,7 +211,7 @@ func TestResourceTemplateScreen_SingleSuggestionAutofills(t *testing.T) {
 		completeResult: &mcp.CompleteResult{Values: []string{"42"}},
 	}
 	s := NewResourceTemplateScreen(
-		mcp.ResourceTemplate{URITemplate: "users://{userId}"},
+		&mcp.ResourceTemplate{URITemplate: "users://{userId}"},
 		svc,
 	)
 
@@ -231,7 +231,7 @@ func TestResourceTemplateScreen_CompletionError(t *testing.T) {
 		completeErr: errors.New("boom"),
 	}
 	s := NewResourceTemplateScreen(
-		mcp.ResourceTemplate{URITemplate: "users://{userId}"},
+		&mcp.ResourceTemplate{URITemplate: "users://{userId}"},
 		svc,
 	)
 
@@ -255,7 +255,7 @@ func TestResourceTemplateScreen_EnterReadsExpandedURI(t *testing.T) {
 		readContents: []mcp.ResourceContents{{Text: "ok"}},
 	}
 	s := NewResourceTemplateScreen(
-		mcp.ResourceTemplate{URITemplate: "users://{userId}/posts/{postId}"},
+		&mcp.ResourceTemplate{URITemplate: "users://{userId}/posts/{postId}"},
 		svc,
 	)
 	s.inputs[0].SetValue("42")
@@ -281,7 +281,7 @@ func TestResourceTemplateScreen_EnterReadsExpandedURI(t *testing.T) {
 func TestResourceTemplateScreen_EnterRefusesIncompleteExpansion(t *testing.T) {
 	svc := &fakeCompletionService{}
 	s := NewResourceTemplateScreen(
-		mcp.ResourceTemplate{URITemplate: "users://{userId}/posts/{postId}"},
+		&mcp.ResourceTemplate{URITemplate: "users://{userId}/posts/{postId}"},
 		svc,
 	)
 	s.inputs[0].SetValue("42") // postId left empty
@@ -306,7 +306,7 @@ func TestResourceTemplateScreen_TabIncludesContextArguments(t *testing.T) {
 		completeResult: &mcp.CompleteResult{Values: []string{"x"}},
 	}
 	s := NewResourceTemplateScreen(
-		mcp.ResourceTemplate{URITemplate: "u://{a}/{b}"},
+		&mcp.ResourceTemplate{URITemplate: "u://{a}/{b}"},
 		svc,
 	)
 	// Fill the second field, leave the first focused.
@@ -331,7 +331,7 @@ func TestResourceTemplateScreen_TabIncludesContextArguments(t *testing.T) {
 // pops the screen and the user lands back on the resource list.
 func TestResourceTemplateScreen_EscBacksOut(t *testing.T) {
 	s := NewResourceTemplateScreen(
-		mcp.ResourceTemplate{URITemplate: "u://{a}"},
+		&mcp.ResourceTemplate{URITemplate: "u://{a}"},
 		&fakeCompletionService{},
 	)
 	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEsc})

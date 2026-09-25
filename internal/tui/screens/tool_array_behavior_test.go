@@ -30,7 +30,7 @@ func TestArrayFieldBehaviorDocumented(t *testing.T) {
 			},
 		}
 
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		require.Len(t, ts.fields, 1)
 		require.True(t, ts.fields[0].required)
 		require.Equal(t, inputschema.KindArray, ts.fields[0].fieldType)
@@ -116,7 +116,7 @@ func TestArrayFieldBehaviorDocumented(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ts := NewToolScreen(tool, nil)
+				ts := NewToolScreen(&tool, nil)
 				ts.fields[0].input.SetValue(tc.input)
 				ts.fields[0].required = tc.required
 

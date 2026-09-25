@@ -32,9 +32,9 @@ func TestDebugScreen_NotificationsTab_NoProvider(t *testing.T) {
 func TestDebugScreen_NotificationsTab_RendersEntries(t *testing.T) {
 	stream := notifications.NewStream()
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	stream.Append(notifications.Entry{Time: now, Type: notifications.TypeMessage, Level: "info", Preview: "hello"})
-	stream.Append(notifications.Entry{Time: now, Type: notifications.TypeProgress, Preview: "1/10"})
-	stream.Append(notifications.Entry{Time: now, Type: notifications.TypeCancelled, Preview: "abort"})
+	stream.Append(&notifications.Entry{Time: now, Type: notifications.TypeMessage, Level: "info", Preview: "hello"})
+	stream.Append(&notifications.Entry{Time: now, Type: notifications.TypeProgress, Preview: "1/10"})
+	stream.Append(&notifications.Entry{Time: now, Type: notifications.TypeCancelled, Preview: "abort"})
 
 	ds := NewDebugScreen().WithNotificationsProvider(func() *notifications.Stream { return stream })
 	ds.activeTab = tabNotifications
@@ -52,8 +52,8 @@ func TestDebugScreen_NotificationsTab_RendersEntries(t *testing.T) {
 func TestDebugScreen_Notifications_FilterByType(t *testing.T) {
 	stream := notifications.NewStream()
 	now := time.Now()
-	stream.Append(notifications.Entry{Time: now, Type: notifications.TypeMessage, Level: "info", Preview: "M"})
-	stream.Append(notifications.Entry{Time: now, Type: notifications.TypeProgress, Preview: "P"})
+	stream.Append(&notifications.Entry{Time: now, Type: notifications.TypeMessage, Level: "info", Preview: "M"})
+	stream.Append(&notifications.Entry{Time: now, Type: notifications.TypeProgress, Preview: "P"})
 
 	ds := NewDebugScreen().WithNotificationsProvider(func() *notifications.Stream { return stream })
 	ds.activeTab = tabNotifications
@@ -79,9 +79,9 @@ func TestDebugScreen_Notifications_FilterByType(t *testing.T) {
 func TestDebugScreen_Notifications_FilterByLevel(t *testing.T) {
 	stream := notifications.NewStream()
 	now := time.Now()
-	stream.Append(notifications.Entry{Time: now, Type: notifications.TypeMessage, Level: "info", Preview: "I"})
-	stream.Append(notifications.Entry{Time: now, Type: notifications.TypeMessage, Level: "warning", Preview: "W"})
-	stream.Append(notifications.Entry{Time: now, Type: notifications.TypeProgress, Preview: "P"})
+	stream.Append(&notifications.Entry{Time: now, Type: notifications.TypeMessage, Level: "info", Preview: "I"})
+	stream.Append(&notifications.Entry{Time: now, Type: notifications.TypeMessage, Level: "warning", Preview: "W"})
+	stream.Append(&notifications.Entry{Time: now, Type: notifications.TypeProgress, Preview: "P"})
 
 	ds := NewDebugScreen().WithNotificationsProvider(func() *notifications.Stream { return stream })
 	ds.activeTab = tabNotifications
@@ -137,8 +137,8 @@ func TestDebugScreen_Notifications_PauseResume(t *testing.T) {
 // This is the visual feedback users rely on to know when capture is live.
 func TestDebugScreen_Notifications_TabLabelShowsCount(t *testing.T) {
 	stream := notifications.NewStream()
-	stream.Append(notifications.Entry{Type: notifications.TypeMessage, Level: "info"})
-	stream.Append(notifications.Entry{Type: notifications.TypeProgress})
+	stream.Append(&notifications.Entry{Type: notifications.TypeMessage, Level: "info"})
+	stream.Append(&notifications.Entry{Type: notifications.TypeProgress})
 
 	ds := NewDebugScreen().WithNotificationsProvider(func() *notifications.Stream { return stream })
 	bar := ds.renderTabs()
@@ -159,7 +159,7 @@ func TestDebugScreen_Notifications_TabLabelShowsCount(t *testing.T) {
 // notifications without nuking unrelated logs.
 func TestDebugScreen_Notifications_ClearStream(t *testing.T) {
 	stream := notifications.NewStream()
-	stream.Append(notifications.Entry{Type: notifications.TypeMessage})
+	stream.Append(&notifications.Entry{Type: notifications.TypeMessage})
 
 	ds := NewDebugScreen().WithNotificationsProvider(func() *notifications.Stream { return stream })
 	ds.activeTab = tabNotifications

@@ -110,7 +110,7 @@ func (c *ConformCommand) RunE(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	runner := conform.NewRunner(target)
+	runner := conform.NewRunner(&target)
 	defer runner.Close()
 
 	scenarios := conform.AllScenarios
@@ -270,7 +270,7 @@ func writeJUnitFile(path string, results []conform.ScenarioResult) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	return conform.WriteJUnitReport(f, suite)
+	return conform.WriteJUnitReport(f, &suite)
 }
 
 // ensure verify package is referenced — used implicitly via conform's

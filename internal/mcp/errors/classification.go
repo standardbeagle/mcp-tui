@@ -149,9 +149,9 @@ func NewErrorClassifier() *ErrorClassifier {
 }
 
 // Classify analyzes an error and returns a classified error with metadata.
-// context["operation"], when present, names what failed; see
+// errContext["operation"], when present, names what failed; see
 // OperationSessionConnect.
-func (ec *ErrorClassifier) Classify(err error, context map[string]interface{}) *ClassifiedError {
+func (ec *ErrorClassifier) Classify(err error, errContext map[string]interface{}) *ClassifiedError {
 	if err == nil {
 		return nil
 	}
@@ -162,7 +162,7 @@ func (ec *ErrorClassifier) Classify(err error, context map[string]interface{}) *
 	}
 
 	var operation string
-	if op, ok := context["operation"].(string); ok {
+	if op, ok := errContext["operation"].(string); ok {
 		operation = op
 	}
 
@@ -176,7 +176,7 @@ func (ec *ErrorClassifier) Classify(err error, context map[string]interface{}) *
 		Severity:    severity,
 		Message:     ec.generateUserFriendlyMessage(err, category),
 		Cause:       err,
-		Context:     context,
+		Context:     errContext,
 		Recoverable: recoverable,
 		RetryAfter:  retryAfter,
 	}

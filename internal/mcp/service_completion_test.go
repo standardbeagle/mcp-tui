@@ -148,7 +148,7 @@ func TestService_Complete_PromptArgument_Roundtrip(t *testing.T) {
 	}
 	defer func() { _ = svc.Disconnect() }()
 
-	result, err := svc.Complete(ctx, CompleteRequest{
+	result, err := svc.Complete(ctx, &CompleteRequest{
 		Ref:           PromptRef("say-hello"),
 		ArgumentName:  "language",
 		ArgumentValue: "en",
@@ -222,7 +222,7 @@ func TestService_Complete_ResourceTemplate_Roundtrip(t *testing.T) {
 	}
 	defer func() { _ = svc.Disconnect() }()
 
-	result, err := svc.Complete(ctx, CompleteRequest{
+	result, err := svc.Complete(ctx, &CompleteRequest{
 		Ref:           ResourceRef("users://{userId}/profile"),
 		ArgumentName:  "userId",
 		ArgumentValue: "4",
@@ -276,7 +276,7 @@ func TestService_Complete_ContextArguments(t *testing.T) {
 	}
 	defer func() { _ = svc.Disconnect() }()
 
-	_, err = svc.Complete(ctx, CompleteRequest{
+	_, err = svc.Complete(ctx, &CompleteRequest{
 		Ref:              ResourceRef("u://{a}/{b}"),
 		ArgumentName:     "b",
 		ArgumentValue:    "",
@@ -316,10 +316,10 @@ func TestService_Complete_ValidatesInput(t *testing.T) {
 	}
 	defer func() { _ = svc.Disconnect() }()
 
-	if _, err := svc.Complete(ctx, CompleteRequest{Ref: PromptRef("x"), ArgumentName: ""}); err == nil {
+	if _, err := svc.Complete(ctx, &CompleteRequest{Ref: PromptRef("x"), ArgumentName: ""}); err == nil {
 		t.Error("expected error for empty argument name")
 	}
-	if _, err := svc.Complete(ctx, CompleteRequest{Ref: CompleteReference{Type: "ref/bogus", Name: "x"}, ArgumentName: "y"}); err == nil {
+	if _, err := svc.Complete(ctx, &CompleteRequest{Ref: CompleteReference{Type: "ref/bogus", Name: "x"}, ArgumentName: "y"}); err == nil {
 		t.Error("expected error for invalid ref type")
 	}
 }

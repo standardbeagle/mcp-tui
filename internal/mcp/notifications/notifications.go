@@ -135,7 +135,7 @@ type Entry struct {
 // FormatLine renders a one-line representation suitable for stderr or the
 // pane list. Format: "HH:MM:SS.mmm  type [level]  preview". Kept here (not in
 // the TUI) so the CLI --watch-notifications flag emits identical strings.
-func (e Entry) FormatLine() string {
+func (e *Entry) FormatLine() string {
 	var b strings.Builder
 	b.WriteString(e.Time.Format("15:04:05.000"))
 	b.WriteString("  ")
@@ -155,7 +155,7 @@ func (e Entry) FormatLine() string {
 // FormatJSON returns the indented JSON form of the entry for clipboard copy.
 // Errors are unlikely (the data is always JSON-marshalable since it came from
 // the wire) but we surface them rather than panicking.
-func (e Entry) FormatJSON() (string, error) {
+func (e *Entry) FormatJSON() (string, error) {
 	out, err := json.MarshalIndent(e, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal notification entry: %w", err)
@@ -199,7 +199,7 @@ func (f *Filter) AllowLevel(level string) bool {
 }
 
 // Allow reports whether the entry passes both type and level filters.
-func (f *Filter) Allow(e Entry) bool {
+func (f *Filter) Allow(e *Entry) bool {
 	if !f.AllowType(e.Type) {
 		return false
 	}
@@ -218,9 +218,9 @@ func FilterEntries(entries []Entry, f *Filter) []Entry {
 		return out
 	}
 	out := make([]Entry, 0, len(entries))
-	for _, e := range entries {
-		if f.Allow(e) {
-			out = append(out, e)
+	for i := range entries {
+		if f.Allow(&entries[i]) {
+			out = append(out, entries[i])
 		}
 	}
 	return out
@@ -267,7 +267,7 @@ func NewStreamWithCap(capacity int) *Stream {
 // Append adds an entry to the stream. Drops the oldest entry when the buffer
 // is full. Silently drops e when the stream is paused — see the Stream type
 // comment for why we don't backfill on resume.
-func (s *Stream) Append(e Entry) {
+func (s *Stream) Append(e *Entry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.paused {
@@ -280,7 +280,7 @@ func (s *Stream) Append(e Entry) {
 		copy(s.buf, s.buf[1:])
 		s.buf = s.buf[:len(s.buf)-1]
 	}
-	s.buf = append(s.buf, e)
+	s.buf = append(s.buf, *e)
 }
 
 // Snapshot returns a copy of the current entries. Callers can mutate the

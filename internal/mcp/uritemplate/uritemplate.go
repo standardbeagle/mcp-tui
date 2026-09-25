@@ -36,8 +36,8 @@ func IsTemplate(uri string) bool {
 	if open < 0 {
 		return false
 	}
-	close := strings.IndexByte(uri[open:], '}')
-	return close > 0
+	closeIdx := strings.IndexByte(uri[open:], '}')
+	return closeIdx > 0
 }
 
 // Variables returns the names of the template variables in uri, in the order
@@ -80,16 +80,16 @@ func Variables(uri string) []string {
 		if open < 0 {
 			break
 		}
-		close := strings.IndexByte(rest[open:], '}')
-		if close < 0 {
+		closeIdx := strings.IndexByte(rest[open:], '}')
+		if closeIdx < 0 {
 			break
 		}
-		expr := rest[open+1 : open+close]
-		rest = rest[open+close+1:]
+		expr := rest[open+1 : open+closeIdx]
+		rest = rest[open+closeIdx+1:]
 
 		// Strip a leading operator character. The set is closed per RFC 6570
 		// §2.2; anything else is treated as part of the variable name.
-		if len(expr) > 0 {
+		if expr != "" {
 			switch expr[0] {
 			case '+', '#', '.', '/', ';', '?', '&':
 				expr = expr[1:]
@@ -159,7 +159,7 @@ func VariableAtCursor(uri string, cursor int) (name, prefix string, ok bool) {
 
 	// Strip leading operator if the expression is at the very start of the
 	// expression (the operator is a single char per RFC 6570).
-	if len(expr) > 0 {
+	if expr != "" {
 		switch expr[0] {
 		case '+', '#', '.', '/', ';', '?', '&':
 			expr = expr[1:]
@@ -231,12 +231,12 @@ func Expand(uri string, values map[string]string) string {
 			b.WriteString(rest)
 			break
 		}
-		close := strings.IndexByte(rest[open:], '}')
-		if close < 0 {
+		closeIdx := strings.IndexByte(rest[open:], '}')
+		if closeIdx < 0 {
 			b.WriteString(rest)
 			break
 		}
-		expr := rest[open+1 : open+close]
+		expr := rest[open+1 : open+closeIdx]
 		// Refuse anything that has an operator or modifier — leave intact.
 		simple := true
 		for i := 0; i < len(expr); i++ {
@@ -259,12 +259,12 @@ func Expand(uri string, values map[string]string) string {
 			if v, found := values[name]; found && v != "" {
 				b.WriteString(v)
 			} else {
-				b.WriteString(rest[open : open+close+1])
+				b.WriteString(rest[open : open+closeIdx+1])
 			}
 		} else {
-			b.WriteString(rest[open : open+close+1])
+			b.WriteString(rest[open : open+closeIdx+1])
 		}
-		rest = rest[open+close+1:]
+		rest = rest[open+closeIdx+1:]
 	}
 	return b.String()
 }

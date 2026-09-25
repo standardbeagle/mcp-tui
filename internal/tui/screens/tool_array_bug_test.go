@@ -24,7 +24,7 @@ func TestToolArrayFieldBug(t *testing.T) {
 			},
 		}
 
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		require.Len(t, ts.fields, 1)
 
 		// Test 1: Empty field value
@@ -92,7 +92,7 @@ func TestToolArrayFieldBug(t *testing.T) {
 			},
 		}
 
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		// User doesn't enter anything in the array field (common case)
 		ts.fields[0].input.SetValue("")

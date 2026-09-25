@@ -29,10 +29,10 @@ type SchemaErrorScreen struct {
 }
 
 // NewSchemaErrorScreen creates a new schema error screen
-func NewSchemaErrorScreen(tool mcp.Tool) *SchemaErrorScreen {
+func NewSchemaErrorScreen(tool *mcp.Tool) *SchemaErrorScreen {
 	ses := &SchemaErrorScreen{
 		BaseScreen: NewOverlayScreen("schema-error"),
-		tool:       tool,
+		tool:       *tool,
 	}
 	ses.initStyles()
 	return ses

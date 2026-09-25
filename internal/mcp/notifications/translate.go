@@ -58,7 +58,7 @@ func FromTaskStatus(method, taskID, status, statusMessage string, raw any, now t
 // label alone is enough info, and a forced "(no params)" suffix would just
 // be visual noise. Falls back to a JSON-marshaled summary when we don't
 // recognize the params type, so unknown future fields still render legibly.
-func describeParams(t Type, params officialMCP.Params) (level string, preview string) {
+func describeParams(t Type, params officialMCP.Params) (level, preview string) {
 	if params == nil {
 		return "", ""
 	}

@@ -47,7 +47,7 @@ func (t *staticHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response
 // halves. The split happens on the first '=' so values containing additional
 // '=' characters (base64-encoded tokens, RFC 7235 challenges) survive intact.
 // Returns an error when the input is empty, has no '=', or has an empty key.
-func ParseHeaderFlag(input string) (string, string, error) {
+func ParseHeaderFlag(input string) (key, value string, err error) {
 	if input == "" {
 		return "", "", fmt.Errorf("--header value cannot be empty")
 	}
@@ -55,14 +55,14 @@ func ParseHeaderFlag(input string) (string, string, error) {
 	if idx < 0 {
 		return "", "", fmt.Errorf("--header %q must be in KEY=VALUE format", input)
 	}
-	key := strings.TrimSpace(input[:idx])
+	key = strings.TrimSpace(input[:idx])
 	if key == "" {
 		return "", "", fmt.Errorf("--header %q has empty key", input)
 	}
 	// Value preserves the substring after the first '=' verbatim. Trimming
 	// would corrupt tokens that legitimately contain leading/trailing spaces
 	// in test fixtures or that end in '=' padding.
-	value := input[idx+1:]
+	value = input[idx+1:]
 	return key, value, nil
 }
 

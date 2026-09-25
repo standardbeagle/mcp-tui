@@ -64,7 +64,7 @@ func TestMainScreen_DetailPanesListIcons(t *testing.T) {
 			if err != nil || len(templates) != 1 {
 				t.Fatalf("templates = %v, %v", templates, err)
 			}
-			if view := NewResourceTemplateScreen(templates[0], svc).View(); !strings.Contains(view, "https://cdn.example.com/folder.png (sizes 32x32)") {
+			if view := NewResourceTemplateScreen(&templates[0], svc).View(); !strings.Contains(view, "https://cdn.example.com/folder.png (sizes 32x32)") {
 				t.Errorf("template screen lacks the icon:\n%s", view)
 			}
 

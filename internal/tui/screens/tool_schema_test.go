@@ -109,7 +109,8 @@ func (ts *ToolScreen) setField(t *testing.T, name, value string) {
 func TestToolScreen_RefAndUnionSchemaEndToEnd(t *testing.T) {
 	client := officialMCP.NewClient(&officialMCP.Implementation{Name: "mcp-tui-tui"}, nil)
 	cs := testutil.ConnectMRTR(t, client, deployServer(t))
-	ts := NewToolScreen(listedTool(t, cs, deployTool), nil)
+	tool := listedTool(t, cs, deployTool)
+	ts := NewToolScreen(&tool, nil)
 
 	ts.setField(t, "service", "billing-api")
 	ts.setField(t, "build", "1234")
@@ -144,7 +145,7 @@ func TestToolScreen_ArrayOfObjectsNeedsJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(deployToolSchema), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: deployTool, InputSchema: schema}, nil)
+	ts := NewToolScreen(&mcp.Tool{Name: deployTool, InputSchema: schema}, nil)
 	ts.setField(t, "service", "billing-api")
 	ts.setField(t, "targets", "eu-1.example.net, us-2.example.net")
 
@@ -162,7 +163,7 @@ func TestToolScreen_RemoteRefShowsSchemaError(t *testing.T) {
 	if err := json.Unmarshal([]byte(remote), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "geocode", InputSchema: schema}, nil)
+	ts := NewToolScreen(&mcp.Tool{Name: "geocode", InputSchema: schema}, nil)
 	if !ts.rawJSONMode {
 		t.Fatal("remote $ref did not switch the form to raw JSON")
 	}
@@ -182,7 +183,7 @@ func TestToolScreen_RootSchemaNoteOpensRawJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(root), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "tag", InputSchema: schema}, nil)
+	ts := NewToolScreen(&mcp.Tool{Name: "tag", InputSchema: schema}, nil)
 	if !ts.rawJSONMode {
 		t.Fatal("root schema note did not switch the form to raw JSON")
 	}
@@ -197,7 +198,7 @@ func TestToolScreen_MultiTypeFieldShowsInferredType(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type": "object", "properties": {"id": {"type": ["integer", "string"]}}}`), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "lookup", InputSchema: schema}, nil)
+	ts := NewToolScreen(&mcp.Tool{Name: "lookup", InputSchema: schema}, nil)
 
 	for _, c := range []struct {
 		value, shown string
@@ -231,7 +232,7 @@ func TestToolScreen_ValidatesArgumentsAgainstTheWholeSchema(t *testing.T) {
 		"then": {"required": ["path"]}}`), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "ship", InputSchema: schema}, nil)
+	ts := NewToolScreen(&mcp.Tool{Name: "ship", InputSchema: schema}, nil)
 	ts.setField(t, "mode", "file")
 	if _, err := ts.buildArguments(); err == nil || !strings.Contains(err.Error(), "then") {
 		t.Errorf("err = %v, want the unmet then-requirement", err)
@@ -251,7 +252,7 @@ func TestToolScreen_NullToggle(t *testing.T) {
 		"required": ["note"]}`), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "annotate", InputSchema: schema}, nil)
+	ts := NewToolScreen(&mcp.Tool{Name: "annotate", InputSchema: schema}, nil)
 	ts.Init()
 	ts.setField(t, "note", "draft")
 	ctrlN := tea.KeyMsg{Type: tea.KeyCtrlN}
@@ -322,7 +323,7 @@ func TestToolScreen_NestedObjectSubForm(t *testing.T) {
 	if err := json.Unmarshal([]byte(shipmentSchema), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "ship", InputSchema: schema}, nil)
+	ts := NewToolScreen(&mcp.Tool{Name: "ship", InputSchema: schema}, nil)
 	ts.Init()
 	ctrlE := tea.KeyMsg{Type: tea.KeyCtrlE}
 	ts.setField(t, "service", "express")
@@ -418,7 +419,7 @@ func TestToolScreen_ArrayOfObjectsSubForm(t *testing.T) {
 	if err := json.Unmarshal([]byte(deployToolSchema), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: deployTool, InputSchema: schema},
+	ts := NewToolScreen(&mcp.Tool{Name: deployTool, InputSchema: schema},
 		connectionConfigService{conn: &config.ConnectionConfig{Type: config.TransportStdio, Command: "deployer"}})
 	ts.Init()
 	ctrlE, ctrlA, ctrlX := tea.KeyMsg{Type: tea.KeyCtrlE}, tea.KeyMsg{Type: tea.KeyCtrlA}, tea.KeyMsg{Type: tea.KeyCtrlX}

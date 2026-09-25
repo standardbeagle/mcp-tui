@@ -79,7 +79,7 @@ func callResult(t *testing.T, ts *ToolScreen, cmd tea.Cmd) toolExecutionComplete
 // refusal names the key.
 func TestToolScreen_CtrlOSendsArgumentsThatBreakTheSchema(t *testing.T) {
 	svc, tool := connectShipServer(t)
-	ts := NewToolScreen(tool, svc)
+	ts := NewToolScreen(&tool, svc)
 	ts.setField(t, "mode", "file")
 
 	if cmd := ts.executeTool(); cmd != nil || ts.LastError() == nil || !strings.Contains(ts.LastError().Error(), "Ctrl+O") {
@@ -122,7 +122,7 @@ func TestToolScreen_CtrlOInTheRawJSONEditor(t *testing.T) {
 	]}`), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "tag", InputSchema: schema}, nil)
+	ts := NewToolScreen(&mcp.Tool{Name: "tag", InputSchema: schema}, nil)
 	if !ts.rawJSONMode || ts.cursor != 0 {
 		t.Fatalf("rawJSONMode = %v, cursor = %d; want the raw JSON editor focused", ts.rawJSONMode, ts.cursor)
 	}

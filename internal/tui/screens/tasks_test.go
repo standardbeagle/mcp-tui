@@ -139,7 +139,7 @@ func TestToolScreen_TaskMode(t *testing.T) {
 			tool = candidate
 		}
 	}
-	screen := NewToolScreen(tool, svc)
+	screen := NewToolScreen(&tool, svc)
 	screen.UpdateSize(120, 40)
 	screen.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
 	if !screen.taskMode || !strings.Contains(screen.View(), "task mode") {
@@ -184,7 +184,7 @@ func TestToolScreen_TaskModeNeedsServerSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	screen := NewToolScreen(tools[0], &undeclaredTasks{Service: svc})
+	screen := NewToolScreen(&tools[0], &undeclaredTasks{Service: svc})
 	screen.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
 	if screen.taskMode {
 		t.Fatal("task mode on although the server declared no tasks")

@@ -142,7 +142,7 @@ func TestService_NotificationCapture_RoundTrip(t *testing.T) {
 	// is covered by the explicit unit tests in translate_test.go, so we
 	// do not lose coverage here — we just drive the integration test
 	// against six types and confirm cancelled is reachable.
-	svc.NotificationStream().Append(notifications.Entry{
+	svc.NotificationStream().Append(&notifications.Entry{
 		Time: time.Now(), Type: notifications.TypeCancelled,
 		Method: "notifications/cancelled", Preview: "synthetic",
 	})
@@ -250,11 +250,11 @@ func TestService_NotificationStream_PauseAffectsCapture(t *testing.T) {
 	svc := NewService().(*service)
 	stream := svc.NotificationStream()
 
-	stream.Append(notifications.Entry{Type: notifications.TypeMessage})
+	stream.Append(&notifications.Entry{Type: notifications.TypeMessage})
 	stream.Pause()
-	stream.Append(notifications.Entry{Type: notifications.TypeMessage}) // dropped
+	stream.Append(&notifications.Entry{Type: notifications.TypeMessage}) // dropped
 	stream.Resume()
-	stream.Append(notifications.Entry{Type: notifications.TypeMessage})
+	stream.Append(&notifications.Entry{Type: notifications.TypeMessage})
 
 	if got := stream.Len(); got != 2 {
 		t.Errorf("len = %d; want 2 (paused append should drop)", got)

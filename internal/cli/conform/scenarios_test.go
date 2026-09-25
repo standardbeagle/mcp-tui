@@ -83,7 +83,7 @@ func TestRunner_ToolNamesRunsAgainstAURL(t *testing.T) {
 	testutil.RequireLocalListener(t)
 	closed := httptest.NewServer(http.NotFoundHandler())
 	closed.Close() // connection refused: the probe runs and fails fast
-	r := NewRunner(Target{URL: closed.URL})
+	r := NewRunner(&Target{URL: closed.URL})
 	defer r.Close()
 	res := r.Run(withTimeout(t, 30*time.Second), "verify.tool-names")
 	if res.Skipped {
@@ -103,7 +103,7 @@ func TestRunner_SkipsProbesTheTargetCannotRun(t *testing.T) {
 		{Target{Command: "server"}, "verify.cross-origin"},
 		{Target{URL: "http://127.0.0.1:1/mcp"}, "verify.seterror-content"},
 	} {
-		r := NewRunner(tc.target)
+		r := NewRunner(&tc.target)
 		res := r.Run(context.Background(), tc.probe)
 		r.Close()
 		if !res.Skipped || !res.Pass {
@@ -115,7 +115,7 @@ func TestRunner_SkipsProbesTheTargetCannotRun(t *testing.T) {
 // TestRunner_UnknownScenario covers the dispatch fallthrough — an unknown
 // scenario name must return a failed ScenarioResult, not panic.
 func TestRunner_UnknownScenario(t *testing.T) {
-	r := NewRunner(Target{URL: "http://127.0.0.1:1"})
+	r := NewRunner(&Target{URL: "http://127.0.0.1:1"})
 	defer r.Close()
 	res := r.Run(context.Background(), "made-up-scenario")
 	if res.Pass {
@@ -133,7 +133,7 @@ func TestRunner_UnknownScenario(t *testing.T) {
 // when neither URL nor Command is set. Surfaces through the first protocol
 // scenario.
 func TestRunner_NoTarget(t *testing.T) {
-	r := NewRunner(Target{})
+	r := NewRunner(&Target{})
 	defer r.Close()
 	res := r.Run(context.Background(), "initialize")
 	if res.Pass {
@@ -176,7 +176,7 @@ func TestRunner_InitializeAndTools(t *testing.T) {
 	})
 	defer srv.Close()
 
-	r := NewRunner(Target{URL: srv.URL})
+	r := NewRunner(&Target{URL: srv.URL})
 	defer r.Close()
 
 	for _, scenario := range []string{
@@ -213,7 +213,7 @@ func TestRunner_ToolsCall_IsError(t *testing.T) {
 	})
 	defer srv.Close()
 
-	r := NewRunner(Target{URL: srv.URL})
+	r := NewRunner(&Target{URL: srv.URL})
 	defer r.Close()
 	res := r.Run(withTimeout(t, 10*time.Second), "tools.call.isError")
 	if !res.Pass {
@@ -241,7 +241,7 @@ func TestRunner_ToolsCall_IsError_Skip(t *testing.T) {
 	})
 	defer srv.Close()
 
-	r := NewRunner(Target{URL: srv.URL})
+	r := NewRunner(&Target{URL: srv.URL})
 	defer r.Close()
 	res := r.Run(withTimeout(t, 10*time.Second), "tools.call.isError")
 	if !res.Pass {
@@ -257,7 +257,7 @@ func TestRunner_ToolsCall_IsError_Skip(t *testing.T) {
 func TestRunner_NoTools_Skip(t *testing.T) {
 	srv := newSDKTestServer(t, nil) // no tools registered
 	defer srv.Close()
-	r := NewRunner(Target{URL: srv.URL})
+	r := NewRunner(&Target{URL: srv.URL})
 	defer r.Close()
 	res := r.Run(withTimeout(t, 10*time.Second), "tools.call")
 	if !res.Pass || !res.Skipped {
@@ -275,7 +275,7 @@ func TestRunner_NoTools_Skip(t *testing.T) {
 func TestRunner_VerifyProbeIntegration(t *testing.T) {
 	srv := newSDKTestServer(t, nil)
 	defer srv.Close()
-	r := NewRunner(Target{URL: srv.URL})
+	r := NewRunner(&Target{URL: srv.URL})
 	defer r.Close()
 	res := r.Run(withTimeout(t, 10*time.Second), "verify.content-type")
 	if !res.Pass {
@@ -289,7 +289,7 @@ func TestRunner_VerifyProbeIntegration(t *testing.T) {
 func TestRunner_VerifyProbeIntegration_Skip(t *testing.T) {
 	srv := newSDKTestServer(t, nil)
 	defer srv.Close()
-	r := NewRunner(Target{URL: srv.URL}) // URL-only target
+	r := NewRunner(&Target{URL: srv.URL}) // URL-only target
 	defer r.Close()
 	res := r.Run(withTimeout(t, 10*time.Second), "verify.seterror-content")
 	if !res.Pass || !res.Skipped {
@@ -418,7 +418,7 @@ func TestRunner_Initialize_DetailContainsServerInfo(t *testing.T) {
 	srv := newSDKTestServer(t, nil)
 	defer srv.Close()
 
-	r := NewRunner(Target{URL: srv.URL})
+	r := NewRunner(&Target{URL: srv.URL})
 	defer r.Close()
 	res := r.Run(withTimeout(t, 10*time.Second), "initialize")
 	if !res.Pass {
@@ -437,7 +437,7 @@ func TestRunner_Initialize_DetailContainsServerInfo(t *testing.T) {
 // unreachable URL should fail once, then every later scenario reports the
 // same error without paying for a fresh connect timeout.
 func TestRunner_StickyConnectError(t *testing.T) {
-	r := NewRunner(Target{URL: "http://127.0.0.1:1/no-such-server"})
+	r := NewRunner(&Target{URL: "http://127.0.0.1:1/no-such-server"})
 	defer r.Close()
 	ctx := withTimeout(t, 5*time.Second)
 	res1 := r.Run(ctx, "initialize")
@@ -458,4 +458,4 @@ func TestRunner_StickyConnectError(t *testing.T) {
 // drainTo is a tiny helper for tests that need to keep an httptest server
 // busy. Currently unused but kept for future scenarios that need to
 // inspect SSE traffic.
-func drainTo(w io.Writer, r io.Reader) { _, _ = io.Copy(w, r) } //nolint:unused
+func drainTo(w io.Writer, r io.Reader) { _, _ = io.Copy(w, r) } //nolint:unused // kept for future SSE-inspection scenarios

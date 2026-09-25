@@ -460,7 +460,7 @@ func TestSchema_ValidateEnforcesTheWholeSchema(t *testing.T) {
 			t.Errorf("%v: error = %v, want one mentioning %q", args, err, name)
 		}
 	}
-	if err := (Schema{}).Validate(map[string]any{"any": 1}); err != nil {
+	if err := (&Schema{}).Validate(map[string]any{"any": 1}); err != nil {
 		t.Errorf("an absent schema rejected arguments: %v", err)
 	}
 }
@@ -500,7 +500,7 @@ func TestParse_NestedObjectProperties(t *testing.T) {
 	depth := 0
 	for p, _ := s.Param("tree"); p.Properties != nil; depth++ {
 		var ok bool
-		if p, ok = (Schema{Params: p.Properties}).Param("child"); !ok {
+		if p, ok = (&Schema{Params: p.Properties}).Param("child"); !ok {
 			break
 		}
 	}
@@ -545,7 +545,7 @@ func TestParse_ArrayOfObjectsItemProperties(t *testing.T) {
 	depth := 0
 	for p, _ := s.Param("tree"); p.ItemProperties != nil; depth++ {
 		var ok bool
-		if p, ok = (Schema{Params: p.ItemProperties}).Param("children"); !ok {
+		if p, ok = (&Schema{Params: p.ItemProperties}).Param("children"); !ok {
 			break
 		}
 	}

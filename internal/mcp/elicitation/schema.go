@@ -207,7 +207,7 @@ func ParseForm(message string, schema any) (Form, error) {
 			})
 			continue
 		}
-		form.Fields = append(form.Fields, fieldFromProp(name, rp, required[name]))
+		form.Fields = append(form.Fields, fieldFromProp(name, &rp, required[name]))
 	}
 
 	return form, nil
@@ -217,7 +217,7 @@ func ParseForm(message string, schema any) (Form, error) {
 // mapping is intentionally narrow — fields whose schema does not match one
 // of the supported control types are reported as FieldUnknown so the UI
 // can render a placeholder.
-func fieldFromProp(name string, rp rawProp, required bool) Field {
+func fieldFromProp(name string, rp *rawProp, required bool) Field {
 	f := Field{
 		Name:        name,
 		Title:       rp.Title,
@@ -282,7 +282,7 @@ func fieldFromProp(name string, rp rawProp, required bool) Field {
 // Only string enums are fully supported by the renderer; numeric and
 // boolean enums are converted to their JSON representation, which is good
 // enough for display and submit-back round-tripping.
-func decodeEnum(raw []json.RawMessage, names []string) (values []string, displayNames []string) {
+func decodeEnum(raw []json.RawMessage, names []string) (values, displayNames []string) {
 	values = make([]string, 0, len(raw))
 	for _, r := range raw {
 		var s string

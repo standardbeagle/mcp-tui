@@ -24,7 +24,8 @@ func AnalyzeJSONError(err error, rawData string) map[string]interface{} {
 	errStr := err.Error()
 
 	// Check for specific unmarshaling errors
-	if strings.Contains(errStr, "cannot unmarshal array into") {
+	switch {
+	case strings.Contains(errStr, "cannot unmarshal array into"):
 		details["issue"] = "Type mismatch: server sent an array where an object was expected"
 		details["hint"] = "The server's response format doesn't match the expected schema"
 
@@ -34,10 +35,10 @@ func AnalyzeJSONError(err error, rawData string) map[string]interface{} {
 			details["expected"] = "object (map)"
 			details["received"] = "array"
 		}
-	} else if strings.Contains(errStr, "cannot unmarshal object into") {
+	case strings.Contains(errStr, "cannot unmarshal object into"):
 		details["issue"] = "Type mismatch: server sent an object where an array was expected"
 		details["hint"] = "The server's response format doesn't match the expected schema"
-	} else if strings.Contains(errStr, "unexpected end of JSON input") {
+	case strings.Contains(errStr, "unexpected end of JSON input"):
 		details["issue"] = "Incomplete JSON response"
 		details["hint"] = "The server may have closed the connection prematurely"
 	}
@@ -47,8 +48,7 @@ func AnalyzeJSONError(err error, rawData string) map[string]interface{} {
 		var rawJSON interface{}
 		if err := json.Unmarshal([]byte(rawData), &rawJSON); err == nil {
 			// Successfully parsed, analyze structure
-			switch v := rawJSON.(type) {
-			case map[string]interface{}:
+			if v, ok := rawJSON.(map[string]interface{}); ok {
 				if tools, ok := v["tools"].([]interface{}); ok {
 					details["tools_count"] = len(tools)
 					// Check first tool structure if available

@@ -57,7 +57,7 @@ func callMethodHeadersAs(t *testing.T, body string, preset http.Header) *http.Re
 	if err != nil {
 		t.Fatalf("RoundTrip returned error: %v", err)
 	}
-	defer resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if captured == nil {
 		t.Fatal("inner RoundTripper was not called")
@@ -249,7 +249,7 @@ func TestGetHTTPClientForTransport_FlagOnInjectsHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Do: %v", err)
 	}
-	defer resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestGetHTTPClientForTransport_FlagOffOmitsHeaders(t *testing.T) {
@@ -284,5 +284,5 @@ func TestGetHTTPClientForTransport_FlagOffOmitsHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Do: %v", err)
 	}
-	defer resp.Body.Close()
+	_ = resp.Body.Close()
 }

@@ -52,7 +52,7 @@ func TestResultViews_ShowRespondingServer(t *testing.T) {
 	if err != nil || len(tools) != 1 {
 		t.Fatalf("tools = %v, %v", tools, err)
 	}
-	ts := NewToolScreen(tools[0], svc)
+	ts := NewToolScreen(&tools[0], svc)
 	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	ts.Update(toolExecutionCompleteMsg{Result: result})
 	if view := ts.View(); !strings.Contains(view, servedBy) {

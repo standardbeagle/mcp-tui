@@ -85,7 +85,7 @@ func runCmd(cmd tea.Cmd) []tea.Msg {
 func TestScreenManagerOpensElicitationOverlayOverToolScreen(t *testing.T) {
 	cfg := &config.Config{}
 	main := screens.NewMainScreen(cfg, &config.ConnectionConfig{Type: config.TransportHTTP, URL: "http://127.0.0.1:1/mcp"})
-	tool := screens.NewToolScreen(mcp.Tool{Name: "ask"}, main.Service())
+	tool := screens.NewToolScreen(&mcp.Tool{Name: "ask"}, main.Service())
 	sm := &ScreenManager{
 		config:        cfg,
 		logger:        debug.Component("screen-manager"),
@@ -226,7 +226,7 @@ func TestScreenManagerKeepsRequestOverlayWhenConfirmArrives(t *testing.T) {
 	pending, answered := startElicitation(t, "Your name?")
 	dispatch(t, sm, screens.ElicitationRequestMsg{Pending: pending})
 
-	dispatch(t, sm, screens.ToggleOverlayMsg{Screen: screens.NewConfirmScreen(mcp.Tool{Name: "wipe"})})
+	dispatch(t, sm, screens.ToggleOverlayMsg{Screen: screens.NewConfirmScreen(&mcp.Tool{Name: "wipe"})})
 	requireOverlayShowing(t, sm, "Your name?")
 
 	dispatch(t, sm, tea.KeyMsg{Type: tea.KeyEsc})
@@ -285,7 +285,7 @@ func TestScreenManagerKeepsMainScreenWorkRunningUnderToolScreen(t *testing.T) {
 	sm.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	sm.Update(screens.ConnectionCompleteMsg{Success: true})
 	sm.Update(tea.KeyMsg{Type: tea.KeyTab}) // the resources tab
-	tool := screens.NewToolScreen(mcp.Tool{Name: "deploy"}, main.Service())
+	tool := screens.NewToolScreen(&mcp.Tool{Name: "deploy"}, main.Service())
 	sm.Update(screens.TransitionMsg{Transition: screens.ScreenTransition{Screen: tool}})
 
 	sm.Update(screens.ResourcesLoadedMsg{

@@ -8,10 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/standardbeagle/mcp-tui/internal/mcp"
-
 	"github.com/standardbeagle/mcp-tui/internal/config"
-	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 // memoryClipboard stands in for the OS clipboard. The real one shells out to
@@ -31,13 +29,13 @@ func (c *memoryClipboard) WriteAll(text string) error {
 func TestPhase3ClipboardFeatures(t *testing.T) {
 	t.Run("copy_tool_result", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		clip := &memoryClipboard{}
 		ts.clipboard = clip
 
 		// Simulate a result
-		ts.result = &imcp.CallToolResult{
-			Content: []imcp.Content{
+		ts.result = &mcp.CallToolResult{
+			Content: []mcp.Content{
 				{
 					Type: "text",
 					Text: "Test result",
@@ -69,7 +67,7 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 				},
 			},
 		}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		ts.clipboard = &memoryClipboard{text: "pasted text"}
 		ts.cursor = 0 // Focus on first field
 
@@ -89,7 +87,7 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 func TestPhase3ProgressIndicators(t *testing.T) {
 	t.Run("execution_progress_display", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		ts.executing = true
 		ts.executionStart = time.Now()
 
@@ -103,7 +101,7 @@ func TestPhase3ProgressIndicators(t *testing.T) {
 
 	t.Run("timeout_warning", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		ts.executing = true
 		ts.executionStart = time.Now().Add(-15 * time.Second) // 15 seconds ago
 
@@ -211,7 +209,7 @@ func TestPhase3InputValidation(t *testing.T) {
 				},
 			}
 
-			ts := NewToolScreen(tool, nil)
+			ts := NewToolScreen(&tool, nil)
 			require.Len(t, ts.fields, 1, "Should have one field")
 
 			// Set field value
@@ -244,7 +242,7 @@ func TestPhase3ValidationDisplay(t *testing.T) {
 		},
 	}
 
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	ts.cursor = 0
 
 	// Set invalid value

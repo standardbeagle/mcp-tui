@@ -85,7 +85,7 @@ func (pc *PromptCommand) runCompleteCommand(cmd *cobra.Command, args []string) e
 		fmt.Fprintf(os.Stderr, "🔍 Requesting completions for prompt=%s arg=%s prefix=%q...\n", promptName, varName, prefix)
 	}
 
-	result, err := pc.GetService().Complete(ctx, mcp.CompleteRequest{
+	result, err := pc.GetService().Complete(ctx, &mcp.CompleteRequest{
 		Ref:           mcp.PromptRef(promptName),
 		ArgumentName:  varName,
 		ArgumentValue: prefix,

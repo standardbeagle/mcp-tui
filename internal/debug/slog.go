@@ -36,6 +36,7 @@ func (h *slogHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return globalEnabled(logLevelFromSlog(level))
 }
 
+//nolint:gocritic // hugeParam: the slog.Handler interface fixes this signature
 func (h *slogHandler) Handle(_ context.Context, r slog.Record) error {
 	fields := make([]Field, 0, len(h.fields)+r.NumAttrs())
 	fields = append(fields, h.fields...)

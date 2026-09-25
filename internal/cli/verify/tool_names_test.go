@@ -53,7 +53,7 @@ func TestProbeToolNames_ReportsEachInvalidName(t *testing.T) {
 // tool-names inspects tools/list, so either target shape will do.
 func TestRunAll_ToolNamesRunsAgainstURLTarget(t *testing.T) {
 	url := toolNamesServer(t, "get_weather")
-	for _, r := range RunAll(context.Background(), Target{URL: url}) {
+	for _, r := range RunAll(context.Background(), &Target{URL: url}) {
 		if r.Name == "tool-names" && !r.Pass {
 			t.Errorf("tool-names against a URL target = %+v, want pass", r)
 		}

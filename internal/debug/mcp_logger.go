@@ -70,7 +70,7 @@ func (e MCPLogEntry) String() string {
 }
 
 // DetailedString provides enhanced formatting for TUI display
-func (e MCPLogEntry) DetailedString() string {
+func (e *MCPLogEntry) DetailedString() string {
 	timestamp := e.Timestamp.Format("15:04:05.000")
 
 	// Enhanced formatting with more context
@@ -116,7 +116,7 @@ func (e MCPLogEntry) DetailedString() string {
 }
 
 // GetFormattedJSON returns the raw message formatted as pretty JSON
-func (e MCPLogEntry) GetFormattedJSON() string {
+func (e *MCPLogEntry) GetFormattedJSON() string {
 	// Try to parse and pretty-print the raw message
 	var data interface{}
 	if err := json.Unmarshal([]byte(e.RawMessage), &data); err != nil {
@@ -245,8 +245,8 @@ func (ml *MCPLogger) GetEntries() []MCPLogEntry {
 func (ml *MCPLogger) GetEntriesAsStrings() []string {
 	entries := ml.GetEntries()
 	strings := make([]string, len(entries))
-	for i, entry := range entries {
-		strings[i] = entry.String()
+	for i := range entries {
+		strings[i] = entries[i].String()
 	}
 	return strings
 }
@@ -278,8 +278,8 @@ func (ml *MCPLogger) GetStats() map[string]int {
 		"errors":        0,
 	}
 
-	for _, entry := range ml.entries {
-		switch entry.MessageType {
+	for i := range ml.entries {
+		switch ml.entries[i].MessageType {
 		case MCPMessageRequest:
 			stats["requests"]++
 		case MCPMessageResponse:

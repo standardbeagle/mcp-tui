@@ -81,7 +81,7 @@ func initializeResult(serverName string) map[string]interface{} {
 // dispatchMethod returns the result body for a given JSON-RPC method, mirroring
 // the minimum set required for Connect + ListTools to succeed. Unknown methods
 // return an empty object so the SDK doesn't error on unsolicited calls.
-func dispatchMethod(method string, serverName string) interface{} {
+func dispatchMethod(method, serverName string) interface{} {
 	switch method {
 	case "initialize":
 		return initializeResult(serverName)

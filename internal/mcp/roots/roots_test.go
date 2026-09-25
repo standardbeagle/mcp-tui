@@ -138,15 +138,15 @@ func TestParseFlag_EmptyPathAfterEquals(t *testing.T) {
 // cobra StringSliceVar can produce on trailing commas) and accumulates the
 // rest in order.
 func TestParseFlags_SkipsEmpty(t *testing.T) {
-	roots, err := roots.ParseFlags([]string{"a=/tmp/a", "", "b=/tmp/b"})
+	parsed, err := roots.ParseFlags([]string{"a=/tmp/a", "", "b=/tmp/b"})
 	if err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
-	if len(roots) != 2 {
-		t.Fatalf("len(roots) = %d, want 2", len(roots))
+	if len(parsed) != 2 {
+		t.Fatalf("len(parsed) = %d, want 2", len(parsed))
 	}
-	if roots[0].Name != "a" || roots[1].Name != "b" {
-		t.Errorf("roots = %+v, want [a, b]", roots)
+	if parsed[0].Name != "a" || parsed[1].Name != "b" {
+		t.Errorf("roots = %+v, want [a, b]", parsed)
 	}
 }
 

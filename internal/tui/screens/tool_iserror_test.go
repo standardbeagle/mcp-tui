@@ -22,7 +22,7 @@ func TestToolScreen_IsErrorBanner(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 	}
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	// Width / height must be set or the result block calculates a tiny
 	// available height and the banner gets trimmed by the lipgloss height
 	// constraint.
@@ -68,7 +68,7 @@ func TestToolScreen_IsErrorFalse_NoBanner(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 	}
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	ts.Update(toolExecutionCompleteMsg{
@@ -101,7 +101,7 @@ func TestToolScreen_IsErrorStatusMessage(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 	}
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	ts.Update(toolExecutionCompleteMsg{
@@ -135,7 +135,7 @@ func TestToolScreen_IsErrorVsOutputViolations_Distinguishable(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 	}
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	ts.Update(toolExecutionCompleteMsg{

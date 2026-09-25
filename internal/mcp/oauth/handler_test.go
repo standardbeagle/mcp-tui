@@ -351,7 +351,7 @@ func TestLocalServerFetcher_RedirectURL(t *testing.T) {
 	testutil.RequireLocalListener(t)
 
 	f := newLocalServerFetcher("127.0.0.1", 0)
-	defer f.Close() //nolint:errcheck
+	defer f.Close() //nolint:errcheck // test cleanup; a close error is not actionable
 
 	u := f.RedirectURL()
 	require.NotEmpty(t, u)

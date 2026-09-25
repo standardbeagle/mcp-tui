@@ -394,23 +394,28 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+e":
 		// Export the recorded session to timestamped JSON + .sh replay files.
-		return ds, ds.exportSessionCmd()
+		exportCmd := ds.exportSessionCmd()
+		return ds, exportCmd
 
 	case "r":
 		// Refresh data
-		return ds, ds.refreshDataCmd()
+		refreshCmd := ds.refreshDataCmd()
+		return ds, refreshCmd
 
 	case "c":
 		// Clear logs (if not in a list, otherwise copy)
 		if ds.activeTab == tabStatistics { // In stats tab
-			return ds, ds.clearLogsCmd()
+			clearCmd := ds.clearLogsCmd()
+			return ds, clearCmd
 		}
 		if ds.activeTab == tabCapabilities {
 			// On the capabilities tab, copy the JSON dump to the clipboard.
-			return ds, ds.copyCapabilitiesCmd()
+			copyCapsCmd := ds.copyCapabilitiesCmd()
+			return ds, copyCapsCmd
 		}
 		// In log tabs, copy current item
-		return ds, ds.copySelectedItemCmd()
+		copyCmd := ds.copySelectedItemCmd()
+		return ds, copyCmd
 
 	case "x":
 		// Clear logs (or clear the notification stream on its tab — separate
@@ -423,15 +428,18 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return ds, nil
 		}
-		return ds, ds.clearLogsCmd()
+		clearCmd := ds.clearLogsCmd()
+		return ds, clearCmd
 
 	case "y":
 		// Copy current selected item to clipboard (vim-like).
 		if ds.activeTab == tabCapabilities {
-			return ds, ds.copyCapabilitiesCmd()
+			copyCapsCmd := ds.copyCapabilitiesCmd()
+			return ds, copyCapsCmd
 		}
 		if ds.activeTab != tabStatistics { // Not in stats tab
-			return ds, ds.copySelectedItemCmd()
+			copyCmd := ds.copySelectedItemCmd()
+			return ds, copyCmd
 		}
 		return ds, nil
 
@@ -659,11 +667,12 @@ func (ds *DebugScreen) renderStats() string {
 		builder.WriteString("📈 Analysis:\n")
 
 		errorRate := float64(ds.mcpStats["errors"]) / float64(total) * 100
-		if errorRate > 10 {
+		switch {
+		case errorRate > 10:
 			fmt.Fprintf(&builder, "⚠️  High error rate: %.1f%%\n", errorRate)
-		} else if errorRate > 0 {
+		case errorRate > 0:
 			fmt.Fprintf(&builder, "✅ Error rate: %.1f%%\n", errorRate)
-		} else {
+		default:
 			builder.WriteString("✅ No errors detected\n")
 		}
 
@@ -745,13 +754,14 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 		// Error-specific analysis
 		if httpInfo.StatusCode == 0 {
 			builder.WriteString("\n🚨 Connection Failed Before Response:\n")
-			if strings.Contains(httpInfo.ResponseBody, "context deadline exceeded") {
+			switch {
+			case strings.Contains(httpInfo.ResponseBody, "context deadline exceeded"):
 				builder.WriteString("• Client timeout - increase --timeout flag\n")
-			} else if strings.Contains(httpInfo.ResponseBody, "context canceled") {
+			case strings.Contains(httpInfo.ResponseBody, "context canceled"):
 				builder.WriteString("• Request was canceled - check if server is running\n")
-			} else if strings.Contains(httpInfo.ResponseBody, "connection refused") {
+			case strings.Contains(httpInfo.ResponseBody, "connection refused"):
 				builder.WriteString("• Server not listening on specified port\n")
-			} else if strings.Contains(httpInfo.ResponseBody, "no such host") {
+			case strings.Contains(httpInfo.ResponseBody, "no such host"):
 				builder.WriteString("• DNS resolution failed - check hostname\n")
 			}
 		}

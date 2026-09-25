@@ -180,7 +180,7 @@ func TestToolScreenVisualElements(t *testing.T) {
 		},
 	}
 
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	ts.UpdateSize(80, 24)
 
 	t.Run("execution_spinner", func(t *testing.T) {

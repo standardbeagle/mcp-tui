@@ -125,7 +125,7 @@ type Schema struct {
 // (if/then/else, not, patternProperties, value constraints, the structure
 // of nested objects). A violation is an *ArgumentError naming the
 // argument. An empty schema accepts anything.
-func (s Schema) Validate(args map[string]any) error {
+func (s *Schema) Validate(args map[string]any) error {
 	if s.resolved == nil {
 		return nil
 	}
@@ -209,7 +209,7 @@ func (p *Param) UnionLabel() string {
 }
 
 // Param returns the parameter called name.
-func (s Schema) Param(name string) (Param, bool) {
+func (s *Schema) Param(name string) (Param, bool) {
 	i := sort.Search(len(s.Params), func(i int) bool { return s.Params[i].Name >= name })
 	if i < len(s.Params) && s.Params[i].Name == name {
 		return s.Params[i], true
@@ -265,6 +265,11 @@ func Parse(toolName string, inputSchema map[string]any) (Schema, error) {
 	return out, nil
 }
 
+// walker follows $refs within one schema document.
+type walker struct {
+	refs *refIndex
+}
+
 // params describes object's properties, in name order. depth is how deep
 // object sits below the root.
 func (w walker) params(object *jsonschema.Schema, depth int) []Param {
@@ -307,11 +312,6 @@ func rootAlternativesNote(w walker, root *jsonschema.Schema) string {
 
 func refuseRemote(uri *url.URL) (*jsonschema.Schema, error) {
 	return nil, fmt.Errorf("%w: %s", ErrRemoteRef, uri)
-}
-
-// walker follows $refs within one schema document.
-type walker struct {
-	refs *refIndex
 }
 
 // param describes one property schema.

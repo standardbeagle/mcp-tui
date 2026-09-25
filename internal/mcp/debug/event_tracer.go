@@ -108,7 +108,7 @@ func (et *EventTracer) SetSessionID(sessionID string) {
 }
 
 // TraceConnectionStart records a connection start event
-func (et *EventTracer) TraceConnectionStart(transportType string, target string) *Event {
+func (et *EventTracer) TraceConnectionStart(transportType, target string) *Event {
 	return et.addEvent(EventConnectionStart, "", nil, map[string]interface{}{
 		"transport_type": transportType,
 		"target":         target,
@@ -116,12 +116,12 @@ func (et *EventTracer) TraceConnectionStart(transportType string, target string)
 }
 
 // TraceConnectionEnd records a connection end event with duration
-func (et *EventTracer) TraceConnectionEnd(startEvent *Event, success bool, error string) *Event {
+func (et *EventTracer) TraceConnectionEnd(startEvent *Event, success bool, errStr string) *Event {
 	data := map[string]interface{}{
 		"success": success,
 	}
-	if error != "" {
-		data["error"] = error
+	if errStr != "" {
+		data["error"] = errStr
 	}
 
 	var duration *time.Duration
@@ -138,7 +138,7 @@ func (et *EventTracer) TraceConnectionEnd(startEvent *Event, success bool, error
 }
 
 // TraceRequestSent records an outgoing MCP request
-func (et *EventTracer) TraceRequestSent(method string, requestID interface{}, params interface{}) *Event {
+func (et *EventTracer) TraceRequestSent(method string, requestID, params interface{}) *Event {
 	data := map[string]interface{}{
 		"direction": "outgoing",
 	}
@@ -166,7 +166,7 @@ func (et *EventTracer) TraceRequestSent(method string, requestID interface{}, pa
 }
 
 // TraceResponseReceived records an incoming MCP response
-func (et *EventTracer) TraceResponseReceived(requestID interface{}, result interface{}, error interface{}) *Event {
+func (et *EventTracer) TraceResponseReceived(requestID, result, errVal interface{}) *Event {
 	data := map[string]interface{}{
 		"direction": "incoming",
 	}
@@ -182,9 +182,9 @@ func (et *EventTracer) TraceResponseReceived(requestID interface{}, result inter
 		}
 	}
 
-	if error != nil {
+	if errVal != nil {
 		data["has_error"] = true
-		data["error"] = fmt.Sprintf("%v", error)
+		data["error"] = fmt.Sprintf("%v", errVal)
 	}
 
 	event := et.addEvent(EventResponseReceived, "", requestID, data)
@@ -228,10 +228,10 @@ func (et *EventTracer) TraceNotificationReceived(method string, params interface
 }
 
 // TraceError records an error event
-func (et *EventTracer) TraceError(operation string, error error, context map[string]interface{}) *Event {
+func (et *EventTracer) TraceError(operation string, err error, context map[string]interface{}) *Event {
 	data := map[string]interface{}{
 		"operation": operation,
-		"error":     error.Error(),
+		"error":     err.Error(),
 	}
 
 	for k, v := range context {

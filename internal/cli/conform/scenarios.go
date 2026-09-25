@@ -147,8 +147,8 @@ type Runner struct {
 
 // NewRunner builds a Runner for the supplied target without connecting. The
 // first protocol-level scenario triggers connection.
-func NewRunner(target Target) *Runner {
-	return &Runner{target: target}
+func NewRunner(target *Target) *Runner {
+	return &Runner{target: *target}
 }
 
 // Close releases the runner's MCP session if one was established. Safe to
@@ -302,7 +302,7 @@ func (r *Runner) runVerifyProbe(ctx context.Context, probe string) ScenarioResul
 	if problem := verify.TargetProblem(probe, &tt); problem != "" {
 		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: " + problem}
 	}
-	return scenarioFromProbe(verify.Run(ctx, probe, tt))
+	return scenarioFromProbe(verify.Run(ctx, probe, &tt))
 }
 
 // scenarioFromProbe maps a probe's outcome onto a scenario result, keeping
@@ -390,13 +390,11 @@ func (r *Runner) scenarioToolsCall(ctx context.Context, expectIsError bool) Scen
 				pick = &tools[i]
 				break
 			}
-		} else {
+		} else if !t.IsDestructive() {
 			// Prefer non-destructive (or unannotated, since mcp-tui treats
 			// nil destructiveHint as not-destructive — see Tool.IsDestructive).
-			if !t.IsDestructive() {
-				pick = &tools[i]
-				break
-			}
+			pick = &tools[i]
+			break
 		}
 	}
 	if pick == nil {
@@ -674,7 +672,7 @@ func (r *Runner) scenarioCompletion(ctx context.Context) ScenarioResult {
 	if skipReason != "" {
 		return ScenarioResult{Pass: true, Skipped: true, Error: skipReason}
 	}
-	res, err := svc.Complete(ctx, req)
+	res, err := svc.Complete(ctx, &req)
 	if err != nil {
 		return failResult("Complete failed: "+err.Error(), "")
 	}

@@ -50,7 +50,7 @@ func TestCoerceToolArgumentUsesDeclaredType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := coerceToolArgument(schema, tt.key, tt.value)
+			got, err := coerceToolArgument(&schema, tt.key, tt.value)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
@@ -76,7 +76,7 @@ func TestCoerceToolArgumentFailsFastOnTypeMismatch(t *testing.T) {
 		{"config", "not-an-object"},
 	} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
-			_, err := coerceToolArgument(schema, tc.key, tc.value)
+			_, err := coerceToolArgument(&schema, tc.key, tc.value)
 			assert.Error(t, err, "expected a hard error rather than a string fallback")
 		})
 	}
@@ -86,15 +86,15 @@ func TestCoerceToolArgumentFailsFastOnTypeMismatch(t *testing.T) {
 func TestCoerceToolArgumentFallsBackWhenSchemaSilent(t *testing.T) {
 	schema := schemaWith(t, map[string]interface{}{})
 
-	got, err := coerceToolArgument(schema, "unknown", "42")
+	got, err := coerceToolArgument(&schema, "unknown", "42")
 	require.NoError(t, err)
 	assert.Equal(t, float64(42), got)
 
-	got, err = coerceToolArgument(schema, "unknown", "plain text")
+	got, err = coerceToolArgument(&schema, "unknown", "plain text")
 	require.NoError(t, err)
 	assert.Equal(t, "plain text", got)
 
-	got, err = coerceToolArgument(inputschema.Schema{}, "anything", "true")
+	got, err = coerceToolArgument(&inputschema.Schema{}, "anything", "true")
 	require.NoError(t, err)
 	assert.Equal(t, true, got)
 }
@@ -106,11 +106,11 @@ func TestCoerceToolArgumentNullableUnion(t *testing.T) {
 		"maybe": map[string]interface{}{"type": []interface{}{"null", "integer"}},
 	})
 
-	got, err := coerceToolArgument(schema, "maybe", "null")
+	got, err := coerceToolArgument(&schema, "maybe", "null")
 	require.NoError(t, err)
 	assert.Nil(t, got)
 
-	got, err = coerceToolArgument(schema, "maybe", "7")
+	got, err = coerceToolArgument(&schema, "maybe", "7")
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), got)
 }

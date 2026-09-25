@@ -61,7 +61,7 @@ func (v *versionStubService) ListPrompts(context.Context) ([]mcp.Prompt, error) 
 func (v *versionStubService) GetPrompt(context.Context, mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	return nil, nil
 }
-func (v *versionStubService) Complete(context.Context, mcp.CompleteRequest) (*mcp.CompleteResult, error) {
+func (v *versionStubService) Complete(context.Context, *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
 	return nil, nil
 }
 func (v *versionStubService) GetCapabilitiesSnapshot() *capabilities.Snapshot   { return nil }

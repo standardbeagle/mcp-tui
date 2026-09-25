@@ -314,12 +314,12 @@ func (s *service) AddNotificationObserver(fn func(notifications.Entry)) {
 }
 
 // SetDebugMode enables or disables debug mode
-func (s *service) SetDebugMode(debug bool) {
-	s.debugMode = debug
+func (s *service) SetDebugMode(enabled bool) {
+	s.debugMode = enabled
 
 	// Enable session manager debug tracing
 	if s.sessionManager != nil {
-		s.sessionManager.SetDebugEnabled(debug)
+		s.sessionManager.SetDebugEnabled(enabled)
 	}
 }
 
@@ -356,7 +356,7 @@ func (s *service) publishNotification(entry *notifications.Entry) {
 	copy(observers, s.notificationObservers)
 	s.mu.Unlock()
 	if stream != nil {
-		stream.Append(*entry)
+		stream.Append(entry)
 	}
 	for _, obs := range observers {
 		// Recover so a panicking observer does not break the SDK dispatch
@@ -1459,7 +1459,7 @@ func (s *service) ListResourceTemplates(ctx context.Context) ([]ResourceTemplate
 // response to mcp-tui's CompleteResult shape. Validation of the reference
 // fields (Name vs URI exclusivity per MCP spec) is performed by the SDK; we
 // surface the error verbatim.
-func (s *service) Complete(ctx context.Context, req CompleteRequest) (*CompleteResult, error) {
+func (s *service) Complete(ctx context.Context, req *CompleteRequest) (*CompleteResult, error) {
 	if !s.IsConnected() {
 		return nil, fmt.Errorf("not connected to MCP server - use 'connect' command first to establish a connection")
 	}

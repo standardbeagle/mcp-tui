@@ -44,10 +44,10 @@ type ConfirmScreen struct {
 // NewConfirmScreen creates a confirmation overlay for the given tool. The
 // caller must ensure the tool is actually destructive — this overlay only
 // renders the prompt and emits the decision.
-func NewConfirmScreen(tool mcp.Tool) *ConfirmScreen {
+func NewConfirmScreen(tool *mcp.Tool) *ConfirmScreen {
 	c := &ConfirmScreen{
 		BaseScreen: NewOverlayScreen("confirm-destructive"),
-		tool:       tool,
+		tool:       *tool,
 	}
 	c.initStyles()
 	return c
@@ -91,9 +91,11 @@ func (c *ConfirmScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (c *ConfirmScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
 	case "y", "Y", "enter":
-		return c, c.decision(true)
+		cmd := c.decision(true)
+		return c, cmd
 	case "n", "N", "esc", "q":
-		return c, c.decision(false)
+		cmd := c.decision(false)
+		return c, cmd
 	}
 	return c, nil
 }

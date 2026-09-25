@@ -96,7 +96,7 @@ type ResourceTemplateScreen struct {
 // NewResourceTemplateScreen builds the resolve screen for the given template.
 // The screen is non-overlay so the manager pushes it onto the stack and
 // BackMsg returns to the resource list.
-func NewResourceTemplateScreen(template mcp.ResourceTemplate, service mcp.Service) *ResourceTemplateScreen {
+func NewResourceTemplateScreen(template *mcp.ResourceTemplate, service mcp.Service) *ResourceTemplateScreen {
 	vars := uritemplate.Variables(template.URITemplate)
 
 	inputs := make([]textinput.Model, len(vars))
@@ -119,7 +119,7 @@ func NewResourceTemplateScreen(template mcp.ResourceTemplate, service mcp.Servic
 
 	s := &ResourceTemplateScreen{
 		BaseScreen:     NewBaseScreen("resource-template", true),
-		template:       template,
+		template:       *template,
 		service:        service,
 		variables:      vars,
 		inputs:         inputs,
@@ -189,7 +189,8 @@ func (s *ResourceTemplateScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 
 	switch msg.Type {
 	case tea.KeyTab:
-		return s, s.requestCompletion()
+		completionCmd := s.requestCompletion()
+		return s, completionCmd
 	case tea.KeyShiftTab:
 		s.moveFocus(-1)
 		return s, nil
@@ -200,7 +201,8 @@ func (s *ResourceTemplateScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		s.moveFocus(-1)
 		return s, nil
 	case tea.KeyEnter:
-		return s, s.readResource()
+		readCmd := s.readResource()
+		return s, readCmd
 	}
 
 	// Forward any other key to the focused input.
@@ -240,7 +242,7 @@ func (s *ResourceTemplateScreen) requestCompletion() tea.Cmd {
 			ArgumentValue:    prefix,
 			ContextArguments: contextArgs,
 		}
-		result, err := s.service.Complete(ctx, req)
+		result, err := s.service.Complete(ctx, &req)
 		msg := resourceTemplateCompletionsMsg{variable: variable}
 		if err != nil {
 			msg.err = err

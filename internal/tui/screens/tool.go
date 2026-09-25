@@ -194,12 +194,12 @@ type resultField struct {
 }
 
 // NewToolScreen creates a new tool execution screen
-func NewToolScreen(tool mcp.Tool, service mcp.Service) *ToolScreen {
+func NewToolScreen(tool *mcp.Tool, service mcp.Service) *ToolScreen {
 	ts := &ToolScreen{
 		BaseScreen: NewBaseScreen("Tool", true),
 		logger:     debug.Component("tool-screen"),
 		clipboard:  systemClipboard{},
-		tool:       tool,
+		tool:       *tool,
 		mcpService: service,
 	}
 
@@ -358,7 +358,8 @@ func (ts *ToolScreen) generateCLICommand() string {
 	// A form that does not convert yet (a half-typed field) has no JSON
 	// for its sub-forms, which are then left out.
 	built, buildErr := ts.formArguments()
-	for _, field := range ts.fields {
+	for i := range ts.fields {
+		field := &ts.fields[i]
 		if field.depth > 0 {
 			continue
 		}
@@ -450,7 +451,7 @@ func (ts *ToolScreen) parseSchema() {
 			// A form built from part of the root would mislead.
 			ts.schemaNote = schema.Note
 		default:
-			ts.fields = fieldsFromSchema(schema)
+			ts.fields = fieldsFromSchema(&schema)
 			return
 		}
 	}
@@ -464,7 +465,7 @@ func (ts *ToolScreen) parseSchema() {
 
 // fieldsFromSchema builds one text input per schema parameter, in name
 // order.
-func fieldsFromSchema(schema inputschema.Schema) []toolField {
+func fieldsFromSchema(schema *inputschema.Schema) []toolField {
 	return fieldsFromParams(schema.Params, 0)
 }
 
@@ -842,7 +843,8 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Approved {
 			ts.confirmBypassed = true
 			ts.SetStatus("Confirmed — executing destructive tool", StatusWarning)
-			return ts, ts.executeTool()
+			cmd := ts.executeTool()
+			return ts, cmd
 		}
 		ts.SetStatus("Execution cancelled by user", StatusInfo)
 		return ts, nil
@@ -1193,20 +1195,21 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+c":
 		// Copy result to clipboard if available
-		if ts.result != nil && ts.resultJSON != "" {
+		switch {
+		case ts.result != nil && ts.resultJSON != "":
 			if err := ts.copyToClipboard(ts.resultJSON); err == nil {
 				ts.SetStatus("Result copied to clipboard!", StatusSuccess)
 			} else {
 				ts.SetStatus("Failed to copy to clipboard", StatusError)
 			}
-		} else if ts.showCLICommand && ts.cliCommand != "" {
+		case ts.showCLICommand && ts.cliCommand != "":
 			// Copy CLI command to clipboard
 			if err := ts.copyToClipboard(ts.cliCommand); err == nil {
 				ts.SetStatus("CLI command copied to clipboard!", StatusSuccess)
 			} else {
 				ts.SetStatus("Failed to copy CLI command to clipboard", StatusError)
 			}
-		} else {
+		default:
 			// No result, go back
 			return ts, func() tea.Msg { return BackMsg{} }
 		}
@@ -1327,9 +1330,10 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// so behavior stays in lock-step across the two surfaces.
 			if ts.tool.IsDestructive() && !ts.confirmBypassed {
 				ts.pendingConfirm = true
-				return ts, openConfirmOverlay(ts.tool)
+				return ts, openConfirmOverlay(&ts.tool)
 			}
-			return ts, ts.executeTool()
+			cmd := ts.executeTool()
+			return ts, cmd
 		case cliPos:
 			// CLI button
 			ts.cliCommand = ts.generateCLICommand()
@@ -1366,7 +1370,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // The plain (uncolored) badge string lives on Tool.BadgeString so non-TUI
 // callers (CLI list, JSON output, log lines) get a stable string while the
 // TUI applies styling.
-func renderToolBadges(tool mcp.Tool) string {
+func renderToolBadges(tool *mcp.Tool) string {
 	var out strings.Builder
 	dStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))   // red
 	rStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))  // green
@@ -1392,7 +1396,7 @@ func renderToolBadges(tool mcp.Tool) string {
 // confirm overlay. Extracted as a free function so tests can route the
 // returned message through the screen without depending on the screen
 // manager's wiring.
-func openConfirmOverlay(tool mcp.Tool) tea.Cmd {
+func openConfirmOverlay(tool *mcp.Tool) tea.Cmd {
 	return func() tea.Msg {
 		return ToggleOverlayMsg{Screen: NewConfirmScreen(tool)}
 	}
@@ -1778,7 +1782,7 @@ func (ts *ToolScreen) renderHeader() string {
 	builder.WriteString(ts.titleStyle.Render(title))
 	if badges := ts.tool.BadgeString(); badges != "" {
 		builder.WriteString("  ")
-		builder.WriteString(renderToolBadges(ts.tool))
+		builder.WriteString(renderToolBadges(&ts.tool))
 	}
 	if ts.taskMode {
 		builder.WriteString("  ")
@@ -1828,7 +1832,8 @@ func (ts *ToolScreen) renderHeader() string {
 	}
 
 	// Raw JSON mode - show single input for JSON arguments
-	if ts.rawJSONMode {
+	switch {
+	case ts.rawJSONMode:
 		builder.WriteString(ts.labelStyle.Render("Arguments (JSON):"))
 		builder.WriteString("\n")
 		inputView := ts.rawJSONInput.View()
@@ -1838,12 +1843,13 @@ func (ts *ToolScreen) renderHeader() string {
 			builder.WriteString(ts.inputStyle.Render(inputView))
 		}
 		builder.WriteString("\n\n")
-	} else if len(ts.fields) == 0 {
+	case len(ts.fields) == 0:
 		// Form fields or message if no fields
 		builder.WriteString(ts.labelStyle.Render("This tool requires no parameters."))
 		builder.WriteString("\n\n")
-	} else {
-		for i, field := range ts.fields {
+	default:
+		for i := range ts.fields {
+			field := &ts.fields[i]
 			// Field label with type indicator, indented by sub-form depth
 			label := strings.Repeat("  ", field.depth) + field.name
 			if field.required {
@@ -1892,7 +1898,8 @@ func (ts *ToolScreen) renderHeader() string {
 			}
 
 			// Apply styling based on focus and validation
-			if field.validationError != "" && ts.cursor == i {
+			switch {
+			case field.validationError != "" && ts.cursor == i:
 				// Red border for validation errors
 				errorStyle := lipgloss.NewStyle().
 					Border(lipgloss.RoundedBorder()).
@@ -1900,10 +1907,10 @@ func (ts *ToolScreen) renderHeader() string {
 					Padding(0, 1).
 					Width(60)
 				builder.WriteString(errorStyle.Render(inputView))
-			} else if ts.cursor == i {
+			case ts.cursor == i:
 				// Focused style
 				builder.WriteString(ts.selectedStyle.Render(inputView))
-			} else {
+			default:
 				// Normal style
 				builder.WriteString(ts.inputStyle.Render(inputView))
 			}
@@ -2226,16 +2233,17 @@ func (ts *ToolScreen) renderFooter() string {
 	// Help text
 	builder.WriteString("\n")
 	var helpText string
-	if ts.viewingResult {
+	switch {
+	case ts.viewingResult:
 		// Already shown inline help for viewing mode
 		helpText = ""
-	} else if ts.result != nil {
+	case ts.result != nil:
 		if len(ts.resultFields) > 1 {
 			helpText = "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		} else {
 			helpText = "c: CLI command • Ctrl+C: Copy result • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		}
-	} else if ts.cursor < len(ts.fields) {
+	case ts.cursor < len(ts.fields):
 		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+T: Task mode • " +
 			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b: Back • Esc: Back"
 		if f := ts.fields[ts.cursor]; f.nullable && !f.expanded {
@@ -2249,12 +2257,12 @@ func (ts *ToolScreen) renderFooter() string {
 		} else if list >= 0 {
 			helpText = "Ctrl+A: Add element • " + helpText
 		}
-	} else if ts.cursor == len(ts.fields) {
+	case ts.cursor == len(ts.fields):
 		helpText = "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+T: Task mode • " +
 			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b: Back • Esc: Back"
-	} else if ts.cursor == len(ts.fields)+1 {
+	case ts.cursor == len(ts.fields)+1:
 		helpText = "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b: Back • Esc: Back"
-	} else {
+	default:
 		helpText = "Tab: Navigate • Enter: Go back • c: CLI command • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 	}
 	if helpText != "" {

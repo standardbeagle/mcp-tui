@@ -121,9 +121,9 @@ func (c *VerifyCommand) RunE(cmd *cobra.Command, args []string) error {
 		if problem := verify.TargetProblem(probeName, &target); problem != "" {
 			return fmt.Errorf("--probe %s: %s — supply <url>/--url or --cmd and --args", probeName, problem)
 		}
-		results = []verify.ProbeResult{verify.Run(ctx, probeName, target)}
+		results = []verify.ProbeResult{verify.Run(ctx, probeName, &target)}
 	} else {
-		results = verify.RunAll(ctx, target)
+		results = verify.RunAll(ctx, &target)
 	}
 
 	if jsonOut {

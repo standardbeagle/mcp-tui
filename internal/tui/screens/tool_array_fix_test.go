@@ -27,7 +27,7 @@ func TestToolArrayFieldFix(t *testing.T) {
 			},
 		}
 
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		require.Len(t, ts.fields, 1)
 		assert.True(t, ts.fields[0].required)
 
@@ -70,7 +70,7 @@ func TestToolArrayFieldFix(t *testing.T) {
 			},
 		}
 
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		require.Len(t, ts.fields, 1)
 		assert.False(t, ts.fields[0].required)
 
@@ -105,7 +105,7 @@ func TestToolArrayFieldFix(t *testing.T) {
 			},
 		}
 
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		testCases := []struct {
 			input    string

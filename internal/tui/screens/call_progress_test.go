@@ -35,7 +35,7 @@ func TestCallProgressLine(t *testing.T) {
 // the server's progress for the running call, and drops it once the call
 // completes.
 func TestToolScreen_ShowsProgressWhileExecuting(t *testing.T) {
-	ts := NewToolScreen(imcp.Tool{Name: "build"}, nil)
+	ts := NewToolScreen(&imcp.Tool{Name: "build"}, nil)
 	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	ts.executing = true
 	observe := ts.callProgress.start()

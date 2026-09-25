@@ -121,7 +121,7 @@ func formatJUnitDuration(d time.Duration) string {
 //
 // The output is deterministic for a given suite value: encoding/xml
 // preserves struct field order and slice element order.
-func WriteJUnitReport(w io.Writer, suite JUnitTestSuite) error {
+func WriteJUnitReport(w io.Writer, suite *JUnitTestSuite) error {
 	if _, err := io.WriteString(w, xml.Header); err != nil {
 		return fmt.Errorf("write XML prolog: %w", err)
 	}

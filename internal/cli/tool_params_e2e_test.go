@@ -95,7 +95,7 @@ func TestCoerceToolArgument_EndToEndThroughRefsAndUnions(t *testing.T) {
 		{"assignee", `{"login":"octocat"}`},
 		{"milestone", "null"},
 	} {
-		v, coerceErr := coerceToolArgument(schema, kv[0], kv[1])
+		v, coerceErr := coerceToolArgument(&schema, kv[0], kv[1])
 		if coerceErr != nil {
 			t.Fatalf("coerce %s=%s: %v", kv[0], kv[1], coerceErr)
 		}

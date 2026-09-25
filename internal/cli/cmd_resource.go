@@ -303,15 +303,16 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 		}
 
 		// Content display
-		if content.Text != "" {
+		switch {
+		case content.Text != "":
 			// Text content
 			fmt.Println(contentStyle.Render("Text content:"))
 			fmt.Println(content.Text)
-		} else if content.Blob != "" {
+		case content.Blob != "":
 			// Binary content - show hex dump of first few bytes
 			fmt.Println(contentStyle.Render("Binary content:"))
 			displayBinaryContent(content.Blob)
-		} else {
+		default:
 			fmt.Println(contentStyle.Render("(No content data available)"))
 		}
 	}
@@ -490,7 +491,7 @@ func (rc *ResourceCommand) runCompleteCommand(cmd *cobra.Command, args []string)
 		fmt.Fprintf(os.Stderr, "🔍 Requesting completions for %s={%s|prefix=%q}...\n", uriTemplate, varName, prefix)
 	}
 
-	result, err := rc.GetService().Complete(ctx, mcp.CompleteRequest{
+	result, err := rc.GetService().Complete(ctx, &mcp.CompleteRequest{
 		Ref:           mcp.ResourceRef(uriTemplate),
 		ArgumentName:  varName,
 		ArgumentValue: prefix,

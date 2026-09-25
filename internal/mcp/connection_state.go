@@ -39,7 +39,7 @@ var (
 )
 
 // SetConnectionState updates the current connection state
-func SetConnectionState(stage ConnectionStage, message string, url string, err error) {
+func SetConnectionState(stage ConnectionStage, message, url string, err error) {
 	connectionStateMux.Lock()
 	defer connectionStateMux.Unlock()
 

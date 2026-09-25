@@ -27,7 +27,7 @@ import (
 // nullable non-string parameter the literal "null" sends null; a nullable
 // string keeps "null" as text, since the two cannot be told apart, and
 // takes null as key:=null (jsonLiteralArgument).
-func coerceToolArgument(schema inputschema.Schema, key, value string) (interface{}, error) {
+func coerceToolArgument(schema *inputschema.Schema, key, value string) (interface{}, error) {
 	param, known := schema.Param(key)
 	if !known || param.Kind == inputschema.KindJSON {
 		var parsed interface{}

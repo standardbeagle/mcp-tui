@@ -43,7 +43,7 @@ func TestCtrlLFunctionality(t *testing.T) {
 	t.Run("ToolScreen_CtrlL_TransitionsToDebugScreen", func(t *testing.T) {
 		// Create tool screen
 		tool := mcp.Tool{Name: "test-tool"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		// Press Ctrl+L
 		model, cmd := ts.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
@@ -133,7 +133,7 @@ func TestCtrlLFunctionality(t *testing.T) {
 	t.Run("ToolScreen_WhileExecuting_CtrlL_NoTransition", func(t *testing.T) {
 		// Create tool screen
 		tool := mcp.Tool{Name: "test-tool"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 		ts.executing = true // Simulating execution state
 
 		// Press Ctrl+L while executing
@@ -189,7 +189,7 @@ func TestCtrlLHelpTextDisplay(t *testing.T) {
 
 	t.Run("ToolScreen_ShowsNavigationHelp", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test-tool"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		view := ts.View()
 		assert.Contains(t, view, "Tab: Navigate", "Should show navigation help")

@@ -116,7 +116,7 @@ func TargetProblem(name string, target *Target) string {
 
 // Run dispatches by name. Unknown names produce a failed ProbeResult
 // rather than an error so callers don't have to handle two paths.
-func Run(ctx context.Context, name string, target Target) ProbeResult {
+func Run(ctx context.Context, name string, target *Target) ProbeResult {
 	switch name {
 	case "cross-origin":
 		return ProbeCrossOrigin(ctx, target)
@@ -131,9 +131,9 @@ func Run(ctx context.Context, name string, target Target) ProbeResult {
 	case "seterror-content":
 		return ProbeSetErrorContent(ctx, target)
 	case toolNamesProbe:
-		return ProbeToolNames(ctx, &target)
+		return ProbeToolNames(ctx, target)
 	case listOrderProbe:
-		return ProbeListOrder(ctx, &target)
+		return ProbeListOrder(ctx, target)
 	default:
 		return ProbeResult{
 			Name:  name,
@@ -147,7 +147,7 @@ func Run(ctx context.Context, name string, target Target) ProbeResult {
 // RunAll executes every probe in AllProbes order. Stops on context
 // cancellation. The returned slice is in the same order as AllProbes for
 // deterministic JSON output.
-func RunAll(ctx context.Context, target Target) []ProbeResult {
+func RunAll(ctx context.Context, target *Target) []ProbeResult {
 	results := make([]ProbeResult, 0, len(AllProbes))
 	for _, name := range AllProbes {
 		select {
@@ -163,7 +163,7 @@ func RunAll(ctx context.Context, target Target) []ProbeResult {
 		}
 		// Skip stdio probes when target has no Command — caller may not
 		// have wanted them. Same for HTTP probes when URL is empty.
-		if problem := TargetProblem(name, &target); problem != "" {
+		if problem := TargetProblem(name, target); problem != "" {
 			fix := "rerun `mcp-tui verify --cmd <command> --args <args>` to spawn the server"
 			if IsHTTPProbe(name) {
 				fix = "rerun `mcp-tui verify <url>` against the HTTP/streamable-HTTP endpoint"
@@ -193,7 +193,7 @@ func AllPassed(results []ProbeResult) bool {
 // httpClient picks the caller-supplied client when present, otherwise builds
 // a fresh client with a 10 s timeout. Each probe gets its own short-lived
 // client to avoid pooling state across probes.
-func httpClient(t Target) *http.Client {
+func httpClient(t *Target) *http.Client {
 	if t.HTTPClient != nil {
 		return t.HTTPClient
 	}
@@ -231,7 +231,7 @@ func drainBody(resp *http.Response) {
 // pointing at a foreign domain. Per SDK v1.4.1 (PR #842) and the
 // CrossOriginProtection middleware shipped with go-sdk, compliant servers
 // reject such requests with 403 Forbidden.
-func ProbeCrossOrigin(ctx context.Context, t Target) ProbeResult {
+func ProbeCrossOrigin(ctx context.Context, t *Target) ProbeResult {
 	const name = "cross-origin"
 	if t.URL == "" {
 		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
@@ -267,7 +267,7 @@ func ProbeCrossOrigin(ctx context.Context, t Target) ProbeResult {
 // Host header — the canonical DNS-rebinding attack shape. SDK v1.4.0
 // (PR #760) added DisableLocalhostProtection=false default; compliant
 // streamable-HTTP servers reject with 403/421.
-func ProbeDNSRebind(ctx context.Context, t Target) ProbeResult {
+func ProbeDNSRebind(ctx context.Context, t *Target) ProbeResult {
 	const name = "dns-rebind"
 	if t.URL == "" {
 		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
@@ -303,7 +303,7 @@ func ProbeDNSRebind(ctx context.Context, t Target) ProbeResult {
 // rejects non-JSON payloads. The streamable-HTTP spec (§2.1) requires
 // Content-Type application/json; SDK servers respond with 415 Unsupported
 // Media Type or 400 Bad Request when the payload doesn't match.
-func ProbeContentType(ctx context.Context, t Target) ProbeResult {
+func ProbeContentType(ctx context.Context, t *Target) ProbeResult {
 	const name = "content-type"
 	if t.URL == "" {
 		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
@@ -344,7 +344,7 @@ func ProbeContentType(ctx context.Context, t Target) ProbeResult {
 //     non-403 (server may simply not support GET, that's fine — what we
 //     care about is "GET without Origin is NOT rejected with 403").
 //  2. POST without Origin — expected: 4xx (rejection on the POST path).
-func ProbeOriginHeader(ctx context.Context, t Target) ProbeResult {
+func ProbeOriginHeader(ctx context.Context, t *Target) ProbeResult {
 	const name = "origin-header"
 	if t.URL == "" {
 		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
@@ -392,7 +392,7 @@ func ProbeOriginHeader(ctx context.Context, t Target) ProbeResult {
 // This is fundamentally a CLIENT-side check (does mcp-tui's
 // --mcp-method-headers feature set them on the wire?), but framed as a
 // "verify" probe so it shares the dispatcher with the security probes.
-func ProbeMCPMethodHeaders(ctx context.Context, t Target) ProbeResult {
+func ProbeMCPMethodHeaders(ctx context.Context, t *Target) ProbeResult {
 	const name = "mcp-method-headers"
 	if t.URL == "" {
 		return ProbeResult{Name: name, Pass: false, Error: "missing URL", Fix: "supply <url> on the verify command"}
@@ -472,7 +472,7 @@ func truncate(s string, n int) string {
 //
 // If the user's target tool doesn't naturally fail, the probe reports
 // inconclusive (Pass=false with a Fix that explains the misconfig).
-func ProbeSetErrorContent(ctx context.Context, t Target) ProbeResult {
+func ProbeSetErrorContent(ctx context.Context, t *Target) ProbeResult {
 	const name = "seterror-content"
 	if t.Command == "" {
 		return ProbeResult{Name: name, Pass: false, Error: "missing command", Fix: "supply --cmd <stdio-server-command> for this probe"}

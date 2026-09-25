@@ -524,11 +524,11 @@ func formatModelPrefs(p *officialMCP.ModelPreferences) string {
 	return strings.Join(parts, " ")
 }
 
-// truncate returns s shortened to max runes with an ellipsis when needed.
-func truncate(s string, max int) string {
+// truncate returns s shortened to maxLen runes with an ellipsis when needed.
+func truncate(s string, maxLen int) string {
 	r := []rune(s)
-	if len(r) <= max {
+	if len(r) <= maxLen {
 		return s
 	}
-	return string(r[:max-1]) + "…"
+	return string(r[:maxLen-1]) + "…"
 }

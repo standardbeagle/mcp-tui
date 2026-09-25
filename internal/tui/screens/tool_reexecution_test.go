@@ -22,7 +22,7 @@ const (
 func TestToolReExecutionIndicators(t *testing.T) {
 	t.Run("execution_count_increments", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test-tool"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		// Initial state
 		assert.Equal(t, 0, ts.executionCount, "Should start with 0 executions")
@@ -55,7 +55,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 
 	t.Run("execution_info_display", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test-tool"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		// Execute tool
 		beforeExec := time.Now()
@@ -83,7 +83,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 
 	t.Run("re_execution_shows_sparkle", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test-tool"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		// First execution
 		ts.Update(toolExecutionCompleteMsg{
@@ -113,7 +113,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 
 	t.Run("execution_state_during_execution", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test-tool"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		// Start execution
 		ts.executing = true
@@ -129,7 +129,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 
 	t.Run("status_message_shows_count", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test-tool"}
-		ts := NewToolScreen(tool, nil)
+		ts := NewToolScreen(&tool, nil)
 
 		// Multiple executions
 		for i := 1; i <= 3; i++ {
@@ -164,7 +164,7 @@ func (instantCallService) CallTool(context.Context, mcp.CallToolRequest) (*mcp.C
 // command running the call used to sleep out a 500ms minimum display time,
 // holding a goroutine and delaying the result for nothing.
 func TestToolExecutionDeliversAFastResultAtOnce(t *testing.T) {
-	ts := NewToolScreen(mcp.Tool{Name: "fast-tool"}, instantCallService{})
+	ts := NewToolScreen(&mcp.Tool{Name: "fast-tool"}, instantCallService{})
 
 	batch, ok := ts.executeTool()().(tea.BatchMsg)
 	if !ok {
@@ -187,7 +187,7 @@ func TestToolExecutionDeliversAFastResultAtOnce(t *testing.T) {
 // Test execution counter persistence across multiple executions
 func TestToolExecutionCounterPersistence(t *testing.T) {
 	tool := mcp.Tool{Name: "counter-test"}
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 
 	// Track execution times
 	var executionTimes []time.Time

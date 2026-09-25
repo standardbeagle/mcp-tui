@@ -105,20 +105,20 @@ func TestToolIsDestructive(t *testing.T) {
 // TestToolHintAccessors covers IsReadOnly, IsIdempotent, IsOpenWorld.
 func TestToolHintAccessors(t *testing.T) {
 	t.Run("readOnly", func(t *testing.T) {
-		assert.False(t, Tool{}.IsReadOnly())
-		assert.False(t, Tool{Annotations: &ToolAnnotations{}}.IsReadOnly())
-		assert.True(t, Tool{Annotations: &ToolAnnotations{ReadOnlyHint: true}}.IsReadOnly())
+		assert.False(t, (&Tool{}).IsReadOnly())
+		assert.False(t, (&Tool{Annotations: &ToolAnnotations{}}).IsReadOnly())
+		assert.True(t, (&Tool{Annotations: &ToolAnnotations{ReadOnlyHint: true}}).IsReadOnly())
 	})
 	t.Run("idempotent", func(t *testing.T) {
-		assert.False(t, Tool{}.IsIdempotent())
-		assert.False(t, Tool{Annotations: &ToolAnnotations{}}.IsIdempotent())
-		assert.True(t, Tool{Annotations: &ToolAnnotations{IdempotentHint: true}}.IsIdempotent())
+		assert.False(t, (&Tool{}).IsIdempotent())
+		assert.False(t, (&Tool{Annotations: &ToolAnnotations{}}).IsIdempotent())
+		assert.True(t, (&Tool{Annotations: &ToolAnnotations{IdempotentHint: true}}).IsIdempotent())
 	})
 	t.Run("openWorld", func(t *testing.T) {
-		assert.False(t, Tool{}.IsOpenWorld())
-		assert.False(t, Tool{Annotations: &ToolAnnotations{}}.IsOpenWorld())
-		assert.False(t, Tool{Annotations: &ToolAnnotations{OpenWorldHint: boolPtr(false)}}.IsOpenWorld())
-		assert.True(t, Tool{Annotations: &ToolAnnotations{OpenWorldHint: boolPtr(true)}}.IsOpenWorld())
+		assert.False(t, (&Tool{}).IsOpenWorld())
+		assert.False(t, (&Tool{Annotations: &ToolAnnotations{}}).IsOpenWorld())
+		assert.False(t, (&Tool{Annotations: &ToolAnnotations{OpenWorldHint: boolPtr(false)}}).IsOpenWorld())
+		assert.True(t, (&Tool{Annotations: &ToolAnnotations{OpenWorldHint: boolPtr(true)}}).IsOpenWorld())
 	})
 }
 

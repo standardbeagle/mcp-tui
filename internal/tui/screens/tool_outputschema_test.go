@@ -22,7 +22,7 @@ func TestToolScreen_RenderOutputViolations(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 	}
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	// Width / height must be set or the result block calculates a tiny
 	// available height and the banner gets trimmed by the lipgloss height
 	// constraint. Use a wide window so all text is preserved.
@@ -70,7 +70,7 @@ func TestToolScreen_NoViolations_NoBanner(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 	}
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	ts.Update(toolExecutionCompleteMsg{

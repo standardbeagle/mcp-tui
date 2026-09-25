@@ -138,7 +138,7 @@ type Service interface {
 	// + ArgumentValue describe the variable being typed and its prefix. The
 	// server returns a deterministic ordered list of suggestions; an empty
 	// list (with err == nil) is a normal "no matches" outcome.
-	Complete(ctx context.Context, req CompleteRequest) (*CompleteResult, error)
+	Complete(ctx context.Context, req *CompleteRequest) (*CompleteResult, error)
 
 	// Server info
 	GetServerInfo() *ServerInfo
@@ -254,13 +254,13 @@ type Tool struct {
 }
 
 // HasSchemaError returns true if the tool has a schema parsing error
-func (t Tool) HasSchemaError() bool {
+func (t *Tool) HasSchemaError() bool {
 	return t.SchemaError != nil
 }
 
 // DisplayName returns the user-facing label for the tool. Per MCP 2025-06-18
 // the precedence is: Tool.Title (top-level) → Annotations.Title → Tool.Name.
-func (t Tool) DisplayName() string {
+func (t *Tool) DisplayName() string {
 	if t.Title != "" {
 		return t.Title
 	}
@@ -280,7 +280,7 @@ func (t Tool) DisplayName() string {
 //     unannotated tools keep their no-prompt behavior; servers must opt in
 //     by advertising destructiveHint=true to trigger a confirm gate.
 //   - Otherwise the advertised hint is honored.
-func (t Tool) IsDestructive() bool {
+func (t *Tool) IsDestructive() bool {
 	if t.Annotations == nil {
 		return false
 	}
@@ -294,7 +294,7 @@ func (t Tool) IsDestructive() bool {
 }
 
 // IsReadOnly reports whether the tool advertises readOnlyHint=true.
-func (t Tool) IsReadOnly() bool {
+func (t *Tool) IsReadOnly() bool {
 	return t.Annotations != nil && t.Annotations.ReadOnlyHint
 }
 
@@ -302,7 +302,7 @@ func (t Tool) IsReadOnly() bool {
 // Per the MCP spec, idempotentHint is meaningful only when readOnlyHint=false;
 // a read-only tool is implicitly idempotent so we still surface a true hint
 // only when the server explicitly set it.
-func (t Tool) IsIdempotent() bool {
+func (t *Tool) IsIdempotent() bool {
 	return t.Annotations != nil && t.Annotations.IdempotentHint
 }
 
@@ -310,7 +310,7 @@ func (t Tool) IsIdempotent() bool {
 // false when the hint is absent rather than the spec default of true: the badge
 // is informational, not safety-critical, and showing it for every unannotated
 // tool would create badge noise.
-func (t Tool) IsOpenWorld() bool {
+func (t *Tool) IsOpenWorld() bool {
 	if t.Annotations == nil || t.Annotations.OpenWorldHint == nil {
 		return false
 	}
@@ -323,7 +323,7 @@ func (t Tool) IsOpenWorld() bool {
 // destructive → readOnly → idempotent → openWorld. R and D are mutually
 // exclusive (IsDestructive suppresses on read-only) so we render at most one
 // of them.
-func (t Tool) BadgeString() string {
+func (t *Tool) BadgeString() string {
 	var b []byte
 	switch {
 	case t.IsDestructive():
@@ -350,7 +350,7 @@ type Resource struct {
 	Icons       []officialMCP.Icon `json:"icons,omitempty"`
 }
 
-func (r Resource) DisplayName() string {
+func (r *Resource) DisplayName() string {
 	if r.Title != "" {
 		return r.Title
 	}
@@ -376,7 +376,7 @@ type ResourceTemplate struct {
 // DisplayName returns the user-facing label for the template, preferring
 // Title (added in 2025-06-18) over Name to match the Resource spec, with the
 // raw URI template as a final fallback so the row never renders blank.
-func (t ResourceTemplate) DisplayName() string {
+func (t *ResourceTemplate) DisplayName() string {
 	if t.Title != "" {
 		return t.Title
 	}
@@ -456,7 +456,7 @@ type Prompt struct {
 	Icons       []officialMCP.Icon     `json:"icons,omitempty"`
 }
 
-func (p Prompt) DisplayName() string {
+func (p *Prompt) DisplayName() string {
 	if p.Title != "" {
 		return p.Title
 	}

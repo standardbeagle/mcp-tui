@@ -670,11 +670,7 @@ func (cs *ConnectionScreen) updateMaxFocus() {
 			cs.maxFocus = 1 // just connect button
 		}
 	case "discovery":
-		if len(cs.discoveredFiles) > 0 {
-			cs.maxFocus = 1 // discovered files selection only
-		} else {
-			cs.maxFocus = 1
-		}
+		cs.maxFocus = 1 // discovered files selection only
 	default: // "manual"
 		// Manual entry mode
 		if cs.transportType == config.TransportStdio {
@@ -728,7 +724,8 @@ func (cs *ConnectionScreen) handleSavedConnectionConnect() (tea.Model, tea.Cmd) 
 		manager.UpdateLastUsedWithVersion(connectionID, true, version)
 	})
 
-	return mainScreen, mainScreen.Init()
+	initCmd := mainScreen.Init()
+	return mainScreen, initCmd
 }
 
 // handleDiscoveredFileLoad loads connections from the selected discovered file
@@ -864,7 +861,8 @@ func (cs *ConnectionScreen) handleConnect() (tea.Model, tea.Cmd) {
 			svc.SetInitialRoots(cs.pendingRoots)
 		}
 	}
-	return mainScreen, mainScreen.Init()
+	initCmd := mainScreen.Init()
+	return mainScreen, initCmd
 }
 
 // resolveCommand returns the command and argument string for the current
@@ -1105,7 +1103,8 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 		fmt.Fprintf(&cardContent, "%s %s\n", formatIcon, file.Name)
 		fmt.Fprintf(&cardContent, "📂 %s\n", file.Path)
 
-		if file.Accessible && len(file.Servers) > 0 {
+		switch {
+		case file.Accessible && len(file.Servers) > 0:
 			fmt.Fprintf(&cardContent, "\nServers (%d):\n", len(file.Servers))
 
 			// List servers with name and description
@@ -1131,9 +1130,9 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 			}
 
 			cardContent.WriteString("\n\n✅ Ready to load")
-		} else if file.Accessible {
+		case file.Accessible:
 			cardContent.WriteString("\n⚠️  No servers found")
-		} else {
+		default:
 			fmt.Fprintf(&cardContent, "\n❌ Error: %s", file.Error)
 		}
 

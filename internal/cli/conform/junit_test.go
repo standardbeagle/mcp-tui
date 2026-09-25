@@ -111,7 +111,7 @@ func TestWriteJUnitReport_WellFormed(t *testing.T) {
 	suite := BuildJUnitReport("mcp-tui.conform", results)
 
 	var buf bytes.Buffer
-	if err := WriteJUnitReport(&buf, suite); err != nil {
+	if err := WriteJUnitReport(&buf, &suite); err != nil {
 		t.Fatalf("WriteJUnitReport: %v", err)
 	}
 	out := buf.String()

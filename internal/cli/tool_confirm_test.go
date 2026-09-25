@@ -18,7 +18,7 @@ func boolPtr(b bool) *bool { return &b }
 // confirm prompt's stdin without writing to a real TTY. Note: a pipe is NOT
 // a TTY, which exercises the non-TTY refusal path; tests that need the
 // TTY-prompt path open a pseudo-terminal instead (see ttyPair below).
-func makePipe(t *testing.T) (*os.File, *os.File) {
+func makePipe(t *testing.T) (in, out *os.File) {
 	t.Helper()
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestConfirmDestructiveCallSkipFlag(t *testing.T) {
 		Name:        "drop_table",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true)},
 	}
-	err := confirmDestructiveCall(in, errOut, tool, true)
+	err := confirmDestructiveCall(in, errOut, &tool, true)
 	assert.NoError(t, err, "--no-confirm must bypass the gate")
 }
 
@@ -48,7 +48,7 @@ func TestConfirmDestructiveCallNonDestructive(t *testing.T) {
 	in, _ := makePipe(t)
 	_, errOut := makePipe(t)
 	tool := mcp.Tool{Name: "echo"}
-	err := confirmDestructiveCall(in, errOut, tool, false)
+	err := confirmDestructiveCall(in, errOut, &tool, false)
 	assert.NoError(t, err)
 }
 
@@ -62,7 +62,7 @@ func TestConfirmDestructiveCallNonTTYRefuses(t *testing.T) {
 		Name:        "drop_table",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true)},
 	}
-	err := confirmDestructiveCall(in, errOut, tool, false)
+	err := confirmDestructiveCall(in, errOut, &tool, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "drop_table",
 		"error must name the offending tool for ops triage")
@@ -83,14 +83,14 @@ func TestConfirmDestructiveCallReadOnly(t *testing.T) {
 			DestructiveHint: boolPtr(true),
 		},
 	}
-	err := confirmDestructiveCall(in, errOut, tool, false)
+	err := confirmDestructiveCall(in, errOut, &tool, false)
 	assert.NoError(t, err, "readOnly suppresses the destructive gate")
 }
 
 // TestRenderCLIBadgesNoAnnotations confirms an empty-output guarantee for
 // vanilla tools: no badge string means no extra padding in the list.
 func TestRenderCLIBadgesNoAnnotations(t *testing.T) {
-	got := renderCLIBadges(mcp.Tool{Name: "x"})
+	got := renderCLIBadges(&mcp.Tool{Name: "x"})
 	assert.Equal(t, "", got)
 }
 
@@ -135,7 +135,7 @@ func TestRenderCLIBadgesContainsLabels(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := renderCLIBadges(tc.tool)
+			got := renderCLIBadges(&tc.tool)
 			for _, w := range tc.want {
 				assert.True(t, strings.Contains(got, w),
 					"badge string %q must contain %q", got, w)

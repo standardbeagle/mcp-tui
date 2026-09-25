@@ -335,11 +335,11 @@ func (c *UnifiedConfig) validateConnection() error {
 // validateTransport validates transport-specific configuration
 func (c *UnifiedConfig) validateTransport() error {
 	// Validate HTTP transport settings
-	http := &c.Transport.HTTP
-	if http.Timeout <= 0 {
+	httpCfg := &c.Transport.HTTP
+	if httpCfg.Timeout <= 0 {
 		return fmt.Errorf("HTTP timeout must be positive")
 	}
-	if http.MaxIdleConns < 1 {
+	if httpCfg.MaxIdleConns < 1 {
 		return fmt.Errorf("HTTP max idle connections must be at least 1")
 	}
 

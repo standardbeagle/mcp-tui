@@ -104,7 +104,8 @@ func (s *ElicitationScreen) initFieldStates() {
 	s.enumCursor = make([]int, n)
 	s.enumMultiMask = make([][]bool, n)
 
-	for i, f := range s.form.Fields {
+	for i := range s.form.Fields {
+		f := &s.form.Fields[i]
 		switch f.Kind {
 		case elicitation.FieldText, elicitation.FieldNumber:
 			ti := textinput.New()
@@ -379,7 +380,8 @@ func (s *ElicitationScreen) cancel() (tea.Model, tea.Cmd) {
 // []string slice.
 func (s *ElicitationScreen) collectContent() (map[string]any, error) {
 	content := make(map[string]any, len(s.form.Fields))
-	for i, f := range s.form.Fields {
+	for i := range s.form.Fields {
+		f := &s.form.Fields[i]
 		switch f.Kind {
 		case elicitation.FieldText:
 			v := strings.TrimSpace(s.textInputs[i].Value())
@@ -500,8 +502,8 @@ func (s *ElicitationScreen) View() string {
 		b.WriteString("\n")
 	}
 
-	for i, f := range s.form.Fields {
-		s.renderField(&b, i, f)
+	for i := range s.form.Fields {
+		s.renderField(&b, i, &s.form.Fields[i])
 		b.WriteString("\n")
 	}
 
@@ -524,7 +526,7 @@ func (s *ElicitationScreen) isURLMode() bool {
 }
 
 // renderField renders one field — label, input control, and help — to b.
-func (s *ElicitationScreen) renderField(b *strings.Builder, i int, f elicitation.Field) {
+func (s *ElicitationScreen) renderField(b *strings.Builder, i int, f *elicitation.Field) {
 	focused := i == s.focused
 	indicator := "  "
 	if focused {
@@ -577,7 +579,7 @@ func (s *ElicitationScreen) renderField(b *strings.Builder, i int, f elicitation
 
 // renderEnumSingle renders a horizontal pill list of options with the
 // cursor highlighting the active one.
-func (s *ElicitationScreen) renderEnumSingle(i int, f elicitation.Field, focused bool) string {
+func (s *ElicitationScreen) renderEnumSingle(i int, f *elicitation.Field, focused bool) string {
 	var b strings.Builder
 	cur := s.enumCursor[i]
 	for j, v := range f.EnumValues {
@@ -603,7 +605,7 @@ func (s *ElicitationScreen) renderEnumSingle(i int, f elicitation.Field, focused
 
 // renderEnumMulti renders the multi-select pills with [x] / [ ] markers and
 // a cursor on the highlighted option.
-func (s *ElicitationScreen) renderEnumMulti(i int, f elicitation.Field, focused bool) string {
+func (s *ElicitationScreen) renderEnumMulti(i int, f *elicitation.Field, focused bool) string {
 	var b strings.Builder
 	cur := s.enumCursor[i]
 	mask := s.enumMultiMask[i]
@@ -668,7 +670,7 @@ func boolDisplay(v bool) string {
 // displayLabel returns the field's user-facing label, prefixing the schema
 // title with the property name in parentheses when they differ. Used in
 // validation error messages.
-func displayLabel(f elicitation.Field) string {
+func displayLabel(f *elicitation.Field) string {
 	if f.Title == "" || f.Title == f.Name {
 		return f.Name
 	}

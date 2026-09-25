@@ -23,7 +23,7 @@ var deployTools = []mcp.Tool{{Name: "deploy", Description: "Roll out a release"}
 // list header for the active tab.
 func TestMainScreen_ListHeader_ShowsCacheState(t *testing.T) {
 	ms := connectedMainScreen(t)
-	ms.handleToolsLoaded(ToolsLoadedMsg{
+	ms.handleToolsLoaded(&ToolsLoadedMsg{
 		Tools: deployTools, Items: []string{"deploy - Roll out a release"}, ActualCount: 1,
 		Cache: []*mcp.ListCacheInfo{{Method: "tools/list", TTLMs: 60_000, CacheScope: "private", Pages: 1, CachedPages: 1}},
 	})
@@ -31,7 +31,7 @@ func TestMainScreen_ListHeader_ShowsCacheState(t *testing.T) {
 		t.Errorf("tools header lacks the cache label:\n%s", view)
 	}
 
-	ms.handleResourcesLoaded(ResourcesLoadedMsg{
+	ms.handleResourcesLoaded(&ResourcesLoadedMsg{
 		Resources: []mcp.Resource{{URI: "file:///var/log/deploy.log", Name: "deploy.log"}},
 		Items:     []string{"deploy.log - No description"}, ActualCount: 1,
 		Cache: []*mcp.ListCacheInfo{
@@ -51,7 +51,7 @@ func TestMainScreen_ListHeader_ShowsCacheState(t *testing.T) {
 // when the session has no list caching.
 func TestMainScreen_ListHeader_NoCacheBeforeSEP2549(t *testing.T) {
 	ms := connectedMainScreen(t)
-	ms.handleToolsLoaded(ToolsLoadedMsg{Tools: deployTools, Items: []string{"deploy - Roll out a release"}, ActualCount: 1})
+	ms.handleToolsLoaded(&ToolsLoadedMsg{Tools: deployTools, Items: []string{"deploy - Roll out a release"}, ActualCount: 1})
 	if view := ms.View(); strings.Contains(view, "ttl ") {
 		t.Errorf("header shows a cache label without cache info:\n%s", view)
 	}

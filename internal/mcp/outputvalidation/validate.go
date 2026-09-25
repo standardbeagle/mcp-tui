@@ -41,7 +41,7 @@ import (
 // The function is best-effort: it never panics on malformed input, and it
 // never returns an error — every problem is reported through the violations
 // slice so the caller has a single consistent shape to render.
-func Validate(schema any, structuredContent any) []string {
+func Validate(schema, structuredContent any) []string {
 	if isNil(schema) {
 		return nil
 	}

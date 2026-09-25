@@ -165,8 +165,8 @@ func (td *TransportDebugger) TraceConnectionStart(target string) *Event {
 }
 
 // TraceConnectionEnd traces transport connection end
-func (td *TransportDebugger) TraceConnectionEnd(startEvent *Event, success bool, error string) *Event {
-	return td.tracer.TraceConnectionEnd(startEvent, success, error)
+func (td *TransportDebugger) TraceConnectionEnd(startEvent *Event, success bool, errStr string) *Event {
+	return td.tracer.TraceConnectionEnd(startEvent, success, errStr)
 }
 
 // TraceTransportState traces transport state changes
@@ -180,11 +180,11 @@ func (td *TransportDebugger) TraceTransportState(state string, details map[strin
 }
 
 // TraceTransportError traces transport-specific errors
-func (td *TransportDebugger) TraceTransportError(operation string, err error, context map[string]interface{}) *Event {
-	if context == nil {
-		context = make(map[string]interface{})
+func (td *TransportDebugger) TraceTransportError(operation string, err error, details map[string]interface{}) *Event {
+	if details == nil {
+		details = make(map[string]interface{})
 	}
-	context["transport_type"] = td.transportType
+	details["transport_type"] = td.transportType
 
-	return td.tracer.TraceError(operation, err, context)
+	return td.tracer.TraceError(operation, err, details)
 }

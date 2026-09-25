@@ -39,7 +39,7 @@ func TestToolScreen_CLICommandQuotesValuesForTheShell(t *testing.T) {
 		Command: "/opt/my servers/$SRV",
 		Args:    []string{"--banner=it's", "line1\nline2", "--columns=id,name"},
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "archive_logs", InputSchema: schema}, connectionConfigService{conn: conn})
+	ts := NewToolScreen(&mcp.Tool{Name: "archive_logs", InputSchema: schema}, connectionConfigService{conn: conn})
 	values := map[string]string{
 		"home":   "$HOME and ${PATH}",
 		"cmd":    "`id` $(whoami)",
@@ -87,7 +87,7 @@ func rawJSONToolScreen(t *testing.T, conn *config.ConnectionConfig) *ToolScreen 
 	]}`), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: rawJSONTool, InputSchema: schema}, connectionConfigService{conn: conn})
+	ts := NewToolScreen(&mcp.Tool{Name: rawJSONTool, InputSchema: schema}, connectionConfigService{conn: conn})
 	if !ts.rawJSONMode {
 		t.Fatal("the schema did not open the raw JSON editor")
 	}

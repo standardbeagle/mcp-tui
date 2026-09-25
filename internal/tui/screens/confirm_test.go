@@ -16,8 +16,8 @@ func boolPtr(b bool) *bool { return &b }
 
 // destructiveTool returns a Tool fixture pre-flagged destructive=true so
 // every test does not have to build the same struct.
-func destructiveTool() mcp.Tool {
-	return mcp.Tool{
+func destructiveTool() *mcp.Tool {
+	return &mcp.Tool{
 		Name:        "drop_table",
 		Title:       "Drop Table",
 		Description: "Permanently delete a database table.",
@@ -191,7 +191,7 @@ func TestToolScreenSkipsConfirmForReadOnly(t *testing.T) {
 		Name:        "read_rows",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}
-	ts := NewToolScreen(tool, nil)
+	ts := NewToolScreen(&tool, nil)
 	ts.cursor = len(ts.fields)
 
 	_, cmd := ts.Update(tea.KeyMsg{Type: tea.KeyEnter})

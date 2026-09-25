@@ -73,13 +73,13 @@ func TestParseForm_MapSchema(t *testing.T) {
 // shape the SDK examples and the official server-everything elicit
 // scenario produce.
 func TestParseForm_JSONSchemaSchema(t *testing.T) {
-	min := 1.0
-	max := 10.0
+	minVal := 1.0
+	maxVal := 10.0
 	schema := &jsonschema.Schema{
 		Type: "object",
 		Properties: map[string]*jsonschema.Schema{
 			"endpoint": {Type: "string", Description: "Server endpoint"},
-			"retries":  {Type: "number", Minimum: &min, Maximum: &max},
+			"retries":  {Type: "number", Minimum: &minVal, Maximum: &maxVal},
 		},
 		Required: []string{"endpoint"},
 	}

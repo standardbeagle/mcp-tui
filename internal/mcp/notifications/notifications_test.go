@@ -83,15 +83,15 @@ func TestFilter_Allow_Types(t *testing.T) {
 	emptyEntry := Entry{Type: TypeProgress}
 
 	var zero Filter
-	if !zero.Allow(emptyEntry) {
+	if !zero.Allow(&emptyEntry) {
 		t.Error("zero filter rejected entry; should allow all")
 	}
 
 	onlyMessage := Filter{Types: map[Type]struct{}{TypeMessage: {}}}
-	if onlyMessage.Allow(emptyEntry) {
+	if onlyMessage.Allow(&emptyEntry) {
 		t.Error("onlyMessage filter allowed Progress entry")
 	}
-	if !onlyMessage.Allow(Entry{Type: TypeMessage, Level: "info"}) {
+	if !onlyMessage.Allow(&Entry{Type: TypeMessage, Level: "info"}) {
 		t.Error("onlyMessage filter rejected Message entry")
 	}
 }
@@ -103,15 +103,15 @@ func TestFilter_Allow_Levels(t *testing.T) {
 	f := Filter{MinLevel: "warning"}
 
 	// Message entries respect the threshold.
-	if f.Allow(Entry{Type: TypeMessage, Level: "info"}) {
+	if f.Allow(&Entry{Type: TypeMessage, Level: "info"}) {
 		t.Error("level=warning allowed info message")
 	}
-	if !f.Allow(Entry{Type: TypeMessage, Level: "error"}) {
+	if !f.Allow(&Entry{Type: TypeMessage, Level: "error"}) {
 		t.Error("level=warning rejected error message")
 	}
 
 	// Non-message types are unaffected by MinLevel.
-	if !f.Allow(Entry{Type: TypeToolsListChanged}) {
+	if !f.Allow(&Entry{Type: TypeToolsListChanged}) {
 		t.Error("level=warning rejected list_changed (should ignore level)")
 	}
 }
@@ -142,10 +142,10 @@ func TestFilterEntries_PreservesOrder(t *testing.T) {
 // buffer is full, the oldest entry is dropped, not the newest.
 func TestStream_Append_RingBuffer(t *testing.T) {
 	s := NewStreamWithCap(3)
-	s.Append(Entry{Type: TypeMessage, Preview: "1"})
-	s.Append(Entry{Type: TypeMessage, Preview: "2"})
-	s.Append(Entry{Type: TypeMessage, Preview: "3"})
-	s.Append(Entry{Type: TypeMessage, Preview: "4"}) // overflow
+	s.Append(&Entry{Type: TypeMessage, Preview: "1"})
+	s.Append(&Entry{Type: TypeMessage, Preview: "2"})
+	s.Append(&Entry{Type: TypeMessage, Preview: "3"})
+	s.Append(&Entry{Type: TypeMessage, Preview: "4"}) // overflow
 
 	got := s.Snapshot()
 	if len(got) != 3 {
@@ -161,14 +161,14 @@ func TestStream_Append_RingBuffer(t *testing.T) {
 // already-buffered entries. Resume re-enables capture without backfilling.
 func TestStream_Pause_DropsAppends(t *testing.T) {
 	s := NewStream()
-	s.Append(Entry{Preview: "before"})
+	s.Append(&Entry{Preview: "before"})
 	s.Pause()
-	s.Append(Entry{Preview: "during-pause"}) // dropped
+	s.Append(&Entry{Preview: "during-pause"}) // dropped
 	if got := s.Len(); got != 1 {
 		t.Errorf("len during pause = %d; want 1 (paused appends should drop)", got)
 	}
 	s.Resume()
-	s.Append(Entry{Preview: "after"})
+	s.Append(&Entry{Preview: "after"})
 	if got := s.Len(); got != 2 {
 		t.Errorf("len after resume = %d; want 2 (no backfill)", got)
 	}
@@ -200,7 +200,7 @@ func TestStream_TogglePaused(t *testing.T) {
 func TestStream_Clear_PreservesPaused(t *testing.T) {
 	s := NewStream()
 	s.Pause()
-	s.Append(Entry{}) // no-op while paused, but tests the contract anyway
+	s.Append(&Entry{}) // no-op while paused, but tests the contract anyway
 	s.Clear()
 	if !s.IsPaused() {
 		t.Error("Clear should preserve paused state")
@@ -212,7 +212,7 @@ func TestStream_Clear_PreservesPaused(t *testing.T) {
 // race with new appends in subtle ways.
 func TestStream_Snapshot_IsCopy(t *testing.T) {
 	s := NewStream()
-	s.Append(Entry{Preview: "real"})
+	s.Append(&Entry{Preview: "real"})
 	got := s.Snapshot()
 	got[0].Preview = "mutated"
 	if s.Snapshot()[0].Preview != "real" {
@@ -224,7 +224,7 @@ func TestStream_Snapshot_IsCopy(t *testing.T) {
 // becomes 1 — a 0-cap buffer would be unusable and silently drop everything.
 func TestStream_NewStreamWithCap_RoundsUp(t *testing.T) {
 	s := NewStreamWithCap(0)
-	s.Append(Entry{Preview: "x"})
+	s.Append(&Entry{Preview: "x"})
 	if s.Len() != 1 {
 		t.Errorf("cap=0 stream len after Append = %d; want 1", s.Len())
 	}
@@ -247,7 +247,7 @@ func TestStream_ConcurrentAppendSnapshot(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < perWriter; i++ {
-				s.Append(Entry{Type: TypeProgress})
+				s.Append(&Entry{Type: TypeProgress})
 			}
 		}()
 	}

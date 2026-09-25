@@ -381,7 +381,7 @@ func TestTransportSpecificErrorHandling(t *testing.T) {
 		servers := make([]*httptest.Server, numCycles)
 		for i := 0; i < numCycles; i++ {
 			servers[i] = httptest.NewServer(mockMCPHTTPHandler("load-test-server"))
-			defer servers[i].Close()
+			t.Cleanup(servers[i].Close)
 		}
 
 		service := NewService()

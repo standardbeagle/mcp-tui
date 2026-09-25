@@ -433,13 +433,13 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ms.handleConnectionComplete(msg)
 
 	case ToolsLoadedMsg:
-		return ms.handleToolsLoaded(msg)
+		return ms.handleToolsLoaded(&msg)
 
 	case ResourcesLoadedMsg:
-		return ms.handleResourcesLoaded(msg)
+		return ms.handleResourcesLoaded(&msg)
 
 	case PromptsLoadedMsg:
-		return ms.handlePromptsLoaded(msg)
+		return ms.handlePromptsLoaded(&msg)
 
 	case ResourceContentLoadedMsg:
 		return ms.handleResourceContentLoaded(msg)
@@ -616,7 +616,7 @@ func (ms *MainScreen) handleConnectionFailure(err error) (tea.Model, tea.Cmd) {
 }
 
 // handleToolsLoaded handles tools loaded messages
-func (ms *MainScreen) handleToolsLoaded(msg ToolsLoadedMsg) (tea.Model, tea.Cmd) {
+func (ms *MainScreen) handleToolsLoaded(msg *ToolsLoadedMsg) (tea.Model, tea.Cmd) {
 	ms.toolsLoading = false
 	ms.listCacheLabels[0] = listCacheLabel(msg.Cache)
 	if msg.Error != nil {
@@ -643,7 +643,7 @@ func (ms *MainScreen) handleToolsLoaded(msg ToolsLoadedMsg) (tea.Model, tea.Cmd)
 }
 
 // handleResourcesLoaded handles resources loaded messages
-func (ms *MainScreen) handleResourcesLoaded(msg ResourcesLoadedMsg) (tea.Model, tea.Cmd) {
+func (ms *MainScreen) handleResourcesLoaded(msg *ResourcesLoadedMsg) (tea.Model, tea.Cmd) {
 	ms.resourcesLoading = false
 	ms.listCacheLabels[1] = listCacheLabel(msg.Cache)
 	if msg.Error != nil {
@@ -673,7 +673,7 @@ func (ms *MainScreen) handleResourcesLoaded(msg ResourcesLoadedMsg) (tea.Model, 
 }
 
 // handlePromptsLoaded handles prompts loaded messages
-func (ms *MainScreen) handlePromptsLoaded(msg PromptsLoadedMsg) (tea.Model, tea.Cmd) {
+func (ms *MainScreen) handlePromptsLoaded(msg *PromptsLoadedMsg) (tea.Model, tea.Cmd) {
 	ms.promptsLoading = false
 	ms.listCacheLabels[2] = listCacheLabel(msg.Cache)
 	if msg.Error != nil {
@@ -747,9 +747,10 @@ func (ms *MainScreen) handleEventsLoaded() (tea.Model, tea.Cmd) {
 	if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
 		allEntries := mcpLogger.GetEntries()
 		var events []debug.MCPLogEntry
-		for _, entry := range allEntries {
-			if entry.MessageType == debug.MCPMessageNotification || entry.ID == nil {
-				events = append(events, entry)
+		for i := range allEntries {
+			// Include notifications and any messages without IDs
+			if allEntries[i].MessageType == debug.MCPMessageNotification || allEntries[i].ID == nil {
+				events = append(events, allEntries[i])
 			}
 		}
 		ms.events = events
@@ -774,7 +775,8 @@ func (ms *MainScreen) handleEventTick(msg EventTickMsg) (tea.Model, tea.Cmd) {
 			ms.tickEvents(), // Continue ticking
 		)
 	}
-	return ms, ms.tickEvents() // Continue ticking even if not on events tab
+	tick := ms.tickEvents()
+	return ms, tick // Continue ticking even if not on events tab
 }
 
 // handleSpinnerTick handles spinner animation updates
@@ -938,7 +940,8 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd := ms.readResource(ms.selectedResource)
 			return ms, cmd
 		}
-		return ms, ms.refreshCurrentTab()
+		refreshCmd := ms.refreshCurrentTab()
+		return ms, refreshCmd
 
 	case "s":
 		// Subscribe to / unsubscribe from the selected resource.
@@ -1015,7 +1018,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ms.activeTab == 0 && len(ms.tools) > 0 {
 			selectedIdx := ms.selectedIndex[0]
 			if selectedIdx < len(ms.tools) {
-				tool := ms.tools[selectedIdx]
+				tool := &ms.tools[selectedIdx]
 				if tool.HasSchemaError() {
 					// Show schema error overlay
 					schemaErrorScreen := NewSchemaErrorScreen(tool)
@@ -1047,8 +1050,8 @@ func (ms *MainScreen) getCurrentList() []string {
 	case 3:
 		// Convert events to string list for display
 		eventStrings := make([]string, len(ms.events))
-		for i, event := range ms.events {
-			eventStrings[i] = event.String()
+		for i := range ms.events {
+			eventStrings[i] = ms.events[i].String()
 		}
 		return eventStrings
 	default:
@@ -1140,7 +1143,7 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 		if selectedIdx >= len(ms.tools) {
 			return ms, nil
 		}
-		toolScreen := NewToolScreen(ms.tools[selectedIdx], ms.mcpService)
+		toolScreen := NewToolScreen(&ms.tools[selectedIdx], ms.mcpService)
 		return ms, func() tea.Msg {
 			return TransitionMsg{Transition: ScreenTransition{Screen: toolScreen}}
 		}
@@ -1161,8 +1164,7 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 				if tmplIdx < 0 || tmplIdx >= len(ms.resourceTemplateObjects) {
 					return ms, nil
 				}
-				template := ms.resourceTemplateObjects[tmplIdx]
-				screen := NewResourceTemplateScreen(template, ms.mcpService)
+				screen := NewResourceTemplateScreen(&ms.resourceTemplateObjects[tmplIdx], ms.mcpService)
 				return ms, func() tea.Msg {
 					return TransitionMsg{Transition: ScreenTransition{Screen: screen}}
 				}
@@ -1340,15 +1342,16 @@ func (ms *MainScreen) View() string {
 	}
 
 	// Current list or split-pane view for tools, resources, prompts, and events
-	if ms.activeTab == 3 && ms.showEventDetail {
+	switch {
+	case ms.activeTab == 3 && ms.showEventDetail:
 		builder.WriteString(ms.renderEventSplitView())
-	} else if ms.activeTab == 0 && len(ms.tools) > 0 {
+	case ms.activeTab == 0 && len(ms.tools) > 0:
 		builder.WriteString(ms.renderToolSplitView())
-	} else if ms.activeTab == 1 && ms.resourceViewerOpen {
+	case ms.activeTab == 1 && ms.resourceViewerOpen:
 		builder.WriteString(ms.renderResourceViewer())
-	} else if ms.activeTab == 2 && ms.promptViewerOpen {
+	case ms.activeTab == 2 && ms.promptViewerOpen:
 		builder.WriteString(ms.renderPromptViewer())
-	} else {
+	default:
 		builder.WriteString(ms.renderCurrentList())
 	}
 
@@ -1652,18 +1655,20 @@ func (ms *MainScreen) renderCurrentList() string {
 		endIdx = selectedIdx + 1
 
 		// Expand upward and downward to fill available space
+	expand:
 		for currentHeight < availableHeight && (startIdx > 0 || endIdx < len(currentList)) {
 			// Try expanding upward first
-			if startIdx > 0 && currentHeight+itemHeights[startIdx-1] <= availableHeight {
+			switch {
+			case startIdx > 0 && currentHeight+itemHeights[startIdx-1] <= availableHeight:
 				startIdx--
 				currentHeight += itemHeights[startIdx]
-			} else if endIdx < len(currentList) && currentHeight+itemHeights[endIdx] <= availableHeight {
+			case endIdx < len(currentList) && currentHeight+itemHeights[endIdx] <= availableHeight:
 				// Expand downward
 				currentHeight += itemHeights[endIdx]
 				endIdx++
-			} else {
+			default:
 				// Can't expand further without exceeding available height
-				break
+				break expand
 			}
 		}
 
@@ -2137,10 +2142,10 @@ func (ms *MainScreen) loadEvents() tea.Cmd {
 
 			// Filter for notifications and events without IDs
 			var events []debug.MCPLogEntry
-			for _, entry := range allEntries {
+			for i := range allEntries {
 				// Include notifications and any messages without IDs
-				if entry.MessageType == debug.MCPMessageNotification || entry.ID == nil {
-					events = append(events, entry)
+				if allEntries[i].MessageType == debug.MCPMessageNotification || allEntries[i].ID == nil {
+					events = append(events, allEntries[i])
 				}
 			}
 
@@ -2336,7 +2341,7 @@ func (ms *MainScreen) renderToolList() string {
 		Foreground(lipgloss.Color("11")) // Yellow warning
 
 	for i := startIdx; i < endIdx; i++ {
-		tool := ms.tools[i]
+		tool := &ms.tools[i]
 		warningIndicator := ""
 		if tool.HasSchemaError() {
 			warningIndicator = " " + warningStyle.Render("⚠")
@@ -2377,7 +2382,7 @@ func (ms *MainScreen) renderToolDetail() string {
 		return "Invalid tool selection"
 	}
 
-	tool := ms.tools[selectedIdx]
+	tool := &ms.tools[selectedIdx]
 
 	// Build full content first
 	var contentBuilder strings.Builder
@@ -2671,21 +2676,6 @@ func isUnsupportedCapabilityError(err error) bool {
 		strings.Contains(errStr, "no such method") ||
 		strings.Contains(errStr, "capability not supported") ||
 		strings.Contains(errStr, "does not support this functionality")
-}
-
-// Utility functions
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // renderResourceViewer renders the resource content viewer

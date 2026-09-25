@@ -306,30 +306,30 @@ func (l *logger) buildLogLine(entry *logEntry) string {
 
 // writeTimestamp writes the timestamp to the builder
 func (l *logger) writeTimestamp(builder *strings.Builder, timestamp time.Time) {
-	builder.WriteString(fmt.Sprintf("[%s] ", timestamp.Format("2006-01-02T15:04:05.000Z07:00")))
+	fmt.Fprintf(builder, "[%s] ", timestamp.Format("2006-01-02T15:04:05.000Z07:00"))
 }
 
 // writeLevel writes the log level to the builder
 func (l *logger) writeLevel(builder *strings.Builder, level LogLevel) {
-	builder.WriteString(fmt.Sprintf("%s", logLevelToString(level)))
+	fmt.Fprintf(builder, "%s", logLevelToString(level))
 }
 
 // writeComponent writes the component name to the builder
 func (l *logger) writeComponent(builder *strings.Builder, component string) {
 	if component != "" {
-		builder.WriteString(fmt.Sprintf(" [%s]", component))
+		fmt.Fprintf(builder, " [%s]", component)
 	}
 }
 
 // writeMessage writes the message to the builder
 func (l *logger) writeMessage(builder *strings.Builder, msg string) {
-	builder.WriteString(fmt.Sprintf(" %s", msg))
+	fmt.Fprintf(builder, " %s", msg)
 }
 
 // writeFields writes the fields to the builder
 func (l *logger) writeFields(builder *strings.Builder, fields []Field) {
 	for _, field := range fields {
-		builder.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Value))
+		fmt.Fprintf(builder, " %s=%v", field.Key, field.Value)
 	}
 }
 
@@ -347,7 +347,7 @@ func (l *logger) writeCallerInfo(builder *strings.Builder, level LogLevel) {
 			if !strings.Contains(file, "debug/logger.go") {
 				// Get just the filename, not the full path
 				filename := extractFilename(file)
-				builder.WriteString(fmt.Sprintf(" caller=%s:%d", filename, line))
+				fmt.Fprintf(builder, " caller=%s:%d", filename, line)
 				break
 			}
 		}

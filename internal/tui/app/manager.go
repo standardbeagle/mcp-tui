@@ -99,7 +99,8 @@ func (sm *ScreenManager) checkAutoConnect() (*config.ConnectionConfig, *models.C
 
 	// Convert to connection config and return alongside the source entry +
 	// manager so the caller can post-process success.
-	return entry.ToConnectionConfig(), entry, connectionsManager
+	connConfig := entry.ToConnectionConfig()
+	return connConfig, entry, connectionsManager
 }
 
 // CurrentMainScreen returns the underlying *MainScreen if it is currently the

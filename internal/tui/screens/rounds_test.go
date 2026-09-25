@@ -21,7 +21,7 @@ func confirmRound(method string) []mcp.RoundSummary {
 
 func deployToolScreen(t *testing.T, result *mcp.CallToolResult) string {
 	t.Helper()
-	ts := NewToolScreen(mcp.Tool{Name: "deploy", InputSchema: map[string]interface{}{
+	ts := NewToolScreen(&mcp.Tool{Name: "deploy", InputSchema: map[string]interface{}{
 		"type": "object", "properties": map[string]interface{}{},
 	}}, nil)
 	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

@@ -87,7 +87,7 @@ func TestDiscoverConfigFilesExcludesUnloadablePackageJSON(t *testing.T) {
 	})
 
 	packageJSON := []byte(`{"scripts":{"mcp":"node server.js --mcp"}}`)
-	if err := os.WriteFile(filepath.Join(tmp, "package.json"), packageJSON, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, "package.json"), packageJSON, 0o644); err != nil {
 		t.Fatalf("WriteFile package.json: %v", err)
 	}
 
@@ -181,7 +181,7 @@ func newTestConnectionsManager(t *testing.T) *ConnectionsManager {
 	cm.filePath = filepath.Join(t.TempDir(), "connections.json")
 	cm.config.Servers = make(map[string]*ConnectionEntry)
 	// Defensive: ensure the dir exists for SaveConnections inside the call.
-	if err := os.MkdirAll(filepath.Dir(cm.filePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cm.filePath), 0o755); err != nil {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	return cm
