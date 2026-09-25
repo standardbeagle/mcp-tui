@@ -1,7 +1,6 @@
 package transports
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -9,7 +8,7 @@ import (
 )
 
 func TestServerStartupError(t *testing.T) {
-	err := &ServerStartupError{
+	err := &errors.ServerStartupError{
 		Command:    "npx",
 		Args:       []string{"@modelcontextprotocol/server-brave-search"},
 		Output:     "Error: BRAVE_API_KEY environment variable is required",
@@ -51,7 +50,7 @@ func TestMergeEnvironmentAppendsConfiguredVariables(t *testing.T) {
 }
 
 func TestServerStartupErrorWithoutSuggestion(t *testing.T) {
-	err := &ServerStartupError{
+	err := &errors.ServerStartupError{
 		Command:    "npx",
 		Args:       []string{"some-server"},
 		Output:     "Some generic error",
@@ -308,54 +307,5 @@ func TestGenerateSuggestionEnvironmentVariableExtraction(t *testing.T) {
 
 	if result != expected {
 		t.Errorf("Expected: %s, got: %s", expected, result)
-	}
-}
-
-func TestServerStartupErrorClassifier(t *testing.T) {
-	classifier := NewServerStartupErrorClassifier()
-
-	// Test with ServerStartupError
-	startupErr := &ServerStartupError{
-		Command:    "npx",
-		Args:       []string{"@modelcontextprotocol/server-brave-search"},
-		Output:     "Error: BRAVE_API_KEY environment variable is required",
-		ExitCode:   1,
-		Suggestion: "Set the BRAVE_API_KEY environment variable",
-	}
-
-	classified := classifier.ClassifyServerStartupError(startupErr)
-
-	if classified.Category != errors.CategoryServerStartup {
-		t.Errorf("Expected CategoryServerStartup, got %v", classified.Category)
-	}
-
-	if classified.Recoverable {
-		t.Error("Server startup errors should not be recoverable")
-	}
-
-	if classified.Context == nil {
-		t.Error("Context should be set for server startup errors")
-	}
-
-	// Check context contains expected fields
-	if classified.Context["command"] != "npx" {
-		t.Error("Context should contain command")
-	}
-
-	if classified.Context["exit_code"] != 1 {
-		t.Error("Context should contain exit code")
-	}
-}
-
-func TestServerStartupErrorClassifierFallback(t *testing.T) {
-	classifier := NewServerStartupErrorClassifier()
-
-	// Test with regular error (should fall back to standard classification)
-	regularErr := fmt.Errorf("connection timeout")
-	classified := classifier.ClassifyServerStartupError(regularErr)
-
-	// Should be classified as timeout, not server startup
-	if classified.Category == errors.CategoryServerStartup {
-		t.Error("Regular errors should not be classified as server startup errors")
 	}
 }

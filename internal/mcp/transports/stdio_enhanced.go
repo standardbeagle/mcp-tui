@@ -31,24 +31,6 @@ type ServerKiller interface {
 	KillServer() error
 }
 
-// ServerStartupError represents a server startup failure with captured output
-type ServerStartupError struct {
-	Command    string
-	Args       []string
-	Output     string
-	ExitCode   int
-	Suggestion string
-}
-
-func (e *ServerStartupError) Error() string {
-	if e.Suggestion != "" {
-		return fmt.Sprintf("server startup failed: %s\n\nServer output:\n%s\n\nSuggestion: %s",
-			e.Command, e.Output, e.Suggestion)
-	}
-	return fmt.Sprintf("server startup failed: %s\n\nServer output:\n%s",
-		e.Command, e.Output)
-}
-
 // EnhancedSTDIOTransport runs the server command through the official MCP
 // STDIO transport, capturing the server's stderr so a failed handshake can be
 // reported as a diagnosable startup error rather than a bare EOF.
@@ -350,7 +332,7 @@ func (e *EnhancedSTDIOTransport) StartupError(ctx context.Context) error {
 	for {
 		output := strings.TrimSpace(stderr.String())
 		if output != "" && looksLikeError(output) {
-			return &ServerStartupError{
+			return &errors.ServerStartupError{
 				Command:    e.command,
 				Args:       e.args,
 				Output:     output,
@@ -362,46 +344,4 @@ func (e *EnhancedSTDIOTransport) StartupError(ctx context.Context) error {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-}
-
-// ServerStartupErrorClassifier provides classification for server startup errors
-type ServerStartupErrorClassifier struct {
-	classifier *errors.ErrorClassifier
-}
-
-// NewServerStartupErrorClassifier creates a new server startup error classifier
-func NewServerStartupErrorClassifier() *ServerStartupErrorClassifier {
-	return &ServerStartupErrorClassifier{
-		classifier: errors.NewErrorClassifier(),
-	}
-}
-
-// ClassifyServerStartupError classifies server startup errors with enhanced context
-func (c *ServerStartupErrorClassifier) ClassifyServerStartupError(err error) *errors.ClassifiedError {
-	if startupErr, ok := err.(*ServerStartupError); ok {
-		// Create enhanced context for server startup errors
-		context := map[string]interface{}{
-			"operation":  "server_startup",
-			"command":    startupErr.Command,
-			"args":       startupErr.Args,
-			"exit_code":  startupErr.ExitCode,
-			"output":     startupErr.Output,
-			"suggestion": startupErr.Suggestion,
-		}
-
-		classified := &errors.ClassifiedError{
-			Category:    errors.CategoryServerStartup,
-			Severity:    errors.SeverityError,
-			Message:     startupErr.Error(),
-			Cause:       err,
-			Context:     context,
-			Recoverable: false, // Server startup errors require user intervention
-			RetryAfter:  nil,
-		}
-
-		return classified
-	}
-
-	// Fall back to standard classification
-	return c.classifier.Classify(err, nil)
 }

@@ -10,6 +10,7 @@ import (
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
@@ -371,7 +372,7 @@ func TestServerStartupErrorDetection(t *testing.T) {
 				}
 
 				// Test that error creation works
-				err := &ServerStartupError{
+				err := &errors.ServerStartupError{
 					Command:    "npx",
 					Args:       []string{"test-server"},
 					Output:     scenario.output,

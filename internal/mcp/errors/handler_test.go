@@ -7,43 +7,62 @@ import (
 	"testing"
 )
 
+func braveStartupError() *ServerStartupError {
+	return &ServerStartupError{
+		Command:    "npx",
+		Args:       []string{"@modelcontextprotocol/server-brave-search"},
+		Output:     "Error: BRAVE_API_KEY environment variable is required",
+		ExitCode:   1,
+		Suggestion: "Set the BRAVE_API_KEY environment variable",
+	}
+}
+
+// A startup failure is recognized by its type, wherever it is wrapped and
+// whatever operation reports it; text that merely says "server startup
+// failed" is not one.
 func TestErrorHandlerServerStartupDetection(t *testing.T) {
 	handler := NewErrorHandler()
 
 	tests := []struct {
 		name                string
 		operation           string
-		error               string
+		err                 error
 		expectedCategory    ErrorCategory
 		expectedRecoverable bool
 	}{
 		{
-			name:                "server startup error in session connect",
-			operation:           "session_connect",
-			error:               "server startup failed: npx\n\nServer output:\nError: BRAVE_API_KEY environment variable is required\n\nSuggestion: Set the required environment variable",
+			name:                "startup error in session connect",
+			operation:           OperationSessionConnect,
+			err:                 braveStartupError(),
+			expectedCategory:    CategoryServerStartup,
+			expectedRecoverable: false,
+		},
+		{
+			name:                "wrapped startup error in another operation",
+			operation:           "connect",
+			err:                 fmt.Errorf("reconnect: %w", braveStartupError()),
 			expectedCategory:    CategoryServerStartup,
 			expectedRecoverable: false,
 		},
 		{
 			name:                "regular connection error",
-			operation:           "session_connect",
-			error:               "connection timeout",
+			operation:           OperationSessionConnect,
+			err:                 fmt.Errorf("connection timeout"),
 			expectedCategory:    CategoryConnection,
 			expectedRecoverable: true,
 		},
 		{
-			name:                "startup error in different operation",
-			operation:           "tool_call",
-			error:               "server startup failed: something",
-			expectedCategory:    CategoryUnknown, // Should not be detected as startup error for non-connect operations
+			name:                "text that only reads like a startup error",
+			operation:           OperationSessionConnect,
+			err:                 fmt.Errorf("tool said: server startup failed: something"),
+			expectedCategory:    CategoryUnknown,
 			expectedRecoverable: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := fmt.Errorf("%s", tt.error)
-			classified := handler.HandleError(context.Background(), err, tt.operation, nil)
+			classified := handler.HandleError(context.Background(), tt.err, tt.operation, nil)
 
 			if classified.Category != tt.expectedCategory {
 				t.Errorf("Expected category %v, got %v", tt.expectedCategory, classified.Category)
@@ -60,7 +79,7 @@ func TestErrorHandlerStatisticsWithServerStartup(t *testing.T) {
 	handler := NewErrorHandler()
 
 	// Generate some server startup errors
-	startupErr := fmt.Errorf("server startup failed: missing env var")
+	startupErr := braveStartupError()
 	timeoutErr := fmt.Errorf("connection timeout")
 
 	handler.HandleError(context.Background(), startupErr, "session_connect", nil)
@@ -91,7 +110,7 @@ func TestErrorHandlerStatisticsWithServerStartup(t *testing.T) {
 func TestErrorHandlerUserFriendlyServerStartup(t *testing.T) {
 	handler := NewErrorHandler()
 
-	err := fmt.Errorf("server startup failed: npx\n\nServer output:\nError: BRAVE_API_KEY environment variable is required\n\nSuggestion: Set the BRAVE_API_KEY environment variable")
+	err := braveStartupError()
 	classified := handler.HandleError(context.Background(), err, "session_connect", nil)
 
 	userError := handler.CreateUserFriendlyError(classified)
@@ -121,7 +140,7 @@ func TestErrorHandlerUserFriendlyServerStartup(t *testing.T) {
 func TestErrorHandlerWithRetryServerStartup(t *testing.T) {
 	handler := NewErrorHandler()
 
-	err := fmt.Errorf("server startup failed: missing config")
+	err := braveStartupError()
 	classified, shouldRetry := handler.HandleErrorWithRetry(context.Background(), err, "session_connect", nil, 1)
 
 	if shouldRetry {
@@ -140,7 +159,7 @@ func TestErrorHandlerWithRetryServerStartup(t *testing.T) {
 func TestErrorHandlerJSONFormat(t *testing.T) {
 	handler := NewErrorHandler()
 
-	err := fmt.Errorf("server startup failed: test error")
+	err := braveStartupError()
 	classified := handler.HandleError(context.Background(), err, "session_connect", map[string]interface{}{
 		"command": "npx",
 		"args":    []string{"test-server"},
@@ -174,7 +193,7 @@ func TestErrorHandlerResetStatistics(t *testing.T) {
 	handler := NewErrorHandler()
 
 	// Generate some errors
-	startupErr := fmt.Errorf("server startup failed: test")
+	startupErr := braveStartupError()
 	handler.HandleError(context.Background(), startupErr, "session_connect", nil)
 
 	// Verify we have errors
@@ -204,7 +223,7 @@ func TestErrorHandlerErrorReport(t *testing.T) {
 	handler := NewErrorHandler()
 
 	// Generate mixed errors
-	startupErr := fmt.Errorf("server startup failed: test")
+	startupErr := braveStartupError()
 	timeoutErr := fmt.Errorf("connection timeout")
 
 	handler.HandleError(context.Background(), startupErr, "session_connect", nil)

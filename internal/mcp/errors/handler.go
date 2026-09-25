@@ -54,23 +54,6 @@ func (eh *ErrorHandler) HandleError(ctx context.Context, err error, operation st
 	context["operation"] = operation
 	context["timestamp"] = time.Now().Format(time.RFC3339)
 
-	// Check if this is a server startup error that needs special handling
-	if operation == OperationSessionConnect && strings.Contains(strings.ToLower(err.Error()), "server startup failed") {
-		// This is likely our enhanced server startup error
-		classified := &ClassifiedError{
-			Category:    CategoryServerStartup,
-			Severity:    SeverityError,
-			Message:     err.Error(),
-			Cause:       err,
-			Context:     context,
-			Recoverable: false,
-			RetryAfter:  nil,
-		}
-		eh.updateStatistics(classified)
-		eh.logClassifiedError(classified)
-		return classified
-	}
-
 	// Classify the error
 	classified := eh.classifier.Classify(err, context)
 

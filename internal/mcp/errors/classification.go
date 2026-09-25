@@ -218,6 +218,10 @@ func IsConnectionFailure(classified *ClassifiedError) bool {
 // left for errors that reach us with no type to inspect, and each such
 // check says where those come from.
 func (ec *ErrorClassifier) analyzeError(err error, operation string) (ErrorCategory, ErrorSeverity) {
+	var startupErr *ServerStartupError
+	if errors.As(err, &startupErr) {
+		return CategoryServerStartup, SeverityError
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return CategoryTimeout, SeverityWarning
 	}
@@ -491,6 +495,11 @@ func (ec *ErrorClassifier) generateUserFriendlyMessage(err error, category Error
 		return "Client validation error - invalid parameters or configuration in request"
 
 	case CategoryServerStartup:
+		// The server's own output says what went wrong; keep it.
+		var startupErr *ServerStartupError
+		if errors.As(err, &startupErr) {
+			return startupErr.Error()
+		}
 		return "Server startup failed - check server configuration and dependencies"
 
 	case CategoryServerInternal:
