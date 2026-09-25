@@ -138,6 +138,13 @@ func TestCLIIntegration(t *testing.T) {
 		},
 	}
 
+	// None of these cases needs PATH, but "tool list --cmd <missing>" resolves
+	// the command through it. A lookup that finds nothing stats every PATH
+	// entry; on WSL, where half of PATH is /mnt/c over 9P, that took 0.2s idle
+	// and past the 10s budget under a full-suite load. An empty PATH directory
+	// tests the same lookup failure without timing the host's filesystem.
+	isolatedPath := "PATH=" + t.TempDir()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// None of these spawn a server: measured 0.17s median / 0.4s max
@@ -146,6 +153,7 @@ func TestCLIIntegration(t *testing.T) {
 			defer cancel()
 
 			cmd := exec.CommandContext(ctx, bin, tt.args...)
+			cmd.Env = append(os.Environ(), isolatedPath)
 			start := time.Now()
 			output, err := cmd.CombinedOutput()
 			t.Logf("mcp-tui %v took %v", tt.args, time.Since(start))
