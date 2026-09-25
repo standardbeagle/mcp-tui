@@ -6,17 +6,20 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/roots"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
@@ -310,6 +313,7 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error
 	}
 
 	c.service = mcp.NewService()
+	trackOpenClient(c)
 
 	// Enable debug mode if flag is set
 	debugMode, _ := cmd.Flags().GetBool("debug")
@@ -556,6 +560,45 @@ func (c *BaseCommand) CloseClient() error {
 
 	c.service = nil
 	return nil
+}
+
+// openClients are the commands that created a service this run. Cobra skips
+// PostRunE when PreRunE or RunE fails, so CloseClients closes them instead.
+var openClients struct {
+	sync.Mutex
+	commands []*BaseCommand
+}
+
+func trackOpenClient(c *BaseCommand) {
+	openClients.Lock()
+	defer openClients.Unlock()
+	openClients.commands = append(openClients.commands, c)
+}
+
+// backgroundCloseLimit bounds how long CloseClients waits for sessions still
+// closing in the background. The SDK gives a stdio server that ignores its
+// stdin closing 5s before signaling it.
+const backgroundCloseLimit = 10 * time.Second
+
+// CloseClients disconnects every service a command left open, whether the
+// command succeeded or failed, then waits (up to backgroundCloseLimit) for
+// sessions still closing in the background: handshakes abandoned at their
+// deadline and sessions dropped by a reconnection. Call it before the
+// process exits, so no server process it started outlives it.
+func CloseClients() {
+	openClients.Lock()
+	commands := openClients.commands
+	openClients.commands = nil
+	openClients.Unlock()
+
+	for _, c := range commands {
+		if err := c.CloseClient(); err != nil {
+			debug.Error("Closing MCP client before exit", debug.F("error", err))
+		}
+	}
+	if !session.WaitForAllBackgroundCloses(backgroundCloseLimit) {
+		debug.Warn("Exiting with MCP sessions still closing", debug.F("waited", backgroundCloseLimit))
+	}
 }
 
 // WithContext creates a context with timeout for the command

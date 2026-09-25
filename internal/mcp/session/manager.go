@@ -321,9 +321,7 @@ func (m *Manager) handshake(
 	case <-connectCtx.Done():
 	}
 
-	m.backgroundCloses.Add(1)
-	go func() {
-		defer m.backgroundCloses.Done()
+	m.goBackgroundClose(func() {
 		start := time.Now()
 		o := <-done
 		if o.session != nil {
@@ -331,7 +329,7 @@ func (m *Manager) handshake(
 		}
 		debug.Debug("Session manager: Abandoned handshake finished closing",
 			debug.F("duration", time.Since(start)), debug.F("error", o.err))
-	}()
+	})
 	return nil, fmt.Errorf("handshake abandoned: %w", context.Cause(connectCtx))
 }
 
@@ -745,14 +743,49 @@ func (m *Manager) WaitForBackgroundCloses() {
 // closeInBackground closes session without waiting for it, logging the
 // outcome. WaitForBackgroundCloses waits for it.
 func (m *Manager) closeInBackground(session *officialMCP.ClientSession, what string) {
-	m.backgroundCloses.Add(1)
-	go func() {
-		defer m.backgroundCloses.Done()
+	m.goBackgroundClose(func() {
 		start := time.Now()
 		err := session.Close()
 		debug.Debug("Session manager: Background close finished",
 			debug.F("session", what), debug.F("duration", time.Since(start)), debug.F("error", err))
+	})
+}
+
+// allBackgroundCloses counts the background closes of every manager in the
+// process, so a process about to exit can wait for all of them, including
+// those of managers it no longer holds (WaitForAllBackgroundCloses).
+var allBackgroundCloses sync.WaitGroup
+
+// goBackgroundClose runs closeFn on its own goroutine, counted by this
+// manager's and the process's background closes.
+func (m *Manager) goBackgroundClose(closeFn func()) {
+	m.backgroundCloses.Add(1)
+	allBackgroundCloses.Add(1)
+	go func() {
+		defer allBackgroundCloses.Done()
+		defer m.backgroundCloses.Done()
+		closeFn()
 	}()
+}
+
+// WaitForAllBackgroundCloses waits up to limit for every session any manager
+// in the process is closing in the background, and reports whether they all
+// finished. A process calls it before exiting so no server process it
+// started outlives it.
+func WaitForAllBackgroundCloses(limit time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		allBackgroundCloses.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
 }
 
 // stopConnectionLocked cancels the current connection context. Callers hold m.mu.

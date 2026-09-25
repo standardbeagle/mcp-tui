@@ -52,7 +52,9 @@ func main() {
 
 	// Execute with the signal-canceled context: the handler above swallows
 	// Ctrl-C, so long-running commands (resource watch) must see it here.
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
+	err := rootCmd.ExecuteContext(ctx)
+	cli.CloseClients()
+	if err != nil {
 		debug.Error("Application failed", debug.F("error", err))
 		exitProcess(1)
 	}

@@ -410,7 +410,8 @@ func TestOutputFormats(t *testing.T) {
 // A CLI run whose server never answers the handshake exits at --timeout. The
 // server must not outlive it: the SDK's graceful close gives a server that
 // ignores its stdin closing seconds before signaling it, and the CLI exits
-// long before, which used to orphan the server for good.
+// long before, which used to orphan the server for good. The CLI kills it at
+// the deadline and waits for it to be reaped before exiting.
 func TestCLIConnectTimeoutLeavesNoServerBehind(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration tests in short mode")
@@ -440,7 +441,6 @@ func TestCLIConnectTimeoutLeavesNoServerBehind(t *testing.T) {
 			_ = proc.Kill()
 		}
 	})
-	// The killed server is an orphan once the CLI is gone; init reaps it.
-	require.Eventually(t, func() bool { return testutil.ProcessExited(pid) }, 5*time.Second, 10*time.Millisecond,
-		"the server process outlived the CLI")
+	// The CLI waits for the killed server's background close, which reaps it.
+	require.True(t, testutil.ProcessExited(pid), "the server process outlived the CLI:\n%s", output)
 }
