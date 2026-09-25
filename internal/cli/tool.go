@@ -14,6 +14,7 @@ import (
 	"github.com/mattn/go-isatty"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
@@ -259,7 +260,7 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		}
 
 		// Tool name + badges. DisplayName surfaces server-supplied titles.
-		// Badges are rendered with renderCLIBadges so the colour palette
+		// Badges are rendered with renderCLIBadges so the color palette
 		// matches the TUI tool list.
 		header := toolNameStyle.Render(tool.DisplayName())
 		if badges := renderCLIBadges(tool); badges != "" {
@@ -819,7 +820,7 @@ func reportToolError(isError, strict bool) error {
 // strict mode is enabled. Returns nil when there are no violations.
 //
 // The warning format is fixed (Warning header + bullet per violation) so
-// scripts grepping for "Warning:" or "outputSchema" can recognise the
+// scripts grepping for "Warning:" or "outputSchema" can recognize the
 // signal. We deliberately avoid lipgloss styling on stderr because most
 // CI log viewers strip ANSI escapes anyway and a plain format is easier
 // to assert against in tests.

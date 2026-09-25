@@ -3,10 +3,11 @@ package screens
 import (
 	"testing"
 
-	"github.com/standardbeagle/mcp-tui/internal/mcp"
-	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 )
 
 // TestArrayFieldBehaviorDocumented tests the documented array field behavior

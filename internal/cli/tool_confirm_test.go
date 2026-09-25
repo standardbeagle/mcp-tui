@@ -43,7 +43,7 @@ func TestConfirmDestructiveCallSkipFlag(t *testing.T) {
 }
 
 // TestConfirmDestructiveCallNonDestructive proves the gate is a no-op for
-// tools without destructiveHint=true so existing behaviour is preserved.
+// tools without destructiveHint=true so existing behavior is preserved.
 func TestConfirmDestructiveCallNonDestructive(t *testing.T) {
 	in, _ := makePipe(t)
 	_, errOut := makePipe(t)
@@ -96,7 +96,7 @@ func TestRenderCLIBadgesNoAnnotations(t *testing.T) {
 
 // TestRenderCLIBadgesContainsLabels covers the rendered text irrespective of
 // ANSI escape sequences. We strip simple control characters before
-// asserting because lipgloss colour escapes vary by terminal capabilities.
+// asserting because lipgloss color escapes vary by terminal capabilities.
 func TestRenderCLIBadgesContainsLabels(t *testing.T) {
 	cases := []struct {
 		name string

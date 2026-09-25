@@ -192,7 +192,7 @@ func (c *VerifyCommand) buildTarget(cmd *cobra.Command, args []string) (verify.T
 			}
 		}
 		// Even after parsing, a bare URL-shaped argument should populate
-		// URL — ParseArgs may not flag custom URLs without a recognised
+		// URL — ParseArgs may not flag custom URLs without a recognized
 		// path. Fall back to a substring check.
 		if target.URL == "" && (strings.HasPrefix(args[0], "http://") || strings.HasPrefix(args[0], "https://")) {
 			target.URL = args[0]

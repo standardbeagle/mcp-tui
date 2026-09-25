@@ -415,36 +415,36 @@ func FormatHTTPError(info *HTTPErrorInfo) string {
 // FormatHTTPErrorWithOverrides formats the HTTP error information with an
 // explicit list of header names whose values should be shown verbatim instead
 // of redacted. Names are matched case-insensitively. Pass nil for the default
-// redaction-only behaviour.
+// redaction-only behavior.
 func FormatHTTPErrorWithOverrides(info *HTTPErrorInfo, showHeaders []string) string {
 	if info == nil {
 		return "No HTTP error information available"
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("HTTP Request Analysis (captured at %s)\n", info.Timestamp.Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "HTTP Request Analysis (captured at %s)\n", info.Timestamp.Format(time.RFC3339))
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
-	sb.WriteString(fmt.Sprintf("Method: %s\n", info.Method))
-	sb.WriteString(fmt.Sprintf("URL: %s\n", redact.URL(info.URL)))
-	sb.WriteString(fmt.Sprintf("Status Code: %d\n\n", info.StatusCode))
+	fmt.Fprintf(&sb, "Method: %s\n", info.Method)
+	fmt.Fprintf(&sb, "URL: %s\n", redact.URL(info.URL))
+	fmt.Fprintf(&sb, "Status Code: %d\n\n", info.StatusCode)
 
 	// Connection Details
 	if info.ConnectionDetails != nil {
 		conn := info.ConnectionDetails
 		sb.WriteString("Connection Details:\n")
-		sb.WriteString(fmt.Sprintf("  Local Address: %s\n", conn.LocalAddr))
-		sb.WriteString(fmt.Sprintf("  Remote Address: %s\n", conn.RemoteAddr))
-		sb.WriteString(fmt.Sprintf("  Connection Reused: %t\n", conn.ConnectionReused))
+		fmt.Fprintf(&sb, "  Local Address: %s\n", conn.LocalAddr)
+		fmt.Fprintf(&sb, "  Remote Address: %s\n", conn.RemoteAddr)
+		fmt.Fprintf(&sb, "  Connection Reused: %t\n", conn.ConnectionReused)
 		if conn.IdleTime > 0 {
-			sb.WriteString(fmt.Sprintf("  Idle Time: %v\n", conn.IdleTime))
+			fmt.Fprintf(&sb, "  Idle Time: %v\n", conn.IdleTime)
 		}
 		sb.WriteString("  Timing Breakdown:\n")
-		sb.WriteString(fmt.Sprintf("    DNS Lookup: %v\n", conn.DNSLookupTime))
-		sb.WriteString(fmt.Sprintf("    TCP Connect: %v\n", conn.ConnectTime))
+		fmt.Fprintf(&sb, "    DNS Lookup: %v\n", conn.DNSLookupTime)
+		fmt.Fprintf(&sb, "    TCP Connect: %v\n", conn.ConnectTime)
 		if conn.TLSTime > 0 {
-			sb.WriteString(fmt.Sprintf("    TLS Handshake: %v\n", conn.TLSTime))
+			fmt.Fprintf(&sb, "    TLS Handshake: %v\n", conn.TLSTime)
 		}
-		sb.WriteString(fmt.Sprintf("    First Byte: %v\n", conn.FirstByteTime))
+		fmt.Fprintf(&sb, "    First Byte: %v\n", conn.FirstByteTime)
 		sb.WriteString("\n")
 	}
 
@@ -452,13 +452,13 @@ func FormatHTTPErrorWithOverrides(info *HTTPErrorInfo, showHeaders []string) str
 	if info.SSEInfo != nil {
 		sse := info.SSEInfo
 		sb.WriteString("SSE Connection Details:\n")
-		sb.WriteString(fmt.Sprintf("  Events Received: %d\n", sse.EventsReceived))
-		sb.WriteString(fmt.Sprintf("  Last Event Time: %s\n", sse.LastEventTime.Format(time.RFC3339)))
-		sb.WriteString(fmt.Sprintf("  Stream Duration: %v\n", sse.StreamDuration))
-		sb.WriteString(fmt.Sprintf("  Connection Drops: %d\n", sse.ConnectionDrops))
+		fmt.Fprintf(&sb, "  Events Received: %d\n", sse.EventsReceived)
+		fmt.Fprintf(&sb, "  Last Event Time: %s\n", sse.LastEventTime.Format(time.RFC3339))
+		fmt.Fprintf(&sb, "  Stream Duration: %v\n", sse.StreamDuration)
+		fmt.Fprintf(&sb, "  Connection Drops: %d\n", sse.ConnectionDrops)
 		if sse.LastEventData != "" {
 			lastEvent := redact.Body(headerValue(info.Headers, "Content-Type"), []byte(sse.LastEventData))
-			sb.WriteString(fmt.Sprintf("  Last Event Data: %s\n", truncateString(lastEvent, 100)))
+			fmt.Fprintf(&sb, "  Last Event Data: %s\n", truncateString(lastEvent, 100))
 		}
 		sb.WriteString("\n")
 	}
@@ -520,7 +520,7 @@ func writeHeaderLines(sb *strings.Builder, headers map[string]string) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		sb.WriteString(fmt.Sprintf("  %s: %s\n", k, headers[k]))
+		fmt.Fprintf(sb, "  %s: %s\n", k, headers[k])
 	}
 }
 

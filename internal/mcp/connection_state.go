@@ -85,19 +85,19 @@ func GetConnectionDisplayMessage() string {
 	case StageDNSLookup:
 		return fmt.Sprintf("Resolving DNS for %s...", state.URL)
 	case StageTCPConnect:
-		return fmt.Sprintf("Establishing TCP connection...")
+		return "Establishing TCP connection..."
 	case StageTLSHandshake:
-		return fmt.Sprintf("Performing TLS handshake...")
+		return "Performing TLS handshake..."
 	case StageRequestSent:
-		return fmt.Sprintf("MCP initialize request sent...")
+		return "MCP initialize request sent..."
 	case StageWaitingResponse:
 		return fmt.Sprintf("Waiting for server response... (%s)", state.Duration.Round(time.Second))
 	case StageResponseReceived:
-		return fmt.Sprintf("Processing server response...")
+		return "Processing server response..."
 	case StageFailed:
 		return fmt.Sprintf("Connection failed: %s", state.Error)
 	case StageCompleted:
-		return fmt.Sprintf("Connected successfully!")
+		return "Connected successfully!"
 	default:
 		return state.Message
 	}

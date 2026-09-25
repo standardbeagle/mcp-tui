@@ -1,6 +1,7 @@
 package capabilities
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -231,7 +232,7 @@ func TestSnapshot_JSON_DeterministicMapOrder(t *testing.T) {
 		if err != nil {
 			t.Fatalf("repeat Marshal: %v", err)
 		}
-		if string(again) != string(first) {
+		if !bytes.Equal(again, first) {
 			t.Fatalf("non-deterministic marshal at iteration %d:\nfirst: %s\nagain: %s", i, first, again)
 		}
 	}

@@ -261,7 +261,7 @@ func writeConformText(w io.Writer, results []conform.ScenarioResult) {
 }
 
 // writeJUnitFile builds the JUnit suite and writes it to path, creating or
-// truncating as needed. Mode 0644 is conventional for CI artefacts; tests
+// truncating as needed. Mode 0644 is conventional for CI artifacts; tests
 // override the path to a temp file.
 func writeJUnitFile(path string, results []conform.ScenarioResult) error {
 	suite := conform.BuildJUnitReport("mcp-tui.conform", results)

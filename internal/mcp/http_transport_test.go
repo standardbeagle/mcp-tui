@@ -8,10 +8,11 @@ import (
 	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
-	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
-	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
 // newTestMCPServer stands up a real MCP server behind an httptest server,

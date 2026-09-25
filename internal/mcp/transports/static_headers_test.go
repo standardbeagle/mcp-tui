@@ -26,7 +26,7 @@ func TestStaticHeadersRoundTripper_AppliesHeaders(t *testing.T) {
 	})
 	client := &http.Client{Transport: rt}
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
@@ -61,7 +61,7 @@ func TestStaticHeadersRoundTripper_DoesNotOverrideExisting(t *testing.T) {
 	})
 	client := &http.Client{Transport: rt}
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -91,7 +91,7 @@ func TestStaticHeadersRoundTripper_NilHeadersPassthrough(t *testing.T) {
 	rt := newStaticHeadersRoundTripper(http.DefaultTransport, nil)
 	client := &http.Client{Transport: rt}
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
 	req.Header.Set("X-Existing", "yes")
 	resp, err := client.Do(req)
 	if err != nil {

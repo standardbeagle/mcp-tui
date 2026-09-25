@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 

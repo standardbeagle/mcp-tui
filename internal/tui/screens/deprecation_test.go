@@ -19,7 +19,7 @@ func samplingRequest(includeContext string) *sampling.PendingRequest {
 			MaxTokens:      256,
 			IncludeContext: includeContext,
 			Messages: []*officialMCP.SamplingMessage{
-				{Role: "user", Content: &officialMCP.TextContent{Text: "Summarise the release notes"}},
+				{Role: "user", Content: &officialMCP.TextContent{Text: "Summarize the release notes"}},
 			},
 		},
 	}}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
@@ -276,9 +277,9 @@ func (t Tool) DisplayName() string {
 //     when readOnlyHint is true per the MCP spec).
 //   - Annotations missing or DestructiveHint nil ⇒ NOT destructive. mcp-tui
 //     deliberately diverges from the spec's "default true" so existing
-//     unannotated tools keep their no-prompt behaviour; servers must opt in
+//     unannotated tools keep their no-prompt behavior; servers must opt in
 //     by advertising destructiveHint=true to trigger a confirm gate.
-//   - Otherwise the advertised hint is honoured.
+//   - Otherwise the advertised hint is honored.
 func (t Tool) IsDestructive() bool {
 	if t.Annotations == nil {
 		return false

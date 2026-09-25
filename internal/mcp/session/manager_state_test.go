@@ -9,9 +9,10 @@ import (
 	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 )
 
 // newConnectedPair wires a real client and server over the SDK's in-memory

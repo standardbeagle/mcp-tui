@@ -783,7 +783,7 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if jsonBytes, err := json.MarshalIndent(content, "", "  "); err == nil {
 							resultText.Write(jsonBytes)
 						} else {
-							resultText.WriteString(fmt.Sprintf("%v", content))
+							fmt.Fprintf(&resultText, "%v", content)
 						}
 					}
 				}
@@ -1320,16 +1320,17 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		// Handle enter based on current position
-		if ts.cursor == executePos {
+		switch ts.cursor {
+		case executePos:
 			// Execute button — gate destructive tools behind a confirm overlay.
 			// The check uses the same IsDestructive() helper as the CLI prompt
-			// so behaviour stays in lock-step across the two surfaces.
+			// so behavior stays in lock-step across the two surfaces.
 			if ts.tool.IsDestructive() && !ts.confirmBypassed {
 				ts.pendingConfirm = true
 				return ts, openConfirmOverlay(ts.tool)
 			}
 			return ts, ts.executeTool()
-		} else if ts.cursor == cliPos {
+		case cliPos:
 			// CLI button
 			ts.cliCommand = ts.generateCLICommand()
 			ts.showCLICommand = true
@@ -1341,7 +1342,7 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
 			}
 			return ts, nil
-		} else if ts.cursor == backPos {
+		case backPos:
 			// Back button
 			return ts, func() tea.Msg { return BackMsg{} }
 		}
@@ -2045,7 +2046,7 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 	// banner is intentionally non-blocking — the result still renders below
 	// — because the spec calls these "warnings, not errors": consumers may
 	// still want to see the data, they just need to know the contract was
-	// not honoured.
+	// not honored.
 	if violations := ts.result.OutputViolations; len(violations) > 0 {
 		// Yellow + bold matches the schema-error warning palette used
 		// elsewhere on this screen so the visual treatment is consistent.

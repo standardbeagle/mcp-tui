@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 )

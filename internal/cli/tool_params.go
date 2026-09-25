@@ -109,7 +109,7 @@ func convertToKind(kind inputschema.Kind, key, value string) (interface{}, error
 		return nil, nil
 
 	default:
-		// An unrecognised schema type is not something we can validate against.
+		// An unrecognized schema type is not something we can validate against.
 		// Preserve the value verbatim rather than inventing a conversion.
 		return value, nil
 	}

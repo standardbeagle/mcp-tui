@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 

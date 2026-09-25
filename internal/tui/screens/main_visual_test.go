@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 )

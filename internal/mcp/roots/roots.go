@@ -134,7 +134,7 @@ func LoadFile(path string) ([]*officialMCP.Root, error) {
 // authority and emits "file://C:/foo/bar", where "C:" is the *host*. A file URI
 // needs "file:///C:/foo/bar", so the slash is added explicitly.
 //
-// It takes the path rather than deriving it so the Windows behaviour can be
+// It takes the path rather than deriving it so the Windows behavior can be
 // tested from any platform.
 func absPathToFileURI(abs string) string {
 	slashed := filepath.ToSlash(abs)

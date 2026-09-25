@@ -163,7 +163,7 @@ func TestNewResourceTemplateScreen_ExtractsVariables(t *testing.T) {
 }
 
 // TestResourceTemplateScreen_TabFiresCompletion verifies the load-bearing
-// Tab → completion/complete behaviour. The dispatched command must hit the
+// Tab → completion/complete behavior. The dispatched command must hit the
 // fake service and the variable name must match the focused field.
 func TestResourceTemplateScreen_TabFiresCompletion(t *testing.T) {
 	svc := &fakeCompletionService{

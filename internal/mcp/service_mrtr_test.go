@@ -25,7 +25,7 @@ func TestService_CallTool_FulfilsMRTRInputRequests(t *testing.T) {
 			if req.Params.InputResponses == nil {
 				return &officialMCP.CallToolResult{InputRequests: officialMCP.InputRequestMap{
 					"notes": &officialMCP.CreateMessageParams{MaxTokens: 64, Messages: []*officialMCP.SamplingMessage{
-						{Role: "user", Content: &officialMCP.TextContent{Text: "Summarise the release"}},
+						{Role: "user", Content: &officialMCP.TextContent{Text: "Summarize the release"}},
 					}},
 					"confirm": &officialMCP.ElicitParams{Message: "Tag the release?", RequestedSchema: map[string]any{"type": "object"}},
 					"roots":   &officialMCP.ListRootsParams{},

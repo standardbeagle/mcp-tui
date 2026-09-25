@@ -660,16 +660,16 @@ func (ds *DebugScreen) renderStats() string {
 
 		errorRate := float64(ds.mcpStats["errors"]) / float64(total) * 100
 		if errorRate > 10 {
-			builder.WriteString(fmt.Sprintf("⚠️  High error rate: %.1f%%\n", errorRate))
+			fmt.Fprintf(&builder, "⚠️  High error rate: %.1f%%\n", errorRate)
 		} else if errorRate > 0 {
-			builder.WriteString(fmt.Sprintf("✅ Error rate: %.1f%%\n", errorRate))
+			fmt.Fprintf(&builder, "✅ Error rate: %.1f%%\n", errorRate)
 		} else {
 			builder.WriteString("✅ No errors detected\n")
 		}
 
 		if ds.mcpStats["requests"] > 0 && ds.mcpStats["responses"] > 0 {
 			responseRate := float64(ds.mcpStats["responses"]) / float64(ds.mcpStats["requests"]) * 100
-			builder.WriteString(fmt.Sprintf("📤 Response rate: %.1f%%\n", responseRate))
+			fmt.Fprintf(&builder, "📤 Response rate: %.1f%%\n", responseRate)
 		}
 	}
 
@@ -714,11 +714,11 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 			if !conn.ConnectionReused {
 				builder.WriteString("• Fresh connection established (not reused)\n")
 			} else {
-				builder.WriteString(fmt.Sprintf("• Connection reused (idle: %v)\n", conn.IdleTime))
+				fmt.Fprintf(&builder, "• Connection reused (idle: %v)\n", conn.IdleTime)
 			}
 
 			totalTime := conn.DNSLookupTime + conn.ConnectTime + conn.TLSTime + conn.FirstByteTime
-			builder.WriteString(fmt.Sprintf("• Total connection time: %v\n", totalTime))
+			fmt.Fprintf(&builder, "• Total connection time: %v\n", totalTime)
 
 			if conn.FirstByteTime > 5*time.Second {
 				builder.WriteString("⚠️  Slow first byte time - server may be overloaded\n")
@@ -735,7 +735,7 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 
 		if httpInfo.SSEInfo != nil {
 			sse := httpInfo.SSEInfo
-			builder.WriteString(fmt.Sprintf("• Stream duration: %v\n", sse.StreamDuration))
+			fmt.Fprintf(&builder, "• Stream duration: %v\n", sse.StreamDuration)
 
 			if sse.StreamDuration < 100*time.Millisecond {
 				builder.WriteString("⚠️  Very short stream duration - connection dropped quickly\n")
@@ -1003,9 +1003,9 @@ func (ds *DebugScreen) renderCapabilities() string {
 	var b strings.Builder
 
 	b.WriteString("⚙️  Negotiated MCP Capabilities\n\n")
-	b.WriteString(fmt.Sprintf("Protocol Version: %s\n", capDisplayString(snap.ProtocolVersion)))
+	fmt.Fprintf(&b, "Protocol Version: %s\n", capDisplayString(snap.ProtocolVersion))
 	if snap.Instructions != "" {
-		b.WriteString(fmt.Sprintf("Instructions: %s\n", snap.Instructions))
+		fmt.Fprintf(&b, "Instructions: %s\n", snap.Instructions)
 	}
 	b.WriteString("\n")
 
@@ -1039,21 +1039,21 @@ func capDisplayString(s string) string {
 // stays uncluttered.
 func renderImplementation(role string, impl *capabilities.Implementation) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("── %s ──\n", role))
+	fmt.Fprintf(&b, "── %s ──\n", role)
 	if impl == nil {
 		b.WriteString("  <not reported>\n")
 		return b.String()
 	}
-	b.WriteString(fmt.Sprintf("  Name:    %s\n", capDisplayString(impl.Name)))
+	fmt.Fprintf(&b, "  Name:    %s\n", capDisplayString(impl.Name))
 	if impl.Title != "" {
-		b.WriteString(fmt.Sprintf("  Title:   %s\n", impl.Title))
+		fmt.Fprintf(&b, "  Title:   %s\n", impl.Title)
 	}
-	b.WriteString(fmt.Sprintf("  Version: %s\n", capDisplayString(impl.Version)))
+	fmt.Fprintf(&b, "  Version: %s\n", capDisplayString(impl.Version))
 	if impl.Description != "" {
 		fmt.Fprintf(&b, "  About:   %s\n", impl.Description)
 	}
 	if impl.WebsiteURL != "" {
-		b.WriteString(fmt.Sprintf("  Website: %s\n", impl.WebsiteURL))
+		fmt.Fprintf(&b, "  Website: %s\n", impl.WebsiteURL)
 	}
 	for _, icon := range impl.Icons {
 		fmt.Fprintf(&b, "  Icon:    %s\n", mcp.DescribeIcon(icon))
@@ -1079,15 +1079,15 @@ func renderServerCaps(caps *capabilities.ServerCaps) string {
 		b.WriteString("    ✓ logging\n")
 	}
 	if caps.Prompts != nil {
-		b.WriteString(fmt.Sprintf("    ✓ prompts%s\n", subFlags(caps.Prompts.ListChanged, false)))
+		fmt.Fprintf(&b, "    ✓ prompts%s\n", subFlags(caps.Prompts.ListChanged, false))
 	}
 	if caps.Resources != nil {
 		// ResourceCapabilities has both ListChanged and Subscribe.
-		b.WriteString(fmt.Sprintf("    ✓ resources%s\n",
-			subFlagsResources(caps.Resources.ListChanged, caps.Resources.Subscribe)))
+		fmt.Fprintf(&b, "    ✓ resources%s\n",
+			subFlagsResources(caps.Resources.ListChanged, caps.Resources.Subscribe))
 	}
 	if caps.Tools != nil {
-		b.WriteString(fmt.Sprintf("    ✓ tools%s\n", subFlags(caps.Tools.ListChanged, false)))
+		fmt.Fprintf(&b, "    ✓ tools%s\n", subFlags(caps.Tools.ListChanged, false))
 	}
 	if caps.Completions != nil {
 		b.WriteString("    ✓ completions\n")
@@ -1101,13 +1101,13 @@ func renderServerCaps(caps *capabilities.ServerCaps) string {
 	if len(caps.Experimental) > 0 {
 		b.WriteString("  Experimental:\n")
 		for _, k := range sortedMapKeys(caps.Experimental) {
-			b.WriteString(fmt.Sprintf("    %s: %s\n", k, summarizeValue(caps.Experimental[k])))
+			fmt.Fprintf(&b, "    %s: %s\n", k, summarizeValue(caps.Experimental[k]))
 		}
 	}
 	if len(caps.Extensions) > 0 {
 		b.WriteString("  Extensions:\n")
 		for _, k := range sortedMapKeys(caps.Extensions) {
-			b.WriteString(fmt.Sprintf("    %s: %s\n", k, summarizeValue(caps.Extensions[k])))
+			fmt.Fprintf(&b, "    %s: %s\n", k, summarizeValue(caps.Extensions[k]))
 		}
 	}
 	return b.String()
@@ -1123,14 +1123,14 @@ func renderClientCaps(caps *capabilities.ClientCaps) string {
 	}
 
 	if caps.Roots != nil {
-		b.WriteString(fmt.Sprintf("    ✓ roots%s\n", subFlags(caps.Roots.ListChanged, false)))
+		fmt.Fprintf(&b, "    ✓ roots%s\n", subFlags(caps.Roots.ListChanged, false))
 	}
 	if caps.Sampling != nil {
 		extra := ""
 		if caps.Sampling.Tools != nil {
 			extra = " (tools)"
 		}
-		b.WriteString(fmt.Sprintf("    ✓ sampling%s\n", extra))
+		fmt.Fprintf(&b, "    ✓ sampling%s\n", extra)
 	}
 	if caps.Elicitation != nil {
 		extra := ""
@@ -1144,7 +1144,7 @@ func renderClientCaps(caps *capabilities.ClientCaps) string {
 				extra = " (form, url)"
 			}
 		}
-		b.WriteString(fmt.Sprintf("    ✓ elicitation%s\n", extra))
+		fmt.Fprintf(&b, "    ✓ elicitation%s\n", extra)
 	}
 
 	if caps.Roots == nil && caps.Sampling == nil && caps.Elicitation == nil {
@@ -1154,13 +1154,13 @@ func renderClientCaps(caps *capabilities.ClientCaps) string {
 	if len(caps.Experimental) > 0 {
 		b.WriteString("  Experimental:\n")
 		for _, k := range sortedMapKeys(caps.Experimental) {
-			b.WriteString(fmt.Sprintf("    %s: %s\n", k, summarizeValue(caps.Experimental[k])))
+			fmt.Fprintf(&b, "    %s: %s\n", k, summarizeValue(caps.Experimental[k]))
 		}
 	}
 	if len(caps.Extensions) > 0 {
 		b.WriteString("  Extensions:\n")
 		for _, k := range sortedMapKeys(caps.Extensions) {
-			b.WriteString(fmt.Sprintf("    %s: %s\n", k, summarizeValue(caps.Extensions[k])))
+			fmt.Fprintf(&b, "    %s: %s\n", k, summarizeValue(caps.Extensions[k]))
 		}
 	}
 	return b.String()

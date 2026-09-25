@@ -8,8 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 // The text of the results the re-execution tests feed the screen.

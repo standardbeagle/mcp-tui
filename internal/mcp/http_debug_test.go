@@ -95,7 +95,7 @@ func TestDebugRoundTripperDoesNotBufferEventStream(t *testing.T) {
 	rt := &debugRoundTripper{base: http.DefaultTransport, debugMode: true}
 	client := &http.Client{Transport: rt}
 
-	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+	req, err := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 	defer cancel()

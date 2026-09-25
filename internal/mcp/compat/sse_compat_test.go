@@ -4,7 +4,7 @@
 //  1. Empty SSE keep-alive chunks (`data:\n\n`) — SEP-1699 / SDK PR #779.
 //     Some servers (and proxies) emit empty data events as keep-alives. The
 //     SDK treats them as priming events and skips them. mcp-tui is a thin
-//     wrapper, so the behaviour should propagate, but until this test was
+//     wrapper, so the behavior should propagate, but until this test was
 //     added we had no assertion proving it.
 //
 //  2. Parameterized Content-Type (`application/json; charset=utf-8`) —

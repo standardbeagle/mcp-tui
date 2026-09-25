@@ -178,7 +178,7 @@ func TestMethodHeadersRoundTripper_NonJSONBodyPasses(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	}))
-	req := httptest.NewRequest(http.MethodGet, "http://example.test/sse", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://example.test/sse", http.NoBody)
 	resp, err := rt.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("RoundTrip returned error: %v", err)

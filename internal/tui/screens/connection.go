@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/tui/models"
@@ -471,10 +472,11 @@ func (cs *ConnectionScreen) handleSavedConnectionsInput(msg tea.KeyMsg) (tea.Mod
 		return cs, nil
 
 	case "enter":
-		if cs.focusIndex == 0 {
+		switch cs.focusIndex {
+		case 0:
 			// Select current saved connection and connect
 			return cs.handleSavedConnectionConnect()
-		} else if cs.focusIndex == cs.maxFocus-1 {
+		case cs.maxFocus - 1:
 			// Connect button
 			return cs.handleSavedConnectionConnect()
 		}
@@ -573,9 +575,10 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 						cs.combinedInput, cmd = cs.combinedInput.Update(msg)
 					}
 				} else {
-					if cs.focusIndex == 1 {
+					switch cs.focusIndex {
+					case 1:
 						cs.commandInput, cmd = cs.commandInput.Update(msg)
-					} else if cs.focusIndex == 2 {
+					case 2:
 						cs.argsInput, cmd = cs.argsInput.Update(msg)
 					}
 				}
@@ -801,9 +804,10 @@ func (cs *ConnectionScreen) updateInputFocus() {
 				cs.combinedInput.Focus()
 			}
 		} else {
-			if cs.focusIndex == 1 {
+			switch cs.focusIndex {
+			case 1:
 				cs.commandInput.Focus()
-			} else if cs.focusIndex == 2 {
+			case 2:
 				cs.argsInput.Focus()
 			}
 		}
@@ -1039,17 +1043,17 @@ func (cs *ConnectionScreen) renderSavedConnections() string {
 
 		// Build connection card content
 		var cardContent strings.Builder
-		cardContent.WriteString(fmt.Sprintf("%s %s\n", connection.Icon, connection.Name))
-		cardContent.WriteString(fmt.Sprintf("Transport: %s\n", connection.Transport))
+		fmt.Fprintf(&cardContent, "%s %s\n", connection.Icon, connection.Name)
+		fmt.Fprintf(&cardContent, "Transport: %s\n", connection.Transport)
 
 		if connection.Command != "" {
-			cardContent.WriteString(fmt.Sprintf("Command: %s\n", connection.Command))
+			fmt.Fprintf(&cardContent, "Command: %s\n", connection.Command)
 		}
 		if connection.URL != "" {
-			cardContent.WriteString(fmt.Sprintf("URL: %s\n", connection.URL))
+			fmt.Fprintf(&cardContent, "URL: %s\n", connection.URL)
 		}
 		if connection.Description != "" {
-			cardContent.WriteString(fmt.Sprintf("Description: %s", connection.Description))
+			fmt.Fprintf(&cardContent, "Description: %s", connection.Description)
 		}
 
 		card := style.Render(cardContent.String())
@@ -1104,11 +1108,11 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 		}
 
 		// File header with path
-		cardContent.WriteString(fmt.Sprintf("%s %s\n", formatIcon, file.Name))
-		cardContent.WriteString(fmt.Sprintf("📂 %s\n", file.Path))
+		fmt.Fprintf(&cardContent, "%s %s\n", formatIcon, file.Name)
+		fmt.Fprintf(&cardContent, "📂 %s\n", file.Path)
 
 		if file.Accessible && len(file.Servers) > 0 {
-			cardContent.WriteString(fmt.Sprintf("\nServers (%d):\n", len(file.Servers)))
+			fmt.Fprintf(&cardContent, "\nServers (%d):\n", len(file.Servers))
 
 			// List servers with name and description
 			for j, server := range file.Servers {
@@ -1136,7 +1140,7 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 		} else if file.Accessible {
 			cardContent.WriteString("\n⚠️  No servers found")
 		} else {
-			cardContent.WriteString(fmt.Sprintf("\n❌ Error: %s", file.Error))
+			fmt.Fprintf(&cardContent, "\n❌ Error: %s", file.Error)
 		}
 
 		card := style.Render(cardContent.String())
@@ -1276,10 +1280,10 @@ func (cs *ConnectionScreen) renderStdioFields() string {
 		combinedLabel := "Full Command:"
 		if cs.focusIndex == 1 {
 			combinedLabel = cs.focusedStyle.Render(combinedLabel)
-			builder.WriteString(fmt.Sprintf("%s\n%s", combinedLabel, cs.focusedStyle.Render(cs.combinedInput.View())))
+			fmt.Fprintf(&builder, "%s\n%s", combinedLabel, cs.focusedStyle.Render(cs.combinedInput.View()))
 		} else {
 			combinedLabel = cs.blurredStyle.Render(combinedLabel)
-			builder.WriteString(fmt.Sprintf("%s\n%s", combinedLabel, cs.blurredStyle.Render(cs.combinedInput.View())))
+			fmt.Fprintf(&builder, "%s\n%s", combinedLabel, cs.blurredStyle.Render(cs.combinedInput.View()))
 		}
 	} else {
 		// Separate command and args fields
@@ -1287,20 +1291,20 @@ func (cs *ConnectionScreen) renderStdioFields() string {
 		commandLabel := "Command:"
 		if cs.focusIndex == 1 {
 			commandLabel = cs.focusedStyle.Render(commandLabel)
-			builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, cs.focusedStyle.Render(cs.commandInput.View())))
+			fmt.Fprintf(&builder, "%s\n%s\n\n", commandLabel, cs.focusedStyle.Render(cs.commandInput.View()))
 		} else {
 			commandLabel = cs.blurredStyle.Render(commandLabel)
-			builder.WriteString(fmt.Sprintf("%s\n%s\n\n", commandLabel, cs.blurredStyle.Render(cs.commandInput.View())))
+			fmt.Fprintf(&builder, "%s\n%s\n\n", commandLabel, cs.blurredStyle.Render(cs.commandInput.View()))
 		}
 
 		// Args field
 		argsLabel := "Arguments:"
 		if cs.focusIndex == 2 {
 			argsLabel = cs.focusedStyle.Render(argsLabel)
-			builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, cs.focusedStyle.Render(cs.argsInput.View())))
+			fmt.Fprintf(&builder, "%s\n%s", argsLabel, cs.focusedStyle.Render(cs.argsInput.View()))
 		} else {
 			argsLabel = cs.blurredStyle.Render(argsLabel)
-			builder.WriteString(fmt.Sprintf("%s\n%s", argsLabel, cs.blurredStyle.Render(cs.argsInput.View())))
+			fmt.Fprintf(&builder, "%s\n%s", argsLabel, cs.blurredStyle.Render(cs.argsInput.View()))
 		}
 	}
 

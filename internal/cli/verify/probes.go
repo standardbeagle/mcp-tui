@@ -354,7 +354,7 @@ func ProbeOriginHeader(ctx context.Context, t Target) ProbeResult {
 
 	// GET without Origin: should NOT be rejected with 403/421 (those would
 	// indicate over-broad enforcement).
-	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, t.URL, nil)
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, t.URL, http.NoBody)
 	if err != nil {
 		return ProbeResult{Name: name, Pass: false, Error: err.Error(), Fix: "verify the URL is well-formed"}
 	}

@@ -1321,7 +1321,7 @@ func (ms *MainScreen) View() string {
 
 		// Show elapsed time
 		if elapsed > 2*time.Second {
-			builder.WriteString(fmt.Sprintf(" (%s)", elapsed.Round(time.Second)))
+			fmt.Fprintf(&builder, " (%s)", elapsed.Round(time.Second))
 		}
 		return builder.String()
 	}

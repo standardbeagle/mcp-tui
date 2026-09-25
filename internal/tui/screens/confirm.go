@@ -25,7 +25,7 @@ type ConfirmDecisionMsg struct {
 // badges, then prompts Y/N. The decision is delivered as a ConfirmDecisionMsg
 // followed by the standard BackMsg that closes the overlay.
 //
-// The screen has no behaviour beyond capturing a Y/N decision — the parent
+// The screen has no behavior beyond capturing a Y/N decision — the parent
 // owns the actual execution so this overlay stays trivially testable and
 // reusable for future confirmation gates (e.g. resource writes).
 type ConfirmScreen struct {

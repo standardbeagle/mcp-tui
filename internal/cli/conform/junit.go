@@ -53,7 +53,7 @@ type JUnitTestCase struct {
 }
 
 // JUnitFailure holds the failure metadata. Message is the short summary
-// shown in CI dashboards; Type categorises the failure ("Failure" vs
+// shown in CI dashboards; Type categorizes the failure ("Failure" vs
 // "Error" — we always emit "Failure" because conformance is binary). The
 // chardata body carries the detail (stack-trace equivalent).
 type JUnitFailure struct {

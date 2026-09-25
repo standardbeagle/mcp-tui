@@ -10,7 +10,7 @@ import (
 // TestRedactHeaders_DefaultsRedactSensitive verifies that without any overrides
 // the well-known sensitive headers (Authorization, Cookie, Set-Cookie) are
 // rendered as [REDACTED] while other headers pass through verbatim. The
-// expected behaviour mirrors what proxies and CI log scrubbers do — the values
+// expected behavior mirrors what proxies and CI log scrubbers do — the values
 // are short-circuited to a sentinel so a screenshot or copy-paste of the debug
 // pane never leaks bearer tokens.
 func TestRedactHeaders_DefaultsRedactSensitive(t *testing.T) {
@@ -151,7 +151,7 @@ func TestCaptureRoundTrip_PopulatesRequestAndResponseHeaders(t *testing.T) {
 	prev := GetLastHTTPError()
 	defer setLastHTTPError(prev)
 
-	req, err := http.NewRequest(http.MethodPost, "https://example.com/mcp", nil)
+	req, err := http.NewRequest(http.MethodPost, "https://example.com/mcp", http.NoBody)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}

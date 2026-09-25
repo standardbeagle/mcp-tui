@@ -11,7 +11,7 @@ import (
 // rather than through ParseFlag: a drive path has no leading slash, so
 // url.URL.String() would read "C:" as the authority and emit "file://C:/foo",
 // silently sending a malformed root URI to the server. Testing the conversion
-// directly exercises the Windows behaviour from any OS.
+// directly exercises the Windows behavior from any OS.
 func TestAbsPathToFileURI(t *testing.T) {
 	tests := []struct {
 		name string

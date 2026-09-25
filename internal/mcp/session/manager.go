@@ -8,6 +8,7 @@ import (
 	"time"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"

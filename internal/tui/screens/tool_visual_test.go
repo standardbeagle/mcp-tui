@@ -35,7 +35,7 @@ func TestToolReExecutionVisual(t *testing.T) {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
 				Content: []imcp.Content{
-					imcp.Content{
+					{
 						Type: "text",
 						Text: `{"temp": "72°F", "condition": "Sunny"}`,
 					},
@@ -50,7 +50,7 @@ func TestToolReExecutionVisual(t *testing.T) {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
 				Content: []imcp.Content{
-					imcp.Content{
+					{
 						Type: "text",
 						Text: `{"temp": "72°F", "condition": "Sunny"}`,
 					},
@@ -65,7 +65,7 @@ func TestToolReExecutionVisual(t *testing.T) {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
 				Content: []imcp.Content{
-					imcp.Content{
+					{
 						Type: "text",
 						Text: `{"temp": "75°F", "condition": "Partly Cloudy"}`,
 					},

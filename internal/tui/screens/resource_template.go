@@ -145,7 +145,7 @@ func (s *ResourceTemplateScreen) Init() tea.Cmd { return nil }
 
 // Update routes incoming messages. Tab fires completion, Enter reads the
 // expanded resource, Esc/q goes back. Async messages (suggestions, read
-// result) are funnelled through helper methods so the keystroke path stays
+// result) are funneled through helper methods so the keystroke path stays
 // short.
 func (s *ResourceTemplateScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
@@ -303,7 +303,7 @@ func (s *ResourceTemplateScreen) handleCompletions(msg resourceTemplateCompletio
 }
 
 // readResource expands the template using the current field values and asks
-// the service to read the resulting URI. The result is funnelled through the
+// the service to read the resulting URI. The result is funneled through the
 // existing ResourceContentLoadedMsg so the parent main screen pops the
 // viewer.
 func (s *ResourceTemplateScreen) readResource() tea.Cmd {

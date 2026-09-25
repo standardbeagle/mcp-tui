@@ -81,7 +81,7 @@ func ServerExitsImmediately(t *testing.T) (command string, args []string) {
 }
 
 // ServerFailsWithStderr is a stand-in MCP server that writes msg to stderr and
-// exits non-zero, modelling a server that dies during startup.
+// exits non-zero, modeling a server that dies during startup.
 func ServerFailsWithStderr(t *testing.T, msg string) (command string, args []string) {
 	t.Helper()
 	body := "[Console]::Error.WriteLine(" + psQuote(msg) + ")\nexit 1\n"
@@ -96,7 +96,7 @@ func ServerSleeps(t *testing.T, seconds float64) (command string, args []string)
 	return Script(t, "sleeps", body)
 }
 
-// ServerPrintsThenSleeps writes msg to stdout and then stays alive, modelling a
+// ServerPrintsThenSleeps writes msg to stdout and then stays alive, modeling a
 // server that announces itself but never speaks MCP. The flush matters:
 // PowerShell buffers a redirected stdout, so without it msg arrives only
 // when the process exits.

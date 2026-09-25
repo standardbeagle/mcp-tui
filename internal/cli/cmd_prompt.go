@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
+
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 

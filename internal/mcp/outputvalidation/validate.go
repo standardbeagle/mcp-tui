@@ -25,7 +25,7 @@ import (
 // Validate checks structuredContent against schema. Returns a slice of
 // human-readable violation strings (empty when valid).
 //
-// Behaviour:
+// Behavior:
 //   - schema == nil → no violations (no-op; outputSchema is optional).
 //   - structuredContent == nil with a non-nil schema → returns one violation
 //     reporting the missing structured payload, because the spec says the
@@ -58,7 +58,7 @@ func Validate(schema any, structuredContent any) []string {
 		return []string{fmt.Sprintf("output schema could not be parsed: %v", err)}
 	}
 	if resolved == nil {
-		// Empty/unrecognised schema after round-trip — treat as no-op so
+		// Empty/unrecognized schema after round-trip — treat as no-op so
 		// servers that send {} don't trigger noise.
 		return nil
 	}
@@ -133,7 +133,7 @@ func isNil(v any) bool {
 	}
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func, reflect.Interface:
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func, reflect.Interface:
 		return rv.IsNil()
 	}
 	return false

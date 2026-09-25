@@ -47,9 +47,9 @@ func (e MCPLogEntry) String() string {
 		}
 	case MCPMessageResponse:
 		if e.Error != nil {
-			mainInfo = fmt.Sprintf("❌ ERR")
+			mainInfo = "❌ ERR"
 		} else {
-			mainInfo = fmt.Sprintf("✅ RES")
+			mainInfo = "✅ RES"
 		}
 		if e.ID != nil {
 			mainInfo += fmt.Sprintf(" (id:%v)", e.ID)
@@ -105,9 +105,10 @@ func (e MCPLogEntry) DetailedString() string {
 	}
 
 	directionIcon := e.Direction
-	if e.Direction == "→" {
+	switch e.Direction {
+	case "→":
 		directionIcon = "🔵 →" // Outgoing
-	} else if e.Direction == "←" {
+	case "←":
 		directionIcon = "🟢 ←" // Incoming
 	}
 

@@ -43,14 +43,14 @@ type TransportConfig struct {
 	OAuthHandler auth.OAuthHandler
 
 	// MCPMethodHeaders enables SEP-2243 advisory HTTP headers (MCP-Method,
-	// MCP-Name) on every JSON-RPC request. Honoured by HTTP, SSE, and
+	// MCP-Name) on every JSON-RPC request. Honored by HTTP, SSE, and
 	// streamable-HTTP transports; STDIO ignores it because the headers only
 	// make sense over an HTTP wire.
 	MCPMethodHeaders bool
 
 	// StaticHeaders is the merged set of headers sourced from repeatable
 	// --header KEY=VALUE flags plus any headers carried in saved-connection
-	// JSON. Honoured by HTTP/SSE/streamable-HTTP transports via a
+	// JSON. Honored by HTTP/SSE/streamable-HTTP transports via a
 	// RoundTripper that adds each entry to outgoing requests when not
 	// already present. Existing protocol headers (Content-Type, Accept) win
 	// — these flags are purely additive.

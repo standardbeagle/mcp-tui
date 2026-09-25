@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
-	"github.com/standardbeagle/mcp-tui/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
+
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // TestConfig_ModeAndValidate exercises the mode-inference table and the
@@ -196,7 +197,7 @@ func TestClientCredentialsFlow_BadSecret(t *testing.T) {
 	h, err := NewHandler(cfg, http.DefaultClient, cache)
 	require.NoError(t, err)
 
-	req, _ := http.NewRequest(http.MethodGet, srv.ResourceURL(), nil)
+	req, _ := http.NewRequest(http.MethodGet, srv.ResourceURL(), http.NoBody)
 	resp := &http.Response{
 		StatusCode: http.StatusUnauthorized,
 		Header:     http.Header{},

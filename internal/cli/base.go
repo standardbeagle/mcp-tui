@@ -11,6 +11,7 @@ import (
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
@@ -239,7 +240,7 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 
 	// Plumb --show-headers into the global redaction-override list used by
 	// FormatHTTPError. Setting it here (rather than per-subcommand) means
-	// every CLI subcommand that invokes the debug formatter honours the
+	// every CLI subcommand that invokes the debug formatter honors the
 	// override consistently.
 	if showHeaders, _ := cmd.Flags().GetString("show-headers"); showHeaders != "" {
 		mcp.SetShowHeaderOverrides(mcp.ParseShowHeadersCSV(showHeaders))

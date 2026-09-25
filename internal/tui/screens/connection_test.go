@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/standardbeagle/mcp-tui/internal/config"
 )
 
 // newIsolatedConnectionScreen builds a connection screen against an empty home

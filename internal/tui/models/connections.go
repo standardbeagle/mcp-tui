@@ -176,7 +176,7 @@ func (cm *ConnectionsManager) loadClaudeDesktopFormat(data []byte) bool {
 		entry := &ConnectionEntry{
 			ID:          id,
 			Name:        strings.Title(strings.ReplaceAll(id, "-", " ")),
-			Description: fmt.Sprintf("Imported from Claude Desktop config"),
+			Description: "Imported from Claude Desktop config",
 			Transport:   config.TransportStdio,
 			Command:     server.Command,
 			Args:        server.Args,
@@ -221,7 +221,7 @@ func (cm *ConnectionsManager) loadVSCodeFormat(data []byte) bool {
 		entry := &ConnectionEntry{
 			ID:          id,
 			Name:        strings.Title(strings.ReplaceAll(id, "-", " ")),
-			Description: fmt.Sprintf("Imported from VS Code config"),
+			Description: "Imported from VS Code config",
 			Command:     server.Command,
 			Args:        server.Args,
 			URL:         server.URL,

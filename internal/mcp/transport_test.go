@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/stretchr/testify/assert"
+
+	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 )
 
 func TestTransportTypeValidation(t *testing.T) {
