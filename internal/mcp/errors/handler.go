@@ -254,7 +254,7 @@ func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 
 	// Add recent error patterns
 	if len(stats.ErrorHistory) > 0 {
-		var recentErrors []map[string]interface{}
+		recentErrors := make([]map[string]interface{}, 0, len(stats.ErrorHistory))
 		for _, err := range stats.ErrorHistory {
 			recentErrors = append(recentErrors, map[string]interface{}{
 				"category": err.Category.String(),

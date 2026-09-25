@@ -684,7 +684,7 @@ func (cm *ConnectionsManager) extractVSCodeServers(vscodeServers map[string]inte
 
 // extractNativeServers extracts server information from MCP-TUI native format
 func (cm *ConnectionsManager) extractNativeServers(nativeServers map[string]*ConnectionEntry) []ServerInfo {
-	var servers []ServerInfo
+	servers := make([]ServerInfo, 0, len(nativeServers))
 
 	for name, entry := range nativeServers {
 		server := ServerInfo{

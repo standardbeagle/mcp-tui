@@ -24,12 +24,10 @@ type ConnectionScreen struct {
 	// Connections management
 	connectionsManager *models.ConnectionsManager
 	savedConnections   map[string]*models.ConnectionEntry
-	selectedConnection *models.ConnectionEntry
 
 	// File discovery
 	discoveredFiles []*models.DiscoveredConfigFile
 	discoveryIndex  int
-	showDiscovery   bool
 
 	// UI state
 	viewMode        string // "saved", "manual", or "discovery"
@@ -1207,7 +1205,7 @@ func (cs *ConnectionScreen) renderTransportSelection() string {
 	}
 
 	// Create horizontal options with proper styling
-	var options []string
+	options := make([]string, 0, 3)
 
 	// STDIO option
 	stdioText := "1) STDIO"
@@ -1349,12 +1347,4 @@ func (cs *ConnectionScreen) renderStatusMessage() string {
 	}
 
 	return style.Render(cs.statusMsg)
-}
-
-// checkmark returns a checkmark if selected
-func (cs *ConnectionScreen) checkmark(selected bool) string {
-	if selected {
-		return "✓"
-	}
-	return " "
 }

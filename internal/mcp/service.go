@@ -1266,7 +1266,7 @@ func (s *service) CallTool(ctx context.Context, req CallToolRequest) (*CallToolR
 func (s *service) toolResult(
 	ctx context.Context, toolName string, result *officialMCP.CallToolResult, rounds []RoundSummary,
 ) *CallToolResult {
-	var content []Content
+	content := make([]Content, 0, len(result.Content))
 	for _, c := range result.Content {
 		content = append(content, convertContent(c))
 	}

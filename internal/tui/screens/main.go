@@ -88,8 +88,6 @@ type MainScreen struct {
 	eventPaneFocus  int // 0=list, 1=detail
 
 	// Tool split view state
-	toolPaneFocus    int // 0=list, 1=detail (for future use)
-	toolListScroll   int // Scroll position for tool list
 	toolDetailScroll int // Scroll position for tool description
 
 	// Resource and prompt viewer state
@@ -1645,11 +1643,7 @@ func (ms *MainScreen) renderCurrentList() string {
 		totalHeight += height
 	}
 
-	if totalHeight <= availableHeight {
-		// Everything fits, no scrolling needed
-		startIdx = 0
-		endIdx = len(currentList)
-	} else {
+	if totalHeight > availableHeight {
 		// Need to scroll - find the best window around the selected item
 
 		// Start with the selected item and expand outward

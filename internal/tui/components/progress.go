@@ -94,9 +94,9 @@ func (ip *IndeterminateProgress) Render(elapsed time.Duration) string {
 	result := ""
 	for _, char := range bar {
 		if char == "█" {
-			result += ip.fillStyle.Render(string(char))
+			result += ip.fillStyle.Render(char)
 		} else {
-			result += ip.style.Render(string(char))
+			result += ip.style.Render(char)
 		}
 	}
 

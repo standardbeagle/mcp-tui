@@ -115,7 +115,8 @@ func ServerPrintsThenSleeps(t *testing.T, msg string, seconds float64) (command 
 // Each --arg is passed as is, so a path holding a comma stays whole.
 func ServerFlags(t *testing.T, command string, args []string) []string {
 	t.Helper()
-	flags := []string{"--cmd", command}
+	flags := make([]string, 0, 2+2*len(args))
+	flags = append(flags, "--cmd", command)
 	for _, arg := range args {
 		flags = append(flags, "--arg", arg)
 	}
