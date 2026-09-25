@@ -25,16 +25,24 @@ func TestScreenWorkReportsAreBackgroundMsgs(t *testing.T) {
 	}
 }
 
-// The connecting spinner's tick reaches the main screen under an overlay;
-// swallowed, it stops the spinner for good, since each tick schedules the
-// next.
-func TestMainScreenSpinnerTickIsBackgroundWork(t *testing.T) {
+// The connecting spinner runs on its own ticks: each schedules the next
+// while the screen connects, and the chain ends once it has. The tick is a
+// SessionMsg (TestMainScreenReportsAreSessionMsgs), so an overlay or a
+// screen on top does not swallow it and stop the spinner for good. The
+// tick is handed in directly rather than waited for.
+func TestMainScreenSpinnerTickReArmsWhileConnecting(t *testing.T) {
 	ms := NewMainScreen(&config.Config{}, &config.ConnectionConfig{
 		Type: config.TransportStdio, Command: "uvx", Args: []string{"mcp-server-time"},
 	})
-	_, cmd := ms.handleConnectionStarted(ConnectionStartedMsg{})
-	if _, ok := cmd().(BackgroundMsg); !ok {
-		t.Error("the connecting spinner's tick is not a BackgroundMsg: an open overlay swallows it")
+	if _, cmd := ms.handleConnectionStarted(ConnectionStartedMsg{}); cmd == nil {
+		t.Fatal("starting to connect armed no spinner tick")
+	}
+	if _, cmd := ms.Update(spinnerTickMsg{}); cmd == nil {
+		t.Error("a tick while connecting did not arm the next")
+	}
+	ms.connecting = false
+	if _, cmd := ms.Update(spinnerTickMsg{}); cmd != nil {
+		t.Error("a tick after connecting armed another")
 	}
 }
 

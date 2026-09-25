@@ -98,7 +98,6 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		assert.NotContains(t, view1, "✨", "First execution should not show sparkle")
 
 		// Second execution - same result
-		time.Sleep(10 * time.Millisecond) // Ensure different timestamp
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &mcp.CallToolResult{
 				Content: []mcp.Content{

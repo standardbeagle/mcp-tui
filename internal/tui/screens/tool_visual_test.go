@@ -3,7 +3,6 @@ package screens
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
@@ -47,9 +46,6 @@ func TestToolReExecutionVisual(t *testing.T) {
 		fmt.Println("\n=== After First Execution ===")
 		fmt.Println(ts.View())
 
-		// Wait a bit for different timestamp
-		time.Sleep(100 * time.Millisecond)
-
 		// Second execution - same result
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
@@ -66,7 +62,6 @@ func TestToolReExecutionVisual(t *testing.T) {
 		fmt.Println(ts.View())
 
 		// Third execution - different result
-		time.Sleep(100 * time.Millisecond)
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &imcp.CallToolResult{
 				Content: []imcp.Content{
