@@ -370,7 +370,7 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 	}
 
 	// Arguments
-	if prompt.Arguments != nil && len(prompt.Arguments) > 0 {
+	if len(prompt.Arguments) > 0 {
 		fmt.Println()
 		fmt.Println(sectionStyle.Render("Arguments:"))
 		for key, value := range prompt.Arguments {

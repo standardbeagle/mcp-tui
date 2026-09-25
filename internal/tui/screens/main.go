@@ -2814,7 +2814,7 @@ func (ms *MainScreen) renderPromptViewer() string {
 	builder.WriteString(renderIcons(ms.selectedPrompt.Icons))
 
 	// Arguments
-	if ms.selectedPrompt.Arguments != nil && len(ms.selectedPrompt.Arguments) > 0 {
+	if len(ms.selectedPrompt.Arguments) > 0 {
 		builder.WriteString(metaStyle.Render("Arguments:"))
 		builder.WriteString("\n")
 		argStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).MarginLeft(2)

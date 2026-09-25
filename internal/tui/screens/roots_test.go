@@ -123,8 +123,7 @@ func TestRootsScreen_AddRootViaForm(t *testing.T) {
 	}
 
 	// Save.
-	next, _ = rs.Update(keyMsg("ctrl+s"))
-	rs = next.(*screens.RootsScreen)
+	rs.Update(keyMsg("ctrl+s"))
 
 	if len(svc.addLog) != 1 {
 		t.Fatalf("addLog has %d entries, want 1", len(svc.addLog))

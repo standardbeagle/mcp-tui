@@ -51,7 +51,7 @@ func (c *ServerCommand) RunE(cmd *cobra.Command, args []string) error {
 
 	if !info.Connected {
 		fmt.Fprintf(os.Stderr, "❌ Not connected to MCP server\n")
-		return fmt.Errorf("not connected to MCP server - use 'mcp-tui' to start the TUI and connect to a server, or specify connection parameters with --cmd, --url, etc.")
+		return fmt.Errorf("not connected to MCP server - use 'mcp-tui' to start the TUI and connect to a server, or specify connection parameters with --cmd, --url, etc")
 	}
 
 	fmt.Fprintf(os.Stderr, "✅ Connected to server\n\n")

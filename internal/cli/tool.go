@@ -405,7 +405,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display input schema if available
-	if foundTool.InputSchema != nil && len(foundTool.InputSchema) > 0 {
+	if len(foundTool.InputSchema) > 0 {
 		fmt.Println()
 		fmt.Println(labelStyle.Render("Input Schema:"))
 

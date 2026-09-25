@@ -104,13 +104,13 @@ func (ses *SchemaErrorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "q", "b":
 			return ses, func() tea.Msg { return BackMsg{} }
 		case "up", "k":
-			ses.viewport.LineUp(1)
+			ses.viewport.ScrollUp(1)
 		case "down", "j":
-			ses.viewport.LineDown(1)
+			ses.viewport.ScrollDown(1)
 		case "pgup":
-			ses.viewport.HalfViewUp()
+			ses.viewport.HalfPageUp()
 		case "pgdown":
-			ses.viewport.HalfViewDown()
+			ses.viewport.HalfPageDown()
 		case "home":
 			ses.viewport.GotoTop()
 		case "end":

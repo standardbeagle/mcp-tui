@@ -14,7 +14,7 @@ import (
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
-	. "github.com/standardbeagle/mcp-tui/internal/mcp/config"
+	mcpconfig "github.com/standardbeagle/mcp-tui/internal/mcp/config"
 	mcpDebug "github.com/standardbeagle/mcp-tui/internal/mcp/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
@@ -43,7 +43,7 @@ type service struct {
 	transportFactory   transports.TransportFactory
 	sessionManager     *sessionPkg.Manager
 	errorHandler       *errors.ErrorHandler
-	config             *UnifiedConfig              // Add unified configuration
+	config             *mcpconfig.UnifiedConfig    // Add unified configuration
 	connectionConfig   *configPkg.ConnectionConfig // Store connection config for CLI generation
 	samplingHandler    sampling.Handler            // Optional handler for sampling/createMessage requests
 	elicitationHandler elicitation.Handler         // Optional handler for elicitation/create requests
@@ -376,9 +376,9 @@ func (s *service) publishNotification(entry *notifications.Entry) {
 }
 
 // NewServiceWithConfig creates a new MCP service with unified configuration
-func NewServiceWithConfig(config *UnifiedConfig) Service {
+func NewServiceWithConfig(config *mcpconfig.UnifiedConfig) Service {
 	if config == nil {
-		config = Default()
+		config = mcpconfig.Default()
 	}
 
 	return &service{
@@ -1765,11 +1765,7 @@ func isJSONError(err error) bool {
 
 	// Check for other JSON syntax errors
 	_, isSyntaxError := err.(*json.SyntaxError)
-	if isSyntaxError {
-		return true
-	}
-
-	return false
+	return isSyntaxError
 }
 
 // GetServerInfo returns a copy of the server information. A copy, not the
@@ -2035,7 +2031,7 @@ func (s *service) UpdateConfiguration(configMap map[string]interface{}) error {
 		return fmt.Errorf("failed to serialize configuration: %w", err)
 	}
 
-	newConfig := &UnifiedConfig{}
+	newConfig := &mcpconfig.UnifiedConfig{}
 	if err := json.Unmarshal(configJSON, newConfig); err != nil {
 		return fmt.Errorf("failed to deserialize configuration: %w", err)
 	}

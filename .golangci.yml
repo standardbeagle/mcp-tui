@@ -53,6 +53,13 @@ linters:
     presets:
       - std-error-handling
     rules:
+      # SEP-2577 deprecated roots/sampling/logging in protocol 2026-07-28, but
+      # they stay functional for at least a twelve-month window and mcp-tui is
+      # a test client whose job includes exercising them. Only go-sdk symbols
+      # are excluded; deprecations from anywhere else still report.
+      - linters:
+          - staticcheck
+        text: 'SA1019: .*github\.com/modelcontextprotocol/go-sdk/mcp\.'
       - path: _test\.go
         linters:
           - dupl

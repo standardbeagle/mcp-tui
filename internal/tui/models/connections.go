@@ -12,6 +12,19 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 
+// displayName renders a server id like "my-server" as "My Server" for the
+// connections list. ASCII-only: ids are config keys, so byte-wise casing is
+// fine here.
+func displayName(id string) string {
+	words := strings.Split(strings.ReplaceAll(id, "-", " "), " ")
+	for i, w := range words {
+		if w != "" {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
 // ConnectionEntry represents a saved connection configuration
 type ConnectionEntry struct {
 	ID          string               `json:"id"`
@@ -175,7 +188,7 @@ func (cm *ConnectionsManager) loadClaudeDesktopFormat(data []byte) bool {
 	for id, server := range claudeConfig.MCPServers {
 		entry := &ConnectionEntry{
 			ID:          id,
-			Name:        strings.Title(strings.ReplaceAll(id, "-", " ")),
+			Name:        displayName(id),
 			Description: "Imported from Claude Desktop config",
 			Transport:   config.TransportStdio,
 			Command:     server.Command,
@@ -220,7 +233,7 @@ func (cm *ConnectionsManager) loadVSCodeFormat(data []byte) bool {
 	for id, server := range vscodeConfig.Servers {
 		entry := &ConnectionEntry{
 			ID:          id,
-			Name:        strings.Title(strings.ReplaceAll(id, "-", " ")),
+			Name:        displayName(id),
 			Description: "Imported from VS Code config",
 			Command:     server.Command,
 			Args:        server.Args,

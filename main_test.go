@@ -246,14 +246,13 @@ func TestMainCommandValidation(t *testing.T) {
 
 			err := rootCmd.Execute()
 
+			// wantErr=false cases still fail at connection time (echo is not
+			// an MCP server); only command structure is under test here.
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errMsg != "" {
 					assert.Contains(t, err.Error(), tt.errMsg)
 				}
-			} else {
-				// Note: Command validation passes, but connection would fail
-				// We're only testing command structure here
 			}
 		})
 	}

@@ -369,8 +369,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.blurAllInputs()
 			return cs, nil
 		}
-		// Delegate to mode-specific handler for other left arrow behavior
-		break
+		// Other left arrow behavior falls through to the mode-specific handler
 
 	case "right":
 		// Check if any text input is currently focused
@@ -387,8 +386,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.blurAllInputs()
 			return cs, nil
 		}
-		// Delegate to mode-specific handler for other right arrow behavior
-		break
+		// Other right arrow behavior falls through to the mode-specific handler
 
 	case "c":
 		// Check if any text input is currently focused
@@ -413,8 +411,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.focusIndex = 0
 			return cs, nil
 		}
-		// Otherwise delegate to mode-specific handler
-		break
+		// Otherwise the mode-specific handler takes it
 
 	case "shift+tab":
 		// Return to tab focus if we have multiple tabs
@@ -423,8 +420,7 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.blurAllInputs()
 			return cs, nil
 		}
-		// Otherwise delegate to mode-specific handler
-		break
+		// Otherwise the mode-specific handler takes it
 	}
 
 	// Handle saved connections mode
@@ -985,18 +981,18 @@ func (cs *ConnectionScreen) renderModeSelector() string {
 		var style lipgloss.Style
 		if i == cs.activeTabIndex {
 			if cs.tabFocused {
-				style = cs.focusedStyle.Copy().
+				style = cs.focusedStyle.
 					BorderStyle(lipgloss.RoundedBorder()).
 					BorderForeground(lipgloss.Color("205")).
 					Padding(0, 1)
 			} else {
-				style = cs.focusedStyle.Copy().
+				style = cs.focusedStyle.
 					BorderStyle(lipgloss.RoundedBorder()).
 					BorderForeground(lipgloss.Color("240")).
 					Padding(0, 1)
 			}
 		} else {
-			style = cs.blurredStyle.Copy().
+			style = cs.blurredStyle.
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("238")).
 				Padding(0, 1)

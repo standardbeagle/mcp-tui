@@ -234,10 +234,8 @@ func (et *EventTracer) TraceError(operation string, error error, context map[str
 		"error":     error.Error(),
 	}
 
-	if context != nil {
-		for k, v := range context {
-			data[k] = v
-		}
+	for k, v := range context {
+		data[k] = v
 	}
 
 	return et.addEvent(EventError, operation, nil, data)
@@ -251,10 +249,8 @@ func (et *EventTracer) TraceTransportState(state string, details map[string]inte
 		"transport_state": state,
 	}
 
-	if details != nil {
-		for k, v := range details {
-			data[k] = v
-		}
+	for k, v := range details {
+		data[k] = v
 	}
 
 	return et.addEvent(EventTransportState, "", nil, data)
@@ -268,10 +264,8 @@ func (et *EventTracer) TraceSessionState(state string, details map[string]interf
 		"session_state": state,
 	}
 
-	if details != nil {
-		for k, v := range details {
-			data[k] = v
-		}
+	for k, v := range details {
+		data[k] = v
 	}
 
 	return et.addEvent(EventSessionState, "", nil, data)

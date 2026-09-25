@@ -645,7 +645,7 @@ func (ds *DebugScreen) renderStats() string {
 
 	for _, stat := range stats {
 		value := ds.mcpStats[stat.key]
-		statBox := ds.statStyle.Copy().
+		statBox := ds.statStyle.
 			Foreground(lipgloss.Color(stat.color)).
 			Render(fmt.Sprintf("%s\n%d", stat.label, value))
 		builder.WriteString(statBox)
