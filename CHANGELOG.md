@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fast tool results** show at once in the TUI; a 500ms minimum display time held them back.
 
 ### Fixed
+- **Automatic reconnection**: a session whose server went away stayed dead. A stdio server that exits, an SSE stream that ends, or a streamable HTTP server that refuses or resets requests now starts reconnection (a stdio server is started again). A server that breaks the protocol (malformed JSON-RPC, an unsupported version) still fails the session instead of being retried.
 - **OAuth `iss`**: authorization servers that advertise RFC 9207 support failed with "none was received" because the callback dropped the `iss` parameter.
 - **OAuth callback listener**: `--oauth-redirect-host` accepted non-loopback addresses such as `0.0.0.0`, exposing the authorization code to the network; only `localhost`, `127.0.0.0/8` and `::1` are accepted now. A repeated or foreign callback could hang the flow or end it; only the first callback carrying the flow's `state` completes it, and the listener has fixed caps (16 KiB headers, 10s timeouts, 8 connections).
 - **OAuth private-network access**: a discovered auth endpoint whose hostname resolved to a private, link-local or CGNAT address was dialed. Such auth requests are refused now unless `--oauth-allow-private-network` is set; loopback stays allowed.

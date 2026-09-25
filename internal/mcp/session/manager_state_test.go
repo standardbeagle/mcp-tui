@@ -327,7 +327,7 @@ func TestNonRecoverableFailureSkipsReconnection(t *testing.T) {
 	require.NoError(t, m.Connect(context.Background(), client, transport, stdioStrategy(), transports.TransportSTDIO, nil))
 
 	// An authentication error is classified as requiring user intervention.
-	m.handleConnectionFailure(errors.New("authentication failed: invalid api key"))
+	m.handleConnectionFailure(m.GetSession(), errors.New("authentication failed: invalid api key"))
 
 	assert.Equal(t, StateFailed, m.state())
 	assert.False(t, m.IsConnected())

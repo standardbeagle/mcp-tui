@@ -41,17 +41,21 @@ func (e *ServerStartupError) Error() string {
 		e.Command, e.Output)
 }
 
-// EnhancedSTDIOTransport wraps the official MCP STDIO transport, capturing the
-// server's stderr so a failed handshake can be reported as a diagnosable
-// startup error rather than a bare EOF.
+// EnhancedSTDIOTransport runs the server command through the official MCP
+// STDIO transport, capturing the server's stderr so a failed handshake can be
+// reported as a diagnosable startup error rather than a bare EOF.
+//
+// Unlike the SDK's CommandTransport it can connect more than once: each
+// Connect starts a new server process, which is what reconnecting after the
+// server exited needs (an exec.Cmd runs only once).
 type EnhancedSTDIOTransport struct {
-	transport officialMCP.Transport
-	command   string
-	args      []string
-	stderr    *syncBuffer
+	command string
+	args    []string
+	env     []string // nil inherits the environment
 
 	mu       sync.Mutex
-	startErr error // set when the process could not be started at all
+	stderr   *syncBuffer // stderr of the most recently started process
+	startErr error       // set when the process could not be started at all
 }
 
 // createEnhancedSTDIOTransport creates an enhanced STDIO transport.
@@ -72,26 +76,13 @@ func createEnhancedSTDIOTransport(config *TransportConfig, strategy ContextStrat
 		debug.F("command", config.Command),
 		debug.F("args", config.Args))
 
-	// Create command for STDIO transport. The SDK wires stdin/stdout; stderr is
-	// ours to capture for diagnostics.
-	cmd := exec.Command(config.Command, config.Args...)
-	if len(config.Environment) > 0 {
-		cmd.Env = mergeEnvironment(config.Environment)
-	}
-	stderr := &syncBuffer{}
-	cmd.Stderr = stderr
-
-	// Create STDIO transport using official SDK (direct struct initialization)
-	transport := &officialMCP.CommandTransport{
-		Command: cmd,
-	}
-
-	// Wrap in enhanced transport for additional monitoring
 	enhanced := &EnhancedSTDIOTransport{
-		transport: transport,
-		command:   config.Command,
-		args:      config.Args,
-		stderr:    stderr,
+		command: config.Command,
+		args:    config.Args,
+		stderr:  &syncBuffer{},
+	}
+	if len(config.Environment) > 0 {
+		enhanced.env = mergeEnvironment(config.Environment)
 	}
 
 	return enhanced, strategy, nil
@@ -276,7 +267,17 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 	debug.Info("Enhanced STDIO: Establishing MCP connection",
 		debug.F("command", e.command))
 
-	conn, err := e.transport.Connect(ctx)
+	// A new process per connection. The SDK wires stdin/stdout; stderr is
+	// ours to capture for diagnostics.
+	cmd := exec.Command(e.command, e.args...) //nolint:gosec // G204: validated by ValidateCommand at creation
+	cmd.Env = e.env
+	stderr := &syncBuffer{}
+	cmd.Stderr = stderr
+	e.mu.Lock()
+	e.stderr, e.startErr = stderr, nil
+	e.mu.Unlock()
+
+	conn, err := (&officialMCP.CommandTransport{Command: cmd}).Connect(ctx)
 	if err != nil {
 		debug.Error("Enhanced STDIO: MCP connection failed", debug.F("error", err))
 
@@ -310,7 +311,7 @@ const startupDiagnosticWait = 500 * time.Millisecond
 func (e *EnhancedSTDIOTransport) StartupError() error {
 	// The process never started: that error is already precise.
 	e.mu.Lock()
-	startErr := e.startErr
+	startErr, stderr := e.startErr, e.stderr
 	e.mu.Unlock()
 	if startErr != nil {
 		return startErr
@@ -318,7 +319,7 @@ func (e *EnhancedSTDIOTransport) StartupError() error {
 
 	deadline := time.Now().Add(startupDiagnosticWait)
 	for {
-		output := strings.TrimSpace(e.stderr.String())
+		output := strings.TrimSpace(stderr.String())
 		if output != "" && looksLikeError(output) {
 			return &ServerStartupError{
 				Command:    e.command,

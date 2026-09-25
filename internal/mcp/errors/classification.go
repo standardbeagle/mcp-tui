@@ -2,6 +2,7 @@ package errors
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -203,6 +204,14 @@ func IsConnectionLost(err error) bool {
 	return errors.As(err, &rpcErr) && (rpcErr.Code == codeClientClosing || rpcErr.Code == codeServerClosing)
 }
 
+// IsConnectionFailure reports whether classified means the connection to the
+// server failed -- refused, reset, lost -- rather than a request failing on
+// a working connection.
+func IsConnectionFailure(classified *ClassifiedError) bool {
+	return classified != nil &&
+		(classified.Category == CategoryConnection || classified.Category == CategoryTransport)
+}
+
 // analyzeError determines the category and severity of an error. Types
 // decide first: context errors, lost connections, network and syscall
 // errors, process errors, then JSON-RPC error codes. Message matching is
@@ -239,6 +248,13 @@ func (ec *ErrorClassifier) analyzeError(err error, operation string) (ErrorCateg
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return CategoryServerInternal, SeverityError
+	}
+
+	// Malformed JSON from the peer.
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
+		return CategorySerialization, SeverityError
 	}
 
 	if category, severity, ok := classifyRPCError(err); ok {

@@ -97,6 +97,9 @@ type Manager struct {
 	// reconnectObservers run after each successful reconnection; see
 	// OnReconnected.
 	reconnectObservers []func(*officialMCP.ClientSession)
+	// backgroundCloses counts sessions still closing in the background
+	// (closeInBackground).
+	backgroundCloses sync.WaitGroup
 
 	// Configuration
 	maxReconnectAttempts int
@@ -266,6 +269,8 @@ func (m *Manager) Connect(
 	debug.Info("Session manager: Connection established",
 		debug.F("sessionID", m.info.SessionID),
 		debug.F("connectedAt", m.info.ConnectedAt))
+
+	go m.watchSession(session)
 
 	// Start health monitoring if transport supports it
 	if contextStrategy.RequiresLongLivedConnection() {
@@ -573,7 +578,7 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 			return
 		}
 		debug.Error("Session manager: Health check failed", debug.F("error", err))
-		m.handleConnectionFailure(fmt.Errorf("health check failed: %w", err))
+		m.handleConnectionFailure(session, fmt.Errorf("health check failed: %w", err))
 		return
 	}
 
@@ -583,16 +588,53 @@ func (m *Manager) performHealthCheck(ctx context.Context) {
 		debug.F("transport", transportType))
 }
 
-// handleConnectionFailure handles connection failures and triggers reconnection
-// if appropriate. It transitions StateConnected -> StateReconnecting or
-// StateFailed; from any other state it is a no-op, which is what keeps a single
-// reconnection goroutine in flight at a time.
-func (m *Manager) handleConnectionFailure(err error) {
+// ReportCallFailure tells the manager that a request on session failed with
+// err. A failure that means the connection is gone (refused, reset, closed)
+// starts reconnection; any other failure is the caller's to report and is
+// ignored here. It is how a transport with no connection of its own to
+// watch -- streamable HTTP -- is found to be down.
+func (m *Manager) ReportCallFailure(session *officialMCP.ClientSession, err error) {
+	if !errors.IsConnectionFailure(errors.NewErrorClassifier().Classify(err, nil)) {
+		return
+	}
+	m.handleConnectionFailure(session, err)
+}
+
+// watchSession waits for session's connection to end and, unless the
+// manager ended it (Disconnect, a replaced session), handles the end as a
+// connection failure: a stdio server exiting, an SSE or HTTP stream failing
+// for good.
+func (m *Manager) watchSession(session *officialMCP.ClientSession) {
+	m.handleConnectionFailure(session, sessionEndError(session.Wait()))
+}
+
+// sessionEndError is the failure reported for a session whose connection
+// ended on its own. Wait drops the peer's EOF, so a nil cause (or a process
+// exit status) means the server went away: a lost connection. A cause that
+// is a protocol violation (malformed JSON-RPC) is kept as is, so it is
+// reported and not retried.
+func sessionEndError(cause error) error {
+	if cause == nil {
+		return fmt.Errorf("session ended: %w", officialMCP.ErrConnectionClosed)
+	}
+	switch errors.NewErrorClassifier().Classify(cause, nil).Category {
+	case errors.CategoryProtocol, errors.CategorySerialization:
+		return fmt.Errorf("session ended: %w", cause)
+	}
+	return fmt.Errorf("session ended: %w: %w", officialMCP.ErrConnectionClosed, cause)
+}
+
+// handleConnectionFailure handles a failure of session's connection and
+// triggers reconnection if appropriate. It transitions StateConnected ->
+// StateReconnecting or StateFailed, and only while session is the current
+// one; otherwise it is a no-op, which keeps a single reconnection goroutine
+// in flight and ignores the ends of sessions the manager closed itself.
+func (m *Manager) handleConnectionFailure(session *officialMCP.ClientSession, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.info.State != StateConnected {
-		return // Already handling failure, closed, or never connected
+	if m.info.State != StateConnected || m.session != session {
+		return // Already handling failure, closed, never connected, or a stale session
 	}
 
 	// Classify the error
@@ -606,23 +648,41 @@ func (m *Manager) handleConnectionFailure(err error) {
 
 	m.info.LastError = classified
 
+	// The connection is dead, so its context (and the health monitor running
+	// on it) is useless. Cancel it now; attemptReconnection installs its own.
+	m.stopConnectionLocked()
+
+	// Release the dead session in the background: closing waits on the
+	// transport (a stdio server's exit, an HTTP DELETE), which must hold up
+	// neither the manager lock nor the reconnection.
+	m.session = nil
+	m.closeInBackground(session, "dead session")
+
 	if !classified.Recoverable || m.maxReconnectAttempts <= 0 {
 		debug.Error("Session manager: Cannot reconnect",
 			debug.F("maxAttempts", m.maxReconnectAttempts),
 			debug.F("recoverable", classified.Recoverable))
 		m.setState(StateFailed)
-		m.stopConnectionLocked()
 		return
 	}
-
-	// The connection is dead, so its context (and the health monitor running on
-	// it) is useless. Cancel it now; attemptReconnection installs its own.
-	m.stopConnectionLocked()
 
 	m.setState(StateReconnecting)
 	m.info.ReconnectCount = 0
 
 	go m.attemptReconnection()
+}
+
+// closeInBackground closes session without waiting for it, logging the
+// outcome. Tests wait for these closes with waitBackgroundCloses.
+func (m *Manager) closeInBackground(session *officialMCP.ClientSession, what string) {
+	m.backgroundCloses.Add(1)
+	go func() {
+		defer m.backgroundCloses.Done()
+		start := time.Now()
+		err := session.Close()
+		debug.Info("Session manager: Background close finished",
+			debug.F("session", what), debug.F("duration", time.Since(start)), debug.F("error", err))
+	}()
 }
 
 // stopConnectionLocked cancels the current connection context. Callers hold m.mu.
@@ -749,14 +809,8 @@ func (m *Manager) attemptReconnection() {
 			continue
 		}
 
-		// Successfully reconnected. Close the old, dead session if it is still here.
-		if m.session != nil {
-			if closeErr := m.session.Close(); closeErr != nil {
-				debug.Error("Session manager: Failed to close old session during reconnection",
-					debug.F("error", closeErr))
-			}
-		}
-
+		// Successfully reconnected. handleConnectionFailure already released
+		// the dead session.
 		m.session = session
 		m.setState(StateConnected)
 		m.info.ConnectedAt = time.Now()
@@ -770,6 +824,7 @@ func (m *Manager) attemptReconnection() {
 		debug.Info("Session manager: Reconnection successful",
 			debug.F("attempt", attempt),
 			debug.F("newSessionID", SessionLabel(session)))
+		go m.watchSession(session)
 		for _, observe := range observers {
 			observe(session)
 		}

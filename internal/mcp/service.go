@@ -821,6 +821,7 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 
 	s.addProtocolMiddleware(client)
 	client.AddSendingMiddleware(wireProbeMiddleware())
+	client.AddSendingMiddleware(connectionFailureMiddleware(s.sessionManager))
 	// Added last so it runs first: the message log and tracer see the token.
 	client.AddSendingMiddleware(s.progressTokenMiddleware())
 
