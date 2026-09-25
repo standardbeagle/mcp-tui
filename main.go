@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"os"
 	"syscall"
 
@@ -55,8 +54,17 @@ func main() {
 	// Ctrl-C, so long-running commands (resource watch) must see it here.
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		debug.Error("Application failed", debug.F("error", err))
-		os.Exit(1)
+		exitProcess(1)
 	}
+	debug.Flush()
+}
+
+// exitProcess ends the run with code once the log, which is written
+// asynchronously, has reached its output: os.Exit alone drops the last lines,
+// often the error that ended the run.
+func exitProcess(code int) {
+	debug.Flush()
+	os.Exit(code)
 }
 
 // splitConnectionArg finds a positional connection string in args (the
@@ -113,7 +121,7 @@ Examples:
 				argsFlag, err := cli.ServerArgs(cmd)
 				if err != nil {
 					debug.Error("Server argument flags", debug.F("error", err))
-					os.Exit(1)
+					exitProcess(1)
 				}
 				urlFlag, _ := cmd.Flags().GetString("url")
 
@@ -134,7 +142,7 @@ Examples:
 
 				if oauthCfg, err := cli.BuildOAuthConfig(cmd, connectionConfig); err != nil {
 					debug.Error("OAuth flag parsing failed", debug.F("error", err))
-					os.Exit(1)
+					exitProcess(1)
 				} else if oauthCfg != nil {
 					connectionConfig.OAuth = oauthCfg
 				}
@@ -153,7 +161,7 @@ Examples:
 				traceparent, err := cmd.Flags().GetString("traceparent")
 				if err != nil {
 					debug.Error("Reading --traceparent failed", debug.F("error", err))
-					os.Exit(1)
+					exitProcess(1)
 				}
 				connectionConfig.Traceparent = traceparent
 
@@ -170,7 +178,7 @@ Examples:
 					extras, err := mcptransports.ParseHeaderFlags(headerFlags)
 					if err != nil {
 						debug.Error("Invalid --header flag", debug.F("error", err))
-						os.Exit(1)
+						exitProcess(1)
 					}
 					if connectionConfig.Headers == nil {
 						connectionConfig.Headers = extras
@@ -346,20 +354,18 @@ func runTUIMode(ctx context.Context, connectionConfig *config.ConnectionConfig) 
 	logger := debug.Component("tui")
 	logger.Info("Starting TUI mode")
 
-	// Disable stderr logging during TUI mode to prevent terminal corruption
-	// Logs will still be captured in the debug buffer for viewing in debug screen
-	debug.SetGlobalOutput(io.Discard)
+	// Stderr logging would corrupt the terminal; the debug screen's Logs tab
+	// shows every level from the buffer instead.
+	restoreLogging := debug.LogToBufferOnly()
 
 	// Create and run TUI application
 	tuiApp := app.New(cfg, connectionConfig)
 	if err := tuiApp.Run(ctx); err != nil {
-		// Re-enable stderr logging before exiting
-		debug.SetGlobalOutput(os.Stderr)
+		restoreLogging()
 		logger.Error("TUI application failed", debug.F("error", err))
-		os.Exit(1)
+		exitProcess(1)
 	}
 
-	// Re-enable stderr logging after TUI ends
-	debug.SetGlobalOutput(os.Stderr)
+	restoreLogging()
 	logger.Info("TUI mode ended")
 }

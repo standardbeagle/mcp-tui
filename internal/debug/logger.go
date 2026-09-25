@@ -88,6 +88,10 @@ type logEntry struct {
 
 // logger implements the Logger interface
 type logger struct {
+	// root is the logger WithFields/WithComponent derived this one from; it
+	// owns the level, so SetGlobalLevel reaches loggers made before it ran.
+	// nil on a root logger.
+	root      *logger
 	level     LogLevel
 	output    io.Writer
 	component string
@@ -140,6 +144,7 @@ func (l *logger) Error(msg string, fields ...Field) {
 // Fatal logs a fatal message and exits
 func (l *logger) Fatal(msg string, fields ...Field) {
 	l.log(LogLevelFatal, msg, fields...)
+	l.Flush()
 	os.Exit(1)
 }
 
@@ -152,7 +157,7 @@ func (l *logger) WithFields(fields ...Field) Logger {
 	l.mu.RUnlock()
 
 	return &logger{
-		level:     l.level,
+		root:      l.levelOwner(),
 		output:    l.output,
 		component: l.component,
 		fields:    newFields,
@@ -169,7 +174,7 @@ func (l *logger) WithComponent(component string) Logger {
 	l.mu.RUnlock()
 
 	return &logger{
-		level:     l.level,
+		root:      l.levelOwner(),
 		output:    l.output,
 		component: component,
 		fields:    newFields,
@@ -178,11 +183,20 @@ func (l *logger) WithComponent(component string) Logger {
 	}
 }
 
-// SetLevel sets the logging level
+// SetLevel sets the logging level of l and every logger derived from it.
 func (l *logger) SetLevel(level LogLevel) {
-	l.mu.Lock()
-	l.level = level
-	l.mu.Unlock()
+	owner := l.levelOwner()
+	owner.mu.Lock()
+	owner.level = level
+	owner.mu.Unlock()
+}
+
+// levelOwner returns the logger whose level governs l.
+func (l *logger) levelOwner() *logger {
+	if l.root != nil {
+		return l.root
+	}
+	return l
 }
 
 // SetOutput sets the output writer
@@ -355,11 +369,15 @@ func (l *logger) addToLogBuffer(entry *logEntry) {
 
 // log performs the actual logging
 func (l *logger) log(level LogLevel, msg string, fields ...Field) {
-	l.mu.RLock()
-	if level < l.level {
-		l.mu.RUnlock()
+	owner := l.levelOwner()
+	owner.mu.RLock()
+	minLevel := owner.level
+	owner.mu.RUnlock()
+	if level < minLevel {
 		return
 	}
+
+	l.mu.RLock()
 	component := l.component
 	baseFields := l.fields
 	l.mu.RUnlock()
@@ -480,6 +498,27 @@ func parseLogLevel(s string) LogLevel {
 		return LogLevelFatal
 	default:
 		return -1
+	}
+}
+
+// LogToBufferOnly routes the global log to the in-memory buffer alone, at
+// every level: the TUI owns the terminal, so stderr is discarded, and its
+// Logs tab should show the full trace whatever --log-level says. restore
+// puts back the previous output and level.
+func LogToBufferOnly() (restore func()) {
+	l, ok := globalLogger.(*logger)
+	if !ok {
+		panic("debug.LogToBufferOnly: global logger is not the built-in logger")
+	}
+	l.mu.Lock()
+	prevLevel, prevOutput := l.level, l.output
+	l.level, l.output = LogLevelDebug, io.Discard
+	l.mu.Unlock()
+	return func() {
+		l.Flush()
+		l.mu.Lock()
+		l.level, l.output = prevLevel, prevOutput
+		l.mu.Unlock()
 	}
 }
 
