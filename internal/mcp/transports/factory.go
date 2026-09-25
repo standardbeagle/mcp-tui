@@ -2,10 +2,8 @@ package transports
 
 import (
 	"fmt"
-	"os/exec"
 
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
-	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 )
 
 // factory implements the TransportFactory interface
@@ -36,27 +34,6 @@ func (f *factory) CreateTransport(config *TransportConfig) (officialMCP.Transpor
 	default:
 		return nil, nil, fmt.Errorf("unsupported transport type: %s", config.Type)
 	}
-}
-
-// createSTDIOTransport creates a STDIO transport with security validation
-func (f *factory) createSTDIOTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
-	// Validate command for security before execution
-	if err := configPkg.ValidateCommand(config.Command, config.Args); err != nil {
-		return nil, nil, fmt.Errorf("command validation failed: %w", err)
-	}
-
-	// Create command for STDIO transport
-	cmd := exec.Command(config.Command, config.Args...)
-	if len(config.Environment) > 0 {
-		cmd.Env = mergeEnvironment(config.Environment)
-	}
-
-	// Create STDIO transport using official SDK (direct struct initialization)
-	transport := &officialMCP.CommandTransport{
-		Command: cmd,
-	}
-
-	return transport, strategy, nil
 }
 
 // createSSETransport creates an SSE transport with proper HTTP client configuration
