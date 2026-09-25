@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
@@ -113,18 +115,19 @@ func TestEnhancedSTDIOTransportIntegration(t *testing.T) {
 }
 
 // TestEnhancedSTDIOStartsProcessOnce guards against reintroducing a pre-flight
-// probe that executed the server command a second time. The command records
-// each invocation; exactly one must be observed.
+// probe that executed the server command a second time. The server records
+// each start; exactly one must be observed.
+//
+// The server is the test binary itself (testutil.StdioServer), which starts in
+// milliseconds. The handshake completing proves the real server started, and
+// any probe would have run before Connect returned; closing the session waits
+// for the server to exit, so every start has been recorded by then.
 func TestEnhancedSTDIOStartsProcessOnce(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	counter := filepath.Join(t.TempDir(), "invocations")
-	command, args := testutil.ServerRecordsInvocation(t, counter, 0.5)
+	starts := filepath.Join(t.TempDir(), "starts")
+	command, env := testutil.StdioServer(t, testutil.StdioServerOptions{StartsFile: starts})
 
 	transport, _, err := createEnhancedSTDIOTransport(
-		&TransportConfig{Type: TransportSTDIO, Command: command, Args: args},
+		&TransportConfig{Type: TransportSTDIO, Command: command, Environment: env},
 		NewContextStrategy(TransportSTDIO),
 	)
 	if err != nil {
@@ -132,41 +135,25 @@ func TestEnhancedSTDIOStartsProcessOnce(t *testing.T) {
 	}
 
 	// Creating the transport must not have run the command at all.
-	if _, statErr := os.Stat(counter); statErr == nil {
+	if _, statErr := os.Stat(starts); statErr == nil {
 		t.Fatal("command ran during transport creation; pre-flight probe reintroduced")
 	}
 
-	if _, err := transport.Connect(context.Background()); err != nil {
+	client := officialMCP.NewClient(&officialMCP.Implementation{Name: "mcp-tui", Version: "0.1.0"}, nil)
+	session, err := client.Connect(context.Background(), transport, nil)
+	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
+	if closeErr := session.Close(); closeErr != nil {
+		t.Fatalf("Close: %v", closeErr)
+	}
 
-	// Wait for the child to record its first invocation, then give a second one
-	// a fair chance to appear. Polling beats a fixed sleep: the interpreter's
-	// startup cost varies by platform.
-	waitForFile(t, counter, 10*time.Second)
-	time.Sleep(500 * time.Millisecond)
-
-	data, err := os.ReadFile(counter)
+	data, err := os.ReadFile(starts)
 	if err != nil {
-		t.Fatalf("reading invocation log: %v", err)
+		t.Fatalf("reading start log: %v", err)
 	}
-	if got := strings.Count(string(data), "x"); got != 1 {
+	if got := len(data); got != 1 {
 		t.Errorf("server command ran %d times, want exactly 1", got)
-	}
-}
-
-// waitForFile blocks until path exists, or fails the test.
-func waitForFile(t *testing.T, path string, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", path)
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 

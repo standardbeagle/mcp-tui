@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -60,22 +59,6 @@ func TestServerExitsImmediately(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "test") {
 		t.Errorf("stdout not propagated; got %q", out)
-	}
-}
-
-func TestServerRecordsInvocation(t *testing.T) {
-	counter := t.TempDir() + string(os.PathSeparator) + "invocations"
-	command, args := ServerRecordsInvocation(t, counter, 0)
-
-	if err := exec.Command(command, args...).Run(); err != nil {
-		t.Fatalf("running recorder: %v", err)
-	}
-	data, err := os.ReadFile(counter)
-	if err != nil {
-		t.Fatalf("reading counter: %v", err)
-	}
-	if got := strings.Count(string(data), "x"); got != 1 {
-		t.Errorf("recorded %d invocations, want 1", got)
 	}
 }
 

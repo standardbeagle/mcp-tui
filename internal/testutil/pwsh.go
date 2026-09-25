@@ -108,15 +108,6 @@ func ServerPrintsThenSleeps(t *testing.T, msg string, seconds float64) (command 
 	return Script(t, "prints-then-sleeps", body)
 }
 
-// ServerRecordsInvocation appends a line to counterPath each time it runs, then
-// stays alive briefly. Used to assert a server process is started exactly once.
-func ServerRecordsInvocation(t *testing.T, counterPath string, seconds float64) (command string, args []string) {
-	t.Helper()
-	body := "[IO.File]::AppendAllText(" + psQuote(counterPath) + ", 'x')\n" +
-		"Start-Sleep -Seconds " + strconv.FormatFloat(seconds, 'f', -1, 64) + "\n"
-	return Script(t, "records-invocation", body)
-}
-
 // ServerFlags renders a stand-in server as mcp-tui CLI flags:
 //
 //	--cmd pwsh --args -NoProfile --args -NonInteractive --args -File --args <script>
