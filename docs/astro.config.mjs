@@ -15,6 +15,13 @@ export default defineConfig({
       ],
       head: [
         {
+          tag: 'meta',
+          attrs: {
+            name: 'googlebot',
+            content: 'noindex, follow',
+          },
+        },
+        {
           tag: 'script',
           attrs: {
             type: 'module',
