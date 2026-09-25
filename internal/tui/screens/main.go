@@ -199,8 +199,9 @@ type PromptsLoadedMsg struct {
 	Cache []*mcp.ListCacheInfo
 }
 
-// EventTickMsg is sent periodically to refresh events
-type EventTickMsg struct{}
+// EventTickMsg is sent periodically to refresh events. It names the screen
+// that armed it (see EventTick), so only that screen re-arms it.
+type EventTickMsg struct{ screen *MainScreen }
 
 // ResourceContentLoadedMsg contains loaded resource content
 type ResourceContentLoadedMsg struct {
@@ -233,6 +234,19 @@ func (EventTickMsg) BackgroundWork()             {}
 func (ResourceContentLoadedMsg) BackgroundWork() {}
 func (PromptResultLoadedMsg) BackgroundWork()    {}
 func (spinnerTickMsg) BackgroundWork()           {}
+
+// SessionWork marks the main screen's reports as SessionMsg, so they reach
+// it under a tool screen too, not only under an overlay.
+func (ConnectionStartedMsg) SessionWork()     {}
+func (ConnectionCompleteMsg) SessionWork()    {}
+func (ItemsLoadedMsg) SessionWork()           {}
+func (ToolsLoadedMsg) SessionWork()           {}
+func (ResourcesLoadedMsg) SessionWork()       {}
+func (PromptsLoadedMsg) SessionWork()         {}
+func (EventTickMsg) SessionWork()             {}
+func (ResourceContentLoadedMsg) SessionWork() {}
+func (PromptResultLoadedMsg) SessionWork()    {}
+func (spinnerTickMsg) SessionWork()           {}
 
 // NewMainScreen creates a new main screen
 func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *MainScreen {
@@ -717,6 +731,12 @@ func (ms *MainScreen) handleEventsLoaded() (tea.Model, tea.Cmd) {
 
 // handleEventTick handles periodic event refresh messages
 func (ms *MainScreen) handleEventTick(msg EventTickMsg) (tea.Model, tea.Cmd) {
+	// A tick another screen armed (one left from before a disconnect and
+	// reconnect) or one reaching a disconnected screen ends here: re-armed,
+	// it would run a second timer beside the live one.
+	if msg.screen != ms || ms.feedsDone() {
+		return ms, nil
+	}
 	// Only refresh events if we're on the events tab and connected
 	if ms.connected && ms.activeTab == 3 {
 		return ms, tea.Batch(
@@ -2092,9 +2112,15 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 
 // tickEvents creates a command that periodically refreshes events
 func (ms *MainScreen) tickEvents() tea.Cmd {
-	return tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
-		return EventTickMsg{}
+	return tea.Tick(time.Second*2, func(time.Time) tea.Msg {
+		return ms.EventTick()
 	})
+}
+
+// EventTick is the event-refresh tick this screen arms, for driving the
+// refresh without waiting on its timer.
+func (ms *MainScreen) EventTick() EventTickMsg {
+	return EventTickMsg{screen: ms}
 }
 
 // loadEvents loads the list of events (messages without request IDs)

@@ -62,6 +62,11 @@ type callProgressMsg struct{ next tea.Cmd }
 // itself may have opened (an elicitation it asked for).
 func (callProgressMsg) BackgroundWork() {}
 
+// SessionWork routes it to the session's main screen, the only screen that
+// awaits calls with callProgress.await (the tool screen observes progress
+// without it); a screen that starts to must first address the message.
+func (callProgressMsg) SessionWork() {}
+
 // await returns a command that runs call in the background with a progress
 // observer in its context and yields a callProgressMsg whenever the call's
 // progress changes, then call's own message once it returns.

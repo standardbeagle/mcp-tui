@@ -38,6 +38,11 @@ type resourceSubscriptionChangedMsg struct {
 func (ResourceUpdatedMsg) BackgroundWork()             {}
 func (resourceSubscriptionChangedMsg) BackgroundWork() {}
 
+// SessionWork marks them as SessionMsg: the feed belongs to the main screen
+// and must keep running while a tool screen sits above it.
+func (ResourceUpdatedMsg) SessionWork()             {}
+func (resourceSubscriptionChangedMsg) SessionWork() {}
+
 // resourceUpdateBuffer bounds the updates queued between the SDK's
 // receiving goroutine and the bubbletea loop. An update that finds it full is
 // dropped: the row already carries the updated mark it would set.
@@ -93,6 +98,16 @@ func (ms *MainScreen) stopFeeds() {
 	case <-ms.feedsStopped:
 	default:
 		close(ms.feedsStopped)
+	}
+}
+
+// feedsDone reports whether stopFeeds ran: the screen disconnected.
+func (ms *MainScreen) feedsDone() bool {
+	select {
+	case <-ms.feedsStopped:
+		return true
+	default:
+		return false
 	}
 }
 

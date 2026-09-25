@@ -171,6 +171,11 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case screens.SamplingRequestMsg, screens.ElicitationRequestMsg:
 		return sm.routeInputRequest(msg)
+	case screens.SessionMsg:
+		if main := sm.sessionScreen(); main != nil {
+			_, cmd := main.Update(msg)
+			return sm, cmd
+		}
 	}
 
 	// If we have an overlay screen, route messages to it first

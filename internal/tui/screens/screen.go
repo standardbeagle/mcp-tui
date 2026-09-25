@@ -49,6 +49,17 @@ type BackgroundMsg interface {
 	BackgroundWork()
 }
 
+// SessionMsg reports on work the session's MainScreen started: a list or a
+// read it asked for, its event tick, its connecting spinner, its resource
+// update feed. The screen manager hands it to that MainScreen wherever it
+// sits, under a tool screen or an overlay alike; delivered to the screen on
+// top, it was dropped, and a dropped tick or feed message stops what it
+// re-arms for good.
+type SessionMsg interface {
+	BackgroundMsg
+	SessionWork()
+}
+
 // RequestOverlay is an overlay someone waits on for an answer: a server's
 // elicitation or sampling request, or a destructive tool's confirmation.
 // The screen manager never drops or replaces one; an overlay that arrives

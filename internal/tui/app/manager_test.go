@@ -272,3 +272,37 @@ func TestScreenManagerDeliversMainScreenWorkUnderAnOverlay(t *testing.T) {
 		}
 	}
 }
+
+// The main screen's work keeps reporting to it while a tool screen sits
+// above it. Delivered to the tool screen, a list result was dropped (its tab
+// stayed loading), a resource update was dropped along with the feed it
+// re-arms, and the event tick stopped for good: back on the main screen,
+// updates and events no longer refreshed.
+func TestScreenManagerKeepsMainScreenWorkRunningUnderToolScreen(t *testing.T) {
+	const uri = "file:///var/log/deploy.log"
+	sm := sessionManagerFixture()
+	main := sm.currentScreen.(*screens.MainScreen)
+	sm.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	sm.Update(screens.ConnectionCompleteMsg{Success: true})
+	sm.Update(tea.KeyMsg{Type: tea.KeyTab}) // the resources tab
+	tool := screens.NewToolScreen(mcp.Tool{Name: "deploy"}, main.Service())
+	sm.Update(screens.TransitionMsg{Transition: screens.ScreenTransition{Screen: tool}})
+
+	sm.Update(screens.ResourcesLoadedMsg{
+		Resources: []mcp.Resource{{URI: uri, Name: "deploy-log"}}, Items: []string{"deploy-log"}, ActualCount: 1,
+	})
+	if _, feed := sm.Update(screens.ResourceUpdatedMsg{URI: uri, At: time.Now()}); feed == nil {
+		t.Error("the resource update did not re-arm the update feed")
+	}
+	if _, tick := sm.Update(main.EventTick()); tick == nil {
+		t.Error("the event tick did not re-arm")
+	}
+
+	sm.Update(screens.BackMsg{})
+	if sm.currentScreen != main {
+		t.Fatalf("current screen = %T after back, want the main screen", sm.currentScreen)
+	}
+	if view := main.View(); !strings.Contains(view, "[updated] deploy-log") {
+		t.Errorf("main screen lost the resource update made under the tool screen:\n%s", view)
+	}
+}
