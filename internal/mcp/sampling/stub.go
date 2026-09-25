@@ -20,7 +20,10 @@ const defaultStubModel = "mcp-tui-stub"
 // The reply role is always "assistant" and stopReason is "endTurn", which is
 // the natural choice for a static canned response.
 func NewTextStubHandler(text string) Handler {
-	return HandlerFunc(func(_ context.Context, _ *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+	return HandlerFunc(func(
+		_ context.Context,
+		_ *officialMCP.CreateMessageRequest,
+	) (*officialMCP.CreateMessageResult, error) {
 		return &officialMCP.CreateMessageResult{
 			Content: &officialMCP.TextContent{
 				Text: text,
@@ -101,7 +104,10 @@ func NewFileStubHandler(path string) (Handler, error) {
 		content = &officialMCP.TextContent{Text: spec.Text}
 	}
 
-	return HandlerFunc(func(_ context.Context, _ *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+	return HandlerFunc(func(
+		_ context.Context,
+		_ *officialMCP.CreateMessageRequest,
+	) (*officialMCP.CreateMessageResult, error) {
 		return &officialMCP.CreateMessageResult{
 			Content:    content,
 			Model:      model,
@@ -196,7 +202,10 @@ func NewToolUseStubHandler(toolName, argsJSON string) (WithToolsHandler, error) 
 // in practice this code path is rarely exercised by real servers. It exists
 // to satisfy the Handler interface so the stub can flow through the same
 // wiring code as text/file stubs.
-func (h *toolUseStubHandler) HandleCreateMessage(_ context.Context, _ *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+func (h *toolUseStubHandler) HandleCreateMessage(
+	_ context.Context,
+	_ *officialMCP.CreateMessageRequest,
+) (*officialMCP.CreateMessageResult, error) {
 	return &officialMCP.CreateMessageResult{
 		Content: &officialMCP.ToolUseContent{
 			ID:    h.id,
@@ -211,7 +220,10 @@ func (h *toolUseStubHandler) HandleCreateMessage(_ context.Context, _ *officialM
 
 // HandleCreateMessageWithTools replies with the canned tool_use block. This
 // is the path real servers will hit when they request sampling-with-tools.
-func (h *toolUseStubHandler) HandleCreateMessageWithTools(_ context.Context, _ *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error) {
+func (h *toolUseStubHandler) HandleCreateMessageWithTools(
+	_ context.Context,
+	_ *officialMCP.CreateMessageWithToolsRequest,
+) (*officialMCP.CreateMessageWithToolsResult, error) {
 	return &officialMCP.CreateMessageWithToolsResult{
 		Content: []officialMCP.Content{
 			&officialMCP.ToolUseContent{

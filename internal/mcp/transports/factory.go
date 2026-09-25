@@ -35,8 +35,12 @@ func (f *factory) CreateTransport(config *TransportConfig) (officialMCP.Transpor
 }
 
 // createSSETransport creates an SSE transport with proper HTTP client configuration
-func (f *factory) createSSETransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
-	httpClient := GetHTTPClientForTransportFull(TransportSSE, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
+func (f *factory) createSSETransport(
+	config *TransportConfig,
+	strategy ContextStrategy,
+) (officialMCP.Transport, ContextStrategy, error) {
+	httpClient := GetHTTPClientForTransportFull(
+		TransportSSE, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
 
 	// Create SSE transport using official SDK (direct struct initialization)
 	transport := &officialMCP.SSEClientTransport{
@@ -51,8 +55,12 @@ func (f *factory) createSSETransport(config *TransportConfig, strategy ContextSt
 // serves both "http" and "streamable-http": they are the same transport.
 // OAuthHandler is wired through when the user supplied OAuth flags; the SDK
 // transport calls Authorize() on the first 401/403 response.
-func (f *factory) createStreamableHTTPTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
-	httpClient := GetHTTPClientForTransportFull(config.Type, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
+func (f *factory) createStreamableHTTPTransport(
+	config *TransportConfig,
+	strategy ContextStrategy,
+) (officialMCP.Transport, ContextStrategy, error) {
+	httpClient := GetHTTPClientForTransportFull(
+		config.Type, config.HTTPClient, config.MCPMethodHeaders, config.StaticHeaders)
 
 	transport := &officialMCP.StreamableClientTransport{
 		Endpoint:     config.URL,

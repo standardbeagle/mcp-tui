@@ -131,7 +131,11 @@ func extractMethodAndName(body []byte) (method, name string) {
 // GetHTTPClientForTransport that optionally wraps the client's transport with
 // the SEP-2243 method-headers injector. We add a sibling rather than mutating
 // the existing helper so callers that don't opt in see no behavior change.
-func GetHTTPClientForTransportWithMethodHeaders(transportType TransportType, customClient *http.Client, methodHeaders bool) *http.Client {
+func GetHTTPClientForTransportWithMethodHeaders(
+	transportType TransportType,
+	customClient *http.Client,
+	methodHeaders bool,
+) *http.Client {
 	return GetHTTPClientForTransportFull(transportType, customClient, methodHeaders, nil)
 }
 
@@ -155,7 +159,12 @@ const HTTPTraceComponent = "mcp-http"
 // Mcp-* headers included) and the unmodified server response. Tracing is
 // always layered in: the custom transport bypasses http.DefaultTransport, so
 // nothing else would see this traffic.
-func GetHTTPClientForTransportFull(transportType TransportType, customClient *http.Client, methodHeaders bool, staticHeaders map[string]string) *http.Client {
+func GetHTTPClientForTransportFull(
+	transportType TransportType,
+	customClient *http.Client,
+	methodHeaders bool,
+	staticHeaders map[string]string,
+) *http.Client {
 	client := GetHTTPClientForTransport(transportType, customClient)
 
 	// Clone so we don't mutate the shared default client.

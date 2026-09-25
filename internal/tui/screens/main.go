@@ -1565,9 +1565,11 @@ func (ms *MainScreen) renderCurrentList() string {
 		case 0:
 			emptyMsg = "No tools available\n\nThis MCP server doesn't provide any tools.\nTry connecting to a different server."
 		case 1:
-			emptyMsg = "No resources available\n\nThis MCP server doesn't provide any resources.\nResources allow reading of files and data."
+			emptyMsg = "No resources available\n\nThis MCP server doesn't provide any resources.\n" +
+				"Resources allow reading of files and data."
 		case 2:
-			emptyMsg = "No prompts available\n\nThis MCP server doesn't provide any prompts.\nPrompts are reusable templates for interactions."
+			emptyMsg = "No prompts available\n\nThis MCP server doesn't provide any prompts.\n" +
+				"Prompts are reusable templates for interactions."
 		case 3:
 			emptyMsg = "No events recorded yet\n\nEvents will appear here as the server sends notifications."
 		default:
@@ -1614,7 +1616,10 @@ func (ms *MainScreen) renderCurrentList() string {
 	}
 
 	// Log dimensions for debugging
-	ms.logger.Debug("Rendering list", debug.F("termWidth", termWidth), debug.F("termHeight", termHeight), debug.F("availableHeight", termHeight-8))
+	ms.logger.Debug("Rendering list",
+		debug.F("termWidth", termWidth),
+		debug.F("termHeight", termHeight),
+		debug.F("availableHeight", termHeight-8))
 
 	// Reserve space for: title(1) + connection status(1) + tabs(1) + separators(2) + help(1) + status(2)
 	reservedHeight := 8
@@ -2129,7 +2134,8 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 				if description == "" {
 					description = noDescription
 				}
-				promptList = append(promptList, fmt.Sprintf("%s%s - %s", iconMarker(len(prompt.Icons)), prompt.DisplayName(), description))
+				promptList = append(promptList,
+					fmt.Sprintf("%s%s - %s", iconMarker(len(prompt.Icons)), prompt.DisplayName(), description))
 			}
 		}
 

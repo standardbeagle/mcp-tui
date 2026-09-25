@@ -61,7 +61,10 @@ func (tm *TracingMiddleware) TraceNotificationReceived(method string, params int
 }
 
 // CreateProgressHandler creates a progress notification handler with tracing
-func (tm *TracingMiddleware) CreateProgressHandler() func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
+func (tm *TracingMiddleware) CreateProgressHandler() func(
+	ctx context.Context,
+	req *officialMCP.ProgressNotificationClientRequest,
+) {
 	return func(ctx context.Context, req *officialMCP.ProgressNotificationClientRequest) {
 		// Trace progress notification
 		tm.tracer.TraceProgress(req.Params.ProgressToken, req.Params.Progress, "progress_notification")
@@ -105,7 +108,11 @@ func NewDebugClientOptions(tracer *EventTracer) *DebugClientOptions {
 // callers can install handlers (e.g. CreateMessageHandler for sampling) while
 // still getting tracing middleware. When extra is nil the default debug options
 // are used as-is.
-func CreateDebugClient(impl *officialMCP.Implementation, tracer *EventTracer, extra ...*officialMCP.ClientOptions) *officialMCP.Client {
+func CreateDebugClient(
+	impl *officialMCP.Implementation,
+	tracer *EventTracer,
+	extra ...*officialMCP.ClientOptions,
+) *officialMCP.Client {
 	options := NewDebugClientOptions(tracer)
 	merged := options.ClientOptions
 	for _, e := range extra {

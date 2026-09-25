@@ -113,7 +113,10 @@ func NewTUIHandler(deliver PromptDelivery) *TUIHandler {
 // HandleCreateMessage implements Handler. It delivers the request to the TUI
 // via the deliver callback and waits for Resolve, Reject, or context
 // cancellation.
-func (h *TUIHandler) HandleCreateMessage(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+func (h *TUIHandler) HandleCreateMessage(
+	ctx context.Context,
+	req *officialMCP.CreateMessageRequest,
+) (*officialMCP.CreateMessageResult, error) {
 	if h.deliver == nil {
 		return nil, fmt.Errorf("sampling: TUI handler has no delivery function configured")
 	}
@@ -143,7 +146,8 @@ func (h *TUIHandler) HandleCreateMessage(ctx context.Context, req *officialMCP.C
 		// array content).
 		if outcome.resultWithTools != nil {
 			if len(outcome.resultWithTools.Content) != 1 {
-				return nil, fmt.Errorf("sampling: TUI returned %d content blocks but request was basic CreateMessage (only one block allowed)", len(outcome.resultWithTools.Content))
+				return nil, fmt.Errorf("sampling: TUI returned %d content blocks but request was basic "+
+					"CreateMessage (only one block allowed)", len(outcome.resultWithTools.Content))
 			}
 			return &officialMCP.CreateMessageResult{
 				Meta:       outcome.resultWithTools.Meta,
@@ -160,7 +164,10 @@ func (h *TUIHandler) HandleCreateMessage(ctx context.Context, req *officialMCP.C
 // HandleCreateMessageWithTools implements WithToolsHandler. It delivers the
 // request to the TUI via the deliver callback and waits for Resolve,
 // ResolveWithTools, Reject, or context cancellation.
-func (h *TUIHandler) HandleCreateMessageWithTools(ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error) {
+func (h *TUIHandler) HandleCreateMessageWithTools(
+	ctx context.Context,
+	req *officialMCP.CreateMessageWithToolsRequest,
+) (*officialMCP.CreateMessageWithToolsResult, error) {
 	if h.deliver == nil {
 		return nil, fmt.Errorf("sampling: TUI handler has no delivery function configured")
 	}

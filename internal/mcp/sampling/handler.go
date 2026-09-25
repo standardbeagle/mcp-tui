@@ -19,14 +19,23 @@ import (
 // correct behavior for "user aborted" or "no handler configured" cases.
 type Handler interface {
 	// HandleCreateMessage handles a sampling/createMessage request.
-	HandleCreateMessage(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error)
+	HandleCreateMessage(
+		ctx context.Context,
+		req *officialMCP.CreateMessageRequest,
+	) (*officialMCP.CreateMessageResult, error)
 }
 
 // HandlerFunc is an adapter that lets ordinary functions satisfy Handler.
-type HandlerFunc func(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error)
+type HandlerFunc func(
+	ctx context.Context,
+	req *officialMCP.CreateMessageRequest,
+) (*officialMCP.CreateMessageResult, error)
 
 // HandleCreateMessage calls the underlying function.
-func (f HandlerFunc) HandleCreateMessage(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+func (f HandlerFunc) HandleCreateMessage(
+	ctx context.Context,
+	req *officialMCP.CreateMessageRequest,
+) (*officialMCP.CreateMessageResult, error) {
 	return f(ctx, req)
 }
 
@@ -47,5 +56,8 @@ type WithToolsHandler interface {
 	// replies (text + parallel tool_use blocks). Implementations may return
 	// either a text reply or one or more tool_use blocks; the server then
 	// dispatches the tool calls and follows up with a tool_result message.
-	HandleCreateMessageWithTools(ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error)
+	HandleCreateMessageWithTools(
+		ctx context.Context,
+		req *officialMCP.CreateMessageWithToolsRequest,
+	) (*officialMCP.CreateMessageWithToolsResult, error)
 }

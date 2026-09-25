@@ -333,7 +333,8 @@ func (r *Runner) scenarioInitialize(ctx context.Context) ScenarioResult {
 		return failResult("GetServerInfo returned nil", "server should populate ServerInfo on a successful initialize")
 	}
 	if info.ProtocolVersion == "" {
-		return failResult("negotiated protocol version is empty", fmt.Sprintf("server name=%q version=%q", info.Name, info.Version))
+		return failResult("negotiated protocol version is empty",
+			fmt.Sprintf("server name=%q version=%q", info.Name, info.Version))
 	}
 	if !info.Connected {
 		return failResult("ServerInfo.Connected is false after Connect", "")
@@ -433,15 +434,18 @@ func (r *Runner) scenarioToolsCall(ctx context.Context, expectIsError bool) Scen
 				"SDK v1.6.0 contract requires Content payload on isError responses",
 			)
 		}
-		return ScenarioResult{Pass: true, Detail: fmt.Sprintf("tool %q returned IsError=true with %d content blocks", pick.Name, len(res.Content))}
+		return ScenarioResult{Pass: true,
+			Detail: fmt.Sprintf("tool %q returned IsError=true with %d content blocks", pick.Name, len(res.Content))}
 	}
 	if res.IsError {
 		return ScenarioResult{
-			Pass:   true,
-			Detail: fmt.Sprintf("tool %q returned IsError=true (acceptable for happy-path scenario — server reported a tool-level error rather than crashing)", pick.Name),
+			Pass: true,
+			Detail: fmt.Sprintf("tool %q returned IsError=true "+
+				"(acceptable for happy-path scenario — server reported a tool-level error rather than crashing)", pick.Name),
 		}
 	}
-	return ScenarioResult{Pass: true, Detail: fmt.Sprintf("tool %q returned %d content blocks", pick.Name, len(res.Content))}
+	return ScenarioResult{Pass: true,
+		Detail: fmt.Sprintf("tool %q returned %d content blocks", pick.Name, len(res.Content))}
 }
 
 // scenarioResourcesList drives resources/list. Empty list is allowed.
@@ -566,7 +570,8 @@ func (r *Runner) scenarioSampling(ctx context.Context) ScenarioResult {
 		return failResult("ListTools failed: "+err.Error(), "")
 	}
 	if !hasToolNamed(tools, toolName) {
-		return ScenarioResult{Pass: true, Skipped: true, Error: fmt.Sprintf("skipped: server has no %q tool to trigger sampling", toolName)}
+		return ScenarioResult{Pass: true, Skipped: true,
+			Error: fmt.Sprintf("skipped: server has no %q tool to trigger sampling", toolName)}
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -585,7 +590,9 @@ func (r *Runner) scenarioSampling(ctx context.Context) ScenarioResult {
 	if res == nil {
 		return failResult(fmt.Sprintf("CallTool(%q) returned nil result", toolName), "")
 	}
-	return ScenarioResult{Pass: true, Detail: fmt.Sprintf("sampling round-trip completed via tool %q (isError=%t, %d content blocks)", toolName, res.IsError, len(res.Content))}
+	return ScenarioResult{Pass: true,
+		Detail: fmt.Sprintf("sampling round-trip completed via tool %q (isError=%t, %d content blocks)",
+			toolName, res.IsError, len(res.Content))}
 }
 
 // scenarioElicitation exercises elicitation/create by calling a tool that
@@ -608,7 +615,8 @@ func (r *Runner) scenarioElicitation(ctx context.Context) ScenarioResult {
 		return failResult("ListTools failed: "+err.Error(), "")
 	}
 	if !hasToolNamed(tools, toolName) {
-		return ScenarioResult{Pass: true, Skipped: true, Error: fmt.Sprintf("skipped: server has no %q tool to trigger elicitation", toolName)}
+		return ScenarioResult{Pass: true, Skipped: true,
+			Error: fmt.Sprintf("skipped: server has no %q tool to trigger elicitation", toolName)}
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -619,7 +627,8 @@ func (r *Runner) scenarioElicitation(ctx context.Context) ScenarioResult {
 	if res == nil {
 		return failResult(fmt.Sprintf("CallTool(%q) returned nil result", toolName), "")
 	}
-	return ScenarioResult{Pass: true, Detail: fmt.Sprintf("elicitation round-trip completed via tool %q (isError=%t)", toolName, res.IsError)}
+	return ScenarioResult{Pass: true,
+		Detail: fmt.Sprintf("elicitation round-trip completed via tool %q (isError=%t)", toolName, res.IsError)}
 }
 
 // scenarioNotifications connects and waits up to 5s for at least one
@@ -648,7 +657,8 @@ func (r *Runner) scenarioNotifications(ctx context.Context) ScenarioResult {
 	for time.Now().Before(deadline) {
 		entries := stream.Snapshot()
 		if len(entries) > 0 {
-			return ScenarioResult{Pass: true, Detail: fmt.Sprintf("captured %d notifications (first: %s)", len(entries), entries[0].Method)}
+			return ScenarioResult{Pass: true,
+				Detail: fmt.Sprintf("captured %d notifications (first: %s)", len(entries), entries[0].Method)}
 		}
 		select {
 		case <-ctx.Done():
@@ -682,7 +692,9 @@ func (r *Runner) scenarioCompletion(ctx context.Context) ScenarioResult {
 	if err != nil {
 		return failResult("Complete failed: "+err.Error(), "")
 	}
-	return ScenarioResult{Pass: true, Detail: fmt.Sprintf("completion returned %d values (hasMore=%t, total=%d)", len(res.Values), res.HasMore, res.Total)}
+	return ScenarioResult{Pass: true,
+		Detail: fmt.Sprintf("completion returned %d values (hasMore=%t, total=%d)",
+			len(res.Values), res.HasMore, res.Total)}
 }
 
 // buildCompletionRequest resolves the CompleteRequest for the completion

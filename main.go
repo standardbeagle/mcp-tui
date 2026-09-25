@@ -170,7 +170,8 @@ Examples:
 	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
 	rootCmd.PersistentFlags().String("transport", "stdio",
 		"Transport type (stdio, sse, http, streamable-http); sse is deprecated and negotiates at most 2025-11-25")
-	rootCmd.PersistentFlags().String("protocol-version", "", "MCP protocol version to request (e.g. 2025-11-25); empty = SDK latest")
+	rootCmd.PersistentFlags().String("protocol-version", "",
+		"MCP protocol version to request (e.g. 2025-11-25); empty = SDK latest")
 	rootCmd.PersistentFlags().String("server-log-level", "",
 		"Minimum server log notification level to request (debug ... emergency); empty = none. "+
 			"Logging is deprecated (SEP-2577)")
@@ -184,7 +185,8 @@ Examples:
 	// connect). The flag's value is read by base.go and was previously
 	// referenced without ever being registered, which silently disabled
 	// the diagnostic output.
-	rootCmd.PersistentFlags().Bool("debug", false, "Print extra diagnostics to stderr (e.g. negotiated MCP protocol version on connect)")
+	rootCmd.PersistentFlags().Bool("debug", false,
+		"Print extra diagnostics to stderr (e.g. negotiated MCP protocol version on connect)")
 	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "error", "Log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringP("format", "f", "text", "Output format (text, json)")
 	rootCmd.PersistentFlags().Bool("porcelain", false, "Machine-readable output (disables progress messages)")
@@ -201,7 +203,8 @@ Examples:
 	rootCmd.PersistentFlags().String("sampling-stub-file", "",
 		"JSON file with reply template for sampling/createMessage requests; sampling is deprecated (SEP-2577)")
 	rootCmd.PersistentFlags().String("sampling-tool-use", "",
-		"Auto-reply with a tool_use block of the form '<tool_name>:<json args>' (CLI mode); sampling is deprecated (SEP-2577)")
+		"Auto-reply with a tool_use block of the form '<tool_name>:<json args>' (CLI mode); "+
+			"sampling is deprecated (SEP-2577)")
 
 	// Elicitation stub flags. When the connected server issues an
 	// elicitation/create request, the CLI replies with this stub instead of
@@ -229,7 +232,8 @@ Examples:
 	// cancelled) is written to stderr as a one-line summary. Useful for
 	// piping a long-running tool call into a tool that needs to react to
 	// progress or list_changed events without parsing the full MCP log.
-	rootCmd.PersistentFlags().Bool("watch-notifications", false, "Stream server-to-client notifications to stderr in CLI mode")
+	rootCmd.PersistentFlags().Bool("watch-notifications", false,
+		"Stream server-to-client notifications to stderr in CLI mode")
 
 	// OAuth flags (--oauth-*); see cli.RegisterOAuthFlags.
 	cli.RegisterOAuthFlags(rootCmd.PersistentFlags())
@@ -251,8 +255,11 @@ Examples:
 	// existing protocol header on the request wins). --show-headers reveals
 	// specific header values verbatim in the Ctrl+D HTTP debug tab; without
 	// it, Authorization, Cookie, and Set-Cookie are masked as [REDACTED].
-	rootCmd.PersistentFlags().StringArray("header", nil, "Add an HTTP header to every request: KEY=VALUE (repeatable; HTTP transports only)")
-	rootCmd.PersistentFlags().String("show-headers", "", "Comma-separated list of header names to display verbatim in the debug HTTP tab (otherwise sensitive headers are redacted)")
+	rootCmd.PersistentFlags().StringArray("header", nil,
+		"Add an HTTP header to every request: KEY=VALUE (repeatable; HTTP transports only)")
+	rootCmd.PersistentFlags().String("show-headers", "",
+		"Comma-separated list of header names to display verbatim in the debug HTTP tab "+
+			"(otherwise sensitive headers are redacted)")
 
 	// Add subcommands
 	rootCmd.AddCommand(createToolCommand())

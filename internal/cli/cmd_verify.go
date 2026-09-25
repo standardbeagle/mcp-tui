@@ -78,7 +78,8 @@ Exit codes:
 		RunE: c.RunE,
 	}
 
-	cmd.Flags().String("probe", "", fmt.Sprintf("Run a single probe by name (one of: %s)", strings.Join(verify.AllProbes, ", ")))
+	cmd.Flags().String("probe", "",
+		fmt.Sprintf("Run a single probe by name (one of: %s)", strings.Join(verify.AllProbes, ", ")))
 	cmd.Flags().Bool("json", false, "Print machine-readable JSON instead of human-formatted output")
 	cmd.Flags().String("tool", "", "(seterror-content) Tool name to call (default: \"echo\")")
 	return cmd

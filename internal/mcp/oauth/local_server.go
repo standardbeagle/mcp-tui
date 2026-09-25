@@ -137,7 +137,10 @@ func (f *LocalServerFetcher) takeListener() (net.Listener, error) {
 // Fetch is the auth.AuthorizationCodeFetcher implementation. It opens the
 // user's browser to args.URL and serves a single HTTP request on the
 // loopback listener, returning the code+state from the redirect query.
-func (f *LocalServerFetcher) Fetch(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
+func (f *LocalServerFetcher) Fetch(
+	ctx context.Context,
+	args *auth.AuthorizationArgs,
+) (*auth.AuthorizationResult, error) {
 	if args == nil || args.URL == "" {
 		return nil, fmt.Errorf("oauth: empty authorization URL")
 	}

@@ -111,7 +111,10 @@ func NewTUIHandler(deliver PromptDelivery) *TUIHandler {
 // HandleElicit implements Handler. It delivers the request to the TUI via
 // the deliver callback and waits for Resolve, Reject, or context
 // cancellation.
-func (h *TUIHandler) HandleElicit(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
+func (h *TUIHandler) HandleElicit(
+	ctx context.Context,
+	req *officialMCP.ElicitRequest,
+) (*officialMCP.ElicitResult, error) {
 	if h.deliver == nil {
 		return nil, fmt.Errorf("elicitation: TUI handler has no delivery function configured")
 	}

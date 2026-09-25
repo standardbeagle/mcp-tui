@@ -45,7 +45,8 @@ func ValidateCommand(command string, args []string) error {
 	for i, arg := range args {
 		for _, pattern := range DangerousCommandPatterns {
 			if strings.Contains(arg, pattern) {
-				return fmt.Errorf("argument %d contains dangerous pattern '%s' which is not allowed for security reasons", i+1, pattern)
+				return fmt.Errorf("argument %d contains dangerous pattern '%s' which is not allowed for security reasons",
+					i+1, pattern)
 			}
 		}
 	}

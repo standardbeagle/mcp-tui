@@ -69,13 +69,19 @@ Exit codes:
 		RunE: c.RunE,
 	}
 
-	cmd.Flags().String("scenario", "", fmt.Sprintf("Run a single scenario by name (one of: %s)", strings.Join(conform.AllScenarios, ", ")))
+	cmd.Flags().String("scenario", "",
+		fmt.Sprintf("Run a single scenario by name (one of: %s)", strings.Join(conform.AllScenarios, ", ")))
 	cmd.Flags().String("report-junit", "", "Write JUnit XML report to the given file (e.g. conform.xml)")
-	cmd.Flags().String("sampling-trigger-tool", "", "Override the tool name used to trigger sampling/createMessage (default: sampleLLM)")
-	cmd.Flags().String("elicit-trigger-tool", "", "Override the tool name used to trigger elicitation/create (default: startElicitation)")
-	cmd.Flags().String("completion-prompt", "", "Prompt name (or resource template URI when --completion-resource is set) for completion/complete")
-	cmd.Flags().Bool("completion-resource", false, "Treat --completion-prompt as a resource template URI instead of a prompt name")
-	cmd.Flags().String("completion-arg", "", "Argument name for completion/complete (default: first argument of the chosen prompt)")
+	cmd.Flags().String("sampling-trigger-tool", "",
+		"Override the tool name used to trigger sampling/createMessage (default: sampleLLM)")
+	cmd.Flags().String("elicit-trigger-tool", "",
+		"Override the tool name used to trigger elicitation/create (default: startElicitation)")
+	cmd.Flags().String("completion-prompt", "",
+		"Prompt name (or resource template URI when --completion-resource is set) for completion/complete")
+	cmd.Flags().Bool("completion-resource", false,
+		"Treat --completion-prompt as a resource template URI instead of a prompt name")
+	cmd.Flags().String("completion-arg", "",
+		"Argument name for completion/complete (default: first argument of the chosen prompt)")
 	cmd.Flags().String("completion-prefix", "", "Prefix value for completion/complete (default: empty string)")
 	return cmd
 }

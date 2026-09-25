@@ -610,7 +610,8 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	var claudeConfig struct {
 		MCPServers map[string]interface{} `json:"mcpServers"`
 	}
-	if err := json.Unmarshal(data, &claudeConfig); err == nil && claudeConfig.MCPServers != nil && len(claudeConfig.MCPServers) > 0 {
+	if err := json.Unmarshal(data, &claudeConfig); err == nil &&
+		claudeConfig.MCPServers != nil && len(claudeConfig.MCPServers) > 0 {
 		dc.Format = formatClaudeDesktop
 		serverCount = len(claudeConfig.MCPServers)
 		dc.Servers = cm.extractClaudeDesktopServers(claudeConfig.MCPServers)
@@ -619,14 +620,16 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 		var vscodeConfig struct {
 			Servers map[string]interface{} `json:"servers"`
 		}
-		if err := json.Unmarshal(data, &vscodeConfig); err == nil && vscodeConfig.Servers != nil && len(vscodeConfig.Servers) > 0 {
+		if err := json.Unmarshal(data, &vscodeConfig); err == nil &&
+			vscodeConfig.Servers != nil && len(vscodeConfig.Servers) > 0 {
 			dc.Format = formatVSCode
 			serverCount = len(vscodeConfig.Servers)
 			dc.Servers = cm.extractVSCodeServers(vscodeConfig.Servers)
 		} else {
 			// Try MCP-TUI native format - must have servers node with content
 			var nativeConfig ConnectionsConfig
-			if err := json.Unmarshal(data, &nativeConfig); err == nil && nativeConfig.Servers != nil && len(nativeConfig.Servers) > 0 {
+			if err := json.Unmarshal(data, &nativeConfig); err == nil &&
+				nativeConfig.Servers != nil && len(nativeConfig.Servers) > 0 {
 				dc.Format = formatMCPtui
 				serverCount = len(nativeConfig.Servers)
 				dc.Servers = cm.extractNativeServers(nativeConfig.Servers)

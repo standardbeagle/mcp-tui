@@ -535,7 +535,8 @@ func (ds *DebugScreen) View() string {
 
 	// Help text
 	builder.WriteString("\n\n")
-	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy (incl. Capabilities JSON) • Ctrl+E: Export session • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
+	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy " +
+		"(incl. Capabilities JSON) • Ctrl+E: Export session • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	builder.WriteString(helpStyle.Render(helpText))
 
@@ -1372,7 +1373,8 @@ func (ds *DebugScreen) renderNotifications() string {
 			// We have entries but the filter excluded them all — make that
 			// distinction visible so the user does not assume the server
 			// stopped sending.
-			hint = fmt.Sprintf("All %d captured notifications hidden by current filter (press 0 to clear types, - to lower level).", stream.Len())
+			hint = fmt.Sprintf("All %d captured notifications hidden by current filter "+
+				"(press 0 to clear types, - to lower level).", stream.Len())
 		}
 		return ds.logStyle.Render(b.String() + hint)
 	}

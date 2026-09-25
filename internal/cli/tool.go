@@ -892,7 +892,8 @@ func confirmDestructiveCall(in, out *os.File, tool *mcp.Tool, skipConfirm bool) 
 	// y/N answer from. A piped stdin means we cannot ask the user; refuse
 	// loudly rather than silently defaulting to "yes" or "no".
 	if !isatty.IsTerminal(in.Fd()) {
-		return fmt.Errorf("tool %q is flagged destructive (destructiveHint=true); refusing to run without --no-confirm because stdin is not a TTY",
+		return fmt.Errorf("tool %q is flagged destructive (destructiveHint=true); "+
+			"refusing to run without --no-confirm because stdin is not a TTY",
 			tool.Name)
 	}
 

@@ -361,7 +361,12 @@ func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (
 
 // connectionConfigError returns an error for missing connection configuration
 func (c *BaseCommand) connectionConfigError() error {
-	return fmt.Errorf("no MCP server connection specified\n\nConnection options:\n- Use --cmd for stdio servers: --cmd 'npx @modelcontextprotocol/server-everything stdio'\n- Use --url for HTTP servers: --url 'http://localhost:8080'\n- Use --url for SSE servers: --url 'http://localhost:8080/events'\n\nExamples:\n  mcp-tui tool list --cmd npx --args '@modelcontextprotocol/server-everything,stdio'\n  mcp-tui tool list --url 'http://localhost:8080'")
+	return fmt.Errorf("no MCP server connection specified\n\nConnection options:\n" +
+		"- Use --cmd for stdio servers: --cmd 'npx @modelcontextprotocol/server-everything stdio'\n" +
+		"- Use --url for HTTP servers: --url 'http://localhost:8080'\n" +
+		"- Use --url for SSE servers: --url 'http://localhost:8080/events'\n\nExamples:\n" +
+		"  mcp-tui tool list --cmd npx --args '@modelcontextprotocol/server-everything,stdio'\n" +
+		"  mcp-tui tool list --url 'http://localhost:8080'")
 }
 
 // setupService creates and configures the MCP service
@@ -545,7 +550,11 @@ func elicitStubHandler(cmd *cobra.Command, stderr io.Writer) (elicitation.Handle
 // argument is read at the call site (CreateClient) rather than here because
 // this method doesn't carry a *cobra.Command — keeping cobra dependence
 // localized to the entry-points.
-func (c *BaseCommand) connectToServer(ctx context.Context, connConfig *config.ConnectionConfig, porcelainMode, debugMode bool) error {
+func (c *BaseCommand) connectToServer(
+	ctx context.Context,
+	connConfig *config.ConnectionConfig,
+	porcelainMode, debugMode bool,
+) error {
 	if !porcelainMode {
 		c.showConnectionMessage(connConfig)
 		fmt.Fprintf(os.Stderr, ConnectionTimeout, c.timeout)
@@ -690,7 +699,8 @@ func (c *BaseCommand) HandleError(err error, operation string) error {
 // ValidateConnection checks if the client is connected
 func (c *BaseCommand) ValidateConnection() error {
 	if c.service == nil || !c.service.IsConnected() {
-		return fmt.Errorf("no MCP server connection established - run the command again with proper connection parameters (--cmd or --url)")
+		return fmt.Errorf("no MCP server connection established - " +
+			"run the command again with proper connection parameters (--cmd or --url)")
 	}
 	return nil
 }

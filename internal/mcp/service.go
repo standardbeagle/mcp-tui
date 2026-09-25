@@ -765,12 +765,18 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		// that send the basic CreateMessage variant will be routed through
 		// the SDK's automatic fallback to CreateMessageWithToolsHandler.
 		if wt, ok := handler.(sampling.WithToolsHandler); ok {
-			clientOptions.CreateMessageWithToolsHandler = func(ctx context.Context, req *officialMCP.CreateMessageWithToolsRequest) (*officialMCP.CreateMessageWithToolsResult, error) {
+			clientOptions.CreateMessageWithToolsHandler = func(
+				ctx context.Context,
+				req *officialMCP.CreateMessageWithToolsRequest,
+			) (*officialMCP.CreateMessageWithToolsResult, error) {
 				return wt.HandleCreateMessageWithTools(ctx, req)
 			}
 			debug.Debug("Sampling handler (with tools) registered with MCP client")
 		} else {
-			clientOptions.CreateMessageHandler = func(ctx context.Context, req *officialMCP.CreateMessageRequest) (*officialMCP.CreateMessageResult, error) {
+			clientOptions.CreateMessageHandler = func(
+				ctx context.Context,
+				req *officialMCP.CreateMessageRequest,
+			) (*officialMCP.CreateMessageResult, error) {
 				return handler.HandleCreateMessage(ctx, req)
 			}
 			debug.Debug("Sampling handler registered with MCP client")
@@ -781,14 +787,20 @@ func (s *service) createClient() (*officialMCP.Client, error) {
 		// SetElicitationHandler calls. Setting ElicitationHandler also
 		// causes the SDK to advertise the elicitation capability automatically.
 		ehandler := s.elicitationHandler
-		clientOptions.ElicitationHandler = func(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
+		clientOptions.ElicitationHandler = func(
+			ctx context.Context,
+			req *officialMCP.ElicitRequest,
+		) (*officialMCP.ElicitResult, error) {
 			logURLElicitation(req)
 			return ehandler.HandleElicit(ctx, req)
 		}
 		// Fires before 2026-07-28 only: that revision removed the
 		// notification, and the MRTR loop logs URL elicitation instead
 		// (elicitForInput).
-		clientOptions.ElicitationCompleteHandler = func(_ context.Context, req *officialMCP.ElicitationCompleteNotificationRequest) {
+		clientOptions.ElicitationCompleteHandler = func(
+			_ context.Context,
+			req *officialMCP.ElicitationCompleteNotificationRequest,
+		) {
 			if req != nil && req.Params != nil {
 				debug.Info("URL elicitation completed", debug.F("elicitationID", req.Params.ElicitationID))
 			}

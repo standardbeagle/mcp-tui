@@ -222,7 +222,8 @@ func httpClient(t *Target) *http.Client {
 // jsonRPCInitBody is a minimal initialize request body, used by probes that
 // need a JSON-RPC envelope to look real to the server. Static so the body
 // reads identically across probes.
-const jsonRPCInitBody = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"mcp-tui-verify","version":"0.1.0"},"capabilities":{}}}`
+const jsonRPCInitBody = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25",` +
+	`"clientInfo":{"name":"mcp-tui-verify","version":"0.1.0"},"capabilities":{}}}`
 
 // isRejected is the canonical rejection check shared by the security probes:
 // a server is "rejecting" the request when it returns a 4xx (most commonly
@@ -314,10 +315,11 @@ func ProbeDNSRebind(ctx context.Context, t *Target) ProbeResult {
 		return ProbeResult{Name: name, Pass: true}
 	}
 	return ProbeResult{
-		Name:  name,
-		Pass:  false,
-		Error: fmt.Sprintf("server accepted localhost request with foreign Host header (status %d, expected 403/421)", resp.StatusCode),
-		Fix:   "leave DisableLocalhostProtection=false on StreamableHTTPOptions (SDK v1.4.0+ default)",
+		Name: name,
+		Pass: false,
+		Error: fmt.Sprintf("server accepted localhost request with foreign Host header (status %d, expected 403/421)",
+			resp.StatusCode),
+		Fix: "leave DisableLocalhostProtection=false on StreamableHTTPOptions (SDK v1.4.0+ default)",
 	}
 }
 
@@ -386,10 +388,12 @@ func ProbeOriginHeader(ctx context.Context, t *Target) ProbeResult {
 		defer drainBody(getResp)
 		if getResp.StatusCode == http.StatusForbidden || getResp.StatusCode == 421 {
 			return ProbeResult{
-				Name:  name,
-				Pass:  false,
-				Error: fmt.Sprintf("server rejected GET without Origin (status %d, expected non-403/421 — Origin enforcement should apply to POST only)", getResp.StatusCode),
-				Fix:   "scope Origin enforcement to POST in your handler — GET/HEAD shouldn't require Origin per streamable-HTTP §2.4",
+				Name: name,
+				Pass: false,
+				Error: fmt.Sprintf("server rejected GET without Origin "+
+					"(status %d, expected non-403/421 — Origin enforcement should apply to POST only)", getResp.StatusCode),
+				Fix: "scope Origin enforcement to POST in your handler — " +
+					"GET/HEAD shouldn't require Origin per streamable-HTTP §2.4",
 			}
 		}
 	}
@@ -467,10 +471,11 @@ func ProbeMCPMethodHeaders(ctx context.Context, t *Target) ProbeResult {
 	bodyStr := strings.ToLower(string(bodyBytes))
 	if strings.Contains(bodyStr, "mcp-method") || strings.Contains(bodyStr, "mcp-name") {
 		return ProbeResult{
-			Name:  name,
-			Pass:  false,
-			Error: fmt.Sprintf("server rejected request mentioning MCP-Method/MCP-Name (status %d, body %q)", resp.StatusCode, truncate(string(bodyBytes), 200)),
-			Fix:   "ignore unknown SEP-2243 advisory headers (per spec) instead of rejecting them",
+			Name: name,
+			Pass: false,
+			Error: fmt.Sprintf("server rejected request mentioning MCP-Method/MCP-Name (status %d, body %q)",
+				resp.StatusCode, truncate(string(bodyBytes), 200)),
+			Fix: "ignore unknown SEP-2243 advisory headers (per spec) instead of rejecting them",
 		}
 	}
 	// Header passed through cleanly — non-2xx status is unrelated.
@@ -503,7 +508,8 @@ func truncate(s string, n int) string {
 func ProbeSetErrorContent(ctx context.Context, t *Target) ProbeResult {
 	const name = "seterror-content"
 	if t.Command == "" {
-		return ProbeResult{Name: name, Pass: false, Error: "missing command", Fix: "supply --cmd <stdio-server-command> for this probe"}
+		return ProbeResult{Name: name, Pass: false,
+			Error: "missing command", Fix: "supply --cmd <stdio-server-command> for this probe"}
 	}
 	toolName := t.ToolName
 	if toolName == "" {
@@ -580,7 +586,8 @@ func classifySetErrorResult(toolName string, isError bool, contents []string) Pr
 			Name:  name,
 			Pass:  false,
 			Error: "isError:true response has empty Content slice — payload was dropped",
-			Fix:   "preserve Content on isError responses (SDK v1.6.0 PR #864) — typed handlers do this automatically; raw handlers must populate Content explicitly",
+			Fix: "preserve Content on isError responses (SDK v1.6.0 PR #864) — typed handlers do this automatically; " +
+				"raw handlers must populate Content explicitly",
 		}
 	}
 	for _, t := range contents {

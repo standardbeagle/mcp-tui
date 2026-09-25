@@ -369,9 +369,10 @@ func (rc *ResourceCommand) createTemplatesCommand() *cobra.Command {
 // because the suggestions list is most useful piped to other tools.
 func (rc *ResourceCommand) createCompleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:      "complete <uri-template> <var>=<prefix>",
-		Short:    "Get URI-template variable suggestions via completion/complete",
-		Long:     "Send a completion/complete request scoped to the given URI template and variable. Output is a JSON suggestion list.",
+		Use:   "complete <uri-template> <var>=<prefix>",
+		Short: "Get URI-template variable suggestions via completion/complete",
+		Long: "Send a completion/complete request scoped to the given URI template and variable. " +
+			"Output is a JSON suggestion list.",
 		Args:     cobra.ExactArgs(2),
 		PreRunE:  rc.PreRunE,
 		PostRunE: rc.PostRunE,

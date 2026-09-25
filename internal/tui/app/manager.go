@@ -73,7 +73,11 @@ func NewScreenManager(cfg *config.Config, connConfig *config.ConnectionConfig) *
 // Returns the resolved connection config plus the source entry and its
 // owning manager so the caller can wire post-connect persistence (e.g. the
 // negotiated protocol version) back into the saved-connections file.
-func (sm *ScreenManager) checkAutoConnect() (*config.ConnectionConfig, *models.ConnectionEntry, *models.ConnectionsManager) {
+func (sm *ScreenManager) checkAutoConnect() (
+	*config.ConnectionConfig,
+	*models.ConnectionEntry,
+	*models.ConnectionsManager,
+) {
 	// Create connections manager and try to load connections
 	connectionsManager := models.NewConnectionsManager()
 	if err := connectionsManager.LoadConnections(); err != nil {

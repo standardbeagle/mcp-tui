@@ -287,7 +287,12 @@ func (et *EventTracer) TraceProgress(progressToken interface{}, progress float64
 }
 
 // addEvent is the internal method to add events to the trace buffer
-func (et *EventTracer) addEvent(eventType EventType, method string, requestID interface{}, data map[string]interface{}) *Event {
+func (et *EventTracer) addEvent(
+	eventType EventType,
+	method string,
+	requestID interface{},
+	data map[string]interface{},
+) *Event {
 	et.mu.Lock()
 	defer et.mu.Unlock()
 

@@ -491,7 +491,8 @@ func (s *ElicitationScreen) View() string {
 			b.WriteString(s.errorStyle.Render(elicitation.PunycodeWarning))
 		}
 		b.WriteString("\n\n")
-		b.WriteString(s.dimStyle.Render("Accept confirms consent. Open the URL manually in a browser; it is never fetched automatically."))
+		b.WriteString(s.dimStyle.Render(
+			"Accept confirms consent. Open the URL manually in a browser; it is never fetched automatically."))
 		b.WriteString("\n\n")
 		b.WriteString(s.helpStyle.Render("Enter/Ctrl+S to accept  •  Alt+D to decline  •  Esc to cancel"))
 		return s.wrapInBorder(b.String())
@@ -522,7 +523,8 @@ func (s *ElicitationScreen) View() string {
 }
 
 func (s *ElicitationScreen) isURLMode() bool {
-	return s.pending != nil && s.pending.Request != nil && s.pending.Request.Params != nil && s.pending.Request.Params.Mode == "url"
+	return s.pending != nil && s.pending.Request != nil &&
+		s.pending.Request.Params != nil && s.pending.Request.Params.Mode == "url"
 }
 
 // renderField renders one field — label, input control, and help — to b.

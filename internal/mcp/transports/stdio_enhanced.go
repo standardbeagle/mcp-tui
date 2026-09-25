@@ -58,7 +58,10 @@ type EnhancedSTDIOTransport struct {
 // ports, taking file locks, prompting for auth) and forced a mandatory
 // multi-second wait for well-behaved servers that never exit on their own.
 // Startup diagnostics now come from the real process's stderr instead.
-func createEnhancedSTDIOTransport(config *TransportConfig, strategy ContextStrategy) (officialMCP.Transport, ContextStrategy, error) {
+func createEnhancedSTDIOTransport(
+	config *TransportConfig,
+	strategy ContextStrategy,
+) (officialMCP.Transport, ContextStrategy, error) {
 	// Validate command for security before execution
 	if err := configPkg.ValidateCommand(config.Command, config.Args); err != nil {
 		return nil, nil, fmt.Errorf("command validation failed: %w", err)

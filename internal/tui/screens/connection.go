@@ -1180,9 +1180,11 @@ func (cs *ConnectionScreen) renderHelpText() string {
 
 	switch cs.viewMode {
 	case viewModeSaved:
-		helpText = "←/→: Navigate connections • Enter: Connect • M: Switch mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
+		helpText = "←/→: Navigate connections • Enter: Connect • M: Switch mode • Tab: Navigate • " +
+			"Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
 	case viewModeDiscovery:
-		helpText = "←/→: Navigate files • Enter: Load config • M: Switch mode • Tab: Navigate • Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
+		helpText = "←/→: Navigate files • Enter: Load config • M: Switch mode • Tab: Navigate • " +
+			"Ctrl+D/F12: Debug • Esc/Ctrl+C: Quit"
 	default: // viewModeManual
 		helpText = "←/→: Switch transport • 1/2/3: Select transport • Tab/Shift+Tab: Navigate • Enter: Connect"
 		if cs.transportType == config.TransportStdio {

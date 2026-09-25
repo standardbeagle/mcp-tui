@@ -40,9 +40,15 @@ type Handler interface {
 }
 
 // HandlerFunc is an adapter that lets ordinary functions satisfy Handler.
-type HandlerFunc func(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error)
+type HandlerFunc func(
+	ctx context.Context,
+	req *officialMCP.ElicitRequest,
+) (*officialMCP.ElicitResult, error)
 
 // HandleElicit calls the underlying function.
-func (f HandlerFunc) HandleElicit(ctx context.Context, req *officialMCP.ElicitRequest) (*officialMCP.ElicitResult, error) {
+func (f HandlerFunc) HandleElicit(
+	ctx context.Context,
+	req *officialMCP.ElicitRequest,
+) (*officialMCP.ElicitResult, error) {
 	return f(ctx, req)
 }

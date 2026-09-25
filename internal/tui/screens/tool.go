@@ -2122,7 +2122,8 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 			Foreground(lipgloss.Color("243")).
 			Italic(true)
 		builder.WriteString("\n")
-		builder.WriteString(viewHelpStyle.Render("↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
+		builder.WriteString(viewHelpStyle.Render(
+			"↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
 	} else {
 		lines := ts.resultLines
 		if lines == nil {
@@ -2239,9 +2240,11 @@ func (ts *ToolScreen) renderFooter() string {
 		helpText = ""
 	case ts.result != nil:
 		if len(ts.resultFields) > 1 {
-			helpText = "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+			helpText = "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • " +
+				"Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		} else {
-			helpText = "c: CLI command • Ctrl+C: Copy result • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+			helpText = "c: CLI command • Ctrl+C: Copy result • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll • " +
+				"Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		}
 	case ts.cursor < len(ts.fields):
 		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+T: Task mode • " +

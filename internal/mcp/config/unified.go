@@ -63,10 +63,12 @@ type TransportConfig struct {
 // HTTPTransportConfig contains HTTP-specific settings
 type HTTPTransportConfig struct {
 	// Client configuration
-	Timeout             time.Duration `json:"timeout" yaml:"timeout" validate:"min=1s,max=300s"`
-	MaxIdleConns        int           `json:"max_idle_conns" yaml:"max_idle_conns" validate:"min=1,max=1000"`
-	MaxIdleConnsPerHost int           `json:"max_idle_conns_per_host" yaml:"max_idle_conns_per_host" validate:"min=1,max=100"`
-	IdleConnTimeout     time.Duration `json:"idle_conn_timeout" yaml:"idle_conn_timeout" validate:"min=1s,max=600s"`
+	Timeout      time.Duration `json:"timeout" yaml:"timeout" validate:"min=1s,max=300s"`
+	MaxIdleConns int           `json:"max_idle_conns" yaml:"max_idle_conns" validate:"min=1,max=1000"`
+
+	MaxIdleConnsPerHost int `json:"max_idle_conns_per_host" yaml:"max_idle_conns_per_host" validate:"min=1,max=100"`
+
+	IdleConnTimeout time.Duration `json:"idle_conn_timeout" yaml:"idle_conn_timeout" validate:"min=1s,max=600s"`
 
 	// Security settings
 	TLSInsecureSkipVerify bool   `json:"tls_insecure_skip_verify" yaml:"tls_insecure_skip_verify"`
@@ -105,8 +107,9 @@ type STDIOTransportConfig struct {
 // SSETransportConfig contains SSE-specific settings
 type SSETransportConfig struct {
 	// Connection settings
-	ReconnectInterval    time.Duration `json:"reconnect_interval" yaml:"reconnect_interval" validate:"min=1s,max=300s"`
-	MaxReconnectAttempts int           `json:"max_reconnect_attempts" yaml:"max_reconnect_attempts" validate:"min=0,max=100"`
+	ReconnectInterval time.Duration `json:"reconnect_interval" yaml:"reconnect_interval" validate:"min=1s,max=300s"`
+
+	MaxReconnectAttempts int `json:"max_reconnect_attempts" yaml:"max_reconnect_attempts" validate:"min=0,max=100"`
 
 	// Buffering settings
 	BufferSize   int           `json:"buffer_size" yaml:"buffer_size" validate:"min=1024,max=1048576"`
@@ -128,14 +131,17 @@ const (
 // SessionConfig holds session management settings
 type SessionConfig struct {
 	// Health monitoring
-	HealthCheckInterval time.Duration `json:"health_check_interval" yaml:"health_check_interval" validate:"min=5s,max=600s"`
+	HealthCheckInterval time.Duration `json:"health_check_interval" yaml:"health_check_interval" validate:"min=5s,max=600s"` //nolint:lll // struct tags cannot be split across lines
 	HealthCheckTimeout  time.Duration `json:"health_check_timeout" yaml:"health_check_timeout" validate:"min=1s,max=60s"`
 
 	// Reconnection settings
-	MaxReconnectAttempts int           `json:"max_reconnect_attempts" yaml:"max_reconnect_attempts" validate:"min=0,max=50"`
-	ReconnectDelay       time.Duration `json:"reconnect_delay" yaml:"reconnect_delay" validate:"min=100ms,max=60s"`
-	ReconnectBackoff     string        `json:"reconnect_backoff" yaml:"reconnect_backoff" validate:"oneof=none linear exponential"`
-	MaxReconnectDelay    time.Duration `json:"max_reconnect_delay" yaml:"max_reconnect_delay" validate:"min=1s,max=300s"`
+	MaxReconnectAttempts int `json:"max_reconnect_attempts" yaml:"max_reconnect_attempts" validate:"min=0,max=50"`
+
+	ReconnectDelay time.Duration `json:"reconnect_delay" yaml:"reconnect_delay" validate:"min=100ms,max=60s"`
+
+	ReconnectBackoff string `json:"reconnect_backoff" yaml:"reconnect_backoff" validate:"oneof=none linear exponential"`
+
+	MaxReconnectDelay time.Duration `json:"max_reconnect_delay" yaml:"max_reconnect_delay" validate:"min=1s,max=300s"`
 
 	// Session persistence
 	EnablePersistence   bool          `json:"enable_persistence" yaml:"enable_persistence"`

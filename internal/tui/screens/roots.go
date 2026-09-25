@@ -303,7 +303,8 @@ func (s *RootsScreen) View() string {
 
 	b.WriteString(s.titleStyle.Render("Roots Editor · deprecated (SEP-2577)"))
 	b.WriteString("\n")
-	b.WriteString(s.dimStyle.Render("Roots tell filesystem-aware MCP servers which directories the user has granted them."))
+	b.WriteString(s.dimStyle.Render(
+		"Roots tell filesystem-aware MCP servers which directories the user has granted them."))
 	b.WriteString("\n\n")
 
 	switch s.mode {
