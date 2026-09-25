@@ -10,8 +10,6 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/stretchr/testify/assert"
-
-	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 func TestToolReExecutionIndicators(t *testing.T) {
@@ -24,8 +22,8 @@ func TestToolReExecutionIndicators(t *testing.T) {
 
 		// First execution
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
 					{Type: "text", Text: "Result 1"},
 				},
 			},
@@ -36,9 +34,9 @@ func TestToolReExecutionIndicators(t *testing.T) {
 
 		// Second execution
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
-					imcp.Content{Type: "text", Text: "Result 1"}, // Same result
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
+					mcp.Content{Type: "text", Text: "Result 1"}, // Same result
 				},
 			},
 		})
@@ -55,9 +53,9 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		// Execute tool
 		beforeExec := time.Now()
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
-					imcp.Content{Type: "text", Text: "Test result"},
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
+					mcp.Content{Type: "text", Text: "Test result"},
 				},
 			},
 		})
@@ -82,9 +80,9 @@ func TestToolReExecutionIndicators(t *testing.T) {
 
 		// First execution
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
-					imcp.Content{Type: "text", Text: "Result"},
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
+					mcp.Content{Type: "text", Text: "Result"},
 				},
 			},
 		})
@@ -96,9 +94,9 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		// Second execution - same result
 		time.Sleep(10 * time.Millisecond) // Ensure different timestamp
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
-					imcp.Content{Type: "text", Text: "Result"}, // Same result
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
+					mcp.Content{Type: "text", Text: "Result"}, // Same result
 				},
 			},
 		})
@@ -130,9 +128,9 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		// Multiple executions
 		for i := 1; i <= 3; i++ {
 			ts.Update(toolExecutionCompleteMsg{
-				Result: &imcp.CallToolResult{
-					Content: []imcp.Content{
-						imcp.Content{Type: "text", Text: "Result"},
+				Result: &mcp.CallToolResult{
+					Content: []mcp.Content{
+						mcp.Content{Type: "text", Text: "Result"},
 					},
 				},
 			})
@@ -150,17 +148,17 @@ func TestToolReExecutionIndicators(t *testing.T) {
 }
 
 // instantCallService answers every tool call at once.
-type instantCallService struct{ imcp.Service }
+type instantCallService struct{ mcp.Service }
 
-func (instantCallService) CallTool(context.Context, imcp.CallToolRequest) (*imcp.CallToolResult, error) {
-	return &imcp.CallToolResult{Content: []imcp.Content{{Type: "text", Text: "done"}}}, nil
+func (instantCallService) CallTool(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{Content: []mcp.Content{{Type: "text", Text: "done"}}}, nil
 }
 
 // A fast tool's result is delivered as soon as the call returns: the
 // command running the call used to sleep out a 500ms minimum display time,
 // holding a goroutine and delaying the result for nothing.
 func TestToolExecutionDeliversAFastResultAtOnce(t *testing.T) {
-	ts := NewToolScreen(imcp.Tool{Name: "fast-tool"}, instantCallService{})
+	ts := NewToolScreen(mcp.Tool{Name: "fast-tool"}, instantCallService{})
 
 	batch, ok := ts.executeTool()().(tea.BatchMsg)
 	if !ok {
@@ -191,9 +189,9 @@ func TestToolExecutionCounterPersistence(t *testing.T) {
 	// Execute multiple times
 	for i := 0; i < 5; i++ {
 		ts.Update(toolExecutionCompleteMsg{
-			Result: &imcp.CallToolResult{
-				Content: []imcp.Content{
-					imcp.Content{Type: "text", Text: fmt.Sprintf("Result %d", i)},
+			Result: &mcp.CallToolResult{
+				Content: []mcp.Content{
+					mcp.Content{Type: "text", Text: fmt.Sprintf("Result %d", i)},
 				},
 			},
 		})
