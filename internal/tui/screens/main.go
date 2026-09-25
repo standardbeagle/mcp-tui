@@ -14,6 +14,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
@@ -120,7 +121,10 @@ type MainScreen struct {
 	// feedsStopped ends the wait on both.
 	resourceUpdateFeed chan ResourceUpdatedMsg
 	inputRequestFeed   chan tea.Msg
-	feedsStopped       chan struct{}
+	// reconnectFeed carries the service's automatic reconnections
+	// (startReconnectFeed); one pending signal stands for any number.
+	reconnectFeed chan struct{}
+	feedsStopped  chan struct{}
 
 	// Connection status
 	connectionStatus string
@@ -273,6 +277,7 @@ func NewMainScreen(cfg *config.Config, connConfig *config.ConnectionConfig) *Mai
 		resourceTemplateSectionStart: -1,
 		resourceUpdateFeed:           make(chan ResourceUpdatedMsg, resourceUpdateBuffer),
 		inputRequestFeed:             make(chan tea.Msg),
+		reconnectFeed:                make(chan struct{}, 1),
 		feedsStopped:                 make(chan struct{}),
 	}
 
@@ -314,31 +319,38 @@ func (ms *MainScreen) leaveForConnectionScreen() tea.Cmd {
 }
 
 // formatConnectedStatus renders the connected status line for the TUI
-// status bar. The format is `Connected to <transport-target> [MCP <version>]`
-// — the bracketed suffix is omitted when the version is empty (which can
-// happen briefly during the synthetic test path, or against a server that
-// did not return a ProtocolVersion in its InitializeResult).
-func formatConnectedStatus(connConfig *config.ConnectionConfig, version string) string {
-	if connConfig == nil {
-		if version != "" {
-			return fmt.Sprintf("Connected [MCP %s]", version)
+// status bar: `Connected to <transport-target> · <server> <version> [MCP
+// <protocol>, stateless]`. The server part is omitted when info names none,
+// the bracketed part when it carries no protocol version (briefly during the
+// synthetic test path, or a server that returned none), and "stateless"
+// before 2026-07-28.
+func formatConnectedStatus(connConfig *config.ConnectionConfig, info *mcp.ServerInfo) string {
+	status := "Connected"
+	if connConfig != nil {
+		var target string
+		switch connConfig.Type {
+		case config.TransportHTTP, config.TransportSSE:
+			target = connConfig.URL
+		default:
+			// STDIO and any future transport that uses command/args.
+			target = strings.TrimSpace(fmt.Sprintf("%s %s", connConfig.Command, strings.Join(connConfig.Args, " ")))
 		}
-		return "Connected"
+		status += " to " + target
 	}
-
-	var target string
-	switch connConfig.Type {
-	case config.TransportHTTP, config.TransportSSE:
-		target = connConfig.URL
-	default:
-		// STDIO and any future transport that uses command/args.
-		target = strings.TrimSpace(fmt.Sprintf("%s %s", connConfig.Command, strings.Join(connConfig.Args, " ")))
+	if info == nil {
+		return status
 	}
-
-	if version != "" {
-		return fmt.Sprintf("Connected to %s [MCP %s]", target, version)
+	if server := strings.TrimSpace(info.Name + " " + info.Version); server != "" {
+		status += " · " + server
 	}
-	return fmt.Sprintf("Connected to %s", target)
+	if info.ProtocolVersion != "" {
+		tag := "MCP " + info.ProtocolVersion
+		if protocol.IsStateless(info.ProtocolVersion) {
+			tag += ", stateless"
+		}
+		status += " [" + tag + "]"
+	}
+	return status
 }
 
 // initializeComponents initializes screen components
@@ -400,6 +412,7 @@ func (ms *MainScreen) Init() tea.Cmd {
 		ms.connectToServer(),
 		ms.tickEvents(), // Start periodic event refresh
 		ms.startResourceUpdateFeed(),
+		ms.startReconnectFeed(),
 		ms.nextInputRequest(),
 	)
 }
@@ -464,6 +477,9 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ResourceUpdatedMsg:
 		return ms.handleResourceUpdated(msg)
+
+	case ServerReconnectedMsg:
+		return ms.handleServerReconnected(msg)
 
 	case resourceSubscriptionChangedMsg:
 		return ms.handleResourceSubscriptionChanged(msg)
@@ -545,11 +561,12 @@ func (ms *MainScreen) handleConnectionSuccess() (tea.Model, tea.Cmd) {
 	// label. The version is fetched from the service rather than the
 	// snapshot because GetServerInfo is the spec-confirmed value used by
 	// the same service for legacy reporting and is the cheapest call site.
+	info := ms.mcpService.GetServerInfo()
 	var version string
-	if info := ms.mcpService.GetServerInfo(); info != nil {
+	if info != nil {
 		version = info.ProtocolVersion
 	}
-	ms.connectionStatus = formatConnectedStatus(ms.connectionConfig, version)
+	ms.connectionStatus = formatConnectedStatus(ms.connectionConfig, info)
 
 	// Notify any caller (e.g. the connection screen) that wanted to know
 	// the negotiated version — used to persist it onto saved-connection

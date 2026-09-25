@@ -204,3 +204,54 @@ func (ms *MainScreen) resourceUpdateNotice() string {
 	}
 	return fmt.Sprintf("⟳ Updated on server at %s — press r to reload", at.Format("15:04:05"))
 }
+
+// ServerReconnectedMsg reports that the service reconnected on its own,
+// possibly to a different server, and re-read the new handshake.
+type ServerReconnectedMsg struct {
+	screen *MainScreen
+}
+
+// BackgroundWork and SessionWork: a reconnection reported under an overlay
+// or a tool screen must still reach the main screen, whose feed it re-arms.
+func (ServerReconnectedMsg) BackgroundWork() {}
+func (ServerReconnectedMsg) SessionWork()    {}
+
+// startReconnectFeed routes the service's automatic reconnections into the
+// bubbletea loop and returns the command that delivers the first one. Each
+// handled reconnection re-arms the feed (nextReconnect).
+func (ms *MainScreen) startReconnectFeed() tea.Cmd {
+	reconnected := ms.reconnectFeed
+	ms.mcpService.OnReconnected(func() {
+		select {
+		case reconnected <- struct{}{}:
+		default: // one pending signal already stands for this one
+		}
+	})
+	return ms.nextReconnect()
+}
+
+// nextReconnect waits for the next reconnection, or returns nil once the
+// screen stopped (disconnect).
+func (ms *MainScreen) nextReconnect() tea.Cmd {
+	reconnected, stopped := ms.reconnectFeed, ms.feedsStopped
+	return func() tea.Msg {
+		select {
+		case <-reconnected:
+			return ServerReconnectedMsg{screen: ms}
+		case <-stopped:
+			return nil
+		}
+	}
+}
+
+// handleServerReconnected re-reads the status line from the new handshake
+// and waits for the next reconnection.
+func (ms *MainScreen) handleServerReconnected(msg ServerReconnectedMsg) (tea.Model, tea.Cmd) {
+	if msg.screen != ms || ms.feedsDone() {
+		return ms, nil
+	}
+	if ms.connected {
+		ms.connectionStatus = formatConnectedStatus(ms.connectionConfig, ms.mcpService.GetServerInfo())
+	}
+	return ms, ms.nextReconnect()
+}

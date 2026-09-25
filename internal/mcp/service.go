@@ -99,6 +99,8 @@ type service struct {
 	// the CLI --watch-notifications flag and tests; never reads from the
 	// underlying ring buffer so observers cannot affect what TUI sees.
 	notificationObservers []func(notifications.Entry)
+	// reconnectObservers run after each automatic reconnection (OnReconnected).
+	reconnectObservers []func()
 
 	// outputSchemaCache stores the per-tool outputSchema observed during the
 	// most recent ListTools call. CallTool reads from this map to validate

@@ -63,4 +63,18 @@ func (s *service) onReconnected(session *officialMCP.ClientSession) {
 			debug.Warn("Resource subscription lost on reconnection", debug.F("uri", uri), debug.F("error", err))
 		}
 	}
+
+	s.mu.Lock()
+	observers := slices.Clone(s.reconnectObservers)
+	s.mu.Unlock()
+	for _, fn := range observers {
+		fn()
+	}
+}
+
+// OnReconnected registers fn to run at the end of each onReconnected.
+func (s *service) OnReconnected(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconnectObservers = append(s.reconnectObservers, fn)
 }

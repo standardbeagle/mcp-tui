@@ -162,6 +162,12 @@ type Service interface {
 	// receiving goroutine. Pass nil to make this a no-op.
 	AddNotificationObserver(fn func(notifications.Entry))
 
+	// OnReconnected registers fn to run after each automatic reconnection,
+	// once the service has re-read the new handshake (GetServerInfo,
+	// capabilities) and set its session state up again. It runs on the
+	// reconnection goroutine and must return quickly.
+	OnReconnected(fn func())
+
 	// Connection health and monitoring
 	GetConnectionHealth() map[string]interface{}
 	ConfigureReconnection(maxAttempts int, delay time.Duration)

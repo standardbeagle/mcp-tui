@@ -93,6 +93,7 @@ func (v *versionStubService) NotificationStream() *notifications.Stream {
 	return notifications.NewStream()
 }
 func (v *versionStubService) AddNotificationObserver(func(notifications.Entry)) {}
+func (v *versionStubService) OnReconnected(func())                            {}
 func (v *versionStubService) GetConnectionHealth() map[string]interface{}       { return nil }
 func (v *versionStubService) ConfigureReconnection(int, time.Duration)          {}
 func (v *versionStubService) ConfigureHealthCheck(time.Duration)                {}
@@ -123,7 +124,7 @@ func TestFormatConnectedStatus_StdioWithVersion(t *testing.T) {
 		Command: "npx",
 		Args:    []string{"@modelcontextprotocol/server-everything", "stdio"},
 	}
-	got := formatConnectedStatus(conn, "2025-11-25")
+	got := formatConnectedStatus(conn, &mcp.ServerInfo{ProtocolVersion: "2025-11-25"})
 	if !strings.Contains(got, "MCP 2025-11-25") {
 		t.Errorf("formatConnectedStatus = %q; missing 'MCP 2025-11-25'", got)
 	}
@@ -140,7 +141,7 @@ func TestFormatConnectedStatus_HTTPWithVersion(t *testing.T) {
 		Type: config.TransportHTTP,
 		URL:  "http://localhost:8080",
 	}
-	got := formatConnectedStatus(conn, "2025-06-18")
+	got := formatConnectedStatus(conn, &mcp.ServerInfo{ProtocolVersion: "2025-06-18"})
 	if !strings.Contains(got, "MCP 2025-06-18") {
 		t.Errorf("formatConnectedStatus = %q; missing 'MCP 2025-06-18'", got)
 	}
@@ -158,7 +159,7 @@ func TestFormatConnectedStatus_NoVersion(t *testing.T) {
 		Type:    config.TransportStdio,
 		Command: "echo",
 	}
-	got := formatConnectedStatus(conn, "")
+	got := formatConnectedStatus(conn, &mcp.ServerInfo{})
 	if strings.Contains(got, "MCP ") {
 		t.Errorf("formatConnectedStatus with empty version = %q; should omit MCP suffix", got)
 	}
