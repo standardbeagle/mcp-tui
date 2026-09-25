@@ -186,79 +186,87 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// If we have an overlay screen, route messages to it first
 	if sm.overlayScreen != nil {
-		switch msg := msg.(type) {
-		case screens.BackMsg:
-			// For overlay screens, back means close the overlay
-			cmd := sm.closeOverlay()
-			return sm, cmd
-
-		case screens.ToggleOverlayMsg:
-			// Toggle off the overlay if it's the same screen
-			if msg.Screen != nil && sm.overlayScreen.Name() == msg.Screen.Name() {
-				sm.logger.Info("Toggling off overlay screen")
-				cmd := sm.closeOverlay()
-				return sm, cmd
-			}
-			cmd := sm.openOverlay(msg.Screen)
-			return sm, cmd
-
-		case screens.TransitionMsg:
-			if msg.Transition.Screen.IsOverlay() {
-				cmd := sm.openOverlay(msg.Transition.Screen)
-				return sm, cmd
-			}
-			model, cmd := sm.overlayScreen.Update(msg)
-			if newScreen, ok := model.(screens.Screen); ok {
-				sm.overlayScreen = newScreen
-			}
-			return sm, cmd
-
-		case screens.BackgroundMsg:
-			model, cmd := sm.currentScreen.Update(msg)
-			if newScreen, ok := model.(screens.Screen); ok {
-				sm.currentScreen = newScreen
-			}
-			return sm, cmd
-
-		case screens.ConfirmDecisionMsg:
-			// Decision messages travel from an overlay (ConfirmScreen) to the
-			// parent screen that opened it. Forwarding straight to the parent
-			// while the overlay is still mounted lets a single tea.Batch
-			// containing {ConfirmDecisionMsg, BackMsg} both deliver the
-			// decision and tear down the overlay without ordering hazards.
-			model, cmd := sm.currentScreen.Update(msg)
-			if newScreen, ok := model.(screens.Screen); ok {
-				sm.currentScreen = newScreen
-			}
-			return sm, cmd
-
-		default:
-			// Forward to overlay screen
-			model, cmd := sm.overlayScreen.Update(msg)
-			if newScreen, ok := model.(screens.Screen); ok {
-				sm.overlayScreen = newScreen
-			}
-			return sm, cmd
-		}
+		cmd := sm.updateWithOverlay(msg)
+		return sm, cmd
 	}
 
 	// Handle window size messages for all screens
 	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		// Update current screen size
-		model, cmd := sm.currentScreen.Update(wsMsg)
-		if newScreen, ok := model.(screens.Screen); ok {
-			sm.currentScreen = newScreen
-		}
+		cmd := sm.deliverToCurrent(wsMsg)
 		return sm, cmd
 	}
 
 	// Handle messages for main screen flow
+	cmd := sm.updateMainFlow(msg)
+	return sm, cmd
+}
+
+// deliverToCurrent sends msg to the current screen and stores the returned
+// model back when it is a screens.Screen.
+func (sm *ScreenManager) deliverToCurrent(msg tea.Msg) tea.Cmd {
+	model, cmd := sm.currentScreen.Update(msg)
+	if newScreen, ok := model.(screens.Screen); ok {
+		sm.currentScreen = newScreen
+	}
+	return cmd
+}
+
+// deliverToOverlay sends msg to the open overlay and stores the returned
+// model back when it is a screens.Screen.
+func (sm *ScreenManager) deliverToOverlay(msg tea.Msg) tea.Cmd {
+	model, cmd := sm.overlayScreen.Update(msg)
+	if newScreen, ok := model.(screens.Screen); ok {
+		sm.overlayScreen = newScreen
+	}
+	return cmd
+}
+
+// updateWithOverlay routes a message while an overlay screen is open.
+func (sm *ScreenManager) updateWithOverlay(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case screens.BackMsg:
+		// For overlay screens, back means close the overlay
+		return sm.closeOverlay()
+
+	case screens.ToggleOverlayMsg:
+		// Toggle off the overlay if it's the same screen
+		if msg.Screen != nil && sm.overlayScreen.Name() == msg.Screen.Name() {
+			sm.logger.Info("Toggling off overlay screen")
+			return sm.closeOverlay()
+		}
+		return sm.openOverlay(msg.Screen)
+
+	case screens.TransitionMsg:
+		if msg.Transition.Screen.IsOverlay() {
+			return sm.openOverlay(msg.Transition.Screen)
+		}
+		return sm.deliverToOverlay(msg)
+
+	case screens.BackgroundMsg:
+		return sm.deliverToCurrent(msg)
+
+	case screens.ConfirmDecisionMsg:
+		// Decision messages travel from an overlay (ConfirmScreen) to the
+		// parent screen that opened it. Forwarding straight to the parent
+		// while the overlay is still mounted lets a single tea.Batch
+		// containing {ConfirmDecisionMsg, BackMsg} both deliver the
+		// decision and tear down the overlay without ordering hazards.
+		return sm.deliverToCurrent(msg)
+
+	default:
+		// Forward to overlay screen
+		return sm.deliverToOverlay(msg)
+	}
+}
+
+// updateMainFlow routes a message in the normal flow (no overlay open).
+func (sm *ScreenManager) updateMainFlow(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case screens.TransitionMsg:
 		// Check if this is an overlay screen
 		if msg.Transition.Screen.IsOverlay() {
-			cmd := sm.openOverlay(msg.Transition.Screen)
-			return sm, cmd
+			return sm.openOverlay(msg.Transition.Screen)
 		}
 
 		// Normal screen transition
@@ -276,15 +284,14 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			debug.F("from", sm.getCurrentScreenName()),
 			debug.F("to", msg.Transition.Screen.Name()))
 
-		return sm, sm.currentScreen.Init()
+		return sm.currentScreen.Init()
 
 	case screens.ToggleOverlayMsg:
 		// Toggle on the overlay
 		if msg.Screen != nil {
-			cmd := sm.openOverlay(msg.Screen)
-			return sm, cmd
+			return sm.openOverlay(msg.Screen)
 		}
-		return sm, nil
+		return nil
 
 	case screens.BackMsg:
 		// Go back to previous screen if available
@@ -298,19 +305,15 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				debug.F("to", previousScreen.Name()))
 
 			sm.currentScreen = previousScreen
-			return sm, nil
+			return nil
 		}
 
 		// No previous screen, handle as quit
-		return sm, tea.Quit
+		return tea.Quit
 
 	default:
 		// Forward message to current screen
-		model, cmd := sm.currentScreen.Update(msg)
-		if newScreen, ok := model.(screens.Screen); ok {
-			sm.currentScreen = newScreen
-		}
-		return sm, cmd
+		return sm.deliverToCurrent(msg)
 	}
 }
 

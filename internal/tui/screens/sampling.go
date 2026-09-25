@@ -86,17 +86,15 @@ func NewSamplingScreen(pending *sampling.PendingRequest) *SamplingScreen {
 }
 
 func (s *SamplingScreen) initStyles() {
-	s.titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")).MarginBottom(1)
-	s.labelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	s.contentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
-	s.helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	s.choiceStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
-	s.dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-	s.errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	s.overlayBorder = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("13")).
-		Padding(1, 2)
+	styles := newOverlayStyles("13", "12")
+	s.titleStyle = styles.title
+	s.labelStyle = styles.label
+	s.contentStyle = styles.content
+	s.helpStyle = styles.help
+	s.choiceStyle = styles.choice
+	s.dimStyle = styles.dim
+	s.errorStyle = styles.err
+	s.overlayBorder = styles.border
 }
 
 // AnswersRequest marks the overlay as a RequestOverlay: the server waits
@@ -135,66 +133,84 @@ func (s *SamplingScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (s *SamplingScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch s.mode {
 	case samplingModeChoice:
-		switch m.String() {
-		case keyEsc, "q":
-			return s.abort("user dismissed sampling request")
-		case "1", "m":
-			s.mode = samplingModeManual
-			s.input.Focus()
-			return s, textarea.Blink
-		case "2", "c":
-			return s.resolveText("ok")
-		case "3", "a":
-			return s.abort("user aborted sampling request")
-		case "4", "t":
-			// Tool picker is only available for sampling-with-tools
-			// requests that have at least one tool listed.
-			if s.hasTools() {
-				s.mode = samplingModeToolPick
-				s.toolCursor = 0
-			}
-			return s, nil
-		}
+		return s.handleChoiceKey(m)
 	case samplingModeManual:
-		switch m.String() {
-		case keyEsc:
-			s.mode = samplingModeChoice
-			s.input.Blur()
-			return s, nil
-		case keyCtrlS:
-			text := strings.TrimSpace(s.input.Value())
-			if text == "" {
-				s.helpText = "(reply is empty — type something or press Esc)"
-				return s, nil
-			}
-			return s.resolveText(text)
-		}
-
-		var cmd tea.Cmd
-		s.input, cmd = s.input.Update(m)
-		return s, cmd
+		return s.handleManualKey(m)
 	case samplingModeToolPick:
-		tools := s.tools()
-		switch m.String() {
-		case keyEsc, "q":
-			s.mode = samplingModeChoice
-			return s, nil
-		case keyUp, "k":
-			if s.toolCursor > 0 {
-				s.toolCursor--
-			}
-			return s, nil
-		case keyDown, "j":
-			if s.toolCursor < len(tools)-1 {
-				s.toolCursor++
-			}
-			return s, nil
-		case keyEnter, " ":
-			if s.toolCursor >= 0 && s.toolCursor < len(tools) {
-				return s.resolveToolUse(tools[s.toolCursor])
-			}
+		return s.handleToolPickKey(m)
+	}
+	return s, nil
+}
+
+// handleChoiceKey handles the initial "choose how to reply" mode.
+func (s *SamplingScreen) handleChoiceKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.String() {
+	case keyEsc, "q":
+		return s.abort("user dismissed sampling request")
+	case "1", "m":
+		s.mode = samplingModeManual
+		s.input.Focus()
+		return s, textarea.Blink
+	case "2", "c":
+		return s.resolveText("ok")
+	case "3", "a":
+		return s.abort("user aborted sampling request")
+	case "4", "t":
+		// Tool picker is only available for sampling-with-tools
+		// requests that have at least one tool listed.
+		if s.hasTools() {
+			s.mode = samplingModeToolPick
+			s.toolCursor = 0
+		}
+		return s, nil
+	}
+	return s, nil
+}
+
+// handleManualKey handles the free-text reply mode.
+func (s *SamplingScreen) handleManualKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.String() {
+	case keyEsc:
+		s.mode = samplingModeChoice
+		s.input.Blur()
+		return s, nil
+	case keyCtrlS:
+		text := strings.TrimSpace(s.input.Value())
+		if text == "" {
+			s.helpText = "(reply is empty — type something or press Esc)"
 			return s, nil
 		}
+		return s.resolveText(text)
+	}
+
+	var cmd tea.Cmd
+	s.input, cmd = s.input.Update(m)
+	return s, cmd
+}
+
+// handleToolPickKey handles the tool picker of a sampling-with-tools
+// request.
+func (s *SamplingScreen) handleToolPickKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	tools := s.tools()
+	switch m.String() {
+	case keyEsc, "q":
+		s.mode = samplingModeChoice
+		return s, nil
+	case keyUp, "k":
+		if s.toolCursor > 0 {
+			s.toolCursor--
+		}
+		return s, nil
+	case keyDown, "j":
+		if s.toolCursor < len(tools)-1 {
+			s.toolCursor++
+		}
+		return s, nil
+	case keyEnter, " ":
+		if s.toolCursor >= 0 && s.toolCursor < len(tools) {
+			return s.resolveToolUse(tools[s.toolCursor])
+		}
+		return s, nil
 	}
 	return s, nil
 }
@@ -360,75 +376,86 @@ func (s *SamplingScreen) renderRequestSummary(b *strings.Builder) {
 	switch {
 	case s.pending.RequestWithTools != nil && s.pending.RequestWithTools.Params != nil:
 		p := s.pending.RequestWithTools.Params
-		if p.SystemPrompt != "" {
-			b.WriteString(s.labelStyle.Render("System prompt: "))
-			b.WriteString(s.contentStyle.Render(truncate(p.SystemPrompt, 200)))
-			b.WriteString("\n")
-		}
-		if p.MaxTokens > 0 {
-			b.WriteString(s.labelStyle.Render("Max tokens: "))
-			b.WriteString(s.contentStyle.Render(fmt.Sprintf("%d", p.MaxTokens)))
-			b.WriteString("\n")
-		}
-		if prefs := p.ModelPreferences; prefs != nil {
-			b.WriteString(s.labelStyle.Render("Model preferences: "))
-			b.WriteString(s.contentStyle.Render(formatModelPrefs(prefs)))
-			b.WriteString("\n")
-		}
-		s.renderIncludeContext(b, p.IncludeContext)
-		b.WriteString(s.labelStyle.Render("Messages:"))
-		b.WriteString("\n")
-		for i, msg := range p.Messages {
-			if msg == nil {
-				continue
-			}
-			b.WriteString(s.contentStyle.Render(fmt.Sprintf("  [%d] %s: %s", i+1, msg.Role, summarizeContentSlice(msg.Content))))
-			b.WriteString("\n")
-		}
-		if len(p.Tools) > 0 {
-			b.WriteString(s.labelStyle.Render(fmt.Sprintf("Tools (%d):", len(p.Tools))))
-			b.WriteString("\n")
-			for _, t := range p.Tools {
-				if t == nil {
-					continue
-				}
-				if t.Description != "" {
-					b.WriteString(s.contentStyle.Render(fmt.Sprintf("  • %s — %s", t.Name, truncate(t.Description, 80))))
-				} else {
-					b.WriteString(s.contentStyle.Render("  • " + t.Name))
-				}
-				b.WriteString("\n")
-			}
-		}
+		s.renderSummaryHeader(b, p.SystemPrompt, p.MaxTokens, p.ModelPreferences, p.IncludeContext)
+		s.renderWithToolsMessages(b, p.Messages)
+		s.renderSummaryTools(b, p.Tools)
 	case s.pending.Request != nil && s.pending.Request.Params != nil:
 		p := s.pending.Request.Params
-		if p.SystemPrompt != "" {
-			b.WriteString(s.labelStyle.Render("System prompt: "))
-			b.WriteString(s.contentStyle.Render(truncate(p.SystemPrompt, 200)))
-			b.WriteString("\n")
-		}
-		if p.MaxTokens > 0 {
-			b.WriteString(s.labelStyle.Render("Max tokens: "))
-			b.WriteString(s.contentStyle.Render(fmt.Sprintf("%d", p.MaxTokens)))
-			b.WriteString("\n")
-		}
-		if prefs := p.ModelPreferences; prefs != nil {
-			b.WriteString(s.labelStyle.Render("Model preferences: "))
-			b.WriteString(s.contentStyle.Render(formatModelPrefs(prefs)))
-			b.WriteString("\n")
-		}
-		s.renderIncludeContext(b, p.IncludeContext)
-		b.WriteString(s.labelStyle.Render("Messages:"))
-		b.WriteString("\n")
-		for i, msg := range p.Messages {
-			if msg == nil {
-				continue
-			}
-			b.WriteString(s.contentStyle.Render(fmt.Sprintf("  [%d] %s: %s", i+1, msg.Role, summarizeContent(msg.Content))))
-			b.WriteString("\n")
-		}
+		s.renderSummaryHeader(b, p.SystemPrompt, p.MaxTokens, p.ModelPreferences, p.IncludeContext)
+		s.renderBasicMessages(b, p.Messages)
 	default:
 		b.WriteString(s.dimStyle.Render("(request payload unavailable)"))
+		b.WriteString("\n")
+	}
+}
+
+// renderSummaryHeader writes the request header fields both sampling
+// request shapes share: system prompt, max tokens, model preferences and a
+// flagged includeContext.
+func (s *SamplingScreen) renderSummaryHeader(
+	b *strings.Builder, systemPrompt string, maxTokens int64,
+	prefs *officialMCP.ModelPreferences, includeContext string,
+) {
+	if systemPrompt != "" {
+		b.WriteString(s.labelStyle.Render("System prompt: "))
+		b.WriteString(s.contentStyle.Render(truncate(systemPrompt, 200)))
+		b.WriteString("\n")
+	}
+	if maxTokens > 0 {
+		b.WriteString(s.labelStyle.Render("Max tokens: "))
+		b.WriteString(s.contentStyle.Render(fmt.Sprintf("%d", maxTokens)))
+		b.WriteString("\n")
+	}
+	if prefs != nil {
+		b.WriteString(s.labelStyle.Render("Model preferences: "))
+		b.WriteString(s.contentStyle.Render(formatModelPrefs(prefs)))
+		b.WriteString("\n")
+	}
+	s.renderIncludeContext(b, includeContext)
+}
+
+// renderWithToolsMessages writes the message list of a with-tools request.
+func (s *SamplingScreen) renderWithToolsMessages(b *strings.Builder, messages []*officialMCP.SamplingMessageV2) {
+	b.WriteString(s.labelStyle.Render("Messages:"))
+	b.WriteString("\n")
+	for i, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		b.WriteString(s.contentStyle.Render(fmt.Sprintf("  [%d] %s: %s", i+1, msg.Role, summarizeContentSlice(msg.Content))))
+		b.WriteString("\n")
+	}
+}
+
+// renderBasicMessages writes the message list of a basic sampling request.
+func (s *SamplingScreen) renderBasicMessages(b *strings.Builder, messages []*officialMCP.SamplingMessage) {
+	b.WriteString(s.labelStyle.Render("Messages:"))
+	b.WriteString("\n")
+	for i, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		b.WriteString(s.contentStyle.Render(fmt.Sprintf("  [%d] %s: %s", i+1, msg.Role, summarizeContent(msg.Content))))
+		b.WriteString("\n")
+	}
+}
+
+// renderSummaryTools writes the tools list of a with-tools request.
+func (s *SamplingScreen) renderSummaryTools(b *strings.Builder, tools []*officialMCP.Tool) {
+	if len(tools) == 0 {
+		return
+	}
+	b.WriteString(s.labelStyle.Render(fmt.Sprintf("Tools (%d):", len(tools))))
+	b.WriteString("\n")
+	for _, t := range tools {
+		if t == nil {
+			continue
+		}
+		if t.Description != "" {
+			b.WriteString(s.contentStyle.Render(fmt.Sprintf("  • %s — %s", t.Name, truncate(t.Description, 80))))
+		} else {
+			b.WriteString(s.contentStyle.Render("  • " + t.Name))
+		}
 		b.WriteString("\n")
 	}
 }

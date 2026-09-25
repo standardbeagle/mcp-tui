@@ -357,7 +357,18 @@ func (ts *ToolScreen) generateCLICommand() string {
 	// written as the JSON the form builds for it.
 	// A form that does not convert yet (a half-typed field) has no JSON
 	// for its sub-forms, which are then left out.
+	for _, word := range ts.cliFormArgumentWords() {
+		builder.WriteString(" " + shell.Quote(word))
+	}
+
+	return builder.String()
+}
+
+// cliFormArgumentWords spells the form's arguments as the CLI's key=value /
+// key:=<json> words.
+func (ts *ToolScreen) cliFormArgumentWords() []string {
 	built, buildErr := ts.formArguments()
+	var words []string
 	for i := range ts.fields {
 		field := &ts.fields[i]
 		if field.depth > 0 {
@@ -367,19 +378,18 @@ func (ts *ToolScreen) generateCLICommand() string {
 		case field.expanded:
 			if v, ok := built[field.name]; ok && buildErr == nil {
 				if encoded, err := json.Marshal(v); err == nil {
-					builder.WriteString(" " + shell.Quote(field.name+"="+string(encoded)))
+					words = append(words, field.name+"="+string(encoded))
 				}
 			}
 		case field.sendNull:
-			builder.WriteString(" " + shell.Quote(field.name+":=null"))
+			words = append(words, field.name+":=null")
 		case field.input.Value() != "":
 			// key=value reads the value by the field's schema type, as
 			// the form does.
-			builder.WriteString(" " + shell.Quote(field.name+"="+field.input.Value()))
+			words = append(words, field.name+"="+field.input.Value())
 		}
 	}
-
-	return builder.String()
+	return words
 }
 
 // initStyles initializes the visual styles
@@ -742,80 +752,7 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ts, waitForTaskUpdate(ts.taskUpdates)
 
 	case toolExecutionCompleteMsg:
-		ts.runningTask, ts.taskUpdates = nil, nil
-		ts.callProgress.clear()
-		ts.executing = false
-		ts.lastExecution = time.Now()
-		ts.executionCount++
-		// Reset bypass so a subsequent execution triggers a fresh confirm.
-		ts.confirmBypassed = false
-
-		if msg.Error != nil {
-			ts.SetError(msg.Error)
-		} else {
-			ts.result = msg.Result
-			// Reset scroll state when new result arrives
-			ts.resultScroll = 0
-			ts.resultLines = nil
-			ts.resultLineCount = 0
-
-			// Pretty print JSON result
-			if len(msg.Result.Content) > 0 {
-				// For now, just handle text content
-				var resultText strings.Builder
-				for i, content := range msg.Result.Content {
-					if i > 0 {
-						resultText.WriteString("\n\n")
-					}
-					if content.Type == "text" {
-						text := content.Text
-						// Try to pretty-print JSON
-						var jsonData interface{}
-						if err := json.Unmarshal([]byte(text), &jsonData); err == nil {
-							if formatted, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
-								resultText.Write(formatted)
-							} else {
-								resultText.WriteString(text)
-							}
-						} else {
-							resultText.WriteString(text)
-						}
-					} else {
-						if jsonBytes, err := json.MarshalIndent(content, "", "  "); err == nil {
-							resultText.Write(jsonBytes)
-						} else {
-							fmt.Fprintf(&resultText, "%v", content)
-						}
-					}
-				}
-				ts.resultJSON = resultText.String()
-
-				// Cache lines for scrolling (compute once, use in View)
-				ts.resultLines = strings.Split(ts.resultJSON, "\n")
-				ts.resultLineCount = len(ts.resultLines)
-
-				// Parse result fields for viewing
-				ts.parseResultFields()
-			}
-
-			// Show execution count in status
-			// Tool-result errors (isError:true) are NOT JSON-RPC failures —
-			// the call completed and the server returned a structured result
-			// flagged as an error. Surface that distinction in the status bar
-			// so operators see "Tool reported an error" rather than the
-			// misleading "executed successfully" message that older builds
-			// printed for every non-protocol-error path.
-			if msg.Result != nil && msg.Result.IsError {
-				errMsg := fmt.Sprintf("Tool reported an error (isError:true) (#%d)", ts.executionCount)
-				ts.SetStatus(errMsg, StatusError)
-			} else {
-				execMsg := fmt.Sprintf("Tool executed successfully (#%d)", ts.executionCount)
-				if ts.executionCount > 1 {
-					execMsg = fmt.Sprintf("Tool executed successfully (#%d) ✨", ts.executionCount)
-				}
-				ts.SetStatus(execMsg, StatusSuccess)
-			}
-		}
+		ts.handleExecutionComplete(msg)
 		return ts, nil
 
 	case StatusMsg:
@@ -851,6 +788,91 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return ts, nil
+}
+
+// handleExecutionComplete applies a finished call: stores the result (or
+// the error), rebuilds the pretty-printed JSON and reports the outcome in
+// the status line.
+func (ts *ToolScreen) handleExecutionComplete(msg toolExecutionCompleteMsg) {
+	ts.runningTask, ts.taskUpdates = nil, nil
+	ts.callProgress.clear()
+	ts.executing = false
+	ts.lastExecution = time.Now()
+	ts.executionCount++
+	// Reset bypass so a subsequent execution triggers a fresh confirm.
+	ts.confirmBypassed = false
+
+	if msg.Error != nil {
+		ts.SetError(msg.Error)
+		return
+	}
+	ts.result = msg.Result
+	// Reset scroll state when new result arrives
+	ts.resultScroll = 0
+	ts.resultLines = nil
+	ts.resultLineCount = 0
+
+	// Pretty print JSON result
+	if len(msg.Result.Content) > 0 {
+		ts.resultJSON = prettyPrintResultContent(msg.Result.Content)
+
+		// Cache lines for scrolling (compute once, use in View)
+		ts.resultLines = strings.Split(ts.resultJSON, "\n")
+		ts.resultLineCount = len(ts.resultLines)
+
+		// Parse result fields for viewing
+		ts.parseResultFields()
+	}
+
+	// Show execution count in status
+	// Tool-result errors (isError:true) are NOT JSON-RPC failures —
+	// the call completed and the server returned a structured result
+	// flagged as an error. Surface that distinction in the status bar
+	// so operators see "Tool reported an error" rather than the
+	// misleading "executed successfully" message that older builds
+	// printed for every non-protocol-error path.
+	if msg.Result != nil && msg.Result.IsError {
+		errMsg := fmt.Sprintf("Tool reported an error (isError:true) (#%d)", ts.executionCount)
+		ts.SetStatus(errMsg, StatusError)
+		return
+	}
+	execMsg := fmt.Sprintf("Tool executed successfully (#%d)", ts.executionCount)
+	if ts.executionCount > 1 {
+		execMsg = fmt.Sprintf("Tool executed successfully (#%d) ✨", ts.executionCount)
+	}
+	ts.SetStatus(execMsg, StatusSuccess)
+}
+
+// prettyPrintResultContent renders the call's content blocks, pretty
+// printing text blocks that hold JSON.
+func prettyPrintResultContent(contents []mcp.Content) string {
+	var resultText strings.Builder
+	for i, content := range contents {
+		if i > 0 {
+			resultText.WriteString("\n\n")
+		}
+		if content.Type == "text" {
+			text := content.Text
+			// Try to pretty-print JSON
+			var jsonData interface{}
+			if err := json.Unmarshal([]byte(text), &jsonData); err == nil {
+				if formatted, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
+					resultText.Write(formatted)
+				} else {
+					resultText.WriteString(text)
+				}
+			} else {
+				resultText.WriteString(text)
+			}
+		} else {
+			if jsonBytes, err := json.MarshalIndent(content, "", "  "); err == nil {
+				resultText.Write(jsonBytes)
+			} else {
+				fmt.Fprintf(&resultText, "%v", content)
+			}
+		}
+	}
+	return resultText.String()
 }
 
 // toolExecutionCompleteMsg signals tool execution is complete
@@ -973,201 +995,34 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Handle raw JSON mode input
 	if ts.rawJSONMode && ts.cursor == 0 {
-		switch msg.String() {
-		case keyTab, keyDown:
-			// Move to execute button
-			ts.rawJSONInput.Blur()
-			ts.cursor = 1
-			return ts, nil
-		case keyEnter:
-			// If on input, move to button; if on button, execute
-			if ts.cursor == 0 {
-				ts.rawJSONInput.Blur()
-				ts.cursor = 1
-				return ts, nil
-			}
-		case keyEsc:
-			return ts, func() tea.Msg { return BackMsg{} }
-		case keyToggleArgValidation:
-			ts.toggleArgValidation()
-			return ts, nil
-		default:
-			// Pass to raw JSON input
-			var cmd tea.Cmd
-			ts.rawJSONInput, cmd = ts.rawJSONInput.Update(msg)
-			return ts, cmd
-		}
+		return ts.handleRawJSONKey(msg)
 	}
 
 	// If we're in an input field, let the textinput handle most keys first
 	if !ts.rawJSONMode && ts.cursor < len(ts.fields) {
-		field := &ts.fields[ts.cursor]
-
-		// Handle navigation keys before passing to textinput
-		switch msg.String() {
-		case keyTab, keyDown, keyEnter:
-			// Don't pass these to textinput, handle navigation
-		case keyShiftTab, keyUp:
-			// Don't pass these to textinput, handle navigation
-		case "ctrl+t":
-			// Task mode toggle, handled below
-		case keyToggleArgValidation:
-			ts.toggleArgValidation()
-			return ts, nil
-		case keyToggleSubForm:
-			if ts.toggleSubForm(ts.cursor) {
-				ts.SetStatus("", StatusInfo)
-			}
-			return ts, nil
-		case keyAddElement:
-			if ts.addElement() {
-				ts.SetStatus("", StatusInfo)
-				return ts, nil
-			}
-			return ts.typeIntoField(msg)
-		case keyRemoveElement:
-			if ts.removeElement() {
-				ts.SetStatus("", StatusInfo)
-				return ts, nil
-			}
-			return ts.typeIntoField(msg)
-		case "ctrl+n":
-			// Send null: the only way to say it for a nullable string. An
-			// open sub-form says what the object holds instead.
-			if field.nullable && !field.expanded {
-				field.sendNull = !field.sendNull
-				field.validationError = ""
-				if field.sendNull {
-					ts.SetStatus(fmt.Sprintf("'%s' will be sent as null", field.name), StatusInfo)
-				} else {
-					ts.validateField(ts.cursor)
-					ts.SetStatus(fmt.Sprintf("'%s' takes its typed value again", field.name), StatusInfo)
-				}
-			}
-			return ts, nil
-		case keyEsc:
-			// Don't pass to textinput, handle escape
-		case "ctrl+v":
-			// Paste clipboard contents into the focused field. The help text
-			// advertises this binding; textinput itself ignores ctrl+v.
-			text, err := ts.readFromClipboard()
-			if err != nil {
-				ts.SetStatus(err.Error(), StatusError)
-				return ts, nil
-			}
-			field.input.SetValue(ts.sanitizeInput(text))
-			ts.validateField(ts.cursor)
-			ts.SetStatus("Pasted from clipboard", StatusSuccess)
-			return ts, nil
-		default:
-			return ts.typeIntoField(msg)
+		if model, cmd, handled := ts.handleFieldKey(msg); handled {
+			return model, cmd
 		}
 	}
 
 	// Special handling for result scrolling (when not in viewing mode)
 	if ts.result != nil && !ts.viewingResult {
-		availableHeight := ts.getResultDisplayHeight()
-
-		switch msg.String() {
-		case "ctrl+up":
-			// Scroll result up
-			if ts.resultScroll > 0 {
-				ts.resultScroll--
-			}
-			return ts, nil
-
-		case "ctrl+down":
-			// Scroll result down
-			maxScroll := max(0, ts.resultLineCount-availableHeight)
-			if ts.resultScroll < maxScroll {
-				ts.resultScroll++
-			}
-			return ts, nil
-
-		case keyPgUp:
-			// Page up in result
-			pageSize := max(1, availableHeight-2)
-			ts.resultScroll -= pageSize
-			if ts.resultScroll < 0 {
-				ts.resultScroll = 0
-			}
-			return ts, nil
-
-		case keyPgDown:
-			// Page down in result
-			pageSize := max(1, availableHeight-2)
-			maxScroll := max(0, ts.resultLineCount-availableHeight)
-			ts.resultScroll += pageSize
-			if ts.resultScroll > maxScroll {
-				ts.resultScroll = maxScroll
-			}
-			return ts, nil
-
-		case keyHome:
-			// Jump to top of result
-			ts.resultScroll = 0
-			return ts, nil
-
-		case keyEnd:
-			// Jump to bottom of result
-			ts.resultScroll = max(0, ts.resultLineCount-availableHeight)
+		if handled := ts.handleResultScrollKey(msg); handled {
 			return ts, nil
 		}
 	}
 
 	// Special handling for result viewing mode
 	if ts.viewingResult && ts.result != nil {
-		switch msg.String() {
-		case keyUp, "k":
-			if ts.resultCursor > 0 {
-				ts.resultCursor--
-			}
-			return ts, nil
-
-		case keyDown, "j":
-			if ts.resultCursor < len(ts.resultFields)-1 {
-				ts.resultCursor++
-			}
-			return ts, nil
-
-		case keyEnter, "c", "y":
-			// Copy selected field value
-			if ts.resultCursor < len(ts.resultFields) {
-				field := ts.resultFields[ts.resultCursor]
-				if err := ts.copyToClipboard(field.value); err == nil {
-					ts.SetStatus(fmt.Sprintf("Copied '%s' to clipboard!", field.path), StatusSuccess)
-				} else {
-					ts.SetStatus("Failed to copy to clipboard", StatusError)
-				}
-			}
-			return ts, nil
-
-		case "v":
-			// Exit result viewing mode
-			ts.viewingResult = false
-			ts.SetStatus("", StatusInfo)
-			return ts, nil
-
-		case keyCtrlC:
-			// Copy entire result
-			if err := ts.copyToClipboard(ts.resultJSON); err == nil {
-				ts.SetStatus("Copied entire result to clipboard!", StatusSuccess)
-			} else {
-				ts.SetStatus("Failed to copy to clipboard", StatusError)
-			}
-			return ts, nil
-
-		case keyEsc, "q":
-			// Exit result viewing mode
-			ts.viewingResult = false
-			ts.SetStatus("", StatusInfo)
-			return ts, nil
-		}
-
-		// Don't process other keys in viewing mode
-		return ts, nil
+		return ts.handleResultViewKey(msg)
 	}
 
+	return ts.handleToolbarKey(msg)
+}
+
+// handleToolbarKey handles the keys of the shared toolbar: task mode,
+// validation toggle, CLI command, copy, view, navigation, execute.
+func (ts *ToolScreen) handleToolbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+t":
 		ts.toggleTaskMode()
@@ -1179,41 +1034,12 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "c":
 		// Toggle CLI command display
-		if ts.showCLICommand {
-			ts.showCLICommand = false
-			ts.SetStatus("CLI command hidden", StatusInfo)
-		} else {
-			ts.cliCommand = ts.generateCLICommand()
-			ts.showCLICommand = true
-			if err := ts.copyToClipboard(ts.cliCommand); err == nil {
-				ts.SetStatus("CLI command copied to clipboard and displayed below!", StatusSuccess)
-			} else {
-				ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
-			}
-		}
+		ts.toggleCLICommandDisplay()
 		return ts, nil
 
 	case keyCtrlC:
 		// Copy result to clipboard if available
-		switch {
-		case ts.result != nil && ts.resultJSON != "":
-			if err := ts.copyToClipboard(ts.resultJSON); err == nil {
-				ts.SetStatus("Result copied to clipboard!", StatusSuccess)
-			} else {
-				ts.SetStatus("Failed to copy to clipboard", StatusError)
-			}
-		case ts.showCLICommand && ts.cliCommand != "":
-			// Copy CLI command to clipboard
-			if err := ts.copyToClipboard(ts.cliCommand); err == nil {
-				ts.SetStatus("CLI command copied to clipboard!", StatusSuccess)
-			} else {
-				ts.SetStatus("Failed to copy CLI command to clipboard", StatusError)
-			}
-		default:
-			// No result, go back
-			return ts, func() tea.Msg { return BackMsg{} }
-		}
-		return ts, nil
+		return ts.copyResultOrBack()
 
 	case "v":
 		// Enter result viewing mode if we have results
@@ -1224,139 +1050,366 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 
-	case keyEsc:
-		// Go back to previous screen
-		return ts, func() tea.Msg { return BackMsg{} }
-
-	case "b", keyAltLeft:
+	case keyEsc, "b", keyAltLeft:
 		// Go back to previous screen
 		return ts, func() tea.Msg { return BackMsg{} }
 
 	case keyCtrlL, keyCtrlD, keyF12:
-		// Show debug logs. Wire the snapshot + notifications providers when
-		// a service exists so the Capabilities and Notifications tabs render
-		// live data. Tests instantiate ToolScreen with a nil service, so the
-		// guard prevents a nil-method-value panic on Ctrl+L.
-		debugScreen := NewDebugScreen()
-		if ts.mcpService != nil {
-			debugScreen.WithSnapshotProvider(ts.mcpService.GetCapabilitiesSnapshot)
-			debugScreen.WithNotificationsProvider(ts.mcpService.NotificationStream)
-		}
-		return ts, func() tea.Msg {
-			return ToggleOverlayMsg{
-				Screen: debugScreen,
-			}
-		}
+		debugCmd := ts.showDebugOverlayCmd()
+		return ts, debugCmd
 
 	case keyTab, keyDown:
-		// Calculate total items based on mode
-		var totalItems int
-		var inputCount int
-		if ts.rawJSONMode {
-			inputCount = 1 // Just the raw JSON input
-			totalItems = 4 // raw JSON input + 3 buttons
-		} else {
-			inputCount = len(ts.fields)
-			totalItems = len(ts.fields) + 3 // fields + execute button + cli button + back button
-		}
-
-		// Validate and blur current field before moving
-		if !ts.rawJSONMode && ts.cursor < inputCount {
-			ts.validateField(ts.cursor)
-			ts.fields[ts.cursor].input.Blur()
-		} else if ts.rawJSONMode && ts.cursor == 0 {
-			ts.rawJSONInput.Blur()
-		}
-
-		// Move to next field/button
-		ts.cursor = (ts.cursor + 1) % totalItems
-
-		// Focus new field if it's an input
-		if ts.rawJSONMode && ts.cursor == 0 {
-			ts.rawJSONInput.Focus()
-		} else if !ts.rawJSONMode && ts.cursor < inputCount {
-			ts.fields[ts.cursor].input.Focus()
-		}
+		ts.moveCursor(1)
 		return ts, nil
 
 	case keyShiftTab, keyUp:
-		// Calculate total items based on mode
-		var totalItems int
-		var inputCount int
-		if ts.rawJSONMode {
-			inputCount = 1
-			totalItems = 4
-		} else {
-			inputCount = len(ts.fields)
-			totalItems = len(ts.fields) + 3
-		}
-
-		// Blur current field
-		if !ts.rawJSONMode && ts.cursor < inputCount {
-			ts.fields[ts.cursor].input.Blur()
-		} else if ts.rawJSONMode && ts.cursor == 0 {
-			ts.rawJSONInput.Blur()
-		}
-
-		// Move to previous field/button
-		ts.cursor = (ts.cursor - 1 + totalItems) % totalItems
-
-		// Focus new field if it's an input
-		if ts.rawJSONMode && ts.cursor == 0 {
-			ts.rawJSONInput.Focus()
-		} else if !ts.rawJSONMode && ts.cursor < inputCount {
-			ts.fields[ts.cursor].input.Focus()
-		}
+		ts.moveCursor(-1)
 		return ts, nil
 
 	case keyEnter:
-		// Calculate button positions based on mode
-		var executePos, cliPos, backPos int
-		if ts.rawJSONMode {
-			executePos = 1 // After raw JSON input
-			cliPos = 2
-			backPos = 3
-		} else {
-			executePos = len(ts.fields)
-			cliPos = len(ts.fields) + 1
-			backPos = len(ts.fields) + 2
-		}
-
-		// Handle enter based on current position
-		switch ts.cursor {
-		case executePos:
-			// Execute button — gate destructive tools behind a confirm overlay.
-			// The check uses the same IsDestructive() helper as the CLI prompt
-			// so behavior stays in lock-step across the two surfaces.
-			if ts.tool.IsDestructive() && !ts.confirmBypassed {
-				ts.pendingConfirm = true
-				return ts, openConfirmOverlay(&ts.tool)
-			}
-			cmd := ts.executeTool()
-			return ts, cmd
-		case cliPos:
-			// CLI button
-			ts.cliCommand = ts.generateCLICommand()
-			ts.showCLICommand = true
-
-			// Copy to clipboard
-			if err := ts.copyToClipboard(ts.cliCommand); err == nil {
-				ts.SetStatus("CLI command copied to clipboard and displayed below!", StatusSuccess)
-			} else {
-				ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
-			}
-			return ts, nil
-		case backPos:
-			// Back button
-			return ts, func() tea.Msg { return BackMsg{} }
-		}
-		return ts, nil
+		return ts.activateCursorButton()
 
 	default:
 		// Log unhandled keys for debugging
 		ts.logger.Info("Unhandled key", debug.F("key", msg.String()), debug.F("cursor", ts.cursor))
 		return ts, nil
 	}
+}
+
+// handleRawJSONKey handles keys while the raw JSON editor has focus.
+func (ts *ToolScreen) handleRawJSONKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyTab, keyDown:
+		// Move to execute button
+		ts.rawJSONInput.Blur()
+		ts.cursor = 1
+		return ts, nil
+	case keyEnter:
+		// If on input, move to button; if on button, execute
+		if ts.cursor == 0 {
+			ts.rawJSONInput.Blur()
+			ts.cursor = 1
+			return ts, nil
+		}
+		return ts, nil
+	case keyEsc:
+		return ts, func() tea.Msg { return BackMsg{} }
+	case keyToggleArgValidation:
+		ts.toggleArgValidation()
+		return ts, nil
+	default:
+		// Pass to raw JSON input
+		var cmd tea.Cmd
+		ts.rawJSONInput, cmd = ts.rawJSONInput.Update(msg)
+		return ts, cmd
+	}
+}
+
+// handleFieldKey handles keys while a form field has focus: navigation and
+// the field-edit shortcuts are intercepted, everything else is typed into
+// the field. handled is false for keys the shared handler owns.
+func (ts *ToolScreen) handleFieldKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	field := &ts.fields[ts.cursor]
+
+	// Handle navigation keys before passing to textinput
+	switch msg.String() {
+	case keyTab, keyDown, keyEnter:
+		// Don't pass these to textinput, handle navigation
+	case keyShiftTab, keyUp:
+		// Don't pass these to textinput, handle navigation
+	case "ctrl+t":
+		// Task mode toggle, handled below
+	case keyToggleArgValidation:
+		ts.toggleArgValidation()
+		return ts, nil, true
+	case keyToggleSubForm:
+		if ts.toggleSubForm(ts.cursor) {
+			ts.SetStatus("", StatusInfo)
+		}
+		return ts, nil, true
+	case keyAddElement:
+		if ts.addElement() {
+			ts.SetStatus("", StatusInfo)
+			return ts, nil, true
+		}
+		model, cmd := ts.typeIntoField(msg)
+		return model, cmd, true
+	case keyRemoveElement:
+		if ts.removeElement() {
+			ts.SetStatus("", StatusInfo)
+			return ts, nil, true
+		}
+		model, cmd := ts.typeIntoField(msg)
+		return model, cmd, true
+	case "ctrl+n":
+		ts.toggleSendNull(field)
+		return ts, nil, true
+	case keyEsc:
+		// Don't pass to textinput, handle escape
+	case "ctrl+v":
+		ts.pasteIntoField(field)
+		return ts, nil, true
+	default:
+		model, cmd := ts.typeIntoField(msg)
+		return model, cmd, true
+	}
+	return ts, nil, false
+}
+
+// toggleSendNull flips a nullable field between its typed value and sending
+// null: the only way to say null for a nullable string. An open sub-form
+// says what the object holds instead.
+func (ts *ToolScreen) toggleSendNull(field *toolField) {
+	if !field.nullable || field.expanded {
+		return
+	}
+	field.sendNull = !field.sendNull
+	field.validationError = ""
+	if field.sendNull {
+		ts.SetStatus(fmt.Sprintf("'%s' will be sent as null", field.name), StatusInfo)
+	} else {
+		ts.validateField(ts.cursor)
+		ts.SetStatus(fmt.Sprintf("'%s' takes its typed value again", field.name), StatusInfo)
+	}
+}
+
+// pasteIntoField pastes clipboard contents into the focused field. The help
+// text advertises this binding; textinput itself ignores ctrl+v.
+func (ts *ToolScreen) pasteIntoField(field *toolField) {
+	text, err := ts.readFromClipboard()
+	if err != nil {
+		ts.SetStatus(err.Error(), StatusError)
+		return
+	}
+	field.input.SetValue(ts.sanitizeInput(text))
+	ts.validateField(ts.cursor)
+	ts.SetStatus("Pasted from clipboard", StatusSuccess)
+}
+
+// handleResultScrollKey scrolls the result block. Returns false for keys it
+// does not own so the shared handler can take them.
+func (ts *ToolScreen) handleResultScrollKey(msg tea.KeyMsg) bool {
+	availableHeight := ts.getResultDisplayHeight()
+
+	switch msg.String() {
+	case "ctrl+up":
+		// Scroll result up
+		if ts.resultScroll > 0 {
+			ts.resultScroll--
+		}
+	case "ctrl+down":
+		// Scroll result down
+		maxScroll := max(0, ts.resultLineCount-availableHeight)
+		if ts.resultScroll < maxScroll {
+			ts.resultScroll++
+		}
+	case keyPgUp:
+		// Page up in result
+		pageSize := max(1, availableHeight-2)
+		ts.resultScroll -= pageSize
+		if ts.resultScroll < 0 {
+			ts.resultScroll = 0
+		}
+	case keyPgDown:
+		// Page down in result
+		pageSize := max(1, availableHeight-2)
+		maxScroll := max(0, ts.resultLineCount-availableHeight)
+		ts.resultScroll += pageSize
+		if ts.resultScroll > maxScroll {
+			ts.resultScroll = maxScroll
+		}
+	case keyHome:
+		// Jump to top of result
+		ts.resultScroll = 0
+	case keyEnd:
+		// Jump to bottom of result
+		ts.resultScroll = max(0, ts.resultLineCount-availableHeight)
+	default:
+		return false
+	}
+	return true
+}
+
+// handleResultViewKey handles keys in result viewing mode; other keys are
+// ignored there.
+func (ts *ToolScreen) handleResultViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyUp, "k":
+		if ts.resultCursor > 0 {
+			ts.resultCursor--
+		}
+		return ts, nil
+
+	case keyDown, "j":
+		if ts.resultCursor < len(ts.resultFields)-1 {
+			ts.resultCursor++
+		}
+		return ts, nil
+
+	case keyEnter, "c", "y":
+		// Copy selected field value
+		if ts.resultCursor < len(ts.resultFields) {
+			field := ts.resultFields[ts.resultCursor]
+			if err := ts.copyToClipboard(field.value); err == nil {
+				ts.SetStatus(fmt.Sprintf("Copied '%s' to clipboard!", field.path), StatusSuccess)
+			} else {
+				ts.SetStatus("Failed to copy to clipboard", StatusError)
+			}
+		}
+		return ts, nil
+
+	case "v":
+		// Exit result viewing mode
+		ts.viewingResult = false
+		ts.SetStatus("", StatusInfo)
+		return ts, nil
+
+	case keyCtrlC:
+		// Copy entire result
+		if err := ts.copyToClipboard(ts.resultJSON); err == nil {
+			ts.SetStatus("Copied entire result to clipboard!", StatusSuccess)
+		} else {
+			ts.SetStatus("Failed to copy to clipboard", StatusError)
+		}
+		return ts, nil
+
+	case keyEsc, "q":
+		// Exit result viewing mode
+		ts.viewingResult = false
+		ts.SetStatus("", StatusInfo)
+		return ts, nil
+	}
+
+	// Don't process other keys in viewing mode
+	return ts, nil
+}
+
+// toggleCLICommandDisplay shows or hides the equivalent CLI command.
+func (ts *ToolScreen) toggleCLICommandDisplay() {
+	if ts.showCLICommand {
+		ts.showCLICommand = false
+		ts.SetStatus("CLI command hidden", StatusInfo)
+		return
+	}
+	ts.cliCommand = ts.generateCLICommand()
+	ts.showCLICommand = true
+	if err := ts.copyToClipboard(ts.cliCommand); err == nil {
+		ts.SetStatus("CLI command copied to clipboard and displayed below!", StatusSuccess)
+	} else {
+		ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
+	}
+}
+
+// copyResultOrBack copies the result (or the CLI command shown) to the
+// clipboard; with neither available, Ctrl+C goes back.
+func (ts *ToolScreen) copyResultOrBack() (tea.Model, tea.Cmd) {
+	switch {
+	case ts.result != nil && ts.resultJSON != "":
+		if err := ts.copyToClipboard(ts.resultJSON); err == nil {
+			ts.SetStatus("Result copied to clipboard!", StatusSuccess)
+		} else {
+			ts.SetStatus("Failed to copy to clipboard", StatusError)
+		}
+	case ts.showCLICommand && ts.cliCommand != "":
+		// Copy CLI command to clipboard
+		if err := ts.copyToClipboard(ts.cliCommand); err == nil {
+			ts.SetStatus("CLI command copied to clipboard!", StatusSuccess)
+		} else {
+			ts.SetStatus("Failed to copy CLI command to clipboard", StatusError)
+		}
+	default:
+		// No result, go back
+		return ts, func() tea.Msg { return BackMsg{} }
+	}
+	return ts, nil
+}
+
+// showDebugOverlayCmd builds the command that toggles the debug overlay.
+// The snapshot + notifications providers are wired when a service exists so
+// the Capabilities and Notifications tabs render live data. Tests
+// instantiate ToolScreen with a nil service, so the guard prevents a
+// nil-method-value panic on Ctrl+L.
+func (ts *ToolScreen) showDebugOverlayCmd() tea.Cmd {
+	debugScreen := NewDebugScreen()
+	if ts.mcpService != nil {
+		debugScreen.WithSnapshotProvider(ts.mcpService.GetCapabilitiesSnapshot)
+		debugScreen.WithNotificationsProvider(ts.mcpService.NotificationStream)
+	}
+	return func() tea.Msg {
+		return ToggleOverlayMsg{
+			Screen: debugScreen,
+		}
+	}
+}
+
+// moveCursor moves the cursor by delta (wrapping) across the form fields
+// and buttons, validating and blurring the field it leaves.
+func (ts *ToolScreen) moveCursor(delta int) {
+	// Calculate total items based on mode
+	var totalItems int
+	var inputCount int
+	if ts.rawJSONMode {
+		inputCount = 1 // Just the raw JSON input
+		totalItems = 4 // raw JSON input + 3 buttons
+	} else {
+		inputCount = len(ts.fields)
+		totalItems = len(ts.fields) + 3 // fields + execute button + cli button + back button
+	}
+
+	// Validate and blur current field before moving
+	if !ts.rawJSONMode && ts.cursor < inputCount {
+		if delta > 0 {
+			ts.validateField(ts.cursor)
+		}
+		ts.fields[ts.cursor].input.Blur()
+	} else if ts.rawJSONMode && ts.cursor == 0 {
+		ts.rawJSONInput.Blur()
+	}
+
+	// Move to next/previous field/button
+	ts.cursor = (ts.cursor + delta + totalItems) % totalItems
+
+	// Focus new field if it's an input
+	if ts.rawJSONMode && ts.cursor == 0 {
+		ts.rawJSONInput.Focus()
+	} else if !ts.rawJSONMode && ts.cursor < inputCount {
+		ts.fields[ts.cursor].input.Focus()
+	}
+}
+
+// activateCursorButton runs the button under the cursor: Execute, CLI or
+// Back. Field positions ignore it (Enter in a field is handled earlier).
+func (ts *ToolScreen) activateCursorButton() (tea.Model, tea.Cmd) {
+	executePos, cliPos, backPos := ts.buttonPositions()
+	// Handle enter based on current position
+	switch ts.cursor {
+	case executePos:
+		// Execute button — gate destructive tools behind a confirm overlay.
+		// The check uses the same IsDestructive() helper as the CLI prompt
+		// so behavior stays in lock-step across the two surfaces.
+		if ts.tool.IsDestructive() && !ts.confirmBypassed {
+			ts.pendingConfirm = true
+			return ts, openConfirmOverlay(&ts.tool)
+		}
+		cmd := ts.executeTool()
+		return ts, cmd
+	case cliPos:
+		// CLI button
+		ts.cliCommand = ts.generateCLICommand()
+		ts.showCLICommand = true
+
+		// Copy to clipboard
+		if err := ts.copyToClipboard(ts.cliCommand); err == nil {
+			ts.SetStatus("CLI command copied to clipboard and displayed below!", StatusSuccess)
+		} else {
+			ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
+		}
+		return ts, nil
+	case backPos:
+		// Back button
+		return ts, func() tea.Msg { return BackMsg{} }
+	}
+	return ts, nil
 }
 
 // renderToolBadges produces a colored representation of the tool's
@@ -1708,56 +1761,64 @@ func (ts *ToolScreen) validateField(index int) {
 	}
 
 	// Type-specific validation
+	if field.fieldType == inputschema.KindUnion {
+		ts.validateUnionField(field, value)
+		return
+	}
+	if value != "" {
+		field.validationError = fieldTypeValidationError(field, value)
+	}
+}
+
+// validateUnionField records the kind the typed value picks, or the reason
+// it picks none.
+func (ts *ToolScreen) validateUnionField(field *toolField, value string) {
+	if value == "" {
+		return
+	}
+	kind, err := field.unionKind(value)
+	if err != nil {
+		field.validationError = err.Error()
+	}
+	field.inferredKind = kind
+}
+
+// fieldTypeValidationError checks a non-empty value against the field's
+// declared type and returns the validation error text, or "" when valid.
+func fieldTypeValidationError(field *toolField, value string) string {
 	switch field.fieldType {
-	case inputschema.KindUnion:
-		if value != "" {
-			kind, err := field.unionKind(value)
-			if err != nil {
-				field.validationError = err.Error()
-			}
-			field.inferredKind = kind
+	case inputschema.KindNumber:
+		var num float64
+		if err := json.Unmarshal([]byte(value), &num); err != nil {
+			return "Must be a valid number"
 		}
-	case "number":
-		if value != "" {
-			var num float64
-			if err := json.Unmarshal([]byte(value), &num); err != nil {
-				field.validationError = "Must be a valid number"
-			}
+	case inputschema.KindInteger:
+		var num int
+		if err := json.Unmarshal([]byte(value), &num); err != nil {
+			return "Must be a valid integer"
 		}
-	case "integer":
-		if value != "" {
-			var num int
-			if err := json.Unmarshal([]byte(value), &num); err != nil {
-				field.validationError = "Must be a valid integer"
-			}
+	case inputschema.KindBoolean:
+		if value != boolTrueLiteral && value != "false" {
+			return "Must be 'true' or 'false'"
 		}
-	case "boolean":
-		if value != "" {
-			if value != boolTrueLiteral && value != "false" {
-				field.validationError = "Must be 'true' or 'false'"
+	case inputschema.KindArray:
+		var arr []interface{}
+		if err := json.Unmarshal([]byte(value), &arr); err != nil {
+			switch {
+			case !commaSeparatedItems(field.itemKind):
+				return fmt.Sprintf("Must be a JSON array of %s", field.itemKind)
+			case !strings.Contains(value, ","):
+				// Try comma-separated format
+				return "Must be a JSON array or comma-separated values"
 			}
 		}
-	case "array":
-		if value != "" {
-			var arr []interface{}
-			if err := json.Unmarshal([]byte(value), &arr); err != nil {
-				switch {
-				case !commaSeparatedItems(field.itemKind):
-					field.validationError = fmt.Sprintf("Must be a JSON array of %s", field.itemKind)
-				case !strings.Contains(value, ","):
-					// Try comma-separated format
-					field.validationError = "Must be a JSON array or comma-separated values"
-				}
-			}
-		}
-	case "object":
-		if value != "" {
-			var obj map[string]interface{}
-			if err := json.Unmarshal([]byte(value), &obj); err != nil {
-				field.validationError = "Must be a valid JSON object"
-			}
+	case inputschema.KindObject:
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(value), &obj); err != nil {
+			return "Must be a valid JSON object"
 		}
 	}
+	return ""
 }
 
 // View renders the tool screen
@@ -1770,6 +1831,49 @@ func (ts *ToolScreen) View() string {
 
 // renderHeader builds everything above the result block.
 func (ts *ToolScreen) renderHeader() string {
+	var builder strings.Builder
+
+	builder.WriteString(ts.renderTitleLine())
+	builder.WriteString("\n")
+	builder.WriteString(ts.renderStateLines())
+
+	if ts.tool.Description != "" {
+		builder.WriteString(ts.labelStyle.Render(ts.tool.Description))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("\n")
+
+	builder.WriteString(ts.renderSchemaBanner())
+
+	// Raw JSON mode - show single input for JSON arguments
+	switch {
+	case ts.rawJSONMode:
+		builder.WriteString(ts.labelStyle.Render("Arguments (JSON):"))
+		builder.WriteString("\n")
+		inputView := ts.rawJSONInput.View()
+		if ts.cursor == 0 {
+			builder.WriteString(ts.selectedStyle.Render(inputView))
+		} else {
+			builder.WriteString(ts.inputStyle.Render(inputView))
+		}
+		builder.WriteString("\n\n")
+	case len(ts.fields) == 0:
+		// Form fields or message if no fields
+		builder.WriteString(ts.labelStyle.Render("This tool requires no parameters."))
+		builder.WriteString("\n\n")
+	default:
+		ts.renderFormFields(&builder)
+	}
+
+	ts.renderButtonsRow(&builder)
+	ts.renderExecutionStatus(&builder)
+
+	return builder.String()
+}
+
+// renderTitleLine renders the title with execution count, badges and the
+// mode markers.
+func (ts *ToolScreen) renderTitleLine() string {
 	var builder strings.Builder
 
 	// Title with execution count. Use DisplayName so a server-supplied human
@@ -1792,7 +1896,13 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString("  ")
 		builder.WriteString(ts.warningStyle.Render(argValidationOffBadge))
 	}
-	builder.WriteString("\n")
+	return builder.String()
+}
+
+// renderStateLines renders the argument-violation warning and the running
+// task's progress line, when present.
+func (ts *ToolScreen) renderStateLines() string {
+	var builder strings.Builder
 	if ts.argumentViolation != "" {
 		builder.WriteString(ts.warningStyle.Render("⚠ Sent despite the input schema: " + ts.argumentViolation))
 		builder.WriteString("\n")
@@ -1801,12 +1911,13 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString(ts.labelStyle.Render(taskProgressLine(ts.runningTask)))
 		builder.WriteString("\n")
 	}
+	return builder.String()
+}
 
-	if ts.tool.Description != "" {
-		builder.WriteString(ts.labelStyle.Render(ts.tool.Description))
-		builder.WriteString("\n")
-	}
-	builder.WriteString("\n")
+// renderSchemaBanner renders the schema-error warning banner and the
+// schema note, when present.
+func (ts *ToolScreen) renderSchemaBanner() string {
+	var builder strings.Builder
 
 	// Show schema error warning banner if applicable
 	if ts.tool.HasSchemaError() {
@@ -1830,115 +1941,115 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString(ts.labelStyle.Render(ts.schemaNote))
 		builder.WriteString("\n\n")
 	}
+	return builder.String()
+}
 
-	// Raw JSON mode - show single input for JSON arguments
-	switch {
-	case ts.rawJSONMode:
-		builder.WriteString(ts.labelStyle.Render("Arguments (JSON):"))
+// renderFormFields renders the form fields, one labeled input each.
+func (ts *ToolScreen) renderFormFields(builder *strings.Builder) {
+	for i := range ts.fields {
+		field := &ts.fields[i]
+		builder.WriteString(ts.labelStyle.Render(ts.fieldLabel(field) + ":"))
 		builder.WriteString("\n")
-		inputView := ts.rawJSONInput.View()
-		if ts.cursor == 0 {
-			builder.WriteString(ts.selectedStyle.Render(inputView))
-		} else {
-			builder.WriteString(ts.inputStyle.Render(inputView))
+
+		// Render the textinput model
+		builder.WriteString(ts.renderFieldInput(i, field))
+		builder.WriteString("\n")
+
+		// Show validation error message
+		if field.validationError != "" {
+			validationStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("9")).
+				Italic(true)
+			builder.WriteString(validationStyle.Render("  ⚠ " + field.validationError))
+			builder.WriteString("\n")
 		}
-		builder.WriteString("\n\n")
-	case len(ts.fields) == 0:
-		// Form fields or message if no fields
-		builder.WriteString(ts.labelStyle.Render("This tool requires no parameters."))
-		builder.WriteString("\n\n")
+		builder.WriteString("\n")
+	}
+}
+
+// fieldLabel builds a field's label: indented name, type indicator,
+// description, note and the sub-form hint.
+func (ts *ToolScreen) fieldLabel(field *toolField) string {
+	// Field label with type indicator, indented by sub-form depth
+	label := strings.Repeat("  ", field.depth) + field.name
+	if field.required {
+		label += " *"
+	}
+
+	// Always show field type for clarity
+	typeIndicator := string(field.fieldType)
+	if field.fieldType == inputschema.KindUnion {
+		typeIndicator = (&inputschema.Param{Union: field.union}).UnionLabel()
+		if field.inferredKind != "" {
+			typeIndicator += " → " + string(field.inferredKind)
+		}
+	}
+	if field.itemKind != "" {
+		typeIndicator += " of " + string(field.itemKind)
+	}
+	if field.nullable {
+		typeIndicator += "|null"
+	}
+	label += fmt.Sprintf(" [%s]", typeIndicator)
+
+	if field.description != "" {
+		label += fmt.Sprintf(" - %s", field.description)
+	}
+	if field.note != "" {
+		label += fmt.Sprintf(" (%s)", field.note)
+	}
+	if field.hasSubForm() && !field.expanded {
+		label += " (Ctrl+E: sub-form)"
+	}
+	return label
+}
+
+// renderFieldInput renders a field's input view with the style its state
+// calls for: red border on a focused validation error, selected style on
+// focus, normal otherwise.
+func (ts *ToolScreen) renderFieldInput(i int, field *toolField) string {
+	inputView := field.input.View()
+	switch {
+	case field.sendNull:
+		inputView = "null (Ctrl+N to edit)"
+	case field.element:
+		inputView = "▾ element (Ctrl+X: remove)"
+	case field.isElementList():
+		inputView = "▾ elements below (Ctrl+A: add one, Ctrl+E: type as JSON)"
+	case field.expanded:
+		inputView = "▾ filled in below (Ctrl+E: type as JSON)"
+	}
+
+	// Apply styling based on focus and validation
+	switch {
+	case field.validationError != "" && ts.cursor == i:
+		// Red border for validation errors
+		errorStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("9")).
+			Padding(0, 1).
+			Width(60)
+		return errorStyle.Render(inputView)
+	case ts.cursor == i:
+		// Focused style
+		return ts.selectedStyle.Render(inputView)
 	default:
-		for i := range ts.fields {
-			field := &ts.fields[i]
-			// Field label with type indicator, indented by sub-form depth
-			label := strings.Repeat("  ", field.depth) + field.name
-			if field.required {
-				label += " *"
-			}
-
-			// Always show field type for clarity
-			typeIndicator := string(field.fieldType)
-			if field.fieldType == inputschema.KindUnion {
-				typeIndicator = (&inputschema.Param{Union: field.union}).UnionLabel()
-				if field.inferredKind != "" {
-					typeIndicator += " → " + string(field.inferredKind)
-				}
-			}
-			if field.itemKind != "" {
-				typeIndicator += " of " + string(field.itemKind)
-			}
-			if field.nullable {
-				typeIndicator += "|null"
-			}
-			label += fmt.Sprintf(" [%s]", typeIndicator)
-
-			if field.description != "" {
-				label += fmt.Sprintf(" - %s", field.description)
-			}
-			if field.note != "" {
-				label += fmt.Sprintf(" (%s)", field.note)
-			}
-			if field.hasSubForm() && !field.expanded {
-				label += " (Ctrl+E: sub-form)"
-			}
-			builder.WriteString(ts.labelStyle.Render(label + ":"))
-			builder.WriteString("\n")
-
-			// Render the textinput model
-			inputView := field.input.View()
-			switch {
-			case field.sendNull:
-				inputView = "null (Ctrl+N to edit)"
-			case field.element:
-				inputView = "▾ element (Ctrl+X: remove)"
-			case field.isElementList():
-				inputView = "▾ elements below (Ctrl+A: add one, Ctrl+E: type as JSON)"
-			case field.expanded:
-				inputView = "▾ filled in below (Ctrl+E: type as JSON)"
-			}
-
-			// Apply styling based on focus and validation
-			switch {
-			case field.validationError != "" && ts.cursor == i:
-				// Red border for validation errors
-				errorStyle := lipgloss.NewStyle().
-					Border(lipgloss.RoundedBorder()).
-					BorderForeground(lipgloss.Color("9")).
-					Padding(0, 1).
-					Width(60)
-				builder.WriteString(errorStyle.Render(inputView))
-			case ts.cursor == i:
-				// Focused style
-				builder.WriteString(ts.selectedStyle.Render(inputView))
-			default:
-				// Normal style
-				builder.WriteString(ts.inputStyle.Render(inputView))
-			}
-			builder.WriteString("\n")
-
-			// Show validation error message
-			if field.validationError != "" {
-				validationStyle := lipgloss.NewStyle().
-					Foreground(lipgloss.Color("9")).
-					Italic(true)
-				builder.WriteString(validationStyle.Render("  ⚠ " + field.validationError))
-				builder.WriteString("\n")
-			}
-			builder.WriteString("\n")
-		}
+		// Normal style
+		return ts.inputStyle.Render(inputView)
 	}
+}
 
-	// Buttons - calculate positions based on mode
-	var executePos, cliPos, backPos int
+// buttonPositions are the cursor positions of the buttons row.
+func (ts *ToolScreen) buttonPositions() (executePos, cliPos, backPos int) {
 	if ts.rawJSONMode {
-		executePos = 1
-		cliPos = 2
-		backPos = 3
-	} else {
-		executePos = len(ts.fields)
-		cliPos = len(ts.fields) + 1
-		backPos = len(ts.fields) + 2
+		return 1, 2, 3
 	}
+	return len(ts.fields), len(ts.fields) + 1, len(ts.fields) + 2
+}
+
+// renderButtonsRow renders the Execute / CLI / Back buttons.
+func (ts *ToolScreen) renderButtonsRow(builder *strings.Builder) {
+	executePos, cliPos, backPos := ts.buttonPositions()
 
 	executeBtn := " Execute "
 	cliBtn := " CLI "
@@ -1962,41 +2073,46 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString(ts.buttonStyle.Render(backBtn))
 	}
 	builder.WriteString("\n\n")
+}
 
-	// Execution status with progress indicator
-	if ts.executing {
-		elapsed := time.Since(ts.executionStart)
-
-		// Show spinner and message
-		builder.WriteString(components.ProgressMessage("Executing tool...", elapsed, true))
-		builder.WriteString("\n")
-
-		// The server's progress when it reports any, else an
-		// indeterminate bar.
-		if line := ts.callProgress.line(); line != "" {
-			builder.WriteString(line)
-		} else {
-			builder.WriteString(components.NewIndeterminateProgress(40).Render(elapsed))
+// renderExecutionStatus renders the spinner, the server's progress line and
+// the timeout warning while a call runs (or the progress line of a running
+// task).
+func (ts *ToolScreen) renderExecutionStatus(builder *strings.Builder) {
+	if !ts.executing {
+		if line := ts.callProgress.line(); ts.runningTask != nil && line != "" {
+			// A 2025-11-25 task reporting progress on its call's token.
+			builder.WriteString(line + "\n")
 		}
-		builder.WriteString("\n")
-
-		// Show timeout warning if taking too long
-		if elapsed > 10*time.Second {
-			warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
-			remaining := 30*time.Second - elapsed
-			if remaining > 0 {
-				builder.WriteString(warningStyle.Render(fmt.Sprintf("Timeout in %s", remaining.Round(time.Second))))
-			} else {
-				builder.WriteString(warningStyle.Render("Operation may timeout soon..."))
-			}
-			builder.WriteString("\n")
-		}
-	} else if line := ts.callProgress.line(); ts.runningTask != nil && line != "" {
-		// A 2025-11-25 task reporting progress on its call's token.
-		builder.WriteString(line + "\n")
+		return
 	}
 
-	return builder.String()
+	elapsed := time.Since(ts.executionStart)
+
+	// Show spinner and message
+	builder.WriteString(components.ProgressMessage("Executing tool...", elapsed, true))
+	builder.WriteString("\n")
+
+	// The server's progress when it reports any, else an
+	// indeterminate bar.
+	if line := ts.callProgress.line(); line != "" {
+		builder.WriteString(line)
+	} else {
+		builder.WriteString(components.NewIndeterminateProgress(40).Render(elapsed))
+	}
+	builder.WriteString("\n")
+
+	// Show timeout warning if taking too long
+	if elapsed > 10*time.Second {
+		warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+		remaining := 30*time.Second - elapsed
+		if remaining > 0 {
+			builder.WriteString(warningStyle.Render(fmt.Sprintf("Timeout in %s", remaining.Round(time.Second))))
+		} else {
+			builder.WriteString(warningStyle.Render("Operation may timeout soon..."))
+		}
+		builder.WriteString("\n")
+	}
 }
 
 // renderResultBlock builds the result section, sized to fill remaining
@@ -2054,22 +2170,7 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 	// — because the spec calls these "warnings, not errors": consumers may
 	// still want to see the data, they just need to know the contract was
 	// not honored.
-	if violations := ts.result.OutputViolations; len(violations) > 0 {
-		// Yellow + bold matches the schema-error warning palette used
-		// elsewhere on this screen so the visual treatment is consistent.
-		warnStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("220"))
-		bulletStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("220"))
-		violationsHeader := fmt.Sprintf("⚠ Output schema violations (%d):", len(violations))
-		builder.WriteString(warnStyle.Render(violationsHeader))
-		builder.WriteString("\n")
-		for _, v := range violations {
-			builder.WriteString(bulletStyle.Render("  • " + v))
-			builder.WriteString("\n")
-		}
-	}
+	builder.WriteString(renderViolationsBanner(ts.result.OutputViolations))
 
 	headerH := lipgloss.Height(header)
 	footerH := lipgloss.Height(footer)
@@ -2088,97 +2189,9 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 	}
 
 	if ts.viewingResult && len(ts.resultFields) > 0 {
-		fieldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-		selectedFieldStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color("240")).
-			Foreground(lipgloss.Color("15")).
-			Bold(true)
-		pathStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("14")).
-			Bold(true)
-		valueStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10"))
-
-		builder.WriteString(fieldStyle.Render("Select a field to copy its value:"))
-		builder.WriteString("\n\n")
-
-		for i, field := range ts.resultFields {
-			var line string
-			if i == ts.resultCursor {
-				line = fmt.Sprintf("▶ %s = %s",
-					pathStyle.Render(field.path),
-					valueStyle.Render(field.value))
-				builder.WriteString(selectedFieldStyle.Render(line))
-			} else {
-				line = fmt.Sprintf("  %s = %s",
-					pathStyle.Render(field.path),
-					valueStyle.Render(field.value))
-				builder.WriteString(line)
-			}
-			builder.WriteString("\n")
-		}
-
-		viewHelpStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243")).
-			Italic(true)
-		builder.WriteString("\n")
-		builder.WriteString(viewHelpStyle.Render(
-			"↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
+		ts.renderFieldPicker(&builder)
 	} else {
-		lines := ts.resultLines
-		if lines == nil {
-			lines = []string{}
-		}
-
-		startIdx := ts.resultScroll
-		endIdx := startIdx + availableHeight
-		if startIdx >= len(lines) {
-			startIdx = max(0, len(lines)-1)
-		}
-		if endIdx > len(lines) {
-			endIdx = len(lines)
-		}
-		visibleLines := lines[startIdx:endIdx]
-
-		resultStyle := ts.resultStyle.
-			Width(termWidth - resultWidthMargin).
-			Height(availableHeight)
-
-		resultContent := strings.Join(visibleLines, "\n")
-		builder.WriteString(resultStyle.Render(resultContent))
-
-		if len(lines) > availableHeight {
-			builder.WriteString("\n")
-
-			scrollStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("243")).
-				Italic(true)
-
-			canScrollUp := startIdx > 0
-			canScrollDown := endIdx < len(lines)
-
-			var indicator string
-			switch {
-			case canScrollUp && canScrollDown:
-				indicator = fmt.Sprintf("↑ Ctrl+Up/Down: Scroll (line %d-%d/%d) ↓", startIdx+1, endIdx, len(lines))
-			case canScrollUp:
-				indicator = fmt.Sprintf("↑ Ctrl+Up: Scroll up (line %d-%d/%d)", startIdx+1, endIdx, len(lines))
-			case canScrollDown:
-				indicator = fmt.Sprintf("Ctrl+Down: Scroll down (line %d-%d/%d) ↓", startIdx+1, endIdx, len(lines))
-			default:
-				indicator = fmt.Sprintf("Line %d-%d/%d", startIdx+1, endIdx, len(lines))
-			}
-
-			builder.WriteString(scrollStyle.Render(indicator))
-		}
-
-		if len(ts.resultFields) > 1 {
-			builder.WriteString("\n")
-			hintStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("243")).
-				Italic(true)
-			builder.WriteString(hintStyle.Render("Press 'v' to view fields • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll"))
-		}
+		ts.renderScrolledResult(&builder, availableHeight, termWidth)
 	}
 	builder.WriteString("\n")
 	if roundTrace != "" {
@@ -2189,40 +2202,136 @@ func (ts *ToolScreen) renderResultBlock(header, footer string) string {
 	return builder.String()
 }
 
+// renderFieldPicker renders the result-field picker of viewing mode.
+func (ts *ToolScreen) renderFieldPicker(builder *strings.Builder) {
+	fieldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	selectedFieldStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("240")).
+		Foreground(lipgloss.Color("15")).
+		Bold(true)
+	pathStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("14")).
+		Bold(true)
+	valueStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("10"))
+
+	builder.WriteString(fieldStyle.Render("Select a field to copy its value:"))
+	builder.WriteString("\n\n")
+
+	for i, field := range ts.resultFields {
+		var line string
+		if i == ts.resultCursor {
+			line = fmt.Sprintf("▶ %s = %s",
+				pathStyle.Render(field.path),
+				valueStyle.Render(field.value))
+			builder.WriteString(selectedFieldStyle.Render(line))
+		} else {
+			line = fmt.Sprintf("  %s = %s",
+				pathStyle.Render(field.path),
+				valueStyle.Render(field.value))
+			builder.WriteString(line)
+		}
+		builder.WriteString("\n")
+	}
+
+	viewHelpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Italic(true)
+	builder.WriteString("\n")
+	builder.WriteString(viewHelpStyle.Render(
+		"↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
+}
+
+// renderScrolledResult renders the visible window of the result body with
+// the scroll indicator and the view-fields hint.
+func (ts *ToolScreen) renderScrolledResult(builder *strings.Builder, availableHeight, termWidth int) {
+	lines := ts.resultLines
+	if lines == nil {
+		lines = []string{}
+	}
+
+	startIdx := ts.resultScroll
+	endIdx := startIdx + availableHeight
+	if startIdx >= len(lines) {
+		startIdx = max(0, len(lines)-1)
+	}
+	if endIdx > len(lines) {
+		endIdx = len(lines)
+	}
+	visibleLines := lines[startIdx:endIdx]
+
+	resultStyle := ts.resultStyle.
+		Width(termWidth - resultWidthMargin).
+		Height(availableHeight)
+
+	resultContent := strings.Join(visibleLines, "\n")
+	builder.WriteString(resultStyle.Render(resultContent))
+
+	if len(lines) > availableHeight {
+		builder.WriteString("\n")
+
+		scrollStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Italic(true)
+
+		builder.WriteString(scrollStyle.Render(resultScrollIndicator(startIdx, endIdx, len(lines))))
+	}
+
+	if len(ts.resultFields) > 1 {
+		builder.WriteString("\n")
+		hintStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Italic(true)
+		builder.WriteString(hintStyle.Render("Press 'v' to view fields • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll"))
+	}
+}
+
+// resultScrollIndicator describes the visible result window and the scroll
+// keys that move it.
+func resultScrollIndicator(startIdx, endIdx, total int) string {
+	canScrollUp := startIdx > 0
+	canScrollDown := endIdx < total
+
+	switch {
+	case canScrollUp && canScrollDown:
+		return fmt.Sprintf("↑ Ctrl+Up/Down: Scroll (line %d-%d/%d) ↓", startIdx+1, endIdx, total)
+	case canScrollUp:
+		return fmt.Sprintf("↑ Ctrl+Up: Scroll up (line %d-%d/%d)", startIdx+1, endIdx, total)
+	case canScrollDown:
+		return fmt.Sprintf("Ctrl+Down: Scroll down (line %d-%d/%d) ↓", startIdx+1, endIdx, total)
+	default:
+		return fmt.Sprintf("Line %d-%d/%d", startIdx+1, endIdx, total)
+	}
+}
+
+// renderViolationsBanner renders the yellow output-schema violations
+// banner, or "" when the result honored its schema.
+func renderViolationsBanner(violations []string) string {
+	if len(violations) == 0 {
+		return ""
+	}
+	// Yellow + bold matches the schema-error warning palette used
+	// elsewhere on this screen so the visual treatment is consistent.
+	warnStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("220"))
+	bulletStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("220"))
+	var b strings.Builder
+	b.WriteString(warnStyle.Render(fmt.Sprintf("⚠ Output schema violations (%d):", len(violations))))
+	b.WriteString("\n")
+	for _, v := range violations {
+		b.WriteString(bulletStyle.Render("  • " + v))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // renderFooter builds everything below the result block.
 func (ts *ToolScreen) renderFooter() string {
 	var builder strings.Builder
 
-	// CLI command display
-	if ts.showCLICommand && ts.cliCommand != "" {
-		builder.WriteString("\n")
-
-		// CLI command header
-		cliHeaderStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("14")). // Cyan
-			Bold(true)
-		builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command (POSIX shell):"))
-		builder.WriteString("\n")
-
-		// CLI command box - no fixed width to prevent wrapping
-		// Let the content determine the natural width
-		cliCommandStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("6")). // Cyan border
-			Padding(1).
-			Width(0).                        // No wrapping - let content define width naturally
-			Foreground(lipgloss.Color("15")) // White text
-
-		builder.WriteString(cliCommandStyle.Render(ts.cliCommand))
-		builder.WriteString("\n")
-
-		// CLI command help
-		cliHelpStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243")).
-			Italic(true)
-		builder.WriteString(cliHelpStyle.Render("Copy this command to run the same tool call from the command line"))
-		builder.WriteString("\n")
-	}
+	builder.WriteString(ts.renderCLICommandBox())
 
 	// Error message
 	if err := ts.LastError(); err != nil {
@@ -2233,21 +2342,87 @@ func (ts *ToolScreen) renderFooter() string {
 
 	// Help text
 	builder.WriteString("\n")
-	var helpText string
+	if helpText := ts.currentHelpText(); helpText != "" {
+		builder.WriteString(ts.helpStyle.Render(helpText))
+	}
+
+	// Status message
+	if statusMsg, level := ts.StatusMessage(); statusMsg != "" {
+		builder.WriteString("\n\n")
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColorFor(level))).Bold(true)
+		builder.WriteString(statusStyle.Render(statusMsg))
+	}
+
+	return builder.String()
+}
+
+// renderCLICommandBox renders the equivalent CLI command box, or "" when it
+// is hidden.
+func (ts *ToolScreen) renderCLICommandBox() string {
+	if !ts.showCLICommand || ts.cliCommand == "" {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("\n")
+
+	// CLI command header
+	cliHeaderStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("14")). // Cyan
+		Bold(true)
+	builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command (POSIX shell):"))
+	builder.WriteString("\n")
+
+	// CLI command box - no fixed width to prevent wrapping
+	// Let the content determine the natural width
+	cliCommandStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("6")). // Cyan border
+		Padding(1).
+		Width(0).                        // No wrapping - let content define width naturally
+		Foreground(lipgloss.Color("15")) // White text
+
+	builder.WriteString(cliCommandStyle.Render(ts.cliCommand))
+	builder.WriteString("\n")
+
+	// CLI command help
+	cliHelpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Italic(true)
+	builder.WriteString(cliHelpStyle.Render("Copy this command to run the same tool call from the command line"))
+	builder.WriteString("\n")
+	return builder.String()
+}
+
+// statusColorFor maps a status level to its palette color.
+func statusColorFor(level StatusLevel) string {
+	switch level {
+	case StatusSuccess:
+		return "10" // green
+	case StatusWarning:
+		return "11" // yellow
+	case StatusError:
+		return "9" // red
+	default:
+		return "12" // blue
+	}
+}
+
+// currentHelpText computes the help line for the current state: viewing a
+// result, a result shown, a field focused, or a button focused.
+func (ts *ToolScreen) currentHelpText() string {
 	switch {
 	case ts.viewingResult:
 		// Already shown inline help for viewing mode
-		helpText = ""
+		return ""
 	case ts.result != nil:
 		if len(ts.resultFields) > 1 {
-			helpText = "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • " +
-				"Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
-		} else {
-			helpText = "c: CLI command • Ctrl+C: Copy result • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll • " +
+			return "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • " +
 				"Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		}
+		return "c: CLI command • Ctrl+C: Copy result • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll • " +
+			"Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 	case ts.cursor < len(ts.fields):
-		helpText = "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+T: Task mode • " +
+		helpText := "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+T: Task mode • " +
 			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b: Back • Esc: Back"
 		if f := ts.fields[ts.cursor]; f.nullable && !f.expanded {
 			helpText = "Ctrl+N: Null • " + helpText
@@ -2260,37 +2435,15 @@ func (ts *ToolScreen) renderFooter() string {
 		} else if list >= 0 {
 			helpText = "Ctrl+A: Add element • " + helpText
 		}
+		return helpText
 	case ts.cursor == len(ts.fields):
-		helpText = "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+T: Task mode • " +
+		return "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+T: Task mode • " +
 			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b: Back • Esc: Back"
 	case ts.cursor == len(ts.fields)+1:
-		helpText = "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b: Back • Esc: Back"
+		return "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b: Back • Esc: Back"
 	default:
-		helpText = "Tab: Navigate • Enter: Go back • c: CLI command • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+		return "Tab: Navigate • Enter: Go back • c: CLI command • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 	}
-	if helpText != "" {
-		builder.WriteString(ts.helpStyle.Render(helpText))
-	}
-
-	// Status message
-	if statusMsg, level := ts.StatusMessage(); statusMsg != "" {
-		builder.WriteString("\n\n")
-		var statusColor string
-		switch level {
-		case StatusSuccess:
-			statusColor = "10" // green
-		case StatusWarning:
-			statusColor = "11" // yellow
-		case StatusError:
-			statusColor = "9" // red
-		default:
-			statusColor = "12" // blue
-		}
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Bold(true)
-		builder.WriteString(statusStyle.Render(statusMsg))
-	}
-
-	return builder.String()
 }
 
 // parseResultFields extracts copyable fields from JSON result

@@ -543,15 +543,11 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 	// cwd patterns; the user-config locations below are absolute and still
 	// get checked.
 	if cwd, err := os.Getwd(); err == nil {
+		paths := make([]string, 0, len(currentDirPatterns))
 		for _, pattern := range currentDirPatterns {
-			fullPath := filepath.Join(cwd, pattern)
-			if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-				analyzed := cm.analyzeConfigFile(fullPath)
-				if analyzed != nil { // Only include files with valid MCP config
-					discovered = append(discovered, analyzed)
-				}
-			}
+			paths = append(paths, filepath.Join(cwd, pattern))
 		}
+		discovered = cm.discoverAtPaths(discovered, paths)
 	}
 
 	// Check user config directory
@@ -560,30 +556,31 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 			filepath.Join(homeDir, ".config", "mcp-tui", "connections.json"),
 			filepath.Join(homeDir, ".config", "mcp", "config.json"),
 		}
-
-		for _, path := range userConfigPaths {
-			if info, err := os.Stat(path); err == nil && !info.IsDir() {
-				analyzed := cm.analyzeConfigFile(path)
-				if analyzed != nil { // Only include files with valid MCP config
-					discovered = append(discovered, analyzed)
-				}
-			}
-		}
+		discovered = cm.discoverAtPaths(discovered, userConfigPaths)
 
 		// Claude Desktop config
-		claudePath := cm.getClaudeDesktopConfigPath()
-		if claudePath != "" {
-			if info, err := os.Stat(claudePath); err == nil && !info.IsDir() {
-				analyzed := cm.analyzeConfigFile(claudePath)
-				if analyzed != nil { // Only include files with valid MCP config
-					discovered = append(discovered, analyzed)
-				}
-			}
+		if claudePath := cm.getClaudeDesktopConfigPath(); claudePath != "" {
+			discovered = cm.discoverAtPaths(discovered, []string{claudePath})
 		}
 	}
 
 	// Remove duplicates and sort by relevance
 	return cm.deduplicateAndSort(discovered)
+}
+
+// discoverAtPaths analyzes each existing regular file in paths and appends
+// the ones holding a valid MCP config to discovered.
+func (cm *ConnectionsManager) discoverAtPaths(
+	discovered []*DiscoveredConfigFile, paths []string,
+) []*DiscoveredConfigFile {
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			if analyzed := cm.analyzeConfigFile(path); analyzed != nil {
+				discovered = append(discovered, analyzed)
+			}
+		}
+	}
+	return discovered
 }
 
 // analyzeConfigFile analyzes a configuration file to determine its type and contents
@@ -614,7 +611,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 		claudeConfig.MCPServers != nil && len(claudeConfig.MCPServers) > 0 {
 		dc.Format = formatClaudeDesktop
 		serverCount = len(claudeConfig.MCPServers)
-		dc.Servers = cm.extractClaudeDesktopServers(claudeConfig.MCPServers)
+		dc.Servers = extractJSONObjectServers(claudeConfig.MCPServers)
 	} else {
 		// Try VS Code format - must have servers node
 		var vscodeConfig struct {
@@ -624,7 +621,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 			vscodeConfig.Servers != nil && len(vscodeConfig.Servers) > 0 {
 			dc.Format = formatVSCode
 			serverCount = len(vscodeConfig.Servers)
-			dc.Servers = cm.extractVSCodeServers(vscodeConfig.Servers)
+			dc.Servers = extractJSONObjectServers(vscodeConfig.Servers)
 		} else {
 			// Try MCP-TUI native format - must have servers node with content
 			var nativeConfig ConnectionsConfig
@@ -649,55 +646,20 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	return dc
 }
 
-// extractClaudeDesktopServers extracts server information from Claude Desktop format
-func (cm *ConnectionsManager) extractClaudeDesktopServers(mcpServers map[string]interface{}) []ServerInfo {
+// extractJSONObjectServers extracts server information from a
+// name→server-object map in the Claude Desktop / VS Code shape (both carry
+// command/args and are typically stdio).
+func extractJSONObjectServers(serversMap map[string]interface{}) []ServerInfo {
 	var servers []ServerInfo
 
-	for name, serverData := range mcpServers {
+	for name, serverData := range serversMap {
 		serverMap, ok := serverData.(map[string]interface{})
 		if !ok {
 			continue
 		}
 		server := ServerInfo{
 			Name:      name,
-			Transport: string(config.TransportStdio), // Claude Desktop format is typically stdio
-		}
-
-		if command, ok := serverMap["command"].(string); ok {
-			server.Command = command
-		}
-
-		if args, ok := serverMap["args"].([]interface{}); ok {
-			for _, arg := range args {
-				if argStr, ok := arg.(string); ok {
-					server.Args = append(server.Args, argStr)
-				}
-			}
-		}
-
-		// Try to generate a description
-		if server.Command != "" {
-			server.Description = fmt.Sprintf("%s %s", server.Command, strings.Join(server.Args, " "))
-		}
-
-		servers = append(servers, server)
-	}
-
-	return servers
-}
-
-// extractVSCodeServers extracts server information from VS Code MCP format
-func (cm *ConnectionsManager) extractVSCodeServers(vscodeServers map[string]interface{}) []ServerInfo {
-	var servers []ServerInfo
-
-	for name, serverData := range vscodeServers {
-		serverMap, ok := serverData.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		server := ServerInfo{
-			Name:      name,
-			Transport: string(config.TransportStdio), // VS Code format is typically stdio
+			Transport: string(config.TransportStdio), // Both formats are typically stdio
 		}
 
 		if command, ok := serverMap["command"].(string); ok {

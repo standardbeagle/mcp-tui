@@ -326,108 +326,8 @@ func (cs *ConnectionScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKeyMsg handles keyboard input
 func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// First, check for global keys that should work regardless of focus
-	switch msg.String() {
-	case keyCtrlC:
-		return cs, tea.Quit
-
-	case "q":
-		// Only a quit shortcut when no text field has focus, otherwise the
-		// letter can never be typed into a command, args, or URL value.
-		if cs.isAnyInputFocused() {
-			break
-		}
-		return cs, tea.Quit
-
-	case keyCtrlL, keyCtrlD, keyF12:
-		// Show debug logs
-		debugScreen := NewDebugScreen()
-		return cs, func() tea.Msg {
-			return ToggleOverlayMsg{
-				Screen: debugScreen,
-			}
-		}
-
-	case "R":
-		// Open the roots editor against a staging adapter. Mutations are
-		// stored on the connection screen until the user presses Connect,
-		// at which point they are seeded onto the live service.
-		if cs.isAnyInputFocused() {
-			break
-		}
-		rootsScreen := NewRootsScreen(&pendingRootsAdapter{cs: cs})
-		return cs, func() tea.Msg {
-			return TransitionMsg{
-				Transition: ScreenTransition{Screen: rootsScreen},
-			}
-		}
-
-	case keyLeft:
-		// Check if any text input is currently focused
-		if cs.isAnyInputFocused() {
-			// Let text input handle the key
-			break
-		}
-		if cs.tabFocused && len(cs.availableTabs) > 1 {
-			// Navigate tabs with left arrow
-			cs.activeTabIndex = (cs.activeTabIndex - 1 + len(cs.availableTabs)) % len(cs.availableTabs)
-			cs.viewMode = cs.availableTabs[cs.activeTabIndex]
-			cs.focusIndex = 0
-			cs.updateMaxFocus()
-			cs.blurAllInputs()
-			return cs, nil
-		}
-		// Other left arrow behavior falls through to the mode-specific handler
-
-	case keyRight:
-		// Check if any text input is currently focused
-		if cs.isAnyInputFocused() {
-			// Let text input handle the key
-			break
-		}
-		if cs.tabFocused && len(cs.availableTabs) > 1 {
-			// Navigate tabs with right arrow
-			cs.activeTabIndex = (cs.activeTabIndex + 1) % len(cs.availableTabs)
-			cs.viewMode = cs.availableTabs[cs.activeTabIndex]
-			cs.focusIndex = 0
-			cs.updateMaxFocus()
-			cs.blurAllInputs()
-			return cs, nil
-		}
-		// Other right arrow behavior falls through to the mode-specific handler
-
-	case "c":
-		// Check if any text input is currently focused
-		if cs.isAnyInputFocused() {
-			// Let text input handle the key
-			break
-		}
-		// Toggle between combined and separate command inputs (only in manual STDIO mode)
-		if cs.viewMode == viewModeManual && cs.transportType == config.TransportStdio {
-			cs.usesCombined = !cs.usesCombined
-			cs.blurAllInputs()
-			cs.focusIndex = 1 // Focus on first input field
-			cs.updateMaxFocus()
-			cs.updateInputFocus()
-		}
-		return cs, nil
-
-	case keyTab:
-		// If tabs are focused, move to content focus
-		if cs.tabFocused && len(cs.availableTabs) > 0 {
-			cs.tabFocused = false
-			cs.focusIndex = 0
-			return cs, nil
-		}
-		// Otherwise the mode-specific handler takes it
-
-	case keyShiftTab:
-		// Return to tab focus if we have multiple tabs
-		if !cs.tabFocused && len(cs.availableTabs) > 1 {
-			cs.tabFocused = true
-			cs.blurAllInputs()
-			return cs, nil
-		}
-		// Otherwise the mode-specific handler takes it
+	if model, cmd, handled := cs.handleGlobalKey(msg); handled {
+		return model, cmd
 	}
 
 	// Handle saved connections mode
@@ -442,6 +342,128 @@ func (cs *ConnectionScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Handle manual entry mode
 	return cs.handleManualEntryInput(msg)
+}
+
+// handleGlobalKey handles the keys that work regardless of focus. handled
+// is false when the key belongs to the mode-specific handler (e.g. typed
+// into a focused text input).
+func (cs *ConnectionScreen) handleGlobalKey(msg tea.KeyMsg) (model tea.Model, cmd tea.Cmd, handled bool) {
+	switch msg.String() {
+	case keyCtrlC:
+		return cs, tea.Quit, true
+
+	case "q":
+		// Only a quit shortcut when no text field has focus, otherwise the
+		// letter can never be typed into a command, args, or URL value.
+		if cs.isAnyInputFocused() {
+			return cs, nil, false
+		}
+		return cs, tea.Quit, true
+
+	case keyCtrlL, keyCtrlD, keyF12:
+		// Show debug logs
+		debugScreen := NewDebugScreen()
+		return cs, func() tea.Msg {
+			return ToggleOverlayMsg{
+				Screen: debugScreen,
+			}
+		}, true
+
+	case "R":
+		return cs.openRootsEditor()
+
+	case keyLeft, keyRight:
+		// Check if any text input is currently focused
+		if cs.isAnyInputFocused() {
+			// Let text input handle the key
+			return cs, nil, false
+		}
+		// Navigate tabs with the arrow keys; other arrow behavior falls
+		// through to the mode-specific handler
+		switched := cs.switchTab(msg.String() == keyRight)
+		return cs, nil, switched
+
+	case "c":
+		// Check if any text input is currently focused
+		if cs.isAnyInputFocused() {
+			// Let text input handle the key
+			return cs, nil, false
+		}
+		// Toggle between combined and separate command inputs (only in manual STDIO mode)
+		cs.toggleCommandMode()
+		return cs, nil, true
+
+	case keyTab, keyShiftTab:
+		// Tab moves tabs → content, Shift+Tab content → tabs.
+		moved := cs.moveTabFocus(msg.String() == keyTab)
+		return cs, nil, moved
+	}
+
+	return cs, nil, false
+}
+
+// moveTabFocus moves focus between the tab row and the content. forward is
+// Tab (tabs → content), backward is Shift+Tab (content → tabs). Returns
+// false when the mode-specific handler should take the key.
+func (cs *ConnectionScreen) moveTabFocus(forward bool) bool {
+	if forward && cs.tabFocused && len(cs.availableTabs) > 0 {
+		cs.tabFocused = false
+		cs.focusIndex = 0
+		return true
+	}
+	if !forward && !cs.tabFocused && len(cs.availableTabs) > 1 {
+		cs.tabFocused = true
+		cs.blurAllInputs()
+		return true
+	}
+	return false
+}
+
+// openRootsEditor opens the roots editor against a staging adapter.
+// Mutations are stored on the connection screen until the user presses
+// Connect, at which point they are seeded onto the live service.
+func (cs *ConnectionScreen) openRootsEditor() (tea.Model, tea.Cmd, bool) {
+	if cs.isAnyInputFocused() {
+		return cs, nil, false
+	}
+	rootsScreen := NewRootsScreen(&pendingRootsAdapter{cs: cs})
+	return cs, func() tea.Msg {
+		return TransitionMsg{
+			Transition: ScreenTransition{Screen: rootsScreen},
+		}
+	}, true
+}
+
+// switchTab moves the active tab one step left (right=false) or right.
+// Returns false when the tabs are not focused or there is only one, meaning
+// the key belongs to the mode-specific handler.
+func (cs *ConnectionScreen) switchTab(right bool) bool {
+	if !cs.tabFocused || len(cs.availableTabs) <= 1 {
+		return false
+	}
+	if right {
+		cs.activeTabIndex = (cs.activeTabIndex + 1) % len(cs.availableTabs)
+	} else {
+		cs.activeTabIndex = (cs.activeTabIndex - 1 + len(cs.availableTabs)) % len(cs.availableTabs)
+	}
+	cs.viewMode = cs.availableTabs[cs.activeTabIndex]
+	cs.focusIndex = 0
+	cs.updateMaxFocus()
+	cs.blurAllInputs()
+	return true
+}
+
+// toggleCommandMode flips manual STDIO entry between the combined
+// command-line input and the separate command/args fields. A no-op outside
+// manual STDIO mode.
+func (cs *ConnectionScreen) toggleCommandMode() {
+	if cs.viewMode == viewModeManual && cs.transportType == config.TransportStdio {
+		cs.usesCombined = !cs.usesCombined
+		cs.blurAllInputs()
+		cs.focusIndex = 1 // Focus on first input field
+		cs.updateMaxFocus()
+		cs.updateInputFocus()
+	}
 }
 
 // handleSavedConnectionsInput handles input for saved connections mode
@@ -531,65 +553,9 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 	// Update max focus based on transport type
 	cs.updateMaxFocus()
 
-	// Handle input based on current focus
-	var cmd tea.Cmd
-
 	// If we're in a text input field, handle special navigation keys first
-	isInTextInput := false
-	switch cs.transportType {
-	case config.TransportStdio:
-		if cs.usesCombined {
-			isInTextInput = cs.focusIndex == 1
-		} else {
-			isInTextInput = cs.focusIndex == 1 || cs.focusIndex == 2
-		}
-	case config.TransportSSE, config.TransportHTTP:
-		isInTextInput = cs.focusIndex == 1
-	}
-
-	if isInTextInput {
-		// Check for navigation keys
-		switch msg.String() {
-		case keyEsc:
-			// Unfocus current input and go back to transport selection
-			cs.blurAllInputs()
-			cs.focusIndex = 0
-			return cs, nil
-		case keyTab, keyEnter:
-			// Move to next field
-			cs.blurAllInputs()
-			cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
-			cs.updateInputFocus()
-			return cs, nil
-		case keyShiftTab:
-			// Move to previous field
-			cs.blurAllInputs()
-			cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
-			cs.updateInputFocus()
-			return cs, nil
-		default:
-			// Pass other keys to the active text input
-			switch cs.transportType {
-			case config.TransportStdio:
-				if cs.usesCombined {
-					if cs.focusIndex == 1 {
-						cs.combinedInput, cmd = cs.combinedInput.Update(msg)
-					}
-				} else {
-					switch cs.focusIndex {
-					case 1:
-						cs.commandInput, cmd = cs.commandInput.Update(msg)
-					case 2:
-						cs.argsInput, cmd = cs.argsInput.Update(msg)
-					}
-				}
-			case config.TransportSSE, config.TransportHTTP:
-				if cs.focusIndex == 1 {
-					cs.urlInput, cmd = cs.urlInput.Update(msg)
-				}
-			}
-			return cs, cmd
-		}
+	if cs.textInputFocused() {
+		return cs.handleTextInputKey(msg)
 	}
 
 	// Handle non-text-input navigation
@@ -598,15 +564,11 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 		return cs, tea.Quit
 
 	case keyTab, keyDown:
-		cs.blurAllInputs()
-		cs.focusIndex = (cs.focusIndex + 1) % cs.maxFocus
-		cs.updateInputFocus()
+		cs.moveFocus(1)
 		return cs, nil
 
 	case keyShiftTab, keyUp:
-		cs.blurAllInputs()
-		cs.focusIndex = (cs.focusIndex - 1 + cs.maxFocus) % cs.maxFocus
-		cs.updateInputFocus()
+		cs.moveFocus(-1)
 		return cs, nil
 
 	case keyEnter:
@@ -617,54 +579,142 @@ func (cs *ConnectionScreen) handleManualEntryInput(msg tea.KeyMsg) (tea.Model, t
 
 	case keyLeft:
 		if cs.focusIndex == 0 { // Transport type selection
-			cs.blurAllInputs()
-			switch cs.transportType {
-			case config.TransportStdio:
-				cs.transportType = config.TransportHTTP // Wrap around
-			case config.TransportSSE:
-				cs.transportType = config.TransportStdio
-			case config.TransportHTTP:
-				cs.transportType = config.TransportSSE
-			}
+			cs.cycleTransport(true)
 		}
 		return cs, nil
 
 	case keyRight:
 		if cs.focusIndex == 0 { // Transport type selection
-			cs.blurAllInputs()
-			switch cs.transportType {
-			case config.TransportStdio:
-				cs.transportType = config.TransportSSE
-			case config.TransportSSE:
-				cs.transportType = config.TransportHTTP
-			case config.TransportHTTP:
-				cs.transportType = config.TransportStdio // Wrap around
-			}
+			cs.cycleTransport(false)
 		}
 		return cs, nil
 
 	case "1", "2", "3":
-		if cs.focusIndex == 0 { // Transport type selection
-			oldTransport := cs.transportType
-			switch msg.String() {
-			case "1":
-				cs.transportType = config.TransportStdio
-			case "2":
-				cs.transportType = config.TransportSSE
-			case "3":
-				cs.transportType = config.TransportHTTP
-			}
-			// If transport type changed, reset focus
-			if oldTransport != cs.transportType {
-				cs.blurAllInputs()
-				cs.focusIndex = 1
-				cs.updateInputFocus()
-			}
-		}
+		cs.selectTransportByDigit(msg.String())
 		return cs, nil
 	}
 
 	return cs, nil
+}
+
+// textInputFocused reports whether focus sits on a text input field of the
+// current transport.
+func (cs *ConnectionScreen) textInputFocused() bool {
+	switch cs.transportType {
+	case config.TransportStdio:
+		if cs.usesCombined {
+			return cs.focusIndex == 1
+		}
+		return cs.focusIndex == 1 || cs.focusIndex == 2
+	case config.TransportSSE, config.TransportHTTP:
+		return cs.focusIndex == 1
+	}
+	return false
+}
+
+// moveFocus shifts focus by delta (wrapping) and refreshes input focus.
+func (cs *ConnectionScreen) moveFocus(delta int) {
+	cs.blurAllInputs()
+	cs.focusIndex = (cs.focusIndex + delta + cs.maxFocus) % cs.maxFocus
+	cs.updateInputFocus()
+}
+
+// handleTextInputKey handles keys while a text input has focus: navigation
+// keys move between fields, everything else goes to the input itself.
+func (cs *ConnectionScreen) handleTextInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyEsc:
+		// Unfocus current input and go back to transport selection
+		cs.blurAllInputs()
+		cs.focusIndex = 0
+		return cs, nil
+	case keyTab, keyEnter:
+		// Move to next field
+		cs.moveFocus(1)
+		return cs, nil
+	case keyShiftTab:
+		// Move to previous field
+		cs.moveFocus(-1)
+		return cs, nil
+	default:
+		// Pass other keys to the active text input
+		cmd := cs.forwardToFocusedInput(msg)
+		return cs, cmd
+	}
+}
+
+// forwardToFocusedInput delivers msg to the text input under the cursor.
+func (cs *ConnectionScreen) forwardToFocusedInput(msg tea.KeyMsg) tea.Cmd {
+	var cmd tea.Cmd
+	switch cs.transportType {
+	case config.TransportStdio:
+		if cs.usesCombined {
+			if cs.focusIndex == 1 {
+				cs.combinedInput, cmd = cs.combinedInput.Update(msg)
+			}
+		} else {
+			switch cs.focusIndex {
+			case 1:
+				cs.commandInput, cmd = cs.commandInput.Update(msg)
+			case 2:
+				cs.argsInput, cmd = cs.argsInput.Update(msg)
+			}
+		}
+	case config.TransportSSE, config.TransportHTTP:
+		if cs.focusIndex == 1 {
+			cs.urlInput, cmd = cs.urlInput.Update(msg)
+		}
+	}
+	return cmd
+}
+
+// cycleTransport moves the transport selection one step, back (left arrow)
+// or forward (right arrow), wrapping around.
+func (cs *ConnectionScreen) cycleTransport(back bool) {
+	cs.blurAllInputs()
+	switch cs.transportType {
+	case config.TransportStdio:
+		if back {
+			cs.transportType = config.TransportHTTP // Wrap around
+		} else {
+			cs.transportType = config.TransportSSE
+		}
+	case config.TransportSSE:
+		if back {
+			cs.transportType = config.TransportStdio
+		} else {
+			cs.transportType = config.TransportHTTP
+		}
+	case config.TransportHTTP:
+		if back {
+			cs.transportType = config.TransportSSE
+		} else {
+			cs.transportType = config.TransportStdio // Wrap around
+		}
+	}
+}
+
+// selectTransportByDigit maps "1"/"2"/"3" onto the transport types when the
+// transport selection row has focus, resetting focus when it changes.
+func (cs *ConnectionScreen) selectTransportByDigit(digit string) {
+	if cs.focusIndex != 0 { // Transport type selection
+		return
+	}
+	oldTransport := cs.transportType
+	switch digit {
+	case "1":
+		cs.transportType = config.TransportStdio
+	case "2":
+		cs.transportType = config.TransportSSE
+	case "3":
+		cs.transportType = config.TransportHTTP
+	}
+	// If transport type changed, reset focus
+	if oldTransport != cs.transportType {
+		cs.blurAllInputs()
+		cs.focusIndex = 1
+		cs.updateInputFocus()
+	}
 }
 
 // updateMaxFocus updates the max focus based on current mode and transport
@@ -1080,71 +1130,12 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 
 	// Render files in a list layout
 	for i, file := range cs.discoveredFiles {
-		isSelected := i == cs.discoveryIndex
-		isFocused := cs.focusIndex == 0
-
-		var style lipgloss.Style
-		if isFocused && isSelected {
+		style := cs.cardStyle
+		if cs.focusIndex == 0 && i == cs.discoveryIndex {
 			style = cs.selectedCardStyle
-		} else {
-			style = cs.cardStyle
 		}
 
-		// Build file card content
-		var cardContent strings.Builder
-
-		// Format icon
-		formatIcon := "📄"
-		switch file.Format {
-		case "claude-desktop":
-			formatIcon = "🤖"
-		case "vscode":
-			formatIcon = "📝"
-		case "mcp-tui":
-			formatIcon = "🔧"
-		case "package.json":
-			formatIcon = "📦"
-		}
-
-		// File header with path
-		fmt.Fprintf(&cardContent, "%s %s\n", formatIcon, file.Name)
-		fmt.Fprintf(&cardContent, "📂 %s\n", file.Path)
-
-		switch {
-		case file.Accessible && len(file.Servers) > 0:
-			fmt.Fprintf(&cardContent, "\nServers (%d):\n", len(file.Servers))
-
-			// List servers with name and description
-			for j, server := range file.Servers {
-				serverLine := fmt.Sprintf("  • %s", server.Name)
-				if server.Description != "" {
-					serverLine += fmt.Sprintf(" - %s", server.Description)
-				} else if server.Command != "" {
-					cmdSummary := server.Command
-					if len(server.Args) > 0 {
-						cmdSummary += " " + strings.Join(server.Args, " ")
-					}
-					if len(cmdSummary) > 50 {
-						cmdSummary = cmdSummary[:47] + "..."
-					}
-					serverLine += fmt.Sprintf(" - %s", cmdSummary)
-				}
-
-				cardContent.WriteString(serverLine)
-				if j < len(file.Servers)-1 {
-					cardContent.WriteString("\n")
-				}
-			}
-
-			cardContent.WriteString("\n\n✅ Ready to load")
-		case file.Accessible:
-			cardContent.WriteString("\n⚠️  No servers found")
-		default:
-			fmt.Fprintf(&cardContent, "\n❌ Error: %s", file.Error)
-		}
-
-		card := style.Render(cardContent.String())
-		builder.WriteString(card)
+		builder.WriteString(style.Render(discoveredFileCardContent(file)))
 
 		// Add spacing between cards
 		if i < len(cs.discoveredFiles)-1 {
@@ -1153,6 +1144,72 @@ func (cs *ConnectionScreen) renderDiscoveredFiles() string {
 	}
 
 	return builder.String()
+}
+
+// discoveredFileCardContent renders the body of one discovered-file card:
+// format icon, path, and the server list (or the reason it cannot load).
+func discoveredFileCardContent(file *models.DiscoveredConfigFile) string {
+	var cardContent strings.Builder
+
+	// File header with path
+	fmt.Fprintf(&cardContent, "%s %s\n", formatIconFor(file.Format), file.Name)
+	fmt.Fprintf(&cardContent, "📂 %s\n", file.Path)
+
+	switch {
+	case file.Accessible && len(file.Servers) > 0:
+		fmt.Fprintf(&cardContent, "\nServers (%d):\n", len(file.Servers))
+
+		// List servers with name and description
+		for j := range file.Servers {
+			cardContent.WriteString(discoveredServerLine(&file.Servers[j]))
+			if j < len(file.Servers)-1 {
+				cardContent.WriteString("\n")
+			}
+		}
+
+		cardContent.WriteString("\n\n✅ Ready to load")
+	case file.Accessible:
+		cardContent.WriteString("\n⚠️  No servers found")
+	default:
+		fmt.Fprintf(&cardContent, "\n❌ Error: %s", file.Error)
+	}
+
+	return cardContent.String()
+}
+
+// formatIconFor returns the icon for a discovered config file format.
+func formatIconFor(format string) string {
+	switch format {
+	case "claude-desktop":
+		return "🤖"
+	case "vscode":
+		return "📝"
+	case "mcp-tui":
+		return "🔧"
+	case "package.json":
+		return "📦"
+	default:
+		return "📄"
+	}
+}
+
+// discoveredServerLine renders one server entry of a discovered-file card.
+func discoveredServerLine(server *models.ServerInfo) string {
+	serverLine := fmt.Sprintf("  • %s", server.Name)
+	if server.Description != "" {
+		return serverLine + fmt.Sprintf(" - %s", server.Description)
+	}
+	if server.Command == "" {
+		return serverLine
+	}
+	cmdSummary := server.Command
+	if len(server.Args) > 0 {
+		cmdSummary += " " + strings.Join(server.Args, " ")
+	}
+	if len(cmdSummary) > 50 {
+		cmdSummary = cmdSummary[:47] + "..."
+	}
+	return serverLine + fmt.Sprintf(" - %s", cmdSummary)
 }
 
 // renderManualEntry renders the manual connection entry interface

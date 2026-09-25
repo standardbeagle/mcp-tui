@@ -140,18 +140,16 @@ func (s *ElicitationScreen) initFieldStates() {
 }
 
 func (s *ElicitationScreen) initStyles() {
-	s.titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14")).MarginBottom(1)
-	s.labelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	s.contentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
-	s.helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	s.choiceStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
-	s.dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-	s.errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	styles := newOverlayStyles("14", "12")
+	s.titleStyle = styles.title
+	s.labelStyle = styles.label
+	s.contentStyle = styles.content
+	s.helpStyle = styles.help
+	s.choiceStyle = styles.choice
+	s.dimStyle = styles.dim
+	s.errorStyle = styles.err
 	s.requiredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
-	s.overlayBorder = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("14")).
-		Padding(1, 2)
+	s.overlayBorder = styles.border
 }
 
 // AnswersRequest marks the overlay as a RequestOverlay: the server waits
@@ -232,18 +230,18 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return s, nil
 	}
 
-	f := s.form.Fields[s.focused]
+	return s.handleFieldKey(m, &s.form.Fields[s.focused])
+}
+
+// handleFieldKey routes a key to the focused field's controller.
+func (s *ElicitationScreen) handleFieldKey(m tea.KeyMsg, f *elicitation.Field) (tea.Model, tea.Cmd) {
 	switch f.Kind {
 	case elicitation.FieldText, elicitation.FieldNumber:
 		// Enter on the last field submits; Enter on an earlier field
 		// advances focus. This matches the convention used elsewhere in
 		// mcp-tui forms (connection screen).
 		if m.String() == keyEnter {
-			if s.focused == len(s.form.Fields)-1 {
-				return s.submit()
-			}
-			s.advanceFocus(+1)
-			return s, nil
+			return s.enterOrAdvance()
 		}
 		var cmd tea.Cmd
 		s.textInputs[s.focused], cmd = s.textInputs[s.focused].Update(m)
@@ -254,55 +252,51 @@ func (s *ElicitationScreen) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return s, nil
 		}
 	case elicitation.FieldEnumSingle:
-		switch m.String() {
-		case keyLeft, "h":
-			if s.enumCursor[s.focused] > 0 {
-				s.enumCursor[s.focused]--
-			}
-			return s, nil
-		case keyRight, "l":
-			if s.enumCursor[s.focused] < len(f.EnumValues)-1 {
-				s.enumCursor[s.focused]++
-			}
-			return s, nil
-		case keyEnter:
-			if s.focused == len(s.form.Fields)-1 {
-				return s.submit()
-			}
-			s.advanceFocus(+1)
-			return s, nil
-		}
+		return s.handleEnumKey(m, f, false)
 	case elicitation.FieldEnumMulti:
-		switch m.String() {
-		case keyLeft, "h":
-			if s.enumCursor[s.focused] > 0 {
-				s.enumCursor[s.focused]--
-			}
-			return s, nil
-		case keyRight, "l":
-			if s.enumCursor[s.focused] < len(f.EnumValues)-1 {
-				s.enumCursor[s.focused]++
-			}
-			return s, nil
-		case " ":
-			// Space toggles the highlighted option.
+		return s.handleEnumKey(m, f, true)
+	}
+
+	return s, nil
+}
+
+// enterOrAdvance submits when the focused field is the last one, otherwise
+// advances focus.
+func (s *ElicitationScreen) enterOrAdvance() (tea.Model, tea.Cmd) {
+	if s.focused == len(s.form.Fields)-1 {
+		return s.submit()
+	}
+	s.advanceFocus(+1)
+	return s, nil
+}
+
+// handleEnumKey handles keys for an enum field. Single- and multi-select
+// share cursor movement and the Enter convention; multi additionally
+// toggles the highlighted option on Space (the same convention as bubbles'
+// list multi-select).
+func (s *ElicitationScreen) handleEnumKey(m tea.KeyMsg, f *elicitation.Field, multi bool) (tea.Model, tea.Cmd) {
+	switch m.String() {
+	case keyLeft, "h":
+		if s.enumCursor[s.focused] > 0 {
+			s.enumCursor[s.focused]--
+		}
+		return s, nil
+	case keyRight, "l":
+		if s.enumCursor[s.focused] < len(f.EnumValues)-1 {
+			s.enumCursor[s.focused]++
+		}
+		return s, nil
+	case " ":
+		if multi {
 			cur := s.enumCursor[s.focused]
 			if cur >= 0 && cur < len(s.enumMultiMask[s.focused]) {
 				s.enumMultiMask[s.focused][cur] = !s.enumMultiMask[s.focused][cur]
 			}
-			return s, nil
-		case keyEnter:
-			// Enter on multi-select advances focus / submits rather than
-			// toggling — toggling is space, which is the same convention
-			// as bubbles' list multi-select.
-			if s.focused == len(s.form.Fields)-1 {
-				return s.submit()
-			}
-			s.advanceFocus(+1)
-			return s, nil
 		}
+		return s, nil
+	case keyEnter:
+		return s.enterOrAdvance()
 	}
-
 	return s, nil
 }
 
@@ -382,72 +376,91 @@ func (s *ElicitationScreen) collectContent() (map[string]any, error) {
 	content := make(map[string]any, len(s.form.Fields))
 	for i := range s.form.Fields {
 		f := &s.form.Fields[i]
-		switch f.Kind {
-		case elicitation.FieldText:
-			v := strings.TrimSpace(s.textInputs[i].Value())
-			if v == "" {
-				if f.Required {
-					return nil, fmt.Errorf("field %q is required", displayLabel(f))
-				}
-				// Optional and empty — omit from Content rather than
-				// emitting a blank string. Servers can default-back.
-				continue
-			}
-			content[f.Name] = v
-		case elicitation.FieldNumber:
-			v := strings.TrimSpace(s.textInputs[i].Value())
-			if v == "" {
-				if f.Required {
-					return nil, fmt.Errorf("field %q is required", displayLabel(f))
-				}
-				continue
-			}
-			n, err := strconv.ParseFloat(v, 64)
-			if err != nil {
-				return nil, fmt.Errorf("field %q: %s is not a number", displayLabel(f), v)
-			}
-			content[f.Name] = n
-		case elicitation.FieldBool:
-			content[f.Name] = s.boolValues[i]
-		case elicitation.FieldEnumSingle:
-			cur := s.enumCursor[i]
-			if cur < 0 || cur >= len(f.EnumValues) {
-				if f.Required {
-					return nil, fmt.Errorf("field %q is required", displayLabel(f))
-				}
-				continue
-			}
-			content[f.Name] = f.EnumValues[cur]
-		case elicitation.FieldEnumMulti:
-			selected := []string{}
-			for j, picked := range s.enumMultiMask[i] {
-				if picked && j < len(f.EnumValues) {
-					selected = append(selected, f.EnumValues[j])
-				}
-			}
-			if len(selected) == 0 && f.Required {
-				return nil, fmt.Errorf("field %q is required (select at least one)", displayLabel(f))
-			}
-			if len(selected) == 0 && f.MinItems > 0 {
-				// Optional and empty: omit rather than send an array the
-				// schema's minItems rejects.
-				continue
-			}
-			if len(selected) < f.MinItems {
-				return nil, fmt.Errorf("field %q: select at least %d", displayLabel(f), f.MinItems)
-			}
-			if f.MaxItems > 0 && len(selected) > f.MaxItems {
-				return nil, fmt.Errorf("field %q: select at most %d", displayLabel(f), f.MaxItems)
-			}
-			content[f.Name] = selected
-		case elicitation.FieldUnknown:
-			// Unsupported field: skip silently. The TUI hint already tells
-			// the user the field is unsupported; sending a stub value would
-			// just confuse the server.
-			continue
+		value, include, err := s.collectField(i, f)
+		if err != nil {
+			return nil, err
+		}
+		if include {
+			content[f.Name] = value
 		}
 	}
 	return content, nil
+}
+
+// collectField reads and validates one field's current value. include=false
+// means the field contributes nothing to the Content map (optional and
+// empty, or an unsupported kind).
+func (s *ElicitationScreen) collectField(i int, f *elicitation.Field) (value any, include bool, err error) {
+	switch f.Kind {
+	case elicitation.FieldText:
+		v := strings.TrimSpace(s.textInputs[i].Value())
+		if v == "" {
+			if f.Required {
+				return nil, false, fmt.Errorf("field %q is required", displayLabel(f))
+			}
+			// Optional and empty — omit from Content rather than
+			// emitting a blank string. Servers can default-back.
+			return nil, false, nil
+		}
+		return v, true, nil
+	case elicitation.FieldNumber:
+		v := strings.TrimSpace(s.textInputs[i].Value())
+		if v == "" {
+			if f.Required {
+				return nil, false, fmt.Errorf("field %q is required", displayLabel(f))
+			}
+			return nil, false, nil
+		}
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return nil, false, fmt.Errorf("field %q: %s is not a number", displayLabel(f), v)
+		}
+		return n, true, nil
+	case elicitation.FieldBool:
+		return s.boolValues[i], true, nil
+	case elicitation.FieldEnumSingle:
+		cur := s.enumCursor[i]
+		if cur < 0 || cur >= len(f.EnumValues) {
+			if f.Required {
+				return nil, false, fmt.Errorf("field %q is required", displayLabel(f))
+			}
+			return nil, false, nil
+		}
+		return f.EnumValues[cur], true, nil
+	case elicitation.FieldEnumMulti:
+		return s.collectEnumMulti(i, f)
+	default:
+		// Unsupported field: skip silently. The TUI hint already tells
+		// the user the field is unsupported; sending a stub value would
+		// just confuse the server.
+		return nil, false, nil
+	}
+}
+
+// collectEnumMulti reads the multi-select mask of field i and validates the
+// selection against Required/MinItems/MaxItems.
+func (s *ElicitationScreen) collectEnumMulti(i int, f *elicitation.Field) (value any, include bool, err error) {
+	selected := []string{}
+	for j, picked := range s.enumMultiMask[i] {
+		if picked && j < len(f.EnumValues) {
+			selected = append(selected, f.EnumValues[j])
+		}
+	}
+	if len(selected) == 0 && f.Required {
+		return nil, false, fmt.Errorf("field %q is required (select at least one)", displayLabel(f))
+	}
+	if len(selected) == 0 && f.MinItems > 0 {
+		// Optional and empty: omit rather than send an array the
+		// schema's minItems rejects.
+		return nil, false, nil
+	}
+	if len(selected) < f.MinItems {
+		return nil, false, fmt.Errorf("field %q: select at least %d", displayLabel(f), f.MinItems)
+	}
+	if f.MaxItems > 0 && len(selected) > f.MaxItems {
+		return nil, false, fmt.Errorf("field %q: select at most %d", displayLabel(f), f.MaxItems)
+	}
+	return selected, true, nil
 }
 
 // View renders the overlay.

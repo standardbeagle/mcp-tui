@@ -2,7 +2,34 @@ package screens
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
+
+// overlayStyleSet is the standard palette shared by the request/overlay
+// screens (sampling, elicitation, roots). accent colors the title and the
+// border; label colors field labels.
+type overlayStyleSet struct {
+	title, label, content, help, choice, dim, err lipgloss.Style
+	border                                        lipgloss.Style
+}
+
+// newOverlayStyles builds the standard overlay palette with the given
+// accent color (title and border) and label color.
+func newOverlayStyles(accent, label string) overlayStyleSet {
+	return overlayStyleSet{
+		title:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(accent)).MarginBottom(1),
+		label:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(label)),
+		content: lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+		help:    lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
+		choice:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10")),
+		dim:     lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true),
+		err:     lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
+		border: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(accent)).
+			Padding(1, 2),
+	}
+}
 
 // Screen represents a TUI screen interface
 type Screen interface {

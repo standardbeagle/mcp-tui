@@ -9,6 +9,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
@@ -240,27 +241,7 @@ type debugLogsClearedMsg struct {
 func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// If showing detail view, handle those keys first
 	if ds.showDetail {
-		switch msg.String() {
-		case "b", keyAltLeft, keyEnter:
-			ds.showDetail = false
-			return ds, nil
-		case keyCtrlC, keyEsc:
-			// Even in detail view, escape/ctrl+c should quit
-			return ds, tea.Quit
-		case "c", "y":
-			// Copy full JSON to clipboard
-			if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
-				entry := ds.mcpEntries[ds.selectedIndex]
-				fullJSON := entry.GetFormattedJSON()
-				if err := clipboard.WriteAll(fullJSON); err != nil {
-					ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
-				} else {
-					ds.SetStatus("Copied full JSON to clipboard", StatusSuccess)
-				}
-			}
-			return ds, nil
-		}
-		return ds, nil
+		return ds.handleDetailKey(msg)
 	}
 
 	switch msg.String() {
@@ -273,123 +254,11 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ds, func() tea.Msg { return BackMsg{} }
 
 	case keyTab, keyRight:
-		ds.activeTab = (ds.activeTab + 1) % numDebugTabs
-		ds.selectedIndex = 0
-		ds.scrollOffset = 0
+		ds.switchTab(1)
 		return ds, nil
 
 	case keyShiftTab, keyLeft:
-		ds.activeTab = (ds.activeTab - 1 + numDebugTabs) % numDebugTabs
-		ds.selectedIndex = 0
-		ds.scrollOffset = 0
-		return ds, nil
-
-	case keyUp, "k":
-		if ds.activeTab != tabStatistics && ds.activeTab != tabCapabilities { // Not in stats or capabilities tab
-			currentList := ds.getCurrentList()
-			if len(currentList) > 0 {
-				if ds.selectedIndex > 0 {
-					ds.selectedIndex--
-					ds.adjustScrollOffset()
-				}
-			}
-		}
-		return ds, nil
-
-	case keyDown, "j":
-		if ds.activeTab != tabStatistics && ds.activeTab != tabCapabilities { // Not in stats or capabilities tab
-			currentList := ds.getCurrentList()
-			if len(currentList) > 0 {
-				if ds.selectedIndex < len(currentList)-1 {
-					ds.selectedIndex++
-					ds.adjustScrollOffset()
-				}
-			}
-		}
-		return ds, nil
-
-	case " ", "p", "P":
-		// Pause/resume the notification stream when on the Notifications tab.
-		// Spacebar (" ") is the canonical "pause" shortcut from media players;
-		// 'p'/'P' is included for vi-style users who avoid space in
-		// keyboard-only terminals. Only valid on the notifications tab so
-		// we don't surprise users who pressed space on a logs tab expecting
-		// page-down or similar.
-		if ds.activeTab == tabNotifications && ds.notificationsProvider != nil {
-			if stream := ds.notificationsProvider(); stream != nil {
-				if stream.TogglePaused() {
-					ds.SetStatus("Notification stream paused", StatusWarning)
-				} else {
-					ds.SetStatus("Notification stream resumed", StatusSuccess)
-				}
-			}
-		}
-		return ds, nil
-
-	case "1", "2", "3", "4", "5", "6", "7", "8":
-		// Toggle a single notification type filter. The digit corresponds
-		// to the index in notifications.AllTypes(): 1=message, 2=progress,
-		// ..., 7=cancelled, 8=tasks/status. Pressing the same digit twice removes the
-		// filter again (toggle semantics).
-		if ds.activeTab == tabNotifications {
-			idx := int(msg.String()[0] - '1')
-			types := notifications.AllTypes()
-			if idx >= 0 && idx < len(types) {
-				ds.toggleNotificationType(types[idx])
-				ds.notificationCursor = 0
-			}
-		}
-		return ds, nil
-
-	case "0":
-		// Clear all type filters on the notifications tab. Mirrors the
-		// "0 = wildcard" idiom users will recognize from filter pickers.
-		if ds.activeTab == tabNotifications {
-			ds.notificationFilter.Types = nil
-			ds.notificationCursor = 0
-			ds.SetStatus("Notification type filter cleared", StatusInfo)
-		}
-		return ds, nil
-
-	case "+", "=":
-		// Raise the level threshold one step. '=' is the unshifted '+' key
-		// so users don't have to hold shift on US keyboards.
-		if ds.activeTab == tabNotifications {
-			ds.bumpNotificationLevel(+1)
-		}
-		return ds, nil
-
-	case "-", "_":
-		// Lower the level threshold one step.
-		if ds.activeTab == tabNotifications {
-			ds.bumpNotificationLevel(-1)
-		}
-		return ds, nil
-
-	case "page_up":
-		ds.selectedIndex = max(0, ds.selectedIndex-10)
-		ds.adjustScrollOffset()
-		return ds, nil
-
-	case "page_down":
-		currentList := ds.getCurrentList()
-		if len(currentList) > 0 {
-			ds.selectedIndex = min(len(currentList)-1, ds.selectedIndex+10)
-			ds.adjustScrollOffset()
-		}
-		return ds, nil
-
-	case keyHome, "g":
-		ds.selectedIndex = 0
-		ds.scrollOffset = 0
-		return ds, nil
-
-	case keyEnd, "G":
-		currentList := ds.getCurrentList()
-		if len(currentList) > 0 {
-			ds.selectedIndex = len(currentList) - 1
-			ds.adjustScrollOffset()
-		}
+		ds.switchTab(-1)
 		return ds, nil
 
 	case "ctrl+e":
@@ -403,55 +272,228 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ds, refreshCmd
 
 	case "c":
-		// Clear logs (if not in a list, otherwise copy)
-		if ds.activeTab == tabStatistics { // In stats tab
-			clearCmd := ds.clearLogsCmd()
-			return ds, clearCmd
-		}
-		if ds.activeTab == tabCapabilities {
-			// On the capabilities tab, copy the JSON dump to the clipboard.
-			copyCapsCmd := ds.copyCapabilitiesCmd()
-			return ds, copyCapsCmd
-		}
-		// In log tabs, copy current item
-		copyCmd := ds.copySelectedItemCmd()
-		return ds, copyCmd
+		return ds.handleCopyOrClearKey()
 
 	case "x":
-		// Clear logs (or clear the notification stream on its tab — separate
-		// command path because logs and notifications use different buffers).
-		if ds.activeTab == tabNotifications && ds.notificationsProvider != nil {
-			if stream := ds.notificationsProvider(); stream != nil {
-				stream.Clear()
-				ds.notificationCursor = 0
-				ds.SetStatus("Notification stream cleared", StatusSuccess)
-			}
-			return ds, nil
-		}
-		clearCmd := ds.clearLogsCmd()
-		return ds, clearCmd
+		return ds.handleClearKey()
 
 	case "y":
-		// Copy current selected item to clipboard (vim-like).
-		if ds.activeTab == tabCapabilities {
-			copyCapsCmd := ds.copyCapabilitiesCmd()
-			return ds, copyCapsCmd
-		}
-		if ds.activeTab != tabStatistics { // Not in stats tab
-			copyCmd := ds.copySelectedItemCmd()
-			return ds, copyCmd
-		}
-		return ds, nil
+		return ds.handleCopyKey()
 
 	case keyEnter:
 		// Show detail view for MCP logs
-		if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
-			ds.showDetail = true
-		}
+		ds.openSelectedDetail()
 		return ds, nil
 	}
 
+	if ds.handleListNavKey(msg) {
+		return ds, nil
+	}
+	if ds.activeTab == tabNotifications {
+		notifCmd := ds.handleNotificationsKey(msg)
+		return ds, notifCmd
+	}
 	return ds, nil
+}
+
+// openSelectedDetail opens the detail view for the selected MCP log entry.
+func (ds *DebugScreen) openSelectedDetail() {
+	if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
+		ds.showDetail = true
+	}
+}
+
+// handleListNavKey moves the selection cursor on the list tabs. Returns
+// false for keys it does not own.
+func (ds *DebugScreen) handleListNavKey(msg tea.KeyMsg) bool {
+	switch msg.String() {
+	case keyUp, "k":
+		ds.moveSelection(-1)
+	case keyDown, "j":
+		ds.moveSelection(1)
+	case "page_up":
+		ds.selectedIndex = max(0, ds.selectedIndex-10)
+		ds.adjustScrollOffset()
+	case "page_down":
+		currentList := ds.getCurrentList()
+		if len(currentList) > 0 {
+			ds.selectedIndex = min(len(currentList)-1, ds.selectedIndex+10)
+			ds.adjustScrollOffset()
+		}
+	case keyHome, "g":
+		ds.selectedIndex = 0
+		ds.scrollOffset = 0
+	case keyEnd, "G":
+		currentList := ds.getCurrentList()
+		if len(currentList) > 0 {
+			ds.selectedIndex = len(currentList) - 1
+			ds.adjustScrollOffset()
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+// handleDetailKey handles keys while the MCP message detail view is open.
+func (ds *DebugScreen) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "b", keyAltLeft, keyEnter:
+		ds.showDetail = false
+		return ds, nil
+	case keyCtrlC, keyEsc:
+		// Even in detail view, escape/ctrl+c should quit
+		return ds, tea.Quit
+	case "c", "y":
+		// Copy full JSON to clipboard
+		ds.copyDetailJSON()
+		return ds, nil
+	}
+	return ds, nil
+}
+
+// copyDetailJSON copies the selected MCP entry's full JSON to the clipboard.
+func (ds *DebugScreen) copyDetailJSON() {
+	if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
+		entry := ds.mcpEntries[ds.selectedIndex]
+		fullJSON := entry.GetFormattedJSON()
+		if err := clipboard.WriteAll(fullJSON); err != nil {
+			ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
+		} else {
+			ds.SetStatus("Copied full JSON to clipboard", StatusSuccess)
+		}
+	}
+}
+
+// switchTab moves the active tab by delta, resetting cursor and scroll.
+func (ds *DebugScreen) switchTab(delta int) {
+	ds.activeTab = (ds.activeTab + delta + numDebugTabs) % numDebugTabs
+	ds.selectedIndex = 0
+	ds.scrollOffset = 0
+}
+
+// moveSelection moves the selection cursor by delta on the list tabs; the
+// statistics and capabilities tabs have no cursor.
+func (ds *DebugScreen) moveSelection(delta int) {
+	if ds.activeTab == tabStatistics || ds.activeTab == tabCapabilities {
+		return
+	}
+	currentList := ds.getCurrentList()
+	if len(currentList) == 0 {
+		return
+	}
+	if delta < 0 && ds.selectedIndex > 0 {
+		ds.selectedIndex--
+		ds.adjustScrollOffset()
+	}
+	if delta > 0 && ds.selectedIndex < len(currentList)-1 {
+		ds.selectedIndex++
+		ds.adjustScrollOffset()
+	}
+}
+
+// handleCopyOrClearKey implements "c": clear logs on the statistics tab,
+// copy the capabilities JSON on the capabilities tab, and copy the selected
+// item everywhere else.
+func (ds *DebugScreen) handleCopyOrClearKey() (tea.Model, tea.Cmd) {
+	if ds.activeTab == tabStatistics { // In stats tab
+		clearCmd := ds.clearLogsCmd()
+		return ds, clearCmd
+	}
+	if ds.activeTab == tabCapabilities {
+		// On the capabilities tab, copy the JSON dump to the clipboard.
+		copyCapsCmd := ds.copyCapabilitiesCmd()
+		return ds, copyCapsCmd
+	}
+	// In log tabs, copy current item
+	copyCmd := ds.copySelectedItemCmd()
+	return ds, copyCmd
+}
+
+// handleClearKey implements "x": clear the notification stream on its tab
+// (a separate command path because logs and notifications use different
+// buffers), the log buffers elsewhere.
+func (ds *DebugScreen) handleClearKey() (tea.Model, tea.Cmd) {
+	if ds.activeTab == tabNotifications && ds.notificationsProvider != nil {
+		if stream := ds.notificationsProvider(); stream != nil {
+			stream.Clear()
+			ds.notificationCursor = 0
+			ds.SetStatus("Notification stream cleared", StatusSuccess)
+		}
+		return ds, nil
+	}
+	clearCmd := ds.clearLogsCmd()
+	return ds, clearCmd
+}
+
+// handleCopyKey implements "y": copy the capabilities JSON on the
+// capabilities tab, the selected item on list tabs (vim-like); nothing on
+// the statistics tab.
+func (ds *DebugScreen) handleCopyKey() (tea.Model, tea.Cmd) {
+	if ds.activeTab == tabCapabilities {
+		copyCapsCmd := ds.copyCapabilitiesCmd()
+		return ds, copyCapsCmd
+	}
+	if ds.activeTab != tabStatistics { // Not in stats tab
+		copyCmd := ds.copySelectedItemCmd()
+		return ds, copyCmd
+	}
+	return ds, nil
+}
+
+// handleNotificationsKey handles the keys of the Notifications tab; the
+// caller only routes here when that tab is active.
+func (ds *DebugScreen) handleNotificationsKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case " ", "p", "P":
+		ds.toggleNotificationPause()
+	case "1", "2", "3", "4", "5", "6", "7", "8":
+		ds.toggleNotificationTypeDigit(msg.String()[0])
+	case "0":
+		// Clear all type filters. Mirrors the "0 = wildcard" idiom users
+		// will recognize from filter pickers.
+		ds.notificationFilter.Types = nil
+		ds.notificationCursor = 0
+		ds.SetStatus("Notification type filter cleared", StatusInfo)
+	case "+", "=":
+		// Raise the level threshold one step. '=' is the unshifted '+' key
+		// so users don't have to hold shift on US keyboards.
+		ds.bumpNotificationLevel(+1)
+	case "-", "_":
+		// Lower the level threshold one step.
+		ds.bumpNotificationLevel(-1)
+	}
+	return nil
+}
+
+// toggleNotificationPause pauses/resumes the notification stream.
+// Spacebar (" ") is the canonical "pause" shortcut from media players;
+// 'p'/'P' is included for vi-style users who avoid space in keyboard-only
+// terminals.
+func (ds *DebugScreen) toggleNotificationPause() {
+	if ds.notificationsProvider == nil {
+		return
+	}
+	if stream := ds.notificationsProvider(); stream != nil {
+		if stream.TogglePaused() {
+			ds.SetStatus("Notification stream paused", StatusWarning)
+		} else {
+			ds.SetStatus("Notification stream resumed", StatusSuccess)
+		}
+	}
+}
+
+// toggleNotificationTypeDigit toggles the type filter for digit ('1'..'8'),
+// which indexes into notifications.AllTypes(): 1=message, 2=progress, ...,
+// 7=cancelled, 8=tasks/status. Pressing the same digit twice removes the
+// filter again (toggle semantics).
+func (ds *DebugScreen) toggleNotificationTypeDigit(digit byte) {
+	idx := int(digit - '1')
+	types := notifications.AllTypes()
+	if idx >= 0 && idx < len(types) {
+		ds.toggleNotificationType(types[idx])
+		ds.notificationCursor = 0
+	}
 }
 
 // getCurrentList returns the current list based on active tab
@@ -709,76 +751,98 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 	detailedInfo := mcp.FormatHTTPErrorWithOverrides(httpInfo, mcp.GetShowHeaderOverrides())
 	builder.WriteString(detailedInfo)
 
+	ds.renderHTTPAnalysis(&builder, httpInfo)
+
+	return ds.logStyle.Render(builder.String())
+}
+
+// renderHTTPAnalysis adds the connection-issue analysis section for the
+// last captured HTTP exchange: timing warnings, SSE observations, and
+// troubleshooting steps.
+func (ds *DebugScreen) renderHTTPAnalysis(builder *strings.Builder, httpInfo *mcp.HTTPErrorInfo) {
 	// Add analysis for connection issues
-	isSSERequest := strings.Contains(httpInfo.URL, "sse") ||
+	isSSEExchange := strings.Contains(httpInfo.URL, "sse") ||
 		strings.Contains(httpInfo.Headers["Accept"], "text/event-stream")
 	hasConnectionError := strings.Contains(httpInfo.ResponseBody, "connection") ||
 		strings.Contains(httpInfo.ResponseBody, "context") ||
 		httpInfo.StatusCode == 0
 
-	if isSSERequest || hasConnectionError {
-		builder.WriteString("\n🔍 Connection Analysis:\n")
-
-		if httpInfo.ConnectionDetails != nil {
-			conn := httpInfo.ConnectionDetails
-			if !conn.ConnectionReused {
-				builder.WriteString("• Fresh connection established (not reused)\n")
-			} else {
-				fmt.Fprintf(&builder, "• Connection reused (idle: %v)\n", conn.IdleTime)
-			}
-
-			totalTime := conn.DNSLookupTime + conn.ConnectTime + conn.TLSTime + conn.FirstByteTime
-			fmt.Fprintf(&builder, "• Total connection time: %v\n", totalTime)
-
-			if conn.FirstByteTime > 5*time.Second {
-				builder.WriteString("⚠️  Slow first byte time - server may be overloaded\n")
-			}
-
-			// Analyze specific timing issues
-			if conn.DNSLookupTime > 1*time.Second {
-				builder.WriteString("⚠️  Slow DNS lookup - check DNS configuration\n")
-			}
-			if conn.ConnectTime > 3*time.Second {
-				builder.WriteString("⚠️  Slow TCP connection - network or server issues\n")
-			}
-		}
-
-		if httpInfo.SSEInfo != nil {
-			sse := httpInfo.SSEInfo
-			fmt.Fprintf(&builder, "• Stream duration: %v\n", sse.StreamDuration)
-
-			if sse.StreamDuration < 100*time.Millisecond {
-				builder.WriteString("⚠️  Very short stream duration - connection dropped quickly\n")
-			}
-		}
-
-		// Error-specific analysis
-		if httpInfo.StatusCode == 0 {
-			builder.WriteString("\n🚨 Connection Failed Before Response:\n")
-			switch {
-			case strings.Contains(httpInfo.ResponseBody, "context deadline exceeded"):
-				builder.WriteString("• Client timeout - increase --timeout flag\n")
-			case strings.Contains(httpInfo.ResponseBody, "context canceled"):
-				builder.WriteString("• Request was canceled - check if server is running\n")
-			case strings.Contains(httpInfo.ResponseBody, "connection refused"):
-				builder.WriteString("• Server not listening on specified port\n")
-			case strings.Contains(httpInfo.ResponseBody, "no such host"):
-				builder.WriteString("• DNS resolution failed - check hostname\n")
-			}
-		}
-
-		builder.WriteString("\n💡 Troubleshooting steps:\n")
-		if isSSERequest {
-			builder.WriteString("• For SSE: Check server sends proper headers (Content-Type: text/event-stream)\n")
-			builder.WriteString("• Verify server implements SSE heartbeat/keepalive\n")
-		}
-		builder.WriteString("• Try: curl -v http://localhost:5001/sse to test server directly\n")
-		builder.WriteString("• Check server logs for connection errors\n")
-		builder.WriteString("• Increase timeout: --timeout 60s\n")
-		builder.WriteString("• Test with different transport: --transport http\n")
+	if !isSSEExchange && !hasConnectionError {
+		return
 	}
 
-	return ds.logStyle.Render(builder.String())
+	builder.WriteString("\n🔍 Connection Analysis:\n")
+
+	if conn := httpInfo.ConnectionDetails; conn != nil {
+		renderConnectionTiming(builder, conn)
+	}
+
+	if sse := httpInfo.SSEInfo; sse != nil {
+		fmt.Fprintf(builder, "• Stream duration: %v\n", sse.StreamDuration)
+
+		if sse.StreamDuration < 100*time.Millisecond {
+			builder.WriteString("⚠️  Very short stream duration - connection dropped quickly\n")
+		}
+	}
+
+	// Error-specific analysis
+	if httpInfo.StatusCode == 0 {
+		builder.WriteString("\n🚨 Connection Failed Before Response:\n")
+		if hint := connectionFailureHint(httpInfo.ResponseBody); hint != "" {
+			builder.WriteString(hint)
+		}
+	}
+
+	builder.WriteString("\n💡 Troubleshooting steps:\n")
+	if isSSEExchange {
+		builder.WriteString("• For SSE: Check server sends proper headers (Content-Type: text/event-stream)\n")
+		builder.WriteString("• Verify server implements SSE heartbeat/keepalive\n")
+	}
+	builder.WriteString("• Try: curl -v http://localhost:5001/sse to test server directly\n")
+	builder.WriteString("• Check server logs for connection errors\n")
+	builder.WriteString("• Increase timeout: --timeout 60s\n")
+	builder.WriteString("• Test with different transport: --transport http\n")
+}
+
+// renderConnectionTiming writes the connection reuse/timing lines and the
+// slow-stage warnings of the HTTP analysis.
+func renderConnectionTiming(builder *strings.Builder, conn *mcp.ConnectionInfo) {
+	if !conn.ConnectionReused {
+		builder.WriteString("• Fresh connection established (not reused)\n")
+	} else {
+		fmt.Fprintf(builder, "• Connection reused (idle: %v)\n", conn.IdleTime)
+	}
+
+	totalTime := conn.DNSLookupTime + conn.ConnectTime + conn.TLSTime + conn.FirstByteTime
+	fmt.Fprintf(builder, "• Total connection time: %v\n", totalTime)
+
+	if conn.FirstByteTime > 5*time.Second {
+		builder.WriteString("⚠️  Slow first byte time - server may be overloaded\n")
+	}
+
+	// Analyze specific timing issues
+	if conn.DNSLookupTime > 1*time.Second {
+		builder.WriteString("⚠️  Slow DNS lookup - check DNS configuration\n")
+	}
+	if conn.ConnectTime > 3*time.Second {
+		builder.WriteString("⚠️  Slow TCP connection - network or server issues\n")
+	}
+}
+
+// connectionFailureHint names the likely cause of a request that never got
+// a response, from the transport error text.
+func connectionFailureHint(body string) string {
+	switch {
+	case strings.Contains(body, "context deadline exceeded"):
+		return "• Client timeout - increase --timeout flag\n"
+	case strings.Contains(body, "context canceled"):
+		return "• Request was canceled - check if server is running\n"
+	case strings.Contains(body, "connection refused"):
+		return "• Server not listening on specified port\n"
+	case strings.Contains(body, "no such host"):
+		return "• DNS resolution failed - check hostname\n"
+	}
+	return ""
 }
 
 // refreshData refreshes the debug data from the loggers
@@ -1109,18 +1173,7 @@ func renderServerCaps(caps *capabilities.ServerCaps) string {
 		b.WriteString("    <none of the standard capabilities>\n")
 	}
 
-	if len(caps.Experimental) > 0 {
-		b.WriteString("  Experimental:\n")
-		for _, k := range sortedMapKeys(caps.Experimental) {
-			fmt.Fprintf(&b, "    %s: %s\n", k, summarizeValue(caps.Experimental[k]))
-		}
-	}
-	if len(caps.Extensions) > 0 {
-		b.WriteString("  Extensions:\n")
-		for _, k := range sortedMapKeys(caps.Extensions) {
-			fmt.Fprintf(&b, "    %s: %s\n", k, summarizeValue(caps.Extensions[k]))
-		}
-	}
+	renderExtraCaps(&b, caps.Experimental, caps.Extensions)
 	return b.String()
 }
 
@@ -1137,44 +1190,61 @@ func renderClientCaps(caps *capabilities.ClientCaps) string {
 		fmt.Fprintf(&b, "    ✓ roots%s\n", subFlags(caps.Roots.ListChanged, false))
 	}
 	if caps.Sampling != nil {
-		extra := ""
-		if caps.Sampling.Tools != nil {
-			extra = " (tools)"
-		}
-		fmt.Fprintf(&b, "    ✓ sampling%s\n", extra)
+		fmt.Fprintf(&b, "    ✓ sampling%s\n", samplingSubFlags(caps.Sampling))
 	}
 	if caps.Elicitation != nil {
-		extra := ""
-		if caps.Elicitation.Form != nil {
-			extra = " (form)"
-		}
-		if caps.Elicitation.URL != nil {
-			if extra == "" {
-				extra = " (url)"
-			} else {
-				extra = " (form, url)"
-			}
-		}
-		fmt.Fprintf(&b, "    ✓ elicitation%s\n", extra)
+		fmt.Fprintf(&b, "    ✓ elicitation%s\n", elicitationSubFlags(caps.Elicitation))
 	}
 
 	if caps.Roots == nil && caps.Sampling == nil && caps.Elicitation == nil {
 		b.WriteString("    <none of the standard capabilities>\n")
 	}
 
-	if len(caps.Experimental) > 0 {
-		b.WriteString("  Experimental:\n")
-		for _, k := range sortedMapKeys(caps.Experimental) {
-			fmt.Fprintf(&b, "    %s: %s\n", k, summarizeValue(caps.Experimental[k]))
-		}
-	}
-	if len(caps.Extensions) > 0 {
-		b.WriteString("  Extensions:\n")
-		for _, k := range sortedMapKeys(caps.Extensions) {
-			fmt.Fprintf(&b, "    %s: %s\n", k, summarizeValue(caps.Extensions[k]))
-		}
-	}
+	renderExtraCaps(&b, caps.Experimental, caps.Extensions)
 	return b.String()
+}
+
+// samplingSubFlags renders the sampling sub-flag: " (tools)" when the
+// client advertises sampling with tools support.
+func samplingSubFlags(caps *officialMCP.SamplingCapabilities) string {
+	if caps.Tools != nil {
+		return " (tools)"
+	}
+	return ""
+}
+
+// elicitationSubFlags renders the elicitation sub-flags: " (form)",
+// " (url)", or " (form, url)".
+func elicitationSubFlags(caps *officialMCP.ElicitationCapabilities) string {
+	form := caps.Form != nil
+	url := caps.URL != nil
+	switch {
+	case form && url:
+		return " (form, url)"
+	case form:
+		return " (form)"
+	case url:
+		return " (url)"
+	default:
+		return ""
+	}
+}
+
+// renderExtraCaps prints the Experimental and Extensions sections shared by
+// the server and client capability renderings.
+func renderExtraCaps(b *strings.Builder, experimental, extensions map[string]interface{}) {
+	if len(experimental) > 0 {
+		b.WriteString("  Experimental:\n")
+		for _, k := range sortedMapKeys(experimental) {
+			fmt.Fprintf(b, "    %s: %s\n", k, summarizeValue(experimental[k]))
+		}
+	}
+	if len(extensions) > 0 {
+		b.WriteString("  Extensions:\n")
+		for _, k := range sortedMapKeys(extensions) {
+			fmt.Fprintf(b, "    %s: %s\n", k, summarizeValue(extensions[k]))
+		}
+	}
 }
 
 // subFlags returns " (listChanged)" or empty — the conventional sub-flag
@@ -1387,6 +1457,15 @@ func (ds *DebugScreen) renderNotifications() string {
 		ds.notificationCursor = 0
 	}
 
+	ds.renderNotificationWindow(&b, entries)
+	ds.renderNotificationDetail(&b, entries)
+
+	return ds.logStyle.Render(b.String())
+}
+
+// renderNotificationWindow renders the visible window of the filtered
+// notification entries with scroll indicators.
+func (ds *DebugScreen) renderNotificationWindow(b *strings.Builder, entries []notifications.Entry) {
 	const maxVisible = 12
 	startIdx := ds.scrollOffset
 	if startIdx > len(entries)-maxVisible {
@@ -1416,22 +1495,23 @@ func (ds *DebugScreen) renderNotifications() string {
 	if endIdx < len(entries) {
 		b.WriteString("  ↓ More entries below ↓\n")
 	}
+}
 
-	// Detail panel for the selected entry. We render full JSON of the params
-	// so the user can see fields the preview truncated. Limited to ~300
-	// characters so a verbose log payload doesn't dominate the screen.
-	if ds.selectedIndex < len(entries) {
-		b.WriteString("\nSelected:\n")
-		sel := entries[ds.selectedIndex]
-		if js, err := sel.FormatJSON(); err == nil {
-			if len(js) > 300 {
-				js = js[:297] + "..."
-			}
-			b.WriteString(js)
-		}
+// renderNotificationDetail renders the full JSON of the selected entry so
+// the user can see fields the preview truncated. Limited to ~300 characters
+// so a verbose log payload doesn't dominate the screen.
+func (ds *DebugScreen) renderNotificationDetail(b *strings.Builder, entries []notifications.Entry) {
+	if ds.selectedIndex >= len(entries) {
+		return
 	}
-
-	return ds.logStyle.Render(b.String())
+	b.WriteString("\nSelected:\n")
+	sel := entries[ds.selectedIndex]
+	if js, err := sel.FormatJSON(); err == nil {
+		if len(js) > 300 {
+			js = js[:297] + "..."
+		}
+		b.WriteString(js)
+	}
 }
 
 // renderNotificationFilterLine produces the "Filter:" status line shown above

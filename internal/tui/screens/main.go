@@ -432,28 +432,43 @@ func (ms *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ConnectionCompleteMsg:
 		return ms.handleConnectionComplete(msg)
 
-	case ToolsLoadedMsg:
-		return ms.handleToolsLoaded(&msg)
-
-	case ResourcesLoadedMsg:
-		return ms.handleResourcesLoaded(&msg)
-
-	case PromptsLoadedMsg:
-		return ms.handlePromptsLoaded(&msg)
-
-	case ResourceContentLoadedMsg:
-		return ms.handleResourceContentLoaded(msg)
-
-	case PromptResultLoadedMsg:
-		return ms.handlePromptResultLoaded(msg)
-
-	case ItemsLoadedMsg:
-		return ms.handleItemsLoaded(msg)
-
 	case ErrorMsg:
 		ms.SetError(msg.Error)
 		return ms, nil
+	}
 
+	if model, cmd, ok := ms.handleLoadedMessage(msg); ok {
+		return model, cmd
+	}
+	return ms.handleFeedMessage(msg)
+}
+
+// handleLoadedMessage routes the data-load completion messages. ok is false
+// for every other message type.
+func (ms *MainScreen) handleLoadedMessage(msg tea.Msg) (model tea.Model, cmd tea.Cmd, ok bool) {
+	switch msg := msg.(type) {
+	case ToolsLoadedMsg:
+		model, cmd = ms.handleToolsLoaded(&msg)
+	case ResourcesLoadedMsg:
+		model, cmd = ms.handleResourcesLoaded(&msg)
+	case PromptsLoadedMsg:
+		model, cmd = ms.handlePromptsLoaded(&msg)
+	case ResourceContentLoadedMsg:
+		model, cmd = ms.handleResourceContentLoaded(msg)
+	case PromptResultLoadedMsg:
+		model, cmd = ms.handlePromptResultLoaded(msg)
+	case ItemsLoadedMsg:
+		model, cmd = ms.handleItemsLoaded(msg)
+	default:
+		return nil, nil, false
+	}
+	return model, cmd, true
+}
+
+// handleFeedMessage routes the periodic feeds and server-initiated request
+// messages.
+func (ms *MainScreen) handleFeedMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
 	case EventTickMsg:
 		return ms.handleEventTick(msg)
 
@@ -803,45 +818,7 @@ func (ms *MainScreen) handleSpinnerTick(msg spinnerTickMsg) (tea.Model, tea.Cmd)
 // handleKeyMsg handles keyboard input
 func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ms.connected {
-		// Handle special keys when not connected
-		switch msg.String() {
-		case keyCtrlC, "q", keyEsc:
-			return ms, tea.Quit
-		case "r":
-			// Retry connection
-			ms.connecting = true
-			ms.connectingStart = time.Now()
-			ms.connectionStatus = "Retrying connection..."
-			ms.SetError(nil) // Clear previous error
-			return ms, tea.Batch(
-				ms.connectToServer(),
-				tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-					return spinnerTickMsg{}
-				}),
-			)
-		case keyCtrlL, keyCtrlD, keyF12:
-			// Show debug logs even when disconnected. Wire the snapshot
-			// provider so the Capabilities tab can render the negotiated
-			// state from the most recent successful Connect. mcpService can
-			// be nil in some test paths; guard for safety.
-			debugScreen := NewDebugScreen()
-			if ms.mcpService != nil {
-				debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
-				debugScreen.WithNotificationsProvider(ms.mcpService.NotificationStream)
-				debugScreen.WithExportService(ms.mcpService)
-			}
-			return ms, func() tea.Msg {
-				return ToggleOverlayMsg{
-					Screen: debugScreen,
-				}
-			}
-		case "b", "e":
-			// Go back to connection screen to edit connection details
-			ms.logger.Info("User requested to go back to connection screen")
-			cmd := ms.leaveForConnectionScreen()
-			return ms, cmd
-		}
-		return ms, nil
+		return ms.handleDisconnectedKey(msg)
 	}
 
 	// Try navigation handler first
@@ -854,23 +831,10 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ms, tea.Quit
 
 	case "q", keyEsc:
-		// If we're in a viewer, close it first
-		if ms.resourceViewerOpen {
-			ms.resourceViewerOpen = false
-			ms.selectedResource = nil
-			ms.resourceContent = nil
-			ms.resourceRounds = nil
-			ms.resourceServer = nil
-			ms.resourceCache = nil
+		// If we're in a viewer, close it first; otherwise quit
+		if ms.closeOpenViewer() {
 			return ms, nil
 		}
-		if ms.promptViewerOpen {
-			ms.promptViewerOpen = false
-			ms.selectedPrompt = nil
-			ms.promptResult = nil
-			return ms, nil
-		}
-		// Otherwise quit
 		return ms, tea.Quit
 
 	case keyTab:
@@ -885,62 +849,46 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case keyRight:
 		// In events tab with detail view, switch panes
-		if ms.activeTab == 3 && ms.showEventDetail {
-			ms.eventPaneFocus = 1
-		} else {
-			ms.activeTab = (ms.activeTab + 1) % 4
-		}
+		ms.cycleTabOrPane(true)
 		return ms, nil
 
 	case keyLeft:
 		// In events tab with detail view, switch panes
-		if ms.activeTab == 3 && ms.showEventDetail {
-			ms.eventPaneFocus = 0
-		} else {
-			ms.activeTab = (ms.activeTab - 1 + 4) % 4
-		}
+		ms.cycleTabOrPane(false)
 		return ms, nil
 
 	case "ctrl+up":
 		// Scroll description panel up in tool split view
-		if ms.activeTab == 0 && len(ms.tools) > 0 {
-			if ms.toolDetailScroll > 0 {
-				ms.toolDetailScroll -= 5 // Scroll up by 5 lines
-				if ms.toolDetailScroll < 0 {
-					ms.toolDetailScroll = 0
-				}
-			}
-		}
+		ms.scrollToolDetail(-5)
 		return ms, nil
 
 	case "ctrl+down":
 		// Scroll description panel down in tool split view
-		if ms.activeTab == 0 && len(ms.tools) > 0 {
-			ms.toolDetailScroll += 5 // Scroll down by 5 lines
-		}
+		ms.scrollToolDetail(5)
 		return ms, nil
 
 	case "b", keyAltLeft:
 		// In events tab with detail view, close detail
-		if ms.activeTab == 3 && ms.showEventDetail {
-			ms.showEventDetail = false
-			ms.eventPaneFocus = 0
-			return ms, nil
-		}
+		ms.closeEventDetail()
 		return ms, nil
 
 	case keyEnter:
 		// Execute/show details of selected item
 		return ms.handleItemSelection()
+	}
 
+	return ms.handleCommandKey(msg)
+}
+
+// handleCommandKey handles the command keys: refresh, subscribe, debug
+// overlay, export, the roots/tasks overlays, re-authenticate, disconnect and
+// the schema-error overlay. handled is false for keys it does not own.
+func (ms *MainScreen) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
 	case "r":
 		// In the resource viewer, re-read the open resource (after an
 		// update); elsewhere refresh the current tab.
-		if ms.resourceViewerOpen && ms.selectedResource != nil {
-			cmd := ms.readResource(ms.selectedResource)
-			return ms, cmd
-		}
-		refreshCmd := ms.refreshCurrentTab()
+		refreshCmd := ms.refreshOrRereadResource()
 		return ms, refreshCmd
 
 	case "s":
@@ -952,21 +900,8 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ms, nil
 
 	case keyCtrlL, keyCtrlD, keyF12:
-		// Show debug logs. Wire the snapshot provider so the Capabilities
-		// tab can read the negotiated state from the live service, and the
-		// notifications provider so the Notifications tab streams server
-		// events. Guard against the nil-service path used by some unit tests.
-		debugScreen := NewDebugScreen()
-		if ms.mcpService != nil {
-			debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
-			debugScreen.WithNotificationsProvider(ms.mcpService.NotificationStream)
-			debugScreen.WithExportService(ms.mcpService)
-		}
-		return ms, func() tea.Msg {
-			return ToggleOverlayMsg{
-				Screen: debugScreen,
-			}
-		}
+		debugCmd := ms.showDebugOverlayCmd()
+		return ms, debugCmd
 
 	case "ctrl+e":
 		// Export the recorded session to timestamped JSON + .sh replay files
@@ -980,31 +915,19 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// the SDK client through the service, which fires
 		// roots/list_changed notifications to the connected server.
 		rootsScreen := NewRootsScreen(ms.mcpService)
-		return ms, func() tea.Msg {
-			return TransitionMsg{
-				Transition: ScreenTransition{Screen: rootsScreen},
-			}
-		}
+		return ms, transitionCmdFor(rootsScreen)
 
 	case "T":
 		// Open the MCP tasks overlay: the tasks this session created or the
 		// server listed, with status, progress, result and cancel.
 		tasksScreen := NewTasksScreen(ms.mcpService)
-		return ms, func() tea.Msg {
-			return TransitionMsg{Transition: ScreenTransition{Screen: tasksScreen}}
-		}
+		return ms, transitionCmdFor(tasksScreen)
 
 	case "A":
 		// Re-authenticate: clear cached OAuth state so the next outgoing
 		// request triggers a fresh Authorize() call. Only meaningful when
 		// an OAuth handler is wired into the transport.
-		if h := ms.mcpService.GetOAuthHandler(); h != nil {
-			if err := h.Reauthenticate(); err != nil {
-				ms.logger.Error("OAuth re-authenticate failed", debug.F("error", err))
-			} else {
-				ms.logger.Info("OAuth state cleared; next request will re-authorize")
-			}
-		}
+		ms.reauthenticateOAuth()
 		return ms, nil
 
 	case "d":
@@ -1015,27 +938,176 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "e":
 		// View schema error details for current tool (only in Tools tab)
-		if ms.activeTab == 0 && len(ms.tools) > 0 {
-			selectedIdx := ms.selectedIndex[0]
-			if selectedIdx < len(ms.tools) {
-				tool := &ms.tools[selectedIdx]
-				if tool.HasSchemaError() {
-					// Show schema error overlay
-					schemaErrorScreen := NewSchemaErrorScreen(tool)
-					return ms, func() tea.Msg {
-						return ToggleOverlayMsg{
-							Screen: schemaErrorScreen,
-						}
-					}
-				} else {
-					ms.SetStatus("No schema error for this tool", StatusInfo)
-				}
-			}
-		}
-		return ms, nil
+		overlayCmd := ms.showSchemaErrorOverlayCmd()
+		return ms, overlayCmd
 	}
 
 	return ms, nil
+}
+
+// handleDisconnectedKey handles the keys available while no connection is
+// established: retry, debug logs, back to the connection screen, quit.
+func (ms *MainScreen) handleDisconnectedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyCtrlC, "q", keyEsc:
+		return ms, tea.Quit
+	case "r":
+		// Retry connection
+		ms.connecting = true
+		ms.connectingStart = time.Now()
+		ms.connectionStatus = "Retrying connection..."
+		ms.SetError(nil) // Clear previous error
+		return ms, tea.Batch(
+			ms.connectToServer(),
+			tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+				return spinnerTickMsg{}
+			}),
+		)
+	case keyCtrlL, keyCtrlD, keyF12:
+		// Show debug logs even when disconnected.
+		debugCmd := ms.showDebugOverlayCmd()
+		return ms, debugCmd
+	case "b", "e":
+		// Go back to connection screen to edit connection details
+		ms.logger.Info("User requested to go back to connection screen")
+		cmd := ms.leaveForConnectionScreen()
+		return ms, cmd
+	}
+	return ms, nil
+}
+
+// showDebugOverlayCmd builds the command that toggles the debug overlay.
+// The snapshot provider lets the Capabilities tab render the negotiated
+// state from the most recent successful Connect, the notifications provider
+// streams server events. mcpService can be nil in some test paths; guard
+// for safety.
+func (ms *MainScreen) showDebugOverlayCmd() tea.Cmd {
+	debugScreen := NewDebugScreen()
+	if ms.mcpService != nil {
+		debugScreen.WithSnapshotProvider(ms.mcpService.GetCapabilitiesSnapshot)
+		debugScreen.WithNotificationsProvider(ms.mcpService.NotificationStream)
+		debugScreen.WithExportService(ms.mcpService)
+	}
+	return func() tea.Msg {
+		return ToggleOverlayMsg{
+			Screen: debugScreen,
+		}
+	}
+}
+
+// transitionCmdFor builds the command that transitions to screen.
+func transitionCmdFor(screen Screen) tea.Cmd {
+	return func() tea.Msg {
+		return TransitionMsg{
+			Transition: ScreenTransition{Screen: screen},
+		}
+	}
+}
+
+// closeOpenViewer closes the resource or prompt viewer when one is open.
+// Returns false when neither was open — the caller then treats the key as
+// quit.
+func (ms *MainScreen) closeOpenViewer() bool {
+	if ms.resourceViewerOpen {
+		ms.resourceViewerOpen = false
+		ms.selectedResource = nil
+		ms.resourceContent = nil
+		ms.resourceRounds = nil
+		ms.resourceServer = nil
+		ms.resourceCache = nil
+		return true
+	}
+	if ms.promptViewerOpen {
+		ms.promptViewerOpen = false
+		ms.selectedPrompt = nil
+		ms.promptResult = nil
+		return true
+	}
+	return false
+}
+
+// reauthenticateOAuth clears cached OAuth state so the next outgoing request
+// triggers a fresh Authorize() call. A no-op when no OAuth handler is wired
+// into the transport.
+func (ms *MainScreen) reauthenticateOAuth() {
+	if h := ms.mcpService.GetOAuthHandler(); h != nil {
+		if err := h.Reauthenticate(); err != nil {
+			ms.logger.Error("OAuth re-authenticate failed", debug.F("error", err))
+		} else {
+			ms.logger.Info("OAuth state cleared; next request will re-authorize")
+		}
+	}
+}
+
+// showSchemaErrorOverlayCmd opens the schema error overlay for the selected
+// tool; on other tabs or tools without schema errors it reports a status
+// instead.
+func (ms *MainScreen) showSchemaErrorOverlayCmd() tea.Cmd {
+	if ms.activeTab != 0 || len(ms.tools) == 0 {
+		return nil
+	}
+	selectedIdx := ms.selectedIndex[0]
+	if selectedIdx >= len(ms.tools) {
+		return nil
+	}
+	tool := &ms.tools[selectedIdx]
+	if !tool.HasSchemaError() {
+		ms.SetStatus("No schema error for this tool", StatusInfo)
+		return nil
+	}
+	schemaErrorScreen := NewSchemaErrorScreen(tool)
+	return func() tea.Msg {
+		return ToggleOverlayMsg{
+			Screen: schemaErrorScreen,
+		}
+	}
+}
+
+// cycleTabOrPane moves one tab right (or left), or switches panes of the
+// events detail view when it is open.
+func (ms *MainScreen) cycleTabOrPane(right bool) {
+	if ms.activeTab == 3 && ms.showEventDetail {
+		if right {
+			ms.eventPaneFocus = 1
+		} else {
+			ms.eventPaneFocus = 0
+		}
+		return
+	}
+	if right {
+		ms.activeTab = (ms.activeTab + 1) % 4
+	} else {
+		ms.activeTab = (ms.activeTab - 1 + 4) % 4
+	}
+}
+
+// scrollToolDetail scrolls the tool split view's description panel by delta
+// lines, clamped at the top.
+func (ms *MainScreen) scrollToolDetail(delta int) {
+	if ms.activeTab != 0 || len(ms.tools) == 0 {
+		return
+	}
+	ms.toolDetailScroll += delta
+	if ms.toolDetailScroll < 0 {
+		ms.toolDetailScroll = 0
+	}
+}
+
+// closeEventDetail closes the events detail view when it is open.
+func (ms *MainScreen) closeEventDetail() {
+	if ms.activeTab == 3 && ms.showEventDetail {
+		ms.showEventDetail = false
+		ms.eventPaneFocus = 0
+	}
+}
+
+// refreshOrRereadResource re-reads the open resource in the viewer (after
+// an update); elsewhere it refreshes the current tab.
+func (ms *MainScreen) refreshOrRereadResource() tea.Cmd {
+	if ms.resourceViewerOpen && ms.selectedResource != nil {
+		return ms.readResource(ms.selectedResource)
+	}
+	return ms.refreshCurrentTab()
 }
 
 // getCurrentList returns the current list based on active tab
@@ -1149,61 +1221,10 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 		}
 
 	case 1: // Resources
-		// Three row types share this list: concrete resources (idx <
-		// templates section start), the section header (idx ==
-		// resourceTemplateSectionStart, when >= 0), and template rows
-		// (idx > resourceTemplateSectionStart). The header is decorative
-		// and intentionally non-selectable.
-		if ms.resourceTemplateSectionStart >= 0 {
-			if selectedIdx == ms.resourceTemplateSectionStart {
-				// Header row — ignore.
-				return ms, nil
-			}
-			if selectedIdx > ms.resourceTemplateSectionStart {
-				tmplIdx := selectedIdx - ms.resourceTemplateSectionStart - 1
-				if tmplIdx < 0 || tmplIdx >= len(ms.resourceTemplateObjects) {
-					return ms, nil
-				}
-				screen := NewResourceTemplateScreen(&ms.resourceTemplateObjects[tmplIdx], ms.mcpService)
-				return ms, func() tea.Msg {
-					return TransitionMsg{Transition: ScreenTransition{Screen: screen}}
-				}
-			}
-		}
-
-		// Concrete resource row: read it by URI (the row shows its name).
-		if selectedIdx < len(ms.resourceObjects) {
-			resource := ms.resourceObjects[selectedIdx]
-			cmd := ms.readResource(&resource)
-			return ms, cmd
-		}
+		return ms.selectResourceRow(selectedIdx)
 
 	case 2: // Prompts
-		// Get the prompt by name; the row shows its title and icon marker.
-		if selectedIdx < len(ms.promptObjects) {
-			prompt := ms.promptObjects[selectedIdx]
-			promptName := prompt.Name
-
-			// Load prompt details (execute with no arguments to get basic info)
-			ms.promptLoading = true
-			ms.promptLoadStart = time.Now()
-			ms.SetStatus(components.MCPOperationProgress("prompt", promptName, time.Duration(0)), StatusInfo)
-			return ms, ms.callProgress.await(func(ctx context.Context) tea.Msg {
-				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				defer cancel()
-
-				// Execute prompt with no arguments to get the details
-				result, err := ms.mcpService.GetPrompt(ctx, mcp.GetPromptRequest{
-					Name:      promptName,
-					Arguments: make(map[string]interface{}),
-				})
-				return PromptResultLoadedMsg{
-					Prompt: &prompt,
-					Result: result,
-					Error:  err,
-				}
-			})
-		}
+		return ms.selectPromptRow(selectedIdx)
 
 	case 3: // Events
 		// Toggle detail view for the selected event
@@ -1212,6 +1233,67 @@ func (ms *MainScreen) handleItemSelection() (tea.Model, tea.Cmd) {
 	}
 
 	return ms, nil
+}
+
+// selectResourceRow acts on the selected resources-tab row. Three row types
+// share this list: concrete resources (idx < templates section start), the
+// section header (idx == resourceTemplateSectionStart, when >= 0), and
+// template rows (idx > resourceTemplateSectionStart). The header is
+// decorative and intentionally non-selectable.
+func (ms *MainScreen) selectResourceRow(selectedIdx int) (tea.Model, tea.Cmd) {
+	if ms.resourceTemplateSectionStart >= 0 {
+		if selectedIdx == ms.resourceTemplateSectionStart {
+			// Header row — ignore.
+			return ms, nil
+		}
+		if selectedIdx > ms.resourceTemplateSectionStart {
+			tmplIdx := selectedIdx - ms.resourceTemplateSectionStart - 1
+			if tmplIdx < 0 || tmplIdx >= len(ms.resourceTemplateObjects) {
+				return ms, nil
+			}
+			screen := NewResourceTemplateScreen(&ms.resourceTemplateObjects[tmplIdx], ms.mcpService)
+			return ms, func() tea.Msg {
+				return TransitionMsg{Transition: ScreenTransition{Screen: screen}}
+			}
+		}
+	}
+
+	// Concrete resource row: read it by URI (the row shows its name).
+	if selectedIdx < len(ms.resourceObjects) {
+		resource := ms.resourceObjects[selectedIdx]
+		cmd := ms.readResource(&resource)
+		return ms, cmd
+	}
+	return ms, nil
+}
+
+// selectPromptRow loads the selected prompt's details (executing it with no
+// arguments to get basic info); the row shows its title and icon marker.
+func (ms *MainScreen) selectPromptRow(selectedIdx int) (tea.Model, tea.Cmd) {
+	if selectedIdx >= len(ms.promptObjects) {
+		return ms, nil
+	}
+	prompt := ms.promptObjects[selectedIdx]
+	promptName := prompt.Name
+
+	ms.promptLoading = true
+	ms.promptLoadStart = time.Now()
+	ms.SetStatus(components.MCPOperationProgress("prompt", promptName, time.Duration(0)), StatusInfo)
+	return ms, ms.callProgress.await(func(ctx context.Context) tea.Msg {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		// Execute prompt with no arguments to get the details
+		result, err := ms.mcpService.GetPrompt(ctx, mcp.GetPromptRequest{
+			Name:      promptName,
+			Arguments: make(map[string]interface{}),
+		})
+		return PromptResultLoadedMsg{
+			Prompt: &prompt,
+			Result: result,
+			Error:  err,
+		}
+	})
 }
 
 // readResource starts reading resource by its URI; the viewer opens when
@@ -1260,69 +1342,15 @@ func (ms *MainScreen) refreshCurrentTab() tea.Cmd {
 func (ms *MainScreen) View() string {
 	var builder strings.Builder
 
-	// Title and connection status on same line
-	titleAndStatus := ms.titleStyle.Render("MCP Server Interface") + "\n"
-
-	// Connection status
-	statusColor := "10" // green
-	if !ms.connected {
-		if ms.connecting {
-			statusColor = "11" // yellow
-		} else {
-			statusColor = "9" // red
-		}
-	}
-
-	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
-	titleAndStatus += statusStyle.Render(ms.connectionStatus) + "\n"
-
-	// OAuth status indicator: surface mode + state when an OAuth handler
-	// is wired into the transport. Hidden when no OAuth is in use to
-	// avoid cluttering the dominant STDIO path.
-	if oauthStatus := ms.renderOAuthStatus(); oauthStatus != "" {
-		titleAndStatus += oauthStatus + "\n"
-	}
-
-	builder.WriteString(titleAndStatus)
+	builder.WriteString(ms.renderHeader())
 
 	if !ms.connected && !ms.connecting {
-		// Show error with retry option
-		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-		builder.WriteString(errorStyle.Render("Connection failed"))
-		builder.WriteString("\n\n")
-
-		// Show retry options
-		optionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
-		builder.WriteString(optionStyle.Render("Press 'r' to retry connection"))
-		builder.WriteString("\n")
-		builder.WriteString(optionStyle.Render("Press 'b' or 'e' to go back and edit connection"))
-		builder.WriteString("\n")
-		builder.WriteString(optionStyle.Render("Press Ctrl+D/F12 to view debug logs"))
-		builder.WriteString("\n")
-		builder.WriteString(optionStyle.Render("Press 'q' or Ctrl+C to quit"))
+		builder.WriteString(ms.renderConnectionFailed())
 		return builder.String()
 	}
 
 	if ms.connecting {
-		// Show loading spinner
-		spinner := components.NewSpinner(components.SpinnerDots)
-		elapsed := time.Since(ms.connectingStart)
-
-		builder.WriteString("\n\n")
-		spinnerStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("212")).
-			Bold(true)
-		loadingStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("99"))
-
-		builder.WriteString(spinnerStyle.Render(spinner.Frame(elapsed)))
-		builder.WriteString(" ")
-		builder.WriteString(loadingStyle.Render("Connecting to MCP server..."))
-
-		// Show elapsed time
-		if elapsed > 2*time.Second {
-			fmt.Fprintf(&builder, " (%s)", elapsed.Round(time.Second))
-		}
+		builder.WriteString(ms.renderConnecting())
 		return builder.String()
 	}
 
@@ -1360,6 +1388,93 @@ func (ms *MainScreen) View() string {
 	builder.WriteString("\n")
 	builder.WriteString(separatorStyle.Render(strings.Repeat("─", width)))
 	builder.WriteString("\n")
+	builder.WriteString(ms.renderHelpLine())
+
+	// Status message
+	if statusMsg, _ := ms.StatusMessage(); statusMsg != "" {
+		builder.WriteString("\n\n")
+		builder.WriteString(ms.statusStyle.Render(statusMsg))
+	}
+
+	return builder.String()
+}
+
+// renderHeader renders the title, connection status and OAuth status lines.
+func (ms *MainScreen) renderHeader() string {
+	// Title and connection status on same line
+	titleAndStatus := ms.titleStyle.Render("MCP Server Interface") + "\n"
+
+	// Connection status
+	statusColor := "10" // green
+	if !ms.connected {
+		if ms.connecting {
+			statusColor = "11" // yellow
+		} else {
+			statusColor = "9" // red
+		}
+	}
+
+	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
+	titleAndStatus += statusStyle.Render(ms.connectionStatus) + "\n"
+
+	// OAuth status indicator: surface mode + state when an OAuth handler
+	// is wired into the transport. Hidden when no OAuth is in use to
+	// avoid cluttering the dominant STDIO path.
+	if oauthStatus := ms.renderOAuthStatus(); oauthStatus != "" {
+		titleAndStatus += oauthStatus + "\n"
+	}
+
+	return titleAndStatus
+}
+
+// renderConnectionFailed renders the failure notice with the retry options.
+func (ms *MainScreen) renderConnectionFailed() string {
+	var builder strings.Builder
+
+	// Show error with retry option
+	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	builder.WriteString(errorStyle.Render("Connection failed"))
+	builder.WriteString("\n\n")
+
+	// Show retry options
+	optionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	builder.WriteString(optionStyle.Render("Press 'r' to retry connection"))
+	builder.WriteString("\n")
+	builder.WriteString(optionStyle.Render("Press 'b' or 'e' to go back and edit connection"))
+	builder.WriteString("\n")
+	builder.WriteString(optionStyle.Render("Press Ctrl+D/F12 to view debug logs"))
+	builder.WriteString("\n")
+	builder.WriteString(optionStyle.Render("Press 'q' or Ctrl+C to quit"))
+	return builder.String()
+}
+
+// renderConnecting renders the spinner while the handshake is in flight.
+func (ms *MainScreen) renderConnecting() string {
+	var builder strings.Builder
+
+	spinner := components.NewSpinner(components.SpinnerDots)
+	elapsed := time.Since(ms.connectingStart)
+
+	builder.WriteString("\n\n")
+	spinnerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("212")).
+		Bold(true)
+	loadingStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("99"))
+
+	builder.WriteString(spinnerStyle.Render(spinner.Frame(elapsed)))
+	builder.WriteString(" ")
+	builder.WriteString(loadingStyle.Render("Connecting to MCP server..."))
+
+	// Show elapsed time
+	if elapsed > 2*time.Second {
+		fmt.Fprintf(&builder, " (%s)", elapsed.Round(time.Second))
+	}
+	return builder.String()
+}
+
+// renderHelpLine renders the help items for the current tab state.
+func (ms *MainScreen) renderHelpLine() string {
 	// Help text with better formatting
 	var helpItems []string
 	switch {
@@ -1415,21 +1530,12 @@ func (ms *MainScreen) View() string {
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	helpSeparatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 
-	var styledHelp []string
+	styledHelp := make([]string, 0, len(helpItems))
 	for _, item := range helpItems {
 		styledHelp = append(styledHelp, helpStyle.Render(item))
 	}
 
-	helpText := strings.Join(styledHelp, helpSeparatorStyle.Render(" • "))
-	builder.WriteString(helpText)
-
-	// Status message
-	if statusMsg, _ := ms.StatusMessage(); statusMsg != "" {
-		builder.WriteString("\n\n")
-		builder.WriteString(ms.statusStyle.Render(statusMsg))
-	}
-
-	return builder.String()
+	return strings.Join(styledHelp, helpSeparatorStyle.Render(" • "))
 }
 
 // renderTabs renders the tab bar
@@ -1487,112 +1593,18 @@ const (
 // renderCurrentList renders the current tab's list
 func (ms *MainScreen) renderCurrentList() string {
 	currentList := ms.getCurrentList()
-	tabNames := []string{tabTools, tabResources, tabPrompts, tabEvents}
 
 	// Check if we're loading first
-	var isLoading bool
-	switch ms.activeTab {
-	case 0:
-		isLoading = ms.toolsLoading
-	case 1:
-		isLoading = ms.resourcesLoading
-	case 2:
-		isLoading = ms.promptsLoading
-	case 3:
-		isLoading = ms.eventsLoading
-	}
-
-	if isLoading {
-		// Get terminal dimensions with better defaults
-		termHeight := ms.Height()
-		termWidth := ms.Width()
-
-		// Use reasonable defaults if dimensions aren't set yet
-		if termHeight == 0 {
-			termHeight = 30 // Reasonable default height
-		}
-		if termWidth == 0 {
-			termWidth = 80 // Reasonable default width
-		}
-
-		// Reserve space for: title(1) + connection status(1) + tabs(1) + separators(2) + help(1) + status(2)
-		reservedHeight := 8
-		availableHeight := termHeight - reservedHeight
-		if availableHeight < 5 {
-			availableHeight = 5 // Minimum visible lines
-		}
-
-		// Generate context-aware loading message with progress
-		var loadingMsg string
-		var operationType string
-		var startTime time.Time
-
-		switch ms.activeTab {
-		case 0:
-			operationType = "list_tools"
-			startTime = ms.toolsLoadStart
-		case 1:
-			operationType = "list_resources"
-			startTime = ms.resourcesLoadStart
-		case 2:
-			operationType = "list_prompts"
-			startTime = ms.promptsLoadStart
-		case 3:
-			loadingMsg = components.OperationProgressMessage("Loading events", time.Duration(0), "")
-		}
-
-		if operationType != "" {
-			elapsed := time.Since(startTime)
-			loadingMsg = components.MCPOperationProgress(operationType, "", elapsed)
-		}
-
-		loadingStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("12")).
-			Align(lipgloss.Center).
-			Bold(true)
-
-		// Create a style that fills available space
-		dynamicLoadingStyle := ms.listStyle.
-			Width(termWidth - 4).
-			Height(availableHeight)
-
-		return dynamicLoadingStyle.Render(loadingStyle.Render(loadingMsg))
+	if ms.isTabLoading() {
+		return ms.renderLoadingList()
 	}
 
 	if len(currentList) == 0 {
-		var emptyMsg string
-		switch ms.activeTab {
-		case 0:
-			emptyMsg = "No tools available\n\nThis MCP server doesn't provide any tools.\nTry connecting to a different server."
-		case 1:
-			emptyMsg = "No resources available\n\nThis MCP server doesn't provide any resources.\n" +
-				"Resources allow reading of files and data."
-		case 2:
-			emptyMsg = "No prompts available\n\nThis MCP server doesn't provide any prompts.\n" +
-				"Prompts are reusable templates for interactions."
-		case 3:
-			emptyMsg = "No events recorded yet\n\nEvents will appear here as the server sends notifications."
-		default:
-			emptyMsg = fmt.Sprintf("This MCP server doesn't provide any %s", tabNames[ms.activeTab])
-		}
-		emptyStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243")).
-			Align(lipgloss.Center)
-		return ms.listStyle.Render(emptyStyle.Render(emptyMsg))
+		return ms.renderEmptyList()
 	}
 
 	// Check if we have actual items or just a placeholder message
-	actualCount := 0
-	switch ms.activeTab {
-	case 0:
-		actualCount = ms.toolCount
-	case 1:
-		actualCount = ms.resourceCount
-	case 2:
-		actualCount = ms.promptCount
-	case 3:
-		actualCount = ms.eventCount
-	}
+	actualCount := ms.getActualItemCount()
 
 	// If no actual items, just show the message without selection
 	if actualCount == 0 {
@@ -1602,212 +1614,18 @@ func (ms *MainScreen) renderCurrentList() string {
 	var listItems []string
 	selectedIdx := ms.selectedIndex[ms.activeTab]
 
-	// Calculate viewport based on available height
-	// Get terminal dimensions with better defaults
-	termHeight := ms.Height()
-	termWidth := ms.Width()
-
-	// Use reasonable defaults if dimensions aren't set yet
-	if termHeight == 0 {
-		termHeight = 30 // Reasonable default height
-	}
-	if termWidth == 0 {
-		termWidth = 80 // Reasonable default width
-	}
-
-	// Log dimensions for debugging
-	ms.logger.Debug("Rendering list",
-		debug.F("termWidth", termWidth),
-		debug.F("termHeight", termHeight),
-		debug.F("availableHeight", termHeight-8))
-
-	// Reserve space for: title(1) + connection status(1) + tabs(1) + separators(2) + help(1) + status(2)
-	reservedHeight := 8
-	availableHeight := termHeight - reservedHeight
-	if availableHeight < 5 {
-		availableHeight = 5 // Minimum visible lines
-	}
-
-	// Calculate item display widths - use more of available width
-	listWidth := termWidth - 4 // Only account for minimal borders
-	if listWidth < 40 {
-		listWidth = 40 // Minimum width
-	}
+	termWidth, availableHeight, listWidth := ms.listDimensions()
 
 	// Calculate actual heights of items (accounting for wrapping)
-	itemHeights := make([]int, len(currentList))
-	for i, item := range currentList {
-		// Calculate how many lines this item will take
-		var displayText string
-		switch ms.activeTab {
-		case 0: // Tools
-			if actualCount > 0 {
-				parts := strings.SplitN(item, " - ", 2)
-				if len(parts) == 2 {
-					// Account for number prefix and formatting
-					displayText = fmt.Sprintf("%2d. %s - %s", i+1, parts[0], parts[1])
-				} else {
-					displayText = fmt.Sprintf("%2d. %s", i+1, item)
-				}
-			} else {
-				displayText = item
-			}
-		default:
-			displayText = item
-		}
-
-		// Calculate wrapped lines for this item
-		lines := 1
-		if len(displayText) > listWidth-4 { // Account for selection arrow and padding
-			lines = (len(displayText) + listWidth - 5) / (listWidth - 4)
-		}
-		itemHeights[i] = lines
-	}
+	itemHeights := ms.listItemHeights(currentList, actualCount, listWidth)
 
 	// Find the optimal viewport window
-	startIdx := 0
-	endIdx := len(currentList)
+	startIdx, endIdx := listViewport(itemHeights, selectedIdx, availableHeight)
 
-	// If content fits, show everything
-	totalHeight := 0
-	for _, height := range itemHeights {
-		totalHeight += height
-	}
-
-	if totalHeight > availableHeight {
-		// Need to scroll - find the best window around the selected item
-
-		// Start with the selected item and expand outward
-		currentHeight := itemHeights[selectedIdx]
-		startIdx = selectedIdx
-		endIdx = selectedIdx + 1
-
-		// Expand upward and downward to fill available space
-	expand:
-		for currentHeight < availableHeight && (startIdx > 0 || endIdx < len(currentList)) {
-			// Try expanding upward first
-			switch {
-			case startIdx > 0 && currentHeight+itemHeights[startIdx-1] <= availableHeight:
-				startIdx--
-				currentHeight += itemHeights[startIdx]
-			case endIdx < len(currentList) && currentHeight+itemHeights[endIdx] <= availableHeight:
-				// Expand downward
-				currentHeight += itemHeights[endIdx]
-				endIdx++
-			default:
-				// Can't expand further without exceeding available height
-				break expand
-			}
-		}
-
-		// If we still have space and items above, try to include more from the top
-		for startIdx > 0 && currentHeight+itemHeights[startIdx-1] <= availableHeight {
-			startIdx--
-			currentHeight += itemHeights[startIdx]
-		}
-	}
-
-	// Define item styles
-	nameStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12")) // Bright Blue
-
-	descriptionStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")) // Gray
-
-	numberStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")) // Dim gray
-
-	resourceStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("10")) // Green
-
-	promptStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("13")) // Magenta
-
-	eventTimeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")) // Dim gray
-
-	eventMethodStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("14")) // Cyan
+	styles := newListItemStyles()
 
 	for i := startIdx; i < endIdx; i++ {
-		item := currentList[i]
-
-		// Format the item based on tab type
-		var displayItem string
-		switch ms.activeTab {
-		case 0: // Tools
-			if actualCount > 0 {
-				// Check for schema error indicator
-				warningIndicator := ""
-				if i < len(ms.tools) && ms.tools[i].HasSchemaError() {
-					warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
-					warningIndicator = " " + warningStyle.Render("⚠")
-				}
-
-				parts := strings.SplitN(item, " - ", 2)
-				if len(parts) == 2 {
-					number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
-					name := nameStyle.Render(parts[0])
-					desc := descriptionStyle.Render(parts[1])
-					displayItem = fmt.Sprintf("%s%s%s - %s", number, name, warningIndicator, desc)
-				} else {
-					number := numberStyle.Render(fmt.Sprintf("%2d. ", i+1))
-					displayItem = number + nameStyle.Render(item) + warningIndicator
-				}
-			} else {
-				displayItem = item
-			}
-
-		case 1: // Resources
-			parts := strings.SplitN(item, " - ", 2)
-			if len(parts) == 2 {
-				name := resourceStyle.Render(parts[0])
-				desc := descriptionStyle.Render(parts[1])
-				displayItem = fmt.Sprintf("%s - %s", name, desc)
-			} else {
-				displayItem = resourceStyle.Render(item)
-			}
-
-		case 2: // Prompts
-			parts := strings.SplitN(item, " - ", 2)
-			if len(parts) == 2 {
-				name := promptStyle.Render(parts[0])
-				desc := descriptionStyle.Render(parts[1])
-				displayItem = fmt.Sprintf("%s - %s", name, desc)
-			} else {
-				displayItem = promptStyle.Render(item)
-			}
-
-		case 3: // Events
-			// Parse event format: "[timestamp] direction method"
-			if strings.HasPrefix(item, "[") {
-				closeIdx := strings.Index(item, "]")
-				if closeIdx > 0 && closeIdx < len(item)-1 {
-					timestamp := eventTimeStyle.Render(item[:closeIdx+1])
-					rest := item[closeIdx+1:]
-					// Extract method if present
-					parts := strings.Fields(rest)
-					if len(parts) >= 2 {
-						direction := parts[0]
-						method := eventMethodStyle.Render(strings.Join(parts[1:], " "))
-						displayItem = fmt.Sprintf("%s %s %s", timestamp, direction, method)
-					} else {
-						displayItem = timestamp + rest
-					}
-				} else {
-					displayItem = item
-				}
-			} else {
-				displayItem = item
-			}
-
-		default:
-			displayItem = item
-		}
+		displayItem := ms.formatListItem(i, currentList[i], actualCount, &styles)
 
 		if i == selectedIdx {
 			listItems = append(listItems, ms.selectedStyle.Render(fmt.Sprintf("▶ %s", displayItem)))
@@ -1838,21 +1656,7 @@ func (ms *MainScreen) renderCurrentList() string {
 	// Calculate inner width for padding lines
 	innerWidth := width - 6 // Account for borders and padding
 
-	// Pad each line to full width
-	var paddedItems []string
-	for _, item := range listItems {
-		// Remove any ANSI codes for length calculation
-		plainItem := lipgloss.NewStyle().Render(item)
-		visibleLength := lipgloss.Width(plainItem)
-
-		if visibleLength < innerWidth {
-			// Pad with spaces to reach full width
-			padding := strings.Repeat(" ", innerWidth-visibleLength)
-			paddedItems = append(paddedItems, item+padding)
-		} else {
-			paddedItems = append(paddedItems, item)
-		}
-	}
+	paddedItems := padListItems(listItems, innerWidth)
 
 	// Join padded items
 	content := strings.Join(paddedItems, "\n")
@@ -1872,6 +1676,334 @@ func (ms *MainScreen) renderCurrentList() string {
 		MaxHeight(availableHeight) // Ensure it doesn't grow beyond this
 
 	return dynamicListStyle.Render(content)
+}
+
+// isTabLoading reports whether the active tab's data is still loading.
+func (ms *MainScreen) isTabLoading() bool {
+	switch ms.activeTab {
+	case 0:
+		return ms.toolsLoading
+	case 1:
+		return ms.resourcesLoading
+	case 2:
+		return ms.promptsLoading
+	case 3:
+		return ms.eventsLoading
+	}
+	return false
+}
+
+// renderLoadingList renders the context-aware loading view with progress.
+func (ms *MainScreen) renderLoadingList() string {
+	termWidth, availableHeight, _ := ms.listDimensions()
+
+	// Generate context-aware loading message with progress
+	var loadingMsg string
+	var operationType string
+	var startTime time.Time
+
+	switch ms.activeTab {
+	case 0:
+		operationType = "list_tools"
+		startTime = ms.toolsLoadStart
+	case 1:
+		operationType = "list_resources"
+		startTime = ms.resourcesLoadStart
+	case 2:
+		operationType = "list_prompts"
+		startTime = ms.promptsLoadStart
+	case 3:
+		loadingMsg = components.OperationProgressMessage("Loading events", time.Duration(0), "")
+	}
+
+	if operationType != "" {
+		elapsed := time.Since(startTime)
+		loadingMsg = components.MCPOperationProgress(operationType, "", elapsed)
+	}
+
+	loadingStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("12")).
+		Align(lipgloss.Center).
+		Bold(true)
+
+	// Create a style that fills available space
+	dynamicLoadingStyle := ms.listStyle.
+		Width(termWidth - 4).
+		Height(availableHeight)
+
+	return dynamicLoadingStyle.Render(loadingStyle.Render(loadingMsg))
+}
+
+// renderEmptyList renders the per-tab empty-state message.
+func (ms *MainScreen) renderEmptyList() string {
+	tabNames := []string{tabTools, tabResources, tabPrompts, tabEvents}
+	var emptyMsg string
+	switch ms.activeTab {
+	case 0:
+		emptyMsg = "No tools available\n\nThis MCP server doesn't provide any tools.\nTry connecting to a different server."
+	case 1:
+		emptyMsg = "No resources available\n\nThis MCP server doesn't provide any resources.\n" +
+			"Resources allow reading of files and data."
+	case 2:
+		emptyMsg = "No prompts available\n\nThis MCP server doesn't provide any prompts.\n" +
+			"Prompts are reusable templates for interactions."
+	case 3:
+		emptyMsg = "No events recorded yet\n\nEvents will appear here as the server sends notifications."
+	default:
+		emptyMsg = fmt.Sprintf("This MCP server doesn't provide any %s", tabNames[ms.activeTab])
+	}
+	emptyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Align(lipgloss.Center)
+	return ms.listStyle.Render(emptyStyle.Render(emptyMsg))
+}
+
+// listDimensions resolves the terminal dimensions (with defaults) into the
+// list layout numbers: full width, the height available to the list, and
+// the item text width.
+func (ms *MainScreen) listDimensions() (termWidth, availableHeight, listWidth int) {
+	// Get terminal dimensions with better defaults
+	termHeight := ms.Height()
+	termWidth = ms.Width()
+
+	// Use reasonable defaults if dimensions aren't set yet
+	if termHeight == 0 {
+		termHeight = 30 // Reasonable default height
+	}
+	if termWidth == 0 {
+		termWidth = 80 // Reasonable default width
+	}
+
+	// Log dimensions for debugging
+	ms.logger.Debug("Rendering list",
+		debug.F("termWidth", termWidth),
+		debug.F("termHeight", termHeight),
+		debug.F("availableHeight", termHeight-8))
+
+	// Reserve space for: title(1) + connection status(1) + tabs(1) + separators(2) + help(1) + status(2)
+	reservedHeight := 8
+	availableHeight = termHeight - reservedHeight
+	if availableHeight < 5 {
+		availableHeight = 5 // Minimum visible lines
+	}
+
+	// Calculate item display widths - use more of available width
+	listWidth = termWidth - 4 // Only account for minimal borders
+	if listWidth < 40 {
+		listWidth = 40 // Minimum width
+	}
+	return termWidth, availableHeight, listWidth
+}
+
+// listItemHeights calculates how many display lines each item will take,
+// accounting for wrapping at the list width.
+func (ms *MainScreen) listItemHeights(currentList []string, actualCount, listWidth int) []int {
+	itemHeights := make([]int, len(currentList))
+	for i, item := range currentList {
+		// Calculate how many lines this item will take
+		var displayText string
+		switch ms.activeTab {
+		case 0: // Tools
+			if actualCount > 0 {
+				parts := strings.SplitN(item, " - ", 2)
+				if len(parts) == 2 {
+					// Account for number prefix and formatting
+					displayText = fmt.Sprintf("%2d. %s - %s", i+1, parts[0], parts[1])
+				} else {
+					displayText = fmt.Sprintf("%2d. %s", i+1, item)
+				}
+			} else {
+				displayText = item
+			}
+		default:
+			displayText = item
+		}
+
+		// Calculate wrapped lines for this item
+		lines := 1
+		if len(displayText) > listWidth-4 { // Account for selection arrow and padding
+			lines = (len(displayText) + listWidth - 5) / (listWidth - 4)
+		}
+		itemHeights[i] = lines
+	}
+	return itemHeights
+}
+
+// listViewport finds the window around selectedIdx that fills
+// availableHeight without exceeding it. When everything fits, the window is
+// the whole list.
+func listViewport(itemHeights []int, selectedIdx, availableHeight int) (startIdx, endIdx int) {
+	startIdx = 0
+	endIdx = len(itemHeights)
+
+	// If content fits, show everything
+	totalHeight := 0
+	for _, height := range itemHeights {
+		totalHeight += height
+	}
+	if totalHeight <= availableHeight {
+		return startIdx, endIdx
+	}
+
+	// Need to scroll - find the best window around the selected item
+
+	// Start with the selected item and expand outward
+	currentHeight := itemHeights[selectedIdx]
+	startIdx = selectedIdx
+	endIdx = selectedIdx + 1
+
+	// Expand upward and downward to fill available space
+expand:
+	for currentHeight < availableHeight && (startIdx > 0 || endIdx < len(itemHeights)) {
+		// Try expanding upward first
+		switch {
+		case startIdx > 0 && currentHeight+itemHeights[startIdx-1] <= availableHeight:
+			startIdx--
+			currentHeight += itemHeights[startIdx]
+		case endIdx < len(itemHeights) && currentHeight+itemHeights[endIdx] <= availableHeight:
+			// Expand downward
+			currentHeight += itemHeights[endIdx]
+			endIdx++
+		default:
+			// Can't expand further without exceeding available height
+			break expand
+		}
+	}
+
+	// If we still have space and items above, try to include more from the top
+	for startIdx > 0 && currentHeight+itemHeights[startIdx-1] <= availableHeight {
+		startIdx--
+		currentHeight += itemHeights[startIdx]
+	}
+
+	return startIdx, endIdx
+}
+
+// listItemStyles are the styles renderCurrentList formats items with.
+type listItemStyles struct {
+	name        lipgloss.Style
+	description lipgloss.Style
+	number      lipgloss.Style
+	resource    lipgloss.Style
+	prompt      lipgloss.Style
+	eventTime   lipgloss.Style
+	eventMethod lipgloss.Style
+}
+
+func newListItemStyles() listItemStyles {
+	return listItemStyles{
+		name: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("12")), // Bright Blue
+		description: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")), // Gray
+		number: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")), // Dim gray
+		resource: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("10")), // Green
+		prompt: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("13")), // Magenta
+		eventTime: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")), // Dim gray
+		eventMethod: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("14")), // Cyan
+	}
+}
+
+// formatListItem formats one list row for the active tab.
+func (ms *MainScreen) formatListItem(i int, item string, actualCount int, styles *listItemStyles) string {
+	switch ms.activeTab {
+	case 0: // Tools
+		if actualCount == 0 {
+			return item
+		}
+		return ms.formatToolListItem(i, item, styles)
+	case 1: // Resources
+		return formatNamedListItem(item, &styles.resource, &styles.description)
+	case 2: // Prompts
+		return formatNamedListItem(item, &styles.prompt, &styles.description)
+	case 3: // Events
+		return formatEventListItem(item, &styles.eventTime, &styles.eventMethod)
+	default:
+		return item
+	}
+}
+
+// formatToolListItem formats one tool row: number, name, schema-error
+// warning and description.
+func (ms *MainScreen) formatToolListItem(i int, item string, styles *listItemStyles) string {
+	// Check for schema error indicator
+	warningIndicator := ""
+	if i < len(ms.tools) && ms.tools[i].HasSchemaError() {
+		warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+		warningIndicator = " " + warningStyle.Render("⚠")
+	}
+
+	parts := strings.SplitN(item, " - ", 2)
+	number := styles.number.Render(fmt.Sprintf("%2d. ", i+1))
+	if len(parts) == 2 {
+		name := styles.name.Render(parts[0])
+		desc := styles.description.Render(parts[1])
+		return fmt.Sprintf("%s%s%s - %s", number, name, warningIndicator, desc)
+	}
+	return number + styles.name.Render(item) + warningIndicator
+}
+
+// formatNamedListItem formats a "name - description" row, styling the name
+// and graying the description.
+func formatNamedListItem(item string, nameStyle, descriptionStyle *lipgloss.Style) string {
+	parts := strings.SplitN(item, " - ", 2)
+	if len(parts) == 2 {
+		name := nameStyle.Render(parts[0])
+		desc := descriptionStyle.Render(parts[1])
+		return fmt.Sprintf("%s - %s", name, desc)
+	}
+	return nameStyle.Render(item)
+}
+
+// formatEventListItem formats one event row: "[timestamp] direction
+// method".
+func formatEventListItem(item string, eventTimeStyle, eventMethodStyle *lipgloss.Style) string {
+	if !strings.HasPrefix(item, "[") {
+		return item
+	}
+	closeIdx := strings.Index(item, "]")
+	if closeIdx <= 0 || closeIdx >= len(item)-1 {
+		return item
+	}
+	timestamp := eventTimeStyle.Render(item[:closeIdx+1])
+	rest := item[closeIdx+1:]
+	// Extract method if present
+	parts := strings.Fields(rest)
+	if len(parts) >= 2 {
+		direction := parts[0]
+		method := eventMethodStyle.Render(strings.Join(parts[1:], " "))
+		return fmt.Sprintf("%s %s %s", timestamp, direction, method)
+	}
+	return timestamp + rest
+}
+
+// padListItems pads each row to the inner width so the list box fills its
+// frame.
+func padListItems(listItems []string, innerWidth int) []string {
+	var paddedItems []string
+	for _, item := range listItems {
+		// Remove any ANSI codes for length calculation
+		plainItem := lipgloss.NewStyle().Render(item)
+		visibleLength := lipgloss.Width(plainItem)
+
+		if visibleLength < innerWidth {
+			// Pad with spaces to reach full width
+			padding := strings.Repeat(" ", innerWidth-visibleLength)
+			paddedItems = append(paddedItems, item+padding)
+		} else {
+			paddedItems = append(paddedItems, item)
+		}
+	}
+	return paddedItems
 }
 
 // connectToServer starts the connection to the MCP server
@@ -2411,83 +2543,7 @@ func (ms *MainScreen) renderToolDetail() string {
 		return "Invalid tool selection"
 	}
 
-	tool := &ms.tools[selectedIdx]
-
-	// Build full content first
-	var contentBuilder strings.Builder
-
-	// Tool name header. DisplayName falls back through Title→Annotations.Title→
-	// Name; the badge string surfaces destructive/readOnly/idempotent/openWorld
-	// hints next to it.
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	header := headerStyle.Render("Tool: " + tool.DisplayName())
-	if badges := renderToolBadges(tool); badges != "" {
-		header = header + "  " + badges
-	}
-	contentBuilder.WriteString(header)
-	contentBuilder.WriteString("\n")
-	// Echo the raw Name when it differs from DisplayName for unambiguous reference.
-	if tool.DisplayName() != tool.Name {
-		nameLineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-		contentBuilder.WriteString(nameLineStyle.Render("Name: " + tool.Name))
-		contentBuilder.WriteString("\n")
-	}
-	if problem := mcp.ToolNameProblem(tool.Name); problem != "" {
-		contentBuilder.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("⚠ " + problem))
-		contentBuilder.WriteString("\n")
-	}
-	contentBuilder.WriteString(renderIcons(tool.Icons))
-	contentBuilder.WriteString("\n")
-
-	// Schema error section (if any)
-	if tool.HasSchemaError() {
-		warningStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11"))
-		errorMsgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-
-		contentBuilder.WriteString(warningStyle.Render("⚠ Schema Error"))
-		contentBuilder.WriteString("\n")
-		contentBuilder.WriteString(errorMsgStyle.Render(tool.SchemaError.Message))
-		contentBuilder.WriteString("\n")
-
-		// Show hint if available
-		if hint, ok := tool.SchemaError.Details["hint"].(string); ok {
-			contentBuilder.WriteString(hintStyle.Render(hint))
-			contentBuilder.WriteString("\n")
-		}
-
-		contentBuilder.WriteString("\n")
-		contentBuilder.WriteString(hintStyle.Render("Press 'e' to view raw schema"))
-		contentBuilder.WriteString("\n\n")
-	}
-
-	// Parameter count
-	paramCount := 0
-	if tool.InputSchema != nil {
-		if properties, ok := tool.InputSchema["properties"].(map[string]interface{}); ok {
-			paramCount = len(properties)
-		}
-	}
-
-	paramStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-	if tool.HasSchemaError() {
-		contentBuilder.WriteString(paramStyle.Render("Parameters: unknown (schema error)"))
-	} else {
-		contentBuilder.WriteString(paramStyle.Render(fmt.Sprintf("Parameters: %d", paramCount)))
-	}
-	contentBuilder.WriteString("\n\n")
-
-	// Raw description (no formatting for debugging)
-	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
-	if tool.Description != "" {
-		contentBuilder.WriteString(descStyle.Render("Description:"))
-		contentBuilder.WriteString("\n")
-		contentBuilder.WriteString(tool.Description)
-	} else {
-		contentBuilder.WriteString(descStyle.Render("No description available"))
-	}
-
-	fullContent := contentBuilder.String()
+	fullContent := buildToolDetailContent(&ms.tools[selectedIdx])
 
 	// Calculate available height for scrolling
 	totalHeight := ms.Height()
@@ -2524,6 +2580,12 @@ func (ms *MainScreen) renderToolDetail() string {
 		ms.toolDetailScroll = startIdx
 	}
 
+	return scrollWindowLines(lines, startIdx, availableLines)
+}
+
+// scrollWindowLines returns lines[startIdx:startIdx+availableLines] with
+// scroll position markers attached to the first/last visible line.
+func scrollWindowLines(lines []string, startIdx, availableLines int) string {
 	endIdx := startIdx + availableLines
 	if endIdx > len(lines) {
 		endIdx = len(lines)
@@ -2531,27 +2593,111 @@ func (ms *MainScreen) renderToolDetail() string {
 
 	visibleLines := lines[startIdx:endIdx]
 
-	// Add scroll indicators if there's more content
-	if len(lines) > availableLines {
-		// Add scroll position indicator
-		scrollInfo := fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, len(lines))
+	// Add scroll position indicator
+	scrollInfo := fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, len(lines))
 
-		if len(visibleLines) > 0 {
-			// Add top indicator if not at the beginning
-			if startIdx > 0 {
-				visibleLines[0] = "▲ " + visibleLines[0] + " ▲"
-			}
+	if len(visibleLines) > 0 {
+		// Add top indicator if not at the beginning
+		if startIdx > 0 {
+			visibleLines[0] = "▲ " + visibleLines[0] + " ▲"
+		}
 
-			// Add bottom indicator if not at the end
-			if endIdx < len(lines) {
-				visibleLines[len(visibleLines)-1] += " ▼ (Ctrl+Up/Down to scroll)" + scrollInfo
-			} else {
-				visibleLines[len(visibleLines)-1] += scrollInfo
-			}
+		// Add bottom indicator if not at the end
+		if endIdx < len(lines) {
+			visibleLines[len(visibleLines)-1] += " ▼ (Ctrl+Up/Down to scroll)" + scrollInfo
+		} else {
+			visibleLines[len(visibleLines)-1] += scrollInfo
 		}
 	}
 
 	return strings.Join(visibleLines, "\n")
+}
+
+// buildToolDetailContent renders the full tool detail text: name header
+// with badges, schema error section, parameter count and description.
+func buildToolDetailContent(tool *mcp.Tool) string {
+	var contentBuilder strings.Builder
+
+	// Tool name header. DisplayName falls back through Title→Annotations.Title→
+	// Name; the badge string surfaces destructive/readOnly/idempotent/openWorld
+	// hints next to it.
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	header := headerStyle.Render("Tool: " + tool.DisplayName())
+	if badges := renderToolBadges(tool); badges != "" {
+		header = header + "  " + badges
+	}
+	contentBuilder.WriteString(header)
+	contentBuilder.WriteString("\n")
+	// Echo the raw Name when it differs from DisplayName for unambiguous reference.
+	if tool.DisplayName() != tool.Name {
+		nameLineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+		contentBuilder.WriteString(nameLineStyle.Render("Name: " + tool.Name))
+		contentBuilder.WriteString("\n")
+	}
+	if problem := mcp.ToolNameProblem(tool.Name); problem != "" {
+		contentBuilder.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("⚠ " + problem))
+		contentBuilder.WriteString("\n")
+	}
+	contentBuilder.WriteString(renderIcons(tool.Icons))
+	contentBuilder.WriteString("\n")
+
+	contentBuilder.WriteString(renderToolSchemaError(tool))
+
+	// Parameter count
+	paramCount := 0
+	if tool.InputSchema != nil {
+		if properties, ok := tool.InputSchema["properties"].(map[string]interface{}); ok {
+			paramCount = len(properties)
+		}
+	}
+
+	paramStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	if tool.HasSchemaError() {
+		contentBuilder.WriteString(paramStyle.Render("Parameters: unknown (schema error)"))
+	} else {
+		contentBuilder.WriteString(paramStyle.Render(fmt.Sprintf("Parameters: %d", paramCount)))
+	}
+	contentBuilder.WriteString("\n\n")
+
+	// Raw description (no formatting for debugging)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	if tool.Description != "" {
+		contentBuilder.WriteString(descStyle.Render("Description:"))
+		contentBuilder.WriteString("\n")
+		contentBuilder.WriteString(tool.Description)
+	} else {
+		contentBuilder.WriteString(descStyle.Render("No description available"))
+	}
+
+	return contentBuilder.String()
+}
+
+// renderToolSchemaError renders the schema error section of the tool
+// detail, or "" when the tool's schema parsed cleanly.
+func renderToolSchemaError(tool *mcp.Tool) string {
+	if !tool.HasSchemaError() {
+		return ""
+	}
+	warningStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11"))
+	errorMsgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+
+	var b strings.Builder
+	b.WriteString(warningStyle.Render("⚠ Schema Error"))
+	b.WriteString("\n")
+	b.WriteString(errorMsgStyle.Render(tool.SchemaError.Message))
+	b.WriteString("\n")
+
+	// Show hint if available
+	if hint, ok := tool.SchemaError.Details["hint"].(string); ok {
+		b.WriteString(hintStyle.Render(hint))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Press 'e' to view raw schema"))
+	b.WriteString("\n\n")
+	return b.String()
 }
 
 // renderEventList renders the event list for the left pane
@@ -2728,61 +2874,10 @@ func (ms *MainScreen) renderResourceViewer() string {
 	builder.WriteString("\n\n")
 
 	// Metadata
-	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	if ms.selectedResource.DisplayName() != ms.selectedResource.URI {
-		builder.WriteString(metaStyle.Render(fmt.Sprintf("Name: %s", ms.selectedResource.DisplayName())))
-		builder.WriteString("\n")
-	}
-	if ms.selectedResource.Description != "" {
-		builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.selectedResource.Description)))
-		builder.WriteString("\n")
-	}
-	if ms.selectedResource.MimeType != "" {
-		builder.WriteString(metaStyle.Render(fmt.Sprintf("MIME Type: %s", ms.selectedResource.MimeType)))
-		builder.WriteString("\n")
-	}
-	if ms.resourceCache != nil {
-		builder.WriteString(metaStyle.Render("Cache: " + ms.resourceCache.Label()))
-		builder.WriteString("\n")
-	}
-	builder.WriteString(renderIcons(ms.selectedResource.Icons))
+	builder.WriteString(ms.renderResourceMetadata())
 	builder.WriteString("\n")
 
-	// Content
-	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
-	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
-
-	for i, content := range ms.resourceContent {
-		if i > 0 {
-			builder.WriteString("\n")
-		}
-
-		// Content header
-		if i == 0 && len(ms.resourceContent) == 1 {
-			builder.WriteString(sectionStyle.Render("Content:"))
-		} else {
-			builder.WriteString(sectionStyle.Render(fmt.Sprintf("Content %d:", i+1)))
-		}
-		builder.WriteString("\n")
-
-		if content.Text != "" {
-			// Text content
-			lines := strings.Split(content.Text, "\n")
-			for _, line := range lines {
-				if len(line) > 100 {
-					line = line[:97] + "..."
-				}
-				builder.WriteString(contentStyle.Render(line))
-				builder.WriteString("\n")
-			}
-		} else if content.Blob != "" {
-			// Binary content - show summary
-			builder.WriteString(contentStyle.Render("Binary content (base64 encoded)"))
-			builder.WriteString("\n")
-			builder.WriteString(metaStyle.Render(fmt.Sprintf("Size: %d bytes", len(content.Blob))))
-			builder.WriteString("\n")
-		}
-	}
+	ms.renderResourceContents(&builder)
 
 	if trace := renderResultTrailer(ms.resourceRounds, ms.resourceServer); trace != "" {
 		builder.WriteString("\n")
@@ -2802,6 +2897,70 @@ func (ms *MainScreen) renderResourceViewer() string {
 	builder.WriteString(instructionStyle.Render("Press 'r' to reload, 'q' or Escape to go back to list"))
 
 	return builder.String()
+}
+
+// renderResourceMetadata renders the resource viewer's metadata lines: name,
+// description, MIME type, cache label and icons.
+func (ms *MainScreen) renderResourceMetadata() string {
+	var b strings.Builder
+	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	if ms.selectedResource.DisplayName() != ms.selectedResource.URI {
+		b.WriteString(metaStyle.Render(fmt.Sprintf("Name: %s", ms.selectedResource.DisplayName())))
+		b.WriteString("\n")
+	}
+	if ms.selectedResource.Description != "" {
+		b.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.selectedResource.Description)))
+		b.WriteString("\n")
+	}
+	if ms.selectedResource.MimeType != "" {
+		b.WriteString(metaStyle.Render(fmt.Sprintf("MIME Type: %s", ms.selectedResource.MimeType)))
+		b.WriteString("\n")
+	}
+	if ms.resourceCache != nil {
+		b.WriteString(metaStyle.Render("Cache: " + ms.resourceCache.Label()))
+		b.WriteString("\n")
+	}
+	b.WriteString(renderIcons(ms.selectedResource.Icons))
+	return b.String()
+}
+
+// renderResourceContents renders each content block of the opened resource:
+// text (wrapped at 100 columns) or a summary for binary content.
+func (ms *MainScreen) renderResourceContents(builder *strings.Builder) {
+	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
+	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	for i, content := range ms.resourceContent {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
+
+		// Content header
+		if i == 0 && len(ms.resourceContent) == 1 {
+			builder.WriteString(sectionStyle.Render("Content:"))
+		} else {
+			builder.WriteString(sectionStyle.Render(fmt.Sprintf("Content %d:", i+1)))
+		}
+		builder.WriteString("\n")
+
+		if content.Text != "" {
+			// Text content
+			for _, line := range strings.Split(content.Text, "\n") {
+				if len(line) > 100 {
+					line = line[:97] + "..."
+				}
+				builder.WriteString(contentStyle.Render(line))
+				builder.WriteString("\n")
+			}
+		} else if content.Blob != "" {
+			// Binary content - show summary
+			builder.WriteString(contentStyle.Render("Binary content (base64 encoded)"))
+			builder.WriteString("\n")
+			builder.WriteString(metaStyle.Render(fmt.Sprintf("Size: %d bytes", len(content.Blob))))
+			builder.WriteString("\n")
+		}
+	}
 }
 
 // renderPromptViewer renders the prompt result viewer
@@ -2825,74 +2984,10 @@ func (ms *MainScreen) renderPromptViewer() string {
 	builder.WriteString("\n\n")
 
 	// Metadata
-	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	if ms.selectedPrompt.Description != "" {
-		builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.selectedPrompt.Description)))
-		builder.WriteString("\n")
-	}
-	builder.WriteString(renderIcons(ms.selectedPrompt.Icons))
-
-	// Arguments
-	if len(ms.selectedPrompt.Arguments) > 0 {
-		builder.WriteString(metaStyle.Render("Arguments:"))
-		builder.WriteString("\n")
-		argStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).MarginLeft(2)
-		for key, value := range ms.selectedPrompt.Arguments {
-			builder.WriteString(argStyle.Render(fmt.Sprintf("• %s: %v", key, value)))
-			builder.WriteString("\n")
-		}
-	}
-	builder.WriteString("\n")
+	builder.WriteString(ms.renderPromptMetadata())
 
 	// Result (if available)
-	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
-	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
-
-	if ms.promptResult != nil {
-		builder.WriteString(sectionStyle.Render("Prompt Result:"))
-		builder.WriteString("\n")
-
-		if ms.promptResult.Description != "" {
-			builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.promptResult.Description)))
-			builder.WriteString("\n")
-		}
-
-		if len(ms.promptResult.Messages) > 0 {
-			builder.WriteString(sectionStyle.Render("Messages:"))
-			builder.WriteString("\n")
-
-			for i, message := range ms.promptResult.Messages {
-				if i > 0 {
-					builder.WriteString("\n")
-				}
-
-				roleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-				builder.WriteString(roleStyle.Render(fmt.Sprintf("Role: %s", message.Role)))
-				builder.WriteString("\n")
-
-				if message.Content != nil {
-					for _, content := range message.Content {
-						if content.Text != "" {
-							lines := strings.Split(content.Text, "\n")
-							for _, line := range lines {
-								if len(line) > 100 {
-									line = line[:97] + "..."
-								}
-								builder.WriteString(contentStyle.Render(line))
-								builder.WriteString("\n")
-							}
-						}
-					}
-				}
-			}
-		}
-
-		if trace := renderResultTrailer(ms.promptResult.Rounds, ms.promptResult.Server); trace != "" {
-			builder.WriteString("\n")
-			builder.WriteString(trace)
-			builder.WriteString("\n")
-		}
-	}
+	ms.renderPromptResult(&builder)
 
 	// Instructions
 	builder.WriteString("\n")
@@ -2900,6 +2995,92 @@ func (ms *MainScreen) renderPromptViewer() string {
 	builder.WriteString(instructionStyle.Render("Press 'q' or Escape to go back to list"))
 
 	return builder.String()
+}
+
+// renderPromptMetadata renders the prompt viewer's metadata: description,
+// icons and the argument list.
+func (ms *MainScreen) renderPromptMetadata() string {
+	var b strings.Builder
+	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	if ms.selectedPrompt.Description != "" {
+		b.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.selectedPrompt.Description)))
+		b.WriteString("\n")
+	}
+	b.WriteString(renderIcons(ms.selectedPrompt.Icons))
+
+	// Arguments
+	if len(ms.selectedPrompt.Arguments) > 0 {
+		b.WriteString(metaStyle.Render("Arguments:"))
+		b.WriteString("\n")
+		argStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).MarginLeft(2)
+		for key, value := range ms.selectedPrompt.Arguments {
+			b.WriteString(argStyle.Render(fmt.Sprintf("• %s: %v", key, value)))
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+// renderPromptResult renders the executed prompt's description and
+// messages, when the result has arrived.
+func (ms *MainScreen) renderPromptResult(builder *strings.Builder) {
+	if ms.promptResult == nil {
+		return
+	}
+
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
+	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	builder.WriteString(sectionStyle.Render("Prompt Result:"))
+	builder.WriteString("\n")
+
+	if ms.promptResult.Description != "" {
+		builder.WriteString(metaStyle.Render(fmt.Sprintf("Description: %s", ms.promptResult.Description)))
+		builder.WriteString("\n")
+	}
+
+	if len(ms.promptResult.Messages) > 0 {
+		builder.WriteString(sectionStyle.Render("Messages:"))
+		builder.WriteString("\n")
+
+		renderPromptMessages(builder, ms.promptResult.Messages, &contentStyle)
+	}
+
+	if trace := renderResultTrailer(ms.promptResult.Rounds, ms.promptResult.Server); trace != "" {
+		builder.WriteString("\n")
+		builder.WriteString(trace)
+		builder.WriteString("\n")
+	}
+}
+
+// renderPromptMessages renders each message of a prompt result: role, then
+// its text lines wrapped at 100 columns.
+func renderPromptMessages(builder *strings.Builder, messages []mcp.PromptMessage, contentStyle *lipgloss.Style) {
+	for i, message := range messages {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
+
+		roleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+		builder.WriteString(roleStyle.Render(fmt.Sprintf("Role: %s", message.Role)))
+		builder.WriteString("\n")
+
+		if message.Content != nil {
+			for _, content := range message.Content {
+				if content.Text != "" {
+					for _, line := range strings.Split(content.Text, "\n") {
+						if len(line) > 100 {
+							line = line[:97] + "..."
+						}
+						builder.WriteString(contentStyle.Render(line))
+						builder.WriteString("\n")
+					}
+				}
+			}
+		}
+	}
 }
 
 // renderOAuthStatus produces the per-screen OAuth status indicator. Returns

@@ -102,17 +102,15 @@ func NewRootsScreen(svc RootsEditorService) *RootsScreen {
 }
 
 func (s *RootsScreen) initStyles() {
-	s.titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).MarginBottom(1)
-	s.labelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
-	s.contentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
-	s.helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	s.choiceStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
-	s.dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-	s.errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	s.overlayBorder = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("12")).
-		Padding(1, 2)
+	styles := newOverlayStyles("12", "14")
+	s.titleStyle = styles.title
+	s.labelStyle = styles.label
+	s.contentStyle = styles.content
+	s.helpStyle = styles.help
+	s.choiceStyle = styles.choice
+	s.dimStyle = styles.dim
+	s.errorStyle = styles.err
+	s.overlayBorder = styles.border
 }
 
 // Init implements tea.Model.
@@ -172,18 +170,25 @@ func (s *RootsScreen) handleListKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return s, nil
 	case "d", "x":
-		if s.cursor >= 0 && s.cursor < len(s.rootsList) && s.svc != nil {
-			uri := s.rootsList[s.cursor].URI
-			s.svc.RemoveRoots(uri)
-			s.rootsList = s.svc.ListRoots()
-			if s.cursor >= len(s.rootsList) && s.cursor > 0 {
-				s.cursor--
-			}
-			s.helpText = fmt.Sprintf("Removed %s — list_changed sent", uri)
-		}
+		s.removeCurrentRoot()
 		return s, nil
 	}
 	return s, nil
+}
+
+// removeCurrentRoot removes the root under the cursor and refreshes the
+// list snapshot, keeping the cursor in range.
+func (s *RootsScreen) removeCurrentRoot() {
+	if s.cursor < 0 || s.cursor >= len(s.rootsList) || s.svc == nil {
+		return
+	}
+	uri := s.rootsList[s.cursor].URI
+	s.svc.RemoveRoots(uri)
+	s.rootsList = s.svc.ListRoots()
+	if s.cursor >= len(s.rootsList) && s.cursor > 0 {
+		s.cursor--
+	}
+	s.helpText = fmt.Sprintf("Removed %s — list_changed sent", uri)
 }
 
 // beginEdit switches to edit mode for the root at idx (or adds a new one if
