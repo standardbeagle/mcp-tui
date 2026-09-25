@@ -22,6 +22,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
+	"github.com/standardbeagle/mcp-tui/internal/shell"
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
@@ -283,7 +284,8 @@ func (ts *ToolScreen) sanitizeInput(input string) string {
 	return result.String()
 }
 
-// generateCLICommand generates the equivalent CLI command for the current tool call
+// generateCLICommand generates the equivalent CLI command for the current
+// tool call, as a POSIX shell (sh, bash, zsh) command line.
 func (ts *ToolScreen) generateCLICommand() string {
 	var builder strings.Builder
 
@@ -300,40 +302,22 @@ func (ts *ToolScreen) generateCLICommand() string {
 		return "# Connection config not available - cannot generate CLI command"
 	}
 
-	// Add transport type
-	builder.WriteString(fmt.Sprintf(" --transport %s", connConfig.Type))
-
-	// Add connection-specific parameters based on transport type
+	// Every word goes through shell.Quote, so the shell passes each value
+	// on as typed: nothing in it is expanded or split.
+	fmt.Fprintf(&builder, " --transport %s", shell.Quote(string(connConfig.Type)))
 	if connConfig.Command != "" {
-		// Sanitize: remove newlines and trim whitespace
-		cmd := strings.ReplaceAll(connConfig.Command, "\n", "")
-		cmd = strings.ReplaceAll(cmd, "\r", "")
-		cmd = strings.TrimSpace(cmd)
-		builder.WriteString(fmt.Sprintf(" --cmd \"%s\"", cmd))
+		fmt.Fprintf(&builder, " --cmd %s", shell.Quote(connConfig.Command))
 	}
-
 	if len(connConfig.Args) > 0 {
-		// Join args with commas as expected by CLI
-		escapedArgs := make([]string, 0, len(connConfig.Args))
-		for _, arg := range connConfig.Args {
-			// Sanitize: remove newlines and trim whitespace
-			cleanArg := strings.ReplaceAll(arg, "\n", "")
-			cleanArg = strings.ReplaceAll(cleanArg, "\r", "")
-			cleanArg = strings.TrimSpace(cleanArg)
-			// Escape any quotes in arguments
-			escaped := strings.ReplaceAll(cleanArg, "\"", "\\\"")
-			escapedArgs = append(escapedArgs, escaped)
-		}
-		builder.WriteString(fmt.Sprintf(" --args \"%s\"", strings.Join(escapedArgs, ",")))
+		// The CLI takes the server's arguments joined with commas.
+		fmt.Fprintf(&builder, " --args %s", shell.Quote(strings.Join(connConfig.Args, ",")))
 	}
-
 	if connConfig.URL != "" {
-		builder.WriteString(fmt.Sprintf(" --url \"%s\"", connConfig.URL))
+		fmt.Fprintf(&builder, " --url %s", shell.Quote(connConfig.URL))
 	}
 
 	// Add the tool command
-	builder.WriteString(" tool call ")
-	builder.WriteString(ts.tool.Name)
+	fmt.Fprintf(&builder, " tool call %s", shell.Quote(ts.tool.Name))
 
 	// Add arguments from form fields; an object filled in as a sub-form is
 	// written as the JSON the form builds for it.
@@ -344,39 +328,19 @@ func (ts *ToolScreen) generateCLICommand() string {
 		if field.depth > 0 {
 			continue
 		}
-		if field.expanded {
+		switch {
+		case field.expanded:
 			if v, ok := built[field.name]; ok && buildErr == nil {
 				if encoded, err := json.Marshal(v); err == nil {
-					fmt.Fprintf(&builder, " %s=%q", field.name, string(encoded))
+					builder.WriteString(" " + shell.Quote(field.name+"="+string(encoded)))
 				}
 			}
-			continue
-		}
-		if field.sendNull {
-			fmt.Fprintf(&builder, " %s:=null", field.name)
-			continue
-		}
-		value := field.input.Value()
-		if value != "" {
-			// Sanitize: remove newlines from parameter values
-			value = strings.ReplaceAll(value, "\n", " ")
-			value = strings.ReplaceAll(value, "\r", "")
-			value = strings.TrimSpace(value)
-
-			// Format the value based on field type
-			switch field.fieldType {
-			case "number", "integer", "boolean":
-				// Use value as-is for JSON types
-				builder.WriteString(fmt.Sprintf(" %s=%s", field.name, value))
-			case "array", "object":
-				// Quote JSON values and escape quotes
-				escaped := strings.ReplaceAll(value, "\"", "\\\"")
-				builder.WriteString(fmt.Sprintf(" %s=\"%s\"", field.name, escaped))
-			default:
-				// Quote string values and escape quotes
-				escaped := strings.ReplaceAll(value, "\"", "\\\"")
-				builder.WriteString(fmt.Sprintf(" %s=\"%s\"", field.name, escaped))
-			}
+		case field.sendNull:
+			builder.WriteString(" " + shell.Quote(field.name+":=null"))
+		case field.input.Value() != "":
+			// key=value reads the value by the field's schema type, as
+			// the form does.
+			builder.WriteString(" " + shell.Quote(field.name+"="+field.input.Value()))
 		}
 	}
 
@@ -1961,7 +1925,7 @@ func (ts *ToolScreen) renderFooter() string {
 		cliHeaderStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("14")). // Cyan
 			Bold(true)
-		builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command:"))
+		builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command (POSIX shell):"))
 		builder.WriteString("\n")
 
 		// CLI command box - no fixed width to prevent wrapping

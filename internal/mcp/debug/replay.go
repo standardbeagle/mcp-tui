@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/standardbeagle/mcp-tui/internal/shell"
 )
 
 // ConnectionInfo carries the minimum connection details needed to reconstruct
@@ -61,14 +63,14 @@ func baseInvocation(conn ConnectionInfo) string {
 	case "sse", "http", "streamable-http":
 		parts = append(parts, "--transport", conn.Transport)
 		if conn.URL != "" {
-			parts = append(parts, "--url", shellQuote(conn.URL))
+			parts = append(parts, "--url", shell.Quote(conn.URL))
 		}
 	default: // stdio (also the empty/unknown fallback)
 		if conn.Command != "" {
-			parts = append(parts, "--cmd", shellQuote(conn.Command))
+			parts = append(parts, "--cmd", shell.Quote(conn.Command))
 		}
 		if len(conn.Args) > 0 {
-			parts = append(parts, "--args", shellQuote(strings.Join(conn.Args, ",")))
+			parts = append(parts, "--args", shell.Quote(strings.Join(conn.Args, ",")))
 		}
 	}
 	return strings.Join(parts, " ")
@@ -83,9 +85,9 @@ func translateRequest(base, method string, params map[string]interface{}) (strin
 		if name == "" {
 			return "", false
 		}
-		cmd := fmt.Sprintf("%s tool call %s", base, shellQuote(name))
+		cmd := fmt.Sprintf("%s tool call %s", base, shell.Quote(name))
 		for _, kv := range keyValueArgs(params["arguments"]) {
-			cmd += " " + shellQuote(kv)
+			cmd += " " + shell.Quote(kv)
 		}
 		return cmd, true
 
@@ -94,7 +96,7 @@ func translateRequest(base, method string, params map[string]interface{}) (strin
 		if uri == "" {
 			return "", false
 		}
-		return fmt.Sprintf("%s resource get %s", base, shellQuote(uri)), true
+		return fmt.Sprintf("%s resource get %s", base, shell.Quote(uri)), true
 
 	case "prompts/get":
 		name, _ := params["name"].(string)
@@ -104,12 +106,12 @@ func translateRequest(base, method string, params map[string]interface{}) (strin
 		args := keyValueArgs(params["arguments"])
 		if len(args) == 0 {
 			// `prompt get` fetches the prompt without arguments.
-			return fmt.Sprintf("%s prompt get %s", base, shellQuote(name)), true
+			return fmt.Sprintf("%s prompt get %s", base, shell.Quote(name)), true
 		}
 		// `prompt execute` accepts per-argument --arg flags.
-		cmd := fmt.Sprintf("%s prompt execute %s", base, shellQuote(name))
+		cmd := fmt.Sprintf("%s prompt execute %s", base, shell.Quote(name))
 		for _, kv := range args {
-			cmd += " --arg " + shellQuote(kv)
+			cmd += " --arg " + shell.Quote(kv)
 		}
 		return cmd, true
 
@@ -172,15 +174,4 @@ func scalarString(v interface{}) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return string(b)
-}
-
-// shellQuote wraps a token in single quotes so spaces and shell metacharacters
-// survive as a single argument. Embedded single quotes are escaped with the
-// standard '\” idiom. Simple tokens (safe characters only) are returned as-is
-// to keep the common case readable.
-func shellQuote(s string) string {
-	if s != "" && !strings.ContainsAny(s, " \t\n\"'\\$`&|;<>()*?![]{}#~") {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
