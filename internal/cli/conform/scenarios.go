@@ -157,7 +157,9 @@ func (r *Runner) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.svc != nil {
-		_ = r.svc.Disconnect()
+		if err := r.svc.Disconnect(); err != nil {
+			debug.Warn("conform runner: disconnect failed", debug.F("error", err))
+		}
 		r.svc = nil
 	}
 }
@@ -635,8 +637,12 @@ func (r *Runner) scenarioNotifications(ctx context.Context) ScenarioResult {
 		return failResult("NotificationStream returned nil", "")
 	}
 	// Trigger a tools/list to give the server a reason to emit
-	// notifications/list_changed if it does on-demand.
-	_, _ = svc.ListTools(ctx)
+	// notifications/list_changed if it does on-demand. A failed trigger
+	// only means fewer chances to observe a notification — the wait below
+	// still runs and reports what (if anything) arrived.
+	if _, err := svc.ListTools(ctx); err != nil {
+		debug.Debug("notifications scenario: trigger tools/list failed", debug.F("error", err))
+	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

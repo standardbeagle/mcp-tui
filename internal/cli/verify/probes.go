@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
@@ -223,7 +224,10 @@ func drainBody(resp *http.Response) {
 	if resp == nil || resp.Body == nil {
 		return
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	_, copyErr := io.Copy(io.Discard, resp.Body)
+	if copyErr != nil {
+		debug.Debug("verify: draining response body failed", debug.F("error", copyErr))
+	}
 	_ = resp.Body.Close()
 }
 
@@ -435,7 +439,13 @@ func ProbeMCPMethodHeaders(ctx context.Context, t *Target) ProbeResult {
 	// specifically, that's a fail. Otherwise it's an unrelated rejection
 	// (likely missing initialize) and we still pass — the headers reached
 	// the server without triggering a header-specific reject.
-	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if readErr != nil {
+		// A truncated read still gives us whatever arrived before the
+		// error; the substring check below works on partial bodies.
+		debug.Debug("mcp-method-headers probe: reading rejection body failed; inspecting partial body",
+			debug.F("error", readErr))
+	}
 	bodyStr := strings.ToLower(string(bodyBytes))
 	if strings.Contains(bodyStr, "mcp-method") || strings.Contains(bodyStr, "mcp-name") {
 		return ProbeResult{
@@ -503,7 +513,7 @@ func ProbeSetErrorContent(ctx context.Context, t *Target) ProbeResult {
 			Fix:   "verify the stdio command starts an MCP server (try `mcp-tui --cmd <cmd> --args <args>` first)",
 		}
 	}
-	defer func() { _ = svc.Disconnect() }()
+	defer func() { disconnectProbeService(name, svc) }()
 
 	callCtx, callCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer callCancel()

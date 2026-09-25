@@ -106,8 +106,14 @@ Examples:
 		Version: version,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Initialize logging based on flags
-			debugMode, _ := cmd.Flags().GetBool("debug")
-			logLevel, _ := cmd.Flags().GetString("log-level")
+			debugMode, err := cmd.Flags().GetBool("debug")
+			if err != nil {
+				return err
+			}
+			logLevel, err := cmd.Flags().GetString("log-level")
+			if err != nil {
+				return err
+			}
 
 			debug.InitializeLogging(logLevel, debugMode)
 
@@ -119,13 +125,21 @@ Examples:
 
 			// If not pre-parsed, parse now
 			if connectionConfig == nil {
-				cmdFlag, _ := cmd.Flags().GetString("cmd")
+				cmdFlag, err := cmd.Flags().GetString("cmd")
+				if err != nil {
+					debug.Error("Reading --cmd failed", debug.F("error", err))
+					exitProcess(1)
+				}
 				argsFlag, err := cli.ServerArgs(cmd)
 				if err != nil {
 					debug.Error("Server argument flags", debug.F("error", err))
 					exitProcess(1)
 				}
-				urlFlag, _ := cmd.Flags().GetString("url")
+				urlFlag, err := cmd.Flags().GetString("url")
+				if err != nil {
+					debug.Error("Reading --url failed", debug.F("error", err))
+					exitProcess(1)
+				}
 
 				parsedArgs := config.ParseArgs(args, cli.SubcommandNames(cmd), cmdFlag, urlFlag, argsFlag)
 				connectionConfig = parsedArgs.Connection
@@ -137,67 +151,8 @@ Examples:
 			// fatal — running the TUI with a misconfigured handler would
 			// silently fail every connection attempt.
 			if connectionConfig != nil {
-				transportFlag, _ := cmd.Flags().GetString("transport")
-				if transportFlag != "" && transportFlag != "stdio" {
-					connectionConfig.Type = config.TransportType(transportFlag)
-				}
-
-				if oauthCfg, err := cli.BuildOAuthConfig(cmd, connectionConfig); err != nil {
-					debug.Error("OAuth flag parsing failed", debug.F("error", err))
-					exitProcess(1)
-				} else if oauthCfg != nil {
-					connectionConfig.OAuth = oauthCfg
-				}
-
-				// Mirror --protocol-version; the service validates it at Connect.
-				if protocolVersion, _ := cmd.Flags().GetString("protocol-version"); protocolVersion != "" {
-					connectionConfig.ProtocolVersion = protocolVersion
-				}
-
-				// Mirror --server-log-level; the service validates it at Connect.
-				if level, _ := cmd.Flags().GetString("server-log-level"); level != "" {
-					connectionConfig.ServerLogLevel = level
-				}
-
-				// Mirror --traceparent; the service validates it at Connect.
-				traceparent, err := cmd.Flags().GetString("traceparent")
-				if err != nil {
-					debug.Error("Reading --traceparent failed", debug.F("error", err))
-					exitProcess(1)
-				}
-				connectionConfig.Traceparent = traceparent
-
-				// Mirror --mcp-method-headers into the connection config so
-				// the TUI's transport factory enables the SEP-2243 RoundTripper.
-				if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
-					connectionConfig.MCPMethodHeaders = true
-				}
-
-				// Mirror repeatable --header KEY=VALUE flags. We use the same
-				// parser as the CLI path (internal/cli/base.go) so a malformed
-				// flag fails identically in TUI and subcommand mode.
-				if headerFlags, _ := cmd.Flags().GetStringArray("header"); len(headerFlags) > 0 {
-					extras, err := mcptransports.ParseHeaderFlags(headerFlags)
-					if err != nil {
-						debug.Error("Invalid --header flag", debug.F("error", err))
-						exitProcess(1)
-					}
-					if connectionConfig.Headers == nil {
-						connectionConfig.Headers = extras
-					} else {
-						for k, v := range extras {
-							connectionConfig.Headers[k] = v
-						}
-					}
-				}
-
-				// Plumb --show-headers into the global redaction overrides
-				// used by the debug HTTP tab. Stored on a package-level
-				// register so the TUI's debug screen reads it without a
-				// dependency on cobra.Command.
-				if showHeaders, _ := cmd.Flags().GetString("show-headers"); showHeaders != "" {
-					mcp.SetShowHeaderOverrides(mcp.ParseShowHeadersCSV(showHeaders))
-				}
+				applyTUIConnectionFlags(cmd, connectionConfig)
+				applyTUIHeaderFlags(cmd, connectionConfig)
 			}
 
 			// Run TUI mode with connection config
@@ -310,6 +265,96 @@ Examples:
 	rootCmd.AddCommand(createConformCommand())
 
 	return rootCmd
+}
+
+// applyTUIConnectionFlags mirrors the connection-related persistent flags
+// onto the TUI's connection config, the same way the CLI's
+// parseConnectionConfig does for subcommands. Flag-read errors are fatal:
+// they mean the flag set changed under us, and continuing would silently
+// drop the user's settings.
+func applyTUIConnectionFlags(cmd *cobra.Command, connectionConfig *config.ConnectionConfig) {
+	if transportFlag, err := cmd.Flags().GetString("transport"); err != nil {
+		debug.Error("Reading --transport failed", debug.F("error", err))
+		exitProcess(1)
+	} else if transportFlag != "" && transportFlag != "stdio" {
+		connectionConfig.Type = config.TransportType(transportFlag)
+	}
+
+	if oauthCfg, err := cli.BuildOAuthConfig(cmd, connectionConfig); err != nil {
+		debug.Error("OAuth flag parsing failed", debug.F("error", err))
+		exitProcess(1)
+	} else if oauthCfg != nil {
+		connectionConfig.OAuth = oauthCfg
+	}
+
+	// Mirror --protocol-version; the service validates it at Connect.
+	if protocolVersion, err := cmd.Flags().GetString("protocol-version"); err != nil {
+		debug.Error("Reading --protocol-version failed", debug.F("error", err))
+		exitProcess(1)
+	} else if protocolVersion != "" {
+		connectionConfig.ProtocolVersion = protocolVersion
+	}
+
+	// Mirror --server-log-level; the service validates it at Connect.
+	if level, err := cmd.Flags().GetString("server-log-level"); err != nil {
+		debug.Error("Reading --server-log-level failed", debug.F("error", err))
+		exitProcess(1)
+	} else if level != "" {
+		connectionConfig.ServerLogLevel = level
+	}
+
+	// Mirror --traceparent; the service validates it at Connect.
+	traceparent, err := cmd.Flags().GetString("traceparent")
+	if err != nil {
+		debug.Error("Reading --traceparent failed", debug.F("error", err))
+		exitProcess(1)
+	}
+	connectionConfig.Traceparent = traceparent
+}
+
+// applyTUIHeaderFlags mirrors the HTTP header-related persistent flags
+// (--mcp-method-headers, --header, --show-headers) for TUI mode. Fatal on
+// read error, like applyTUIConnectionFlags.
+func applyTUIHeaderFlags(cmd *cobra.Command, connectionConfig *config.ConnectionConfig) {
+	// Mirror --mcp-method-headers into the connection config so the TUI's
+	// transport factory enables the SEP-2243 RoundTripper.
+	if methodHeaders, mhErr := cmd.Flags().GetBool("mcp-method-headers"); mhErr != nil {
+		debug.Error("Reading --mcp-method-headers failed", debug.F("error", mhErr))
+		exitProcess(1)
+	} else if methodHeaders {
+		connectionConfig.MCPMethodHeaders = true
+	}
+
+	// Mirror repeatable --header KEY=VALUE flags. We use the same parser as
+	// the CLI path (internal/cli/base.go) so a malformed flag fails
+	// identically in TUI and subcommand mode.
+	if headerFlags, hErr := cmd.Flags().GetStringArray("header"); hErr != nil {
+		debug.Error("Reading --header failed", debug.F("error", hErr))
+		exitProcess(1)
+	} else if len(headerFlags) > 0 {
+		extras, parseErr := mcptransports.ParseHeaderFlags(headerFlags)
+		if parseErr != nil {
+			debug.Error("Invalid --header flag", debug.F("error", parseErr))
+			exitProcess(1)
+		}
+		if connectionConfig.Headers == nil {
+			connectionConfig.Headers = extras
+		} else {
+			for k, v := range extras {
+				connectionConfig.Headers[k] = v
+			}
+		}
+	}
+
+	// Plumb --show-headers into the global redaction overrides used by the
+	// debug HTTP tab. Stored on a package-level register so the TUI's debug
+	// screen reads it without a dependency on cobra.Command.
+	if showHeaders, sErr := cmd.Flags().GetString("show-headers"); sErr != nil {
+		debug.Error("Reading --show-headers failed", debug.F("error", sErr))
+		exitProcess(1)
+	} else if showHeaders != "" {
+		mcp.SetShowHeaderOverrides(mcp.ParseShowHeadersCSV(showHeaders))
+	}
 }
 
 func createToolCommand() *cobra.Command {

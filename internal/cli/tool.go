@@ -182,7 +182,7 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 
 	// Only show progress messages for text output and not porcelain mode
 	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -321,7 +321,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 
 	// Only show progress messages for text output and not porcelain mode
 	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -439,7 +439,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	toolArgs := make(map[string]interface{})
 
 	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 
 	// Only show progress messages for text output and not porcelain mode
 	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -493,7 +493,7 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	// the destructive-call confirm gate, and its input schema drives argument
 	// type conversion. Guessing argument types from their syntax silently
 	// corrupts values, so the schema is fetched even under --no-confirm.
-	skipConfirm, _ := cmd.Flags().GetBool("no-confirm")
+	skipConfirm := flagBool(cmd, "no-confirm")
 
 	tools, listErr := tc.GetService().ListTools(ctx)
 	if listErr != nil {

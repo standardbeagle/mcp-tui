@@ -35,7 +35,13 @@ func GetShowHeaderOverrides() []string {
 	if v == nil {
 		return nil
 	}
-	overrides, _ := v.([]string)
+	overrides, ok := v.([]string)
+	if !ok {
+		// Only SetShowHeaderOverrides stores here, and it stores []string;
+		// anything else means the atomic was corrupted — treat as no
+		// overrides rather than panic.
+		return nil
+	}
 	return overrides
 }
 

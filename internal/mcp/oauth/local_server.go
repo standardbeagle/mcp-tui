@@ -78,7 +78,18 @@ func (f *LocalServerFetcher) RedirectURL() string {
 		return ""
 	}
 	f.listener = ln
-	tcpAddr := ln.Addr().(*net.TCPAddr)
+	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		// A "tcp" listener's Addr is always *net.TCPAddr; anything else
+		// breaks the net package contract. Treat it as a bind failure so
+		// Fetch() reports the error instead of panicking here.
+		f.listener = nil
+		if closeErr := ln.Close(); closeErr != nil {
+			debug.Warn("oauth: closing listener after unexpected address type failed", debug.F("error", closeErr))
+		}
+		f.redirectURL = ""
+		return ""
+	}
 	f.redirectURL = fmt.Sprintf("http://%s/callback", net.JoinHostPort(f.host, strconv.Itoa(tcpAddr.Port)))
 	return f.redirectURL
 }
@@ -309,7 +320,12 @@ func writeCallbackPage(w http.ResponseWriter, success bool, message string) {
 <h1>%s</h1>
 <p>%s</p>
 </body></html>`, callbackTitle(success), html.EscapeString(message))
-	_, _ = w.Write([]byte(body))
+	if _, err := w.Write([]byte(body)); err != nil {
+		// The browser is the only reader and it has usually already got
+		// what it needs (the redirect itself carried code+state); a failed
+		// write just means the tab shows nothing.
+		debug.Debug("oauth: writing callback page failed", debug.F("error", err))
+	}
 }
 
 func callbackTitle(success bool) string {

@@ -223,6 +223,8 @@ func (eh *ErrorHandler) GetStatistics() *ErrorStatistics {
 func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 	stats := eh.GetStatistics()
 
+	categories := make(map[string]int)
+	severities := make(map[string]int)
 	report := map[string]interface{}{
 		"summary": map[string]interface{}{
 			"total_errors":       stats.TotalErrors,
@@ -230,29 +232,30 @@ func (eh *ErrorHandler) GetErrorReport() map[string]interface{} {
 			"retry_attempts":     stats.RetryAttempts,
 			"uptime":             time.Since(stats.StartTime).String(),
 		},
-		"categories": make(map[string]int),
-		"severities": make(map[string]int),
+		"categories": categories,
+		"severities": severities,
 	}
 
 	// Convert enum keys to strings
 	for category, count := range stats.ErrorsByCategory {
-		report["categories"].(map[string]int)[category.String()] = count
+		categories[category.String()] = count
 	}
 	for severity, count := range stats.ErrorsBySeverity {
-		report["severities"].(map[string]int)[severity.String()] = count
+		severities[severity.String()] = count
 	}
 
 	// Add last error details
 	if stats.LastError != nil {
-		report["last_error"] = map[string]interface{}{
+		lastError := map[string]interface{}{
 			"category":    stats.LastError.Category.String(),
 			"severity":    stats.LastError.Severity.String(),
 			"message":     stats.LastError.Message,
 			"recoverable": stats.LastError.Recoverable,
 		}
+		report["last_error"] = lastError
 
 		if stats.LastError.Context != nil {
-			report["last_error"].(map[string]interface{})["context"] = stats.LastError.Context
+			lastError["context"] = stats.LastError.Context
 		}
 	}
 

@@ -97,16 +97,16 @@ func (c *VerifyCommand) RunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	probeName, _ := cmd.Flags().GetString("probe")
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	tool, _ := cmd.Flags().GetString("tool")
+	probeName := flagString(cmd, "probe")
+	jsonOut := flagBool(cmd, "json")
+	tool := flagString(cmd, "tool")
 	target.ToolName = tool
 
 	if probeName != "" && !validProbeName(probeName) {
 		return fmt.Errorf("unknown --probe %q (valid: %s)", probeName, strings.Join(verify.AllProbes, ", "))
 	}
 
-	timeout, _ := cmd.Flags().GetDuration("timeout")
+	timeout := flagDuration(cmd, "timeout")
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
@@ -159,8 +159,8 @@ func VerifyFailedError() error { return errVerifyFailed }
 // If both are set, both fields populate Target — RunAll will run HTTP
 // probes against URL and the stdio probe against Command.
 func (c *VerifyCommand) buildTarget(cmd *cobra.Command, args []string) (verify.Target, error) {
-	cmdFlag, _ := cmd.Flags().GetString("cmd")
-	urlFlag, _ := cmd.Flags().GetString("url")
+	cmdFlag := flagString(cmd, "cmd")
+	urlFlag := flagString(cmd, "url")
 	argsFlag, err := ServerArgs(cmd)
 	if err != nil {
 		return verify.Target{}, err

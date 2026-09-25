@@ -94,7 +94,7 @@ func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) err
 	defer cancel()
 
 	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 
 	// Only show progress messages for text output and not porcelain mode
 	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -201,7 +201,7 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 	defer cancel()
 
 	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 
 	// Only show progress messages for text output and not porcelain mode
 	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -392,7 +392,7 @@ func (rc *ResourceCommand) runTemplatesCommand(cmd *cobra.Command, _ []string) e
 	ctx, cancel := rc.WithContext()
 	defer cancel()
 
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🧩 Fetching resource templates...\n")
 	}
@@ -486,7 +486,7 @@ func (rc *ResourceCommand) runCompleteCommand(cmd *cobra.Command, args []string)
 	ctx, cancel := rc.WithContext()
 	defer cancel()
 
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 	if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🔍 Requesting completions for %s={%s|prefix=%q}...\n", uriTemplate, varName, prefix)
 	}

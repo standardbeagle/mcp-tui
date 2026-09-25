@@ -43,7 +43,9 @@ func (a *App) Run(ctx context.Context) error {
 	// Run the program
 	finalModel, err := program.Run()
 	if err != nil {
-		_ = model.Shutdown()
+		if shutdownErr := model.Shutdown(); shutdownErr != nil {
+			a.logger.Warn("MCP session shutdown after TUI failure", debug.F("error", shutdownErr))
+		}
 		return fmt.Errorf("TUI program failed: %w", err)
 	}
 	if err := model.Shutdown(); err != nil {

@@ -395,7 +395,9 @@ func (cm *ConnectionsManager) UpdateLastUsed(serverID string, success bool) {
 		cm.updateRecentConnections(serverID, success)
 
 		// Save changes
-		cm.SaveConnections()
+		if err := cm.SaveConnections(); err != nil {
+			cm.logger.Error("Failed to save connections", debug.F("error", err))
+		}
 	}
 }
 
@@ -419,7 +421,9 @@ func (cm *ConnectionsManager) UpdateLastUsedWithVersion(serverID string, success
 	}
 
 	cm.updateRecentConnections(serverID, success)
-	cm.SaveConnections()
+	if err := cm.SaveConnections(); err != nil {
+		cm.logger.Error("Failed to save connections", debug.F("error", err))
+	}
 }
 
 // updateRecentConnections updates the recent connections list
@@ -522,14 +526,17 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 		".vscode/mcp.json",
 	}
 
-	// Check current directory
-	cwd, _ := os.Getwd()
-	for _, pattern := range currentDirPatterns {
-		fullPath := filepath.Join(cwd, pattern)
-		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-			analyzed := cm.analyzeConfigFile(fullPath)
-			if analyzed != nil { // Only include files with valid MCP config
-				discovered = append(discovered, analyzed)
+	// Check current directory. An unreadable working directory skips the
+	// cwd patterns; the user-config locations below are absolute and still
+	// get checked.
+	if cwd, err := os.Getwd(); err == nil {
+		for _, pattern := range currentDirPatterns {
+			fullPath := filepath.Join(cwd, pattern)
+			if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+				analyzed := cm.analyzeConfigFile(fullPath)
+				if analyzed != nil { // Only include files with valid MCP config
+					discovered = append(discovered, analyzed)
+				}
 			}
 		}
 	}
@@ -747,8 +754,12 @@ func (cm *ConnectionsManager) deduplicateAndSort(configs []*DiscoveredConfigFile
 
 // isMoreRelevant determines if config a is more relevant than config b
 func (cm *ConnectionsManager) isMoreRelevant(a, b *DiscoveredConfigFile) bool {
-	// Current directory files are more relevant
-	cwd, _ := os.Getwd()
+	// Current directory files are more relevant. Without a readable working
+	// directory there is no cwd boosting; the remaining keys still order.
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = ""
+	}
 	aInCwd := strings.HasPrefix(a.Path, cwd)
 	bInCwd := strings.HasPrefix(b.Path, cwd)
 

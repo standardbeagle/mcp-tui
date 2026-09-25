@@ -93,14 +93,14 @@ func (c *ConformCommand) RunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	scenarioFlag, _ := cmd.Flags().GetString("scenario")
-	junitPath, _ := cmd.Flags().GetString("report-junit")
+	scenarioFlag := flagString(cmd, "scenario")
+	junitPath := flagString(cmd, "report-junit")
 
 	if scenarioFlag != "" && !conform.IsScenarioName(scenarioFlag) {
 		return fmt.Errorf("unknown --scenario %q (valid: %s)", scenarioFlag, strings.Join(conform.AllScenarios, ", "))
 	}
 
-	timeout, _ := cmd.Flags().GetDuration("timeout")
+	timeout := flagDuration(cmd, "timeout")
 	if timeout <= 0 {
 		// Conformance runs talk to up to ~19 scenarios — give them a
 		// generous default budget. Per-scenario timeouts inside the runner
@@ -152,8 +152,8 @@ func ConformFailedError() error { return errConformFailed }
 // rules. Adds the conform-specific stub/trigger flags by reading them from
 // the command flags.
 func (c *ConformCommand) buildConformTarget(cmd *cobra.Command, args []string) (conform.Target, error) {
-	cmdFlag, _ := cmd.Flags().GetString("cmd")
-	urlFlag, _ := cmd.Flags().GetString("url")
+	cmdFlag := flagString(cmd, "cmd")
+	urlFlag := flagString(cmd, "url")
 	argsFlag, err := ServerArgs(cmd)
 	if err != nil {
 		return conform.Target{}, err
@@ -190,28 +190,28 @@ func (c *ConformCommand) buildConformTarget(cmd *cobra.Command, args []string) (
 	// Persistent flags inherited from the root command. We don't fail when
 	// the root command isn't present (unit tests sometimes register a bare
 	// command without parents) — empty values just skip the optional path.
-	if v, _ := cmd.Flags().GetString("sampling-stub"); v != "" {
+	if v := flagString(cmd, "sampling-stub"); v != "" {
 		target.SamplingStub = v
 	}
-	if v, _ := cmd.Flags().GetString("elicit-stub"); v != "" {
+	if v := flagString(cmd, "elicit-stub"); v != "" {
 		target.ElicitStub = v
 	}
-	if v, _ := cmd.Flags().GetString("sampling-trigger-tool"); v != "" {
+	if v := flagString(cmd, "sampling-trigger-tool"); v != "" {
 		target.SamplingTriggerTool = v
 	}
-	if v, _ := cmd.Flags().GetString("elicit-trigger-tool"); v != "" {
+	if v := flagString(cmd, "elicit-trigger-tool"); v != "" {
 		target.ElicitTriggerTool = v
 	}
-	if v, _ := cmd.Flags().GetString("completion-prompt"); v != "" {
+	if v := flagString(cmd, "completion-prompt"); v != "" {
 		target.CompletionPromptName = v
 	}
-	if v, _ := cmd.Flags().GetBool("completion-resource"); v {
+	if flagBool(cmd, "completion-resource") {
 		target.CompletionRefIsResource = true
 	}
-	if v, _ := cmd.Flags().GetString("completion-arg"); v != "" {
+	if v := flagString(cmd, "completion-arg"); v != "" {
 		target.CompletionArgumentName = v
 	}
-	if v, _ := cmd.Flags().GetString("completion-prefix"); v != "" {
+	if v := flagString(cmd, "completion-prefix"); v != "" {
 		target.CompletionArgumentValue = v
 	}
 

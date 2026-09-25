@@ -70,6 +70,49 @@ func SetGlobalConnection(conn *config.ConnectionConfig) {
 	globalConnectionConfig = conn
 }
 
+// flagString reads a string flag under the "absent flag means zero value"
+// convention: pflag's Get* errors only when the flag was never registered,
+// which unit tests rely on when they build narrow flag sets (a registered
+// flag with a malformed value already fails at parse time, not here).
+func flagString(cmd *cobra.Command, name string) string {
+	if v, err := cmd.Flags().GetString(name); err == nil {
+		return v
+	}
+	return ""
+}
+
+// flagBool is flagString for bool flags.
+func flagBool(cmd *cobra.Command, name string) bool {
+	if v, err := cmd.Flags().GetBool(name); err == nil {
+		return v
+	}
+	return false
+}
+
+// flagStringSlice is flagString for string-slice flags.
+func flagStringSlice(cmd *cobra.Command, name string) []string {
+	if v, err := cmd.Flags().GetStringSlice(name); err == nil {
+		return v
+	}
+	return nil
+}
+
+// flagStringArray is flagString for string-array flags.
+func flagStringArray(cmd *cobra.Command, name string) []string {
+	if v, err := cmd.Flags().GetStringArray(name); err == nil {
+		return v
+	}
+	return nil
+}
+
+// flagDuration is flagString for duration flags.
+func flagDuration(cmd *cobra.Command, name string) time.Duration {
+	if v, err := cmd.Flags().GetDuration(name); err == nil {
+		return v
+	}
+	return 0
+}
+
 // NewBaseCommand creates a new base command
 func NewBaseCommand() *BaseCommand {
 	return &BaseCommand{
@@ -86,7 +129,7 @@ func (c *BaseCommand) WithTimeout(timeout time.Duration) *BaseCommand {
 
 // SetOutputFormat sets the output format for the command
 func (c *BaseCommand) SetOutputFormat(cmd *cobra.Command) error {
-	format, _ := cmd.Flags().GetString("format")
+	format := flagString(cmd, "format")
 	c.outputFormat = c.parseOutputFormat(format)
 	if c.outputFormat == "" {
 		return fmt.Errorf("unsupported output format: %s (supported: %s, %s)",
@@ -123,7 +166,7 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 		return err
 	}
 
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 	if err := c.setupService(cmd, porcelainMode); err != nil {
 		return err
 	}
@@ -131,7 +174,7 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	ctx, cancel := c.WithContext()
 	defer cancel()
 
-	debugMode, _ := cmd.Flags().GetBool("debug")
+	debugMode := flagBool(cmd, "debug")
 	if err := c.connectToServer(ctx, connConfig, porcelainMode, debugMode); err != nil {
 		return err
 	}
@@ -146,9 +189,9 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 // parseConnectionConfig parses the connection configuration from various sources
 func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.ConnectionConfig, error) {
 	// Check if we have a global connection config (from natural CLI usage)
-	cmdFlag, _ := cmd.Flags().GetString("cmd")
-	urlFlag, _ := cmd.Flags().GetString("url")
-	transportFlag, _ := cmd.Flags().GetString("transport")
+	cmdFlag := flagString(cmd, "cmd")
+	urlFlag := flagString(cmd, "url")
+	transportFlag := flagString(cmd, "transport")
 
 	argsFlag, err := ServerArgs(cmd)
 	if err != nil {
@@ -193,13 +236,13 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	// Mirror --protocol-version into the connection config. Validation
 	// against the SDK's supported versions happens in the service at
 	// Connect, so CLI and TUI reject the same values with the same error.
-	if protocolVersion, _ := cmd.Flags().GetString("protocol-version"); protocolVersion != "" {
+	if protocolVersion := flagString(cmd, "protocol-version"); protocolVersion != "" {
 		connConfig.ProtocolVersion = protocolVersion
 	}
 
 	// Mirror --server-log-level; the service validates it at Connect and
 	// delivers it the way the negotiated protocol requires.
-	if level, _ := cmd.Flags().GetString("server-log-level"); level != "" {
+	if level := flagString(cmd, "server-log-level"); level != "" {
 		connConfig.ServerLogLevel = level
 	}
 
@@ -214,7 +257,7 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	// the transport factory wraps the HTTP client with the header injector
 	// at Connect time. STDIO ignores the flag because the SEP only applies
 	// over HTTP wires.
-	if methodHeaders, _ := cmd.Flags().GetBool("mcp-method-headers"); methodHeaders {
+	if flagBool(cmd, "mcp-method-headers") {
 		connConfig.MCPMethodHeaders = true
 	}
 
@@ -224,7 +267,7 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	// JSON-saved Headers survive when the flag is absent — we merge the two
 	// sources with flag values winning, which matches how users expect ad-hoc
 	// CLI overrides to behave.
-	if headerFlags, _ := cmd.Flags().GetStringArray("header"); len(headerFlags) > 0 {
+	if headerFlags := flagStringArray(cmd, "header"); len(headerFlags) > 0 {
 		extras, err := transports.ParseHeaderFlags(headerFlags)
 		if err != nil {
 			return nil, err
@@ -242,7 +285,7 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 	// FormatHTTPError. Setting it here (rather than per-subcommand) means
 	// every CLI subcommand that invokes the debug formatter honors the
 	// override consistently.
-	if showHeaders, _ := cmd.Flags().GetString("show-headers"); showHeaders != "" {
+	if showHeaders := flagString(cmd, "show-headers"); showHeaders != "" {
 		mcp.SetShowHeaderOverrides(mcp.ParseShowHeadersCSV(showHeaders))
 	}
 
@@ -317,7 +360,7 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error
 	trackOpenClient(c)
 
 	// Enable debug mode if flag is set
-	debugMode, _ := cmd.Flags().GetBool("debug")
+	debugMode := flagBool(cmd, "debug")
 	c.service.SetDebugMode(debugMode)
 
 	// Wire up sampling stub handler when configured. CLI runs are
@@ -354,7 +397,7 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error
 // Entry.FormatLine so the CLI output matches the TUI Notifications tab
 // verbatim — easy for users to grep across modes.
 func (c *BaseCommand) configureWatchNotifications(cmd *cobra.Command) {
-	watch, _ := cmd.Flags().GetBool("watch-notifications")
+	watch := flagBool(cmd, "watch-notifications")
 	if !watch {
 		return
 	}
@@ -371,8 +414,8 @@ func (c *BaseCommand) configureWatchNotifications(cmd *cobra.Command) {
 // File entries are loaded first; --root flags are appended in declaration
 // order, mirroring how cobra surfaces repeatable string slices.
 func (c *BaseCommand) configureRoots(cmd *cobra.Command) error {
-	rootsFile, _ := cmd.Flags().GetString("roots-file")
-	rootSpecs, _ := cmd.Flags().GetStringSlice("root")
+	rootsFile := flagString(cmd, "roots-file")
+	rootSpecs := flagStringSlice(cmd, "root")
 
 	if rootsFile == "" && len(rootSpecs) == 0 {
 		return nil
@@ -405,9 +448,9 @@ func (c *BaseCommand) configureRoots(cmd *cobra.Command) error {
 // on the service. The three flags are mutually exclusive; setting more than
 // one is a usage error.
 func (c *BaseCommand) configureSamplingHandler(cmd *cobra.Command) error {
-	stubText, _ := cmd.Flags().GetString("sampling-stub")
-	stubFile, _ := cmd.Flags().GetString("sampling-stub-file")
-	toolUse, _ := cmd.Flags().GetString("sampling-tool-use")
+	stubText := flagString(cmd, "sampling-stub")
+	stubFile := flagString(cmd, "sampling-stub-file")
+	toolUse := flagString(cmd, "sampling-tool-use")
 
 	set := 0
 	for _, v := range []string{stubText, stubFile, toolUse} {
@@ -459,8 +502,8 @@ func (c *BaseCommand) configureElicitationHandler(cmd *cobra.Command) error {
 // announced on stderr (elicitation.AnnounceURL): the stub replies without
 // anyone seeing the request, and the user still has to open the URL.
 func elicitStubHandler(cmd *cobra.Command, stderr io.Writer) (elicitation.Handler, error) {
-	stubJSON, _ := cmd.Flags().GetString("elicit-stub")
-	stubFile, _ := cmd.Flags().GetString("elicit-stub-file")
+	stubJSON := flagString(cmd, "elicit-stub")
+	stubFile := flagString(cmd, "elicit-stub-file")
 
 	if stubJSON != "" && stubFile != "" {
 		return nil, fmt.Errorf("--elicit-stub and --elicit-stub-file are mutually exclusive")

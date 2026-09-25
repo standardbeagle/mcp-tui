@@ -80,7 +80,7 @@ func (pc *PromptCommand) runCompleteCommand(cmd *cobra.Command, args []string) e
 	ctx, cancel := pc.WithContext()
 	defer cancel()
 
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 		fmt.Fprintf(os.Stderr, "🔍 Requesting completions for prompt=%s arg=%s prefix=%q...\n", promptName, varName, prefix)
 	}
@@ -173,7 +173,7 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 	defer cancel()
 
 	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 
 	// Only show progress messages for text output and not porcelain mode
 	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -282,7 +282,7 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 	defer cancel()
 
 	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 
 	// Only show progress messages for text output and not porcelain mode
 	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -406,7 +406,7 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 	defer cancel()
 
 	// Check if porcelain mode is enabled
-	porcelainMode, _ := cmd.Flags().GetBool("porcelain")
+	porcelainMode := flagBool(cmd, "porcelain")
 
 	// Only show progress messages for text output and not porcelain mode
 	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {

@@ -81,8 +81,8 @@ func baseInvocation(conn ConnectionInfo) string {
 func translateRequest(base, method string, params map[string]interface{}) (string, bool) {
 	switch method {
 	case "tools/call":
-		name, _ := params["name"].(string)
-		if name == "" {
+		name, ok := params["name"].(string)
+		if !ok || name == "" {
 			return "", false
 		}
 		cmd := fmt.Sprintf("%s tool call %s", base, shell.Quote(name))
@@ -92,15 +92,15 @@ func translateRequest(base, method string, params map[string]interface{}) (strin
 		return cmd, true
 
 	case "resources/read":
-		uri, _ := params["uri"].(string)
-		if uri == "" {
+		uri, ok := params["uri"].(string)
+		if !ok || uri == "" {
 			return "", false
 		}
 		return fmt.Sprintf("%s resource get %s", base, shell.Quote(uri)), true
 
 	case "prompts/get":
-		name, _ := params["name"].(string)
-		if name == "" {
+		name, ok := params["name"].(string)
+		if !ok || name == "" {
 			return "", false
 		}
 		args := keyValueArgs(params["arguments"])
