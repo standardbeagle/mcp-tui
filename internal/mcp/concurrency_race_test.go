@@ -7,16 +7,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // mockMCPHTTPHandler returns an HTTP handler that speaks JSON-RPC 2.0 MCP protocol.
@@ -80,126 +81,66 @@ func TestConcurrentServiceOperations(t *testing.T) {
 	requireLocalListener(t)
 
 	t.Run("Concurrent_Tool_Execution", func(t *testing.T) {
-		// Server that tracks concurrent requests
-		var activeRequests int64
-		var maxConcurrentRequests int64
-		var totalRequests int64
+		const numConcurrentRequests = 20
+		var active, maxActive, arrived int64
+		allInFlight := make(chan struct{})
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-
-			if strings.Contains(r.URL.Path, "tools/call") || r.URL.Query().Get("method") == "tools/call" {
-				// Track concurrency
-				current := atomic.AddInt64(&activeRequests, 1)
-				atomic.AddInt64(&totalRequests, 1)
-
-				// Update max if necessary
-				for {
-					max := atomic.LoadInt64(&maxConcurrentRequests)
-					if current <= max || atomic.CompareAndSwapInt64(&maxConcurrentRequests, max, current) {
-						break
-					}
+		server := officialMCP.NewServer(&officialMCP.Implementation{Name: "concurrent-test-server", Version: "1.0.0"}, nil)
+		addTool(server, "concurrent-tool", func(ctx context.Context, _ *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+			current := atomic.AddInt64(&active, 1)
+			defer atomic.AddInt64(&active, -1)
+			for {
+				seen := atomic.LoadInt64(&maxActive)
+				if current <= seen || atomic.CompareAndSwapInt64(&maxActive, seen, current) {
+					break
 				}
-
-				// Simulate some processing time
-				time.Sleep(100 * time.Millisecond)
-
-				// Send response
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"content": []interface{}{
-						map[string]interface{}{
-							"type": "text",
-							"text": fmt.Sprintf("Tool result for request %d", atomic.LoadInt64(&totalRequests)),
-						},
-					},
-				})
-
-				atomic.AddInt64(&activeRequests, -1)
-				return
 			}
-
-			if strings.Contains(r.URL.Path, "tools/list") || r.URL.Query().Get("method") == "tools/list" {
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"tools": []interface{}{
-						map[string]interface{}{
-							"name":        "concurrent-tool",
-							"description": "A tool for testing concurrency",
-						},
-					},
-				})
-				return
+			if atomic.AddInt64(&arrived, 1) == numConcurrentRequests {
+				close(allInFlight)
 			}
-
-			// Default initialization response
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"protocolVersion": "2024-11-05",
-				"serverInfo": map[string]interface{}{
-					"name":    "concurrent-test-server",
-					"version": "1.0.0",
-				},
-				"capabilities": map[string]interface{}{},
-			})
-		}))
-		defer server.Close()
+			// Hold every call until all of them are in flight, so the calls
+			// complete only if the service really runs them concurrently.
+			select {
+			case <-allInFlight:
+				return textResult("done"), nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		})
+		url := testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, ""))
 
 		service := NewService()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-
-		connConfig := &config.ConnectionConfig{
-			Type: config.TransportHTTP,
-			URL:  server.URL,
-		}
-
-		err := service.Connect(ctx, connConfig)
-		if err != nil {
-			t.Skipf("Connection failed: %v", err)
-		}
+		require.NoError(t, service.Connect(ctx, &config.ConnectionConfig{Type: config.TransportStreamableHTTP, URL: url}))
 		defer service.Disconnect()
 
-		// Execute many tools concurrently
-		const numConcurrentRequests = 20
 		var wg sync.WaitGroup
-		var successCount int64
-		var errorCount int64
-
+		errs := make(chan error, numConcurrentRequests)
 		for i := 0; i < numConcurrentRequests; i++ {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-
-				toolCtx, toolCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				toolCtx, toolCancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer toolCancel()
-
 				result, err := service.CallTool(toolCtx, CallToolRequest{
-					Name: "concurrent-tool",
-					Arguments: map[string]interface{}{
-						"request_id": id,
-					},
+					Name:      "concurrent-tool",
+					Arguments: map[string]interface{}{"request_id": id},
 				})
-
-				if err != nil {
-					atomic.AddInt64(&errorCount, 1)
-					t.Logf("Tool execution %d failed: %v", id, err)
-				} else {
-					atomic.AddInt64(&successCount, 1)
-					require.NotNil(t, result, "Result should not be nil")
+				switch {
+				case err != nil:
+					errs <- fmt.Errorf("tool call %d: %w", id, err)
+				case result == nil || result.IsError:
+					errs <- fmt.Errorf("tool call %d: result %+v, want success", id, result)
 				}
 			}(i)
 		}
-
 		wg.Wait()
-
-		successTotal := atomic.LoadInt64(&successCount)
-		errorTotal := atomic.LoadInt64(&errorCount)
-		maxConcurrent := atomic.LoadInt64(&maxConcurrentRequests)
-
-		t.Logf("Concurrent tool execution: %d successes, %d errors, max concurrent: %d",
-			successTotal, errorTotal, maxConcurrent)
-
-		assert.Greater(t, successTotal, int64(15), "Most tool executions should succeed")
-		assert.Greater(t, maxConcurrent, int64(5), "Should achieve significant concurrency")
-		assert.LessOrEqual(t, errorTotal, int64(5), "Error rate should be low")
+		close(errs)
+		for err := range errs {
+			t.Error(err)
+		}
+		assert.Equal(t, int64(numConcurrentRequests), atomic.LoadInt64(&maxActive), "every call should be in flight at once")
 	})
 
 	t.Run("Concurrent_Connection_Operations", func(t *testing.T) {
@@ -331,153 +272,136 @@ func TestConcurrentServiceOperations(t *testing.T) {
 	})
 }
 
-// TestDataRaceDetection tests for data races using race detector
+// TestDataRaceDetection drives concurrent readers and writers of service
+// state against a real SDK server. It asserts behaviour in any build; under
+// -race (tman race) the detector also checks the accesses.
 func TestDataRaceDetection(t *testing.T) {
-	if !isRaceEnabled() {
-		t.Skip("Race detector not enabled, skipping race detection tests")
-	}
 	requireLocalListener(t)
 
-	t.Run("Service_Info_Race_Detection", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"protocolVersion": "2024-11-05",
-				"serverInfo": map[string]interface{}{
-					"name":    "race-detection-server",
-					"version": "1.0.0",
-				},
-				"capabilities": map[string]interface{}{},
-			})
-		}))
-		defer server.Close()
-
+	connectHTTP := func(t *testing.T, server *officialMCP.Server) Service {
+		t.Helper()
+		url := testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(server, ""))
 		service := NewService()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		require.NoError(t, service.Connect(ctx, &config.ConnectionConfig{Type: config.TransportStreamableHTTP, URL: url}))
+		t.Cleanup(func() { _ = service.Disconnect() })
+		return service
+	}
 
-		connConfig := &config.ConnectionConfig{
-			Type: config.TransportHTTP,
-			URL:  server.URL,
-		}
-
-		err := service.Connect(ctx, connConfig)
-		if err != nil {
-			t.Skipf("Connection failed: %v", err)
-		}
-		defer service.Disconnect()
+	t.Run("Service_Info_Race_Detection", func(t *testing.T) {
+		server := officialMCP.NewServer(&officialMCP.Implementation{Name: "race-detection-server", Version: "1.0.0"}, nil)
+		addTool(server, "noop", func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+			return textResult("ok"), nil
+		})
+		service := connectHTTP(t, server)
 
 		const numReaders = 10
 		const numOperations = 50
 		var wg sync.WaitGroup
+		var wrongInfo int64
 
-		// Concurrent readers of server info
 		for i := 0; i < numReaders; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				for j := 0; j < numOperations; j++ {
 					info := service.GetServerInfo()
-					if info != nil {
-						_ = info.Name    // Read operation
-						_ = info.Version // Read operation
+					if info == nil || info.Name != "race-detection-server" || info.Version != "1.0.0" {
+						atomic.AddInt64(&wrongInfo, 1)
 					}
-					time.Sleep(1 * time.Millisecond)
 				}
 			}()
 		}
 
-		// Concurrent operations that might modify state
+		listErrs := make(chan error, numOperations/10)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := 0; i < numOperations/10; i++ {
-				opCtx, opCancel := context.WithTimeout(context.Background(), 1*time.Second)
-				service.ListTools(opCtx) // This might update internal state
+				opCtx, opCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if _, err := service.ListTools(opCtx); err != nil {
+					listErrs <- err
+				}
 				opCancel()
-				time.Sleep(10 * time.Millisecond)
 			}
 		}()
 
 		wg.Wait()
-		t.Log("Race detection test completed without data races")
+		close(listErrs)
+		for err := range listErrs {
+			t.Errorf("ListTools: %v", err)
+		}
+		assert.Zero(t, atomic.LoadInt64(&wrongInfo), "GetServerInfo should always return the connected server")
 	})
 
 	t.Run("Concurrent_Tool_List_Operations", func(t *testing.T) {
-		var requestCount int64
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-
-			if strings.Contains(r.URL.Path, "tools/list") || r.URL.Query().Get("method") == "tools/list" {
-				count := atomic.AddInt64(&requestCount, 1)
-				// Return different number of tools based on request count to test state changes
-				numTools := int(count % 5)
-				tools := make([]interface{}, numTools)
-				for i := 0; i < numTools; i++ {
-					tools[i] = map[string]interface{}{
-						"name":        fmt.Sprintf("tool-%d-%d", count, i),
-						"description": fmt.Sprintf("Tool %d from request %d", i, count),
-					}
+		var listRequests int64
+		server := officialMCP.NewServer(&officialMCP.Implementation{Name: "tool-list-race-server", Version: "1.0.0"}, nil)
+		server.AddReceivingMiddleware(func(next officialMCP.MethodHandler) officialMCP.MethodHandler {
+			return func(ctx context.Context, method string, req officialMCP.Request) (officialMCP.Result, error) {
+				if method == "tools/list" {
+					atomic.AddInt64(&listRequests, 1)
 				}
-				json.NewEncoder(w).Encode(map[string]interface{}{"tools": tools})
-				return
+				return next(ctx, method, req)
 			}
-
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"protocolVersion": "2024-11-05",
-				"serverInfo": map[string]interface{}{
-					"name":    "tool-list-race-server",
-					"version": "1.0.0",
-				},
-				"capabilities": map[string]interface{}{},
-			})
-		}))
-		defer server.Close()
-
-		service := NewService()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		connConfig := &config.ConnectionConfig{
-			Type: config.TransportHTTP,
-			URL:  server.URL,
-		}
-
-		err := service.Connect(ctx, connConfig)
-		if err != nil {
-			t.Skipf("Connection failed: %v", err)
-		}
-		defer service.Disconnect()
+		})
+		addTool(server, "stable-tool", func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+			return textResult("ok"), nil
+		})
+		service := connectHTTP(t, server)
 
 		const numConcurrentCalls = 20
 		var wg sync.WaitGroup
-		var totalTools int64
+		errs := make(chan error, numConcurrentCalls)
+
+		// The server's tool set changes while the lists are in flight.
+		stopChurn := make(chan struct{})
+		churnDone := make(chan struct{})
+		go func() {
+			defer close(churnDone)
+			for i := 0; ; i++ {
+				select {
+				case <-stopChurn:
+					return
+				default:
+				}
+				name := fmt.Sprintf("churn-tool-%d", i%5)
+				addTool(server, name, func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+					return textResult("ok"), nil
+				})
+				server.RemoveTools(name)
+			}
+		}()
 
 		for i := 0; i < numConcurrentCalls; i++ {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-
-				toolCtx, toolCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				toolCtx, toolCancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer toolCancel()
-
 				tools, err := service.ListTools(toolCtx)
-				if err == nil {
-					atomic.AddInt64(&totalTools, int64(len(tools)))
+				if err != nil {
+					errs <- fmt.Errorf("list %d: %w", id, err)
+					return
 				}
+				for _, tool := range tools {
+					if tool.Name == "stable-tool" {
+						return
+					}
+				}
+				errs <- fmt.Errorf("list %d: %d tools without stable-tool", id, len(tools))
 			}(i)
 		}
 
 		wg.Wait()
-
-		totalToolsReceived := atomic.LoadInt64(&totalTools)
-		totalRequests := atomic.LoadInt64(&requestCount)
-
-		t.Logf("Concurrent tool list: %d requests, %d total tools received",
-			totalRequests, totalToolsReceived)
-
-		assert.Greater(t, totalRequests, int64(15), "Most requests should complete")
+		close(stopChurn)
+		<-churnDone
+		close(errs)
+		for err := range errs {
+			t.Error(err)
+		}
+		assert.Equal(t, int64(numConcurrentCalls), atomic.LoadInt64(&listRequests), "every list should reach the server")
 	})
 }
 
@@ -618,7 +542,7 @@ func TestMemoryConsistencyUnderConcurrency(t *testing.T) {
 
 				err := services[serviceIndex].Connect(ctx, connConfig)
 				if err != nil {
-					t.Logf("Service %d connection failed: %v", serviceIndex, err)
+					t.Errorf("Service %d connection failed: %v", serviceIndex, err)
 				}
 			}(i)
 		}
@@ -771,11 +695,4 @@ func TestConcurrentResourceAccess(t *testing.T) {
 		assert.Greater(t, successCount, int64(6), "Most services should succeed")
 		assert.Greater(t, totalRequests, int64(numServices), "Should generate multiple requests")
 	})
-}
-
-// Helper function to check if race detector is enabled
-func isRaceEnabled() bool {
-	// Simple check for race detector by looking at build tags
-	// The race detector is typically enabled with -race flag
-	return false // Simplified for now - race tests will run if race detector is available
 }
