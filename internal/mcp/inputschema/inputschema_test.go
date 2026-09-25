@@ -114,6 +114,41 @@ func TestParse_MultiTypeUnion(t *testing.T) {
 	}
 }
 
+// A property with no type takes it from what else it says: a const allows
+// only that value's type, and a default shows the type expected (with a
+// note, since other values are allowed). With none of them, or only a null
+// default, any JSON value is allowed, and the note says so.
+func TestParse_UntypedPropertyInfersItsType(t *testing.T) {
+	s, err := Parse("t", decode(t, `{"type":"object","properties":{
+		"api_version": {"const": "v2"},
+		"shards": {"default": 4, "description": "Shard count"},
+		"ratio": {"default": 0.25},
+		"labels": {"default": ["prod"]},
+		"cursor": {"default": null},
+		"payload": {}
+	}}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for _, c := range []struct {
+		name string
+		kind Kind
+		note string
+	}{
+		{"api_version", KindString, ""},
+		{"shards", KindInteger, "no type declared; read as integer, the type of its default"},
+		{"ratio", KindNumber, "no type declared; read as number, the type of its default"},
+		{"labels", KindArray, "no type declared; read as array, the type of its default"},
+		{"cursor", KindJSON, "no type declared, so any JSON value is allowed; value is read as JSON"},
+		{"payload", KindJSON, "no type declared, so any JSON value is allowed; value is read as JSON"},
+	} {
+		got, _ := s.Param(c.name)
+		if got.Kind != c.kind || got.Note != c.note {
+			t.Errorf("param %q = kind %q note %q, want kind %q note %q", c.name, got.Kind, got.Note, c.kind, c.note)
+		}
+	}
+}
+
 // A value takes the first alternative its syntax strictly fits, in the
 // order boolean, integer, number, array, object, string: "0123" is no
 // integer literal, so it stays a string and keeps its leading zero.

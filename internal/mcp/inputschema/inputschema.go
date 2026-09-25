@@ -364,7 +364,11 @@ func (w walker) setKind(p *Param, target *jsonschema.Schema) {
 	case len(concrete) == 0 && p.Nullable:
 		p.Kind, p.Nullable = KindNull, false
 	case len(concrete) == 0:
-		p.Kind, p.Note = KindJSON, "no type declared; value is read as JSON"
+		if kind, ok := defaultKind(target); ok {
+			p.Kind, p.Note = kind, fmt.Sprintf("no type declared; read as %s, the type of its default", kind)
+		} else {
+			p.Kind, p.Note = KindJSON, "no type declared, so any JSON value is allowed; value is read as JSON"
+		}
 	default:
 		p.Kind = KindUnion
 		for _, k := range unionOrder {
@@ -435,6 +439,8 @@ func (w walker) types(s *jsonschema.Schema) (types []string, note string) {
 			types[i] = string(jsonKind(v))
 		}
 		return dedupe(types), ""
+	case s.Const != nil:
+		return []string{string(jsonKind(*s.Const))}, ""
 	}
 	branches := s.AnyOf
 	if len(branches) == 0 {
@@ -593,6 +599,19 @@ func unescape(segment string) string {
 
 // jsonKind is the JSON type of a decoded JSON value; a number with no
 // fraction is an integer.
+// defaultKind is the type of s's default value. A null or undecodable
+// default says nothing about what else is expected, so it gives none.
+func defaultKind(s *jsonschema.Schema) (Kind, bool) {
+	if len(s.Default) == 0 {
+		return "", false
+	}
+	var v any
+	if err := json.Unmarshal(s.Default, &v); err != nil || v == nil {
+		return "", false
+	}
+	return jsonKind(v), true
+}
+
 func jsonKind(v any) Kind {
 	switch v := v.(type) {
 	case nil:
