@@ -273,7 +273,7 @@ func TestConcurrentServiceOperations(t *testing.T) {
 }
 
 // TestDataRaceDetection drives concurrent readers and writers of service
-// state against a real SDK server. It asserts behaviour in any build; under
+// state against a real SDK server. It asserts behavior in any build; under
 // -race (tman race) the detector also checks the accesses.
 func TestDataRaceDetection(t *testing.T) {
 	requireLocalListener(t)

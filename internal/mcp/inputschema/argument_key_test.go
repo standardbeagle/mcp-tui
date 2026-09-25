@@ -6,6 +6,7 @@ import (
 )
 
 func TestCheckArgumentKey(t *testing.T) {
+	const invalidChar = "invalid character"
 	for _, tc := range []struct {
 		key, wantErr string
 	}{
@@ -14,9 +15,9 @@ func TestCheckArgumentKey(t *testing.T) {
 		{strings.Repeat("k", MaxArgumentKeyLength), ""},
 		{"", "empty"},
 		{strings.Repeat("k", MaxArgumentKeyLength+1), "too long"},
-		{"bad key", "invalid character"},
-		{"key@host", "invalid character"},
-		{"caf\xe9", "invalid character"},
+		{"bad key", invalidChar},
+		{"key@host", invalidChar},
+		{"caf\xe9", invalidChar},
 	} {
 		err := CheckArgumentKey(tc.key)
 		switch {

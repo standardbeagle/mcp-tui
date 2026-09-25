@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/standardbeagle/mcp-tui/internal/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // runCLIAgainstStdioServer runs the CLI with args against the stdio test
 // server and returns the server's PID and whether the CLI succeeded.
-func runCLIAgainstStdioServer(t *testing.T, opts testutil.StdioServerOptions, args ...string) (pid int, runErr error, output []byte) {
+func runCLIAgainstStdioServer(t *testing.T, opts testutil.StdioServerOptions, args ...string) (pid int, output []byte, runErr error) {
 	t.Helper()
 	bin := buildTestBinary(t)
 	opts.PIDFile = filepath.Join(t.TempDir(), "pid")
@@ -39,7 +40,7 @@ func runCLIAgainstStdioServer(t *testing.T, opts testutil.StdioServerOptions, ar
 			_ = proc.Kill()
 		}
 	})
-	return pid, runErr, output
+	return pid, output, runErr
 }
 
 // A command that fails after connecting still disconnects: the CLI waits
@@ -49,7 +50,7 @@ func TestCLIFailedCommandLeavesNoServerBehind(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration tests in short mode")
 	}
-	pid, err, output := runCLIAgainstStdioServer(t, testutil.StdioServerOptions{},
+	pid, output, err := runCLIAgainstStdioServer(t, testutil.StdioServerOptions{},
 		"tool", "call", "no-such-tool")
 	require.Error(t, err, "calling a tool the server lacks must fail:\n%s", output)
 	require.True(t, testutil.ProcessExited(pid), "the server process outlived the CLI:\n%s", output)
@@ -60,7 +61,7 @@ func TestCLISucceededCommandLeavesNoServerBehind(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration tests in short mode")
 	}
-	pid, err, output := runCLIAgainstStdioServer(t, testutil.StdioServerOptions{}, "tool", "list")
+	pid, output, err := runCLIAgainstStdioServer(t, testutil.StdioServerOptions{}, "tool", "list")
 	require.NoError(t, err, "%s", output)
 	require.True(t, testutil.ProcessExited(pid), "the server process outlived the CLI:\n%s", output)
 }

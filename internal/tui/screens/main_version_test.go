@@ -17,6 +17,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // versionStubService is a no-op mcp.Service implementation that returns a
@@ -93,7 +94,7 @@ func (v *versionStubService) NotificationStream() *notifications.Stream {
 	return notifications.NewStream()
 }
 func (v *versionStubService) AddNotificationObserver(func(notifications.Entry)) {}
-func (v *versionStubService) OnReconnected(func())                            {}
+func (v *versionStubService) OnReconnected(func())                              {}
 func (v *versionStubService) GetConnectionHealth() map[string]interface{}       { return nil }
 func (v *versionStubService) ConfigureReconnection(int, time.Duration)          {}
 func (v *versionStubService) ConfigureHealthCheck(time.Duration)                {}
@@ -124,7 +125,7 @@ func TestFormatConnectedStatus_StdioWithVersion(t *testing.T) {
 		Command: "npx",
 		Args:    []string{"@modelcontextprotocol/server-everything", "stdio"},
 	}
-	got := formatConnectedStatus(conn, &mcp.ServerInfo{ProtocolVersion: "2025-11-25"})
+	got := formatConnectedStatus(conn, &mcp.ServerInfo{ProtocolVersion: testutil.LegacyProtocolVersion})
 	if !strings.Contains(got, "MCP 2025-11-25") {
 		t.Errorf("formatConnectedStatus = %q; missing 'MCP 2025-11-25'", got)
 	}
@@ -182,7 +183,7 @@ func TestMainScreen_HandleConnectionSuccess_RendersVersion(t *testing.T) {
 	}
 	ms := NewMainScreen(cfg, conn)
 	// Replace the mcpService with a stub that returns a known version.
-	ms.mcpService = &versionStubService{version: "2025-11-25"}
+	ms.mcpService = &versionStubService{version: testutil.LegacyProtocolVersion}
 
 	ms.handleConnectionSuccess()
 
@@ -203,7 +204,7 @@ func TestMainScreen_HandleConnectionSuccess_FiresVersionHook(t *testing.T) {
 		Command: "echo",
 	}
 	ms := NewMainScreen(cfg, conn)
-	ms.mcpService = &versionStubService{version: "2025-11-25"}
+	ms.mcpService = &versionStubService{version: testutil.LegacyProtocolVersion}
 
 	var gotVersion string
 	var hookCalls int
@@ -217,7 +218,7 @@ func TestMainScreen_HandleConnectionSuccess_FiresVersionHook(t *testing.T) {
 	if hookCalls != 1 {
 		t.Errorf("hookCalls = %d; want 1", hookCalls)
 	}
-	if gotVersion != "2025-11-25" {
+	if gotVersion != testutil.LegacyProtocolVersion {
 		t.Errorf("hook received version = %q; want 2025-11-25", gotVersion)
 	}
 }
@@ -231,7 +232,7 @@ func TestMainScreen_HandleConnectionSuccess_NilHookSafe(t *testing.T) {
 		Command: "echo",
 	}
 	ms := NewMainScreen(cfg, conn)
-	ms.mcpService = &versionStubService{version: "2025-11-25"}
+	ms.mcpService = &versionStubService{version: testutil.LegacyProtocolVersion}
 	// No SetConnectionSuccessHook call.
 
 	defer func() {

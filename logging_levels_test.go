@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/standardbeagle/mcp-tui/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // logLine matches one line of the stderr log: "[timestamp] LEVEL message ...".

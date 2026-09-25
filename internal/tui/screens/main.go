@@ -838,7 +838,8 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "b", "e":
 			// Go back to connection screen to edit connection details
 			ms.logger.Info("User requested to go back to connection screen")
-			return ms, ms.leaveForConnectionScreen()
+			cmd := ms.leaveForConnectionScreen()
+			return ms, cmd
 		}
 		return ms, nil
 	}
@@ -1008,7 +1009,8 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		// Disconnect and return to connection screen
 		ms.logger.Info("User requested disconnect")
-		return ms, ms.leaveForConnectionScreen()
+		cmd := ms.leaveForConnectionScreen()
+		return ms, cmd
 
 	case "e":
 		// View schema error details for current tool (only in Tools tab)

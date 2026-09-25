@@ -19,8 +19,9 @@ func TestLogToBufferOnly_BuffersEveryLevelAndRestores(t *testing.T) {
 	Debug("global trace")
 	Flush()
 
-	var buffered []string
-	for _, e := range GetLogBuffer().GetEntries() {
+	entries := GetLogBuffer().GetEntries()
+	buffered := make([]string, 0, len(entries))
+	for _, e := range entries {
 		buffered = append(buffered, e.Level.String()+" "+e.Message)
 	}
 	joined := strings.Join(buffered, "\n")

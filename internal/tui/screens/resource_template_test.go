@@ -118,7 +118,7 @@ func (f *fakeCompletionService) NotificationStream() *notifications.Stream {
 	return notifications.NewStream()
 }
 func (f *fakeCompletionService) AddNotificationObserver(func(notifications.Entry)) {}
-func (f *fakeCompletionService) OnReconnected(func())                           {}
+func (f *fakeCompletionService) OnReconnected(func())                              {}
 func (f *fakeCompletionService) GetConnectionHealth() map[string]interface{}       { return nil }
 func (f *fakeCompletionService) ConfigureReconnection(int, time.Duration)          {}
 func (f *fakeCompletionService) ConfigureHealthCheck(time.Duration)                {}

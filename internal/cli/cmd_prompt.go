@@ -392,7 +392,7 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 
 	// Validate arguments
 	for key, value := range promptArgs {
-		if err := validateArgument(key, value); err != nil {
+		if err = validateArgument(key, value); err != nil {
 			return fmt.Errorf("invalid argument %s: %w", key, err)
 		}
 	}

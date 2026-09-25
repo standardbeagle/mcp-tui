@@ -253,5 +253,6 @@ func (ms *MainScreen) handleServerReconnected(msg ServerReconnectedMsg) (tea.Mod
 	if ms.connected {
 		ms.connectionStatus = formatConnectedStatus(ms.connectionConfig, ms.mcpService.GetServerInfo())
 	}
-	return ms, ms.nextReconnect()
+	next := ms.nextReconnect()
+	return ms, next
 }

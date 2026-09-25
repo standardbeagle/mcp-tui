@@ -20,7 +20,7 @@ import (
 // one here, which reports version 2 and negotiates an older protocol. The
 // status line must describe the new handshake, not the first one.
 func TestMainScreen_StatusLineFollowsReconnection(t *testing.T) {
-	const first, downgraded = "2025-11-25", "2025-06-18"
+	const first, downgraded = testutil.LegacyProtocolVersion, "2025-06-18"
 	command, env := testutil.StdioServer(t, testutil.StdioServerOptions{
 		StartsFile: filepath.Join(t.TempDir(), "starts"), DowngradeTo: downgraded,
 	})
@@ -100,7 +100,7 @@ func TestFormatConnectedStatus_ServerNameAndStateless(t *testing.T) {
 			t.Errorf("formatConnectedStatus = %q, missing %q", got, want)
 		}
 	}
-	got = formatConnectedStatus(conn, &mcp.ServerInfo{Name: "gateway", Version: "4.0.0", ProtocolVersion: "2025-11-25"})
+	got = formatConnectedStatus(conn, &mcp.ServerInfo{Name: "gateway", Version: "4.0.0", ProtocolVersion: testutil.LegacyProtocolVersion})
 	if strings.Contains(got, "stateless") {
 		t.Errorf("formatConnectedStatus = %q, want no stateless mark before 2026-07-28", got)
 	}
