@@ -123,7 +123,7 @@ func TestParse_UntypedPropertyInfersItsType(t *testing.T) {
 		"api_version": {"const": "v2"},
 		"shards": {"default": 4, "description": "Shard count"},
 		"ratio": {"default": 0.25},
-		"labels": {"default": ["prod"]},
+		"regions": {"default": ["eu-west-1"]},
 		"cursor": {"default": null},
 		"payload": {}
 	}}`))
@@ -138,7 +138,7 @@ func TestParse_UntypedPropertyInfersItsType(t *testing.T) {
 		{"api_version", KindString, ""},
 		{"shards", KindInteger, "no type declared; read as integer, the type of its default"},
 		{"ratio", KindNumber, "no type declared; read as number, the type of its default"},
-		{"labels", KindArray, "no type declared; read as array, the type of its default"},
+		{"regions", KindArray, "no type declared; read as array, the type of its default"},
 		{"cursor", KindJSON, "no type declared, so any JSON value is allowed; value is read as JSON"},
 		{"payload", KindJSON, "no type declared, so any JSON value is allowed; value is read as JSON"},
 	} {

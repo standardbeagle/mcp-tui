@@ -247,7 +247,8 @@ func TestServerArgReachesTheServerAsIs(t *testing.T) {
 		"[IO.File]::WriteAllText("+psQuoteForTest(recorded)+", [string]::Join([char]0, $args))\nexit 1\n")
 	want := []string{"--columns=id,name,owner", "two words", `it's "quoted"`, `["a","b"]`}
 
-	args := []string{"tool", "list", "--cmd", serverCmd}
+	args := make([]string, 0, 4+2*(len(serverArgs)+len(want)))
+	args = append(args, "tool", "list", "--cmd", serverCmd)
 	for _, arg := range append(serverArgs, want...) {
 		args = append(args, "--arg", arg)
 	}

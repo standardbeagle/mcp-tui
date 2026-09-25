@@ -1480,53 +1480,56 @@ func (ts *ToolScreen) formArguments() (map[string]interface{}, error) {
 // An open sub-form builds its object (or list of elements) from its fields;
 // a nested object with nothing filled in is left out, while a required
 // top-level one is sent empty. Every element in a list is sent.
-func objectFromFields(fields []toolField, i, depth int) (map[string]interface{}, int, error) {
-	obj := make(map[string]interface{})
+func objectFromFields(fields []toolField, i, depth int) (obj map[string]interface{}, next int, err error) {
+	obj = make(map[string]interface{})
 	for i < len(fields) && fields[i].depth == depth {
-		field := &fields[i]
-		i++
-		switch {
-		case field.isElementList():
-			elements := []interface{}{}
-			for i < len(fields) && fields[i].depth == depth+1 {
-				element, next, err := objectFromFields(fields, i+1, depth+2)
-				if err != nil {
-					return nil, 0, err
-				}
-				elements = append(elements, element)
-				i = next
-			}
-			if len(elements) > 0 || (field.required && depth == 0) {
-				obj[field.name] = elements
-			}
-		case field.expanded:
-			sub, next, err := objectFromFields(fields, i, depth+1)
-			if err != nil {
-				return nil, 0, err
-			}
-			i = next
-			if len(sub) > 0 || (field.required && depth == 0) {
-				obj[field.name] = sub
-			}
-		case field.sendNull:
-			obj[field.name] = nil
-		default:
-			value := field.input.Value()
-			if value == "" {
-				// Include an empty array only when the field is required.
-				if field.fieldType == inputschema.KindArray && field.required && depth == 0 {
-					obj[field.name] = []interface{}{}
-				}
-				continue
-			}
-			converted, err := field.convert(value)
-			if err != nil {
-				return nil, 0, err
-			}
-			obj[field.name] = converted
+		var value interface{}
+		var send bool
+		if value, send, next, err = valueFromFields(fields, i, depth); err != nil {
+			return nil, 0, err
 		}
+		if send {
+			obj[fields[i].name] = value
+		}
+		i = next
 	}
 	return obj, i, nil
+}
+
+// valueFromFields builds the value of fields[i], depth levels down, from
+// the field and its open sub-form, and returns the index past them; send
+// is false when the value is left out of its object.
+func valueFromFields(fields []toolField, i, depth int) (value interface{}, send bool, next int, err error) {
+	field := &fields[i]
+	sentEmpty := field.required && depth == 0
+	switch {
+	case field.isElementList():
+		elements := []interface{}{}
+		next = i + 1
+		for next < len(fields) && fields[next].depth == depth+1 {
+			var element map[string]interface{}
+			if element, next, err = objectFromFields(fields, next+1, depth+2); err != nil {
+				return nil, false, 0, err
+			}
+			elements = append(elements, element)
+		}
+		return elements, len(elements) > 0 || sentEmpty, next, nil
+	case field.expanded:
+		var sub map[string]interface{}
+		if sub, next, err = objectFromFields(fields, i+1, depth+1); err != nil {
+			return nil, false, 0, err
+		}
+		return sub, len(sub) > 0 || sentEmpty, next, nil
+	case field.sendNull:
+		return nil, true, i + 1, nil
+	}
+	text := field.input.Value()
+	if text == "" {
+		// An empty array is sent only when the field is required.
+		return []interface{}{}, sentEmpty && field.fieldType == inputschema.KindArray, i + 1, nil
+	}
+	converted, err := field.convert(text)
+	return converted, err == nil, i + 1, err
 }
 
 // rawJSONArguments parses the raw JSON editor; empty means no arguments.
@@ -1582,7 +1585,8 @@ func isCLIArgumentKey(key string) bool {
 		return false
 	}
 	for _, r := range key {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
+		allowed := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
+		if !allowed {
 			return false
 		}
 	}

@@ -402,6 +402,13 @@ func (ts *ToolScreen) focusNthField(t *testing.T, name string, n int) {
 	ts.fields[ts.cursor].input.Focus()
 }
 
+// targetHost is a deploy target's host field; usTarget is a host typed
+// into it.
+const (
+	targetHost = "host"
+	usTarget   = "us-2.example.net"
+)
+
 // Ctrl+E opens an array of objects as a list of elements, each an object
 // sub-form (nested objects included); Ctrl+A adds an element and Ctrl+X
 // removes the one under the cursor. It was one text field taking a JSON
@@ -422,24 +429,24 @@ func TestToolScreen_ArrayOfObjectsSubForm(t *testing.T) {
 	if got := strings.Join(ts.fieldNames(), " "); got != "build replicas service tags targets .[0] ..host ..port" {
 		t.Fatalf("fields after Ctrl+E = %s", got)
 	}
-	ts.setNthField(t, "host", 0, "eu-1.example.net")
+	ts.setNthField(t, targetHost, 0, "eu-1.example.net")
 	ts.setNthField(t, "port", 0, "8443")
 	ts.Update(ctrlA)
 	if got := strings.Join(ts.fieldNames(), " "); got != "build replicas service tags targets .[0] ..host ..port .[1] ..host ..port" {
 		t.Fatalf("fields after Ctrl+A = %s", got)
 	}
-	if ts.cursor != ts.nthField(t, "host", 1) {
+	if ts.cursor != ts.nthField(t, targetHost, 1) {
 		t.Errorf("cursor = %s after Ctrl+A, want the new element's first field", ts.fieldNames()[ts.cursor])
 	}
-	ts.setNthField(t, "host", 1, "us-2.example.net")
+	ts.setNthField(t, targetHost, 1, usTarget)
 
 	args, err := ts.buildArguments()
 	if err != nil {
 		t.Fatalf("buildArguments: %v", err)
 	}
 	want := []any{
-		map[string]any{"host": "eu-1.example.net", "port": 8443},
-		map[string]any{"host": "us-2.example.net"},
+		map[string]any{targetHost: "eu-1.example.net", "port": 8443},
+		map[string]any{targetHost: usTarget},
 	}
 	if !reflect.DeepEqual(args["targets"], want) {
 		t.Errorf("targets = %#v, want %#v", args["targets"], want)
@@ -449,8 +456,8 @@ func TestToolScreen_ArrayOfObjectsSubForm(t *testing.T) {
 	}
 
 	// An element missing its required host breaks the schema.
-	ts.setNthField(t, "host", 1, "")
-	if _, err := ts.buildArguments(); err == nil || !strings.Contains(err.Error(), "host") {
+	ts.setNthField(t, targetHost, 1, "")
+	if _, err := ts.buildArguments(); err == nil || !strings.Contains(err.Error(), targetHost) {
 		t.Errorf("element without host: err = %v, want the missing host named", err)
 	}
 
@@ -459,9 +466,9 @@ func TestToolScreen_ArrayOfObjectsSubForm(t *testing.T) {
 	if got := strings.Join(ts.fieldNames(), " "); got != "build replicas service tags targets .[0] ..host ..port" {
 		t.Fatalf("fields after Ctrl+X on the first element = %s", got)
 	}
-	ts.setNthField(t, "host", 0, "us-2.example.net")
+	ts.setNthField(t, targetHost, 0, usTarget)
 	if args, err := ts.buildArguments(); err != nil ||
-		!reflect.DeepEqual(args["targets"], []any{map[string]any{"host": "us-2.example.net"}}) {
+		!reflect.DeepEqual(args["targets"], []any{map[string]any{targetHost: usTarget}}) {
 		t.Errorf("after removing the first element targets = %#v (err %v)", args["targets"], err)
 	}
 
@@ -471,7 +478,7 @@ func TestToolScreen_ArrayOfObjectsSubForm(t *testing.T) {
 		t.Fatalf("fields after closing the sub-form = %s", got)
 	}
 	ts.Update(ctrlE)
-	if got := ts.fields[ts.nthField(t, "host", 0)].input.Value(); got != "us-2.example.net" {
+	if got := ts.fields[ts.nthField(t, targetHost, 0)].input.Value(); got != usTarget {
 		t.Errorf("reopened sub-form host = %q, want what was typed", got)
 	}
 }

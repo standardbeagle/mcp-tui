@@ -197,9 +197,11 @@ Examples:
 
 	// Add persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfg.Command, "cmd", "", "Command to run MCP server (STDIO mode)")
-	rootCmd.PersistentFlags().StringSliceVar(&cfg.Args, "args", []string{}, "Arguments for MCP server command, comma-separated")
+	rootCmd.PersistentFlags().StringSliceVar(&cfg.Args, "args", []string{},
+		"Arguments for MCP server command, comma-separated")
 	rootCmd.PersistentFlags().StringArray("arg", nil,
-		"One argument for MCP server command, passed as is (commas included); repeat for each, in order. Not combinable with --args")
+		"One argument for MCP server command, passed as is (commas included); repeat for each, in order. "+
+			"Not combinable with --args")
 	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
 	rootCmd.PersistentFlags().String("transport", "stdio",
 		"Transport type (stdio, sse, http, streamable-http); sse is deprecated and negotiates at most 2025-11-25")

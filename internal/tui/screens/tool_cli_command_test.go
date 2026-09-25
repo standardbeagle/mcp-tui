@@ -52,9 +52,11 @@ func TestToolScreen_CLICommandQuotesValuesForTheShell(t *testing.T) {
 		ts.setField(t, name, value)
 	}
 
-	want := []string{"--porcelain", "--transport", string(config.TransportStdio),
-		"--cmd", conn.Command, "--arg", conn.Args[0], "--arg", conn.Args[1], "--arg", conn.Args[2],
-		"tool", "call", "archive_logs"}
+	want := []string{"--porcelain", "--transport", string(config.TransportStdio), "--cmd", conn.Command}
+	for _, arg := range conn.Args {
+		want = append(want, "--arg", arg)
+	}
+	want = append(want, "tool", "call", "archive_logs")
 	for _, field := range ts.fields {
 		// An empty field is not sent, so the command leaves it out.
 		if v := values[field.name]; v != "" {
@@ -71,6 +73,9 @@ func TestToolScreen_CLICommandQuotesValuesForTheShell(t *testing.T) {
 	}
 }
 
+// rawJSONTool is the tool rawJSONToolScreen opens.
+const rawJSONTool = "tag"
+
 // rawJSONToolScreen opens a tool whose root schema the form cannot express,
 // so its arguments are typed as raw JSON.
 func rawJSONToolScreen(t *testing.T, conn *config.ConnectionConfig) *ToolScreen {
@@ -82,7 +87,7 @@ func rawJSONToolScreen(t *testing.T, conn *config.ConnectionConfig) *ToolScreen 
 	]}`), &schema); err != nil {
 		t.Fatal(err)
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "tag", InputSchema: schema}, connectionConfigService{conn: conn})
+	ts := NewToolScreen(mcp.Tool{Name: rawJSONTool, InputSchema: schema}, connectionConfigService{conn: conn})
 	if !ts.rawJSONMode {
 		t.Fatal("the schema did not open the raw JSON editor")
 	}
@@ -108,7 +113,7 @@ func TestToolScreen_CLICommandCarriesRawJSONArguments(t *testing.T) {
 		t.Fatalf("command does not start with mcp-tui: %s", command)
 	}
 	words := testutil.ShWords(t, rest)
-	call := slices.Index(words, "tag")
+	call := slices.Index(words, rawJSONTool)
 	if call < 0 {
 		t.Fatalf("sh reads %q, no tool name", words)
 	}
