@@ -65,6 +65,7 @@ linters:
           - dupl
           - errcheck
           - gocognit
+          - goconst
           - gocyclo
           - gosec
           - lll
