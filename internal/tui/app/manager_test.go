@@ -306,3 +306,54 @@ func TestScreenManagerKeepsMainScreenWorkRunningUnderToolScreen(t *testing.T) {
 		t.Errorf("main screen lost the resource update made under the tool screen:\n%s", view)
 	}
 }
+
+// leaveMainScreen presses key on the session's main screen and follows the
+// transition it asks for; it fails unless that lands on the connection
+// screen.
+func leaveMainScreen(t *testing.T, sm *ScreenManager, key string) {
+	t.Helper()
+	_, cmd := sm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	msgs := runCmd(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("%q produced %v, want one transition", key, msgs)
+	}
+	sm.Update(msgs[0])
+	if _, ok := sm.currentScreen.(*screens.ConnectionScreen); !ok {
+		t.Fatalf("%q led to %T, want the connection screen", key, sm.currentScreen)
+	}
+}
+
+// Disconnecting ("d") or leaving a failed connection ("b") starts over from
+// the connection screen. The old main screen used to be pushed onto the
+// stack each time: it piled up, Back returned to a dead session, and it
+// stayed the session screen, so its event tick kept re-arming.
+func TestScreenManagerLeavingMainScreenDoesNotStackIt(t *testing.T) {
+	for _, tc := range []struct {
+		key       string
+		connected bool
+	}{{"d", true}, {"b", false}} {
+		sm := sessionManagerFixture()
+		var left []*screens.MainScreen
+		for cycle := 0; cycle < 3; cycle++ {
+			main := sm.currentScreen.(*screens.MainScreen)
+			sm.Update(screens.ConnectionCompleteMsg{Success: tc.connected})
+			leaveMainScreen(t, sm, tc.key)
+			left = append(left, main)
+
+			next := screens.NewMainScreen(sm.config, &config.ConnectionConfig{Type: config.TransportHTTP, URL: "http://127.0.0.1:1/mcp"})
+			sm.Update(screens.TransitionMsg{Transition: screens.ScreenTransition{Screen: next}})
+		}
+
+		if len(sm.screenStack) != 0 {
+			t.Errorf("%q: screen stack holds %d screens after 3 cycles, want 0", tc.key, len(sm.screenStack))
+		}
+		if sm.sessionScreen() != sm.currentScreen {
+			t.Errorf("%q: session screen is not the newest main screen", tc.key)
+		}
+		for i, old := range left {
+			if _, tick := old.Update(old.EventTick()); tick != nil {
+				t.Errorf("%q: main screen %d re-armed its event tick after it was left", tc.key, i)
+			}
+		}
+	}
+}

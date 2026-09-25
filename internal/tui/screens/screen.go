@@ -25,6 +25,11 @@ type Screen interface {
 type ScreenTransition struct {
 	Screen Screen
 	Data   interface{} // Optional data to pass to the new screen
+	// ResetStack starts a new navigation history at Screen: the screens
+	// behind the current one are dropped rather than the current one pushed.
+	// Leaving a session for the connection screen does this, so the old
+	// session's screens are neither returned to nor sent its work.
+	ResetStack bool
 }
 
 // TransitionMsg is sent when switching screens

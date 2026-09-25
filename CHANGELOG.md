@@ -87,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`conform` skipped the `tool-names` probe**; it now runs every `verify` probe.
 - **Debug screen copy**: copying from the Auth tab (and the tabs after it) reported the wrong tab name.
 - **TUI main screen under a tool screen**: while a tool screen was open, the main screen stopped refreshing events and lost resource updates and list results, and returning did not restart them. They now keep reaching the main screen.
+- **TUI disconnect piled up dead screens**: each `d` (disconnect) or `b`/`e` (back to the connection screen from a failed connection) pushed the old main screen onto the navigation stack, so screens accumulated across reconnects, Back could return to a dead session, and a failed connection's screen kept its event tick and feeds running and kept receiving session work. Leaving now ends that screen's session and starts a fresh navigation history at the connection screen.
 - **TUI "copy CLI command" and raw JSON**: arguments typed in the raw JSON editor were left out of the copied command; it now writes one `key:=<json>` per key, or a `#` line naming what the CLI cannot take.
 - **TUI "copy CLI command" and server arguments**: a server argument containing a comma was split in two; each server argument is now its own `--arg`.
 

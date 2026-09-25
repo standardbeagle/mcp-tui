@@ -257,7 +257,10 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Normal screen transition
 		// Push current screen to stack if it can go back
-		if sm.currentScreen.CanGoBack() {
+		switch {
+		case msg.Transition.ResetStack:
+			sm.screenStack = sm.screenStack[:0]
+		case sm.currentScreen.CanGoBack():
 			sm.screenStack = append(sm.screenStack, sm.currentScreen)
 		}
 

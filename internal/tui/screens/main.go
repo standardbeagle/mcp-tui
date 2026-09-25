@@ -298,6 +298,21 @@ func (ms *MainScreen) SetConnectionSuccessHook(fn func(version string)) {
 	ms.connectionSuccessHook = fn
 }
 
+// leaveForConnectionScreen ends this screen's session -- its feeds, ticks
+// and connection -- and returns the transition to a connection screen
+// prefilled with its config, which starts a new navigation history.
+func (ms *MainScreen) leaveForConnectionScreen() tea.Cmd {
+	ms.stopFeeds()
+	if err := ms.mcpService.Disconnect(); err != nil {
+		// The screen is left either way; the service is not used again.
+		ms.logger.Error("Failed to disconnect cleanly", debug.F("error", err))
+	}
+	connScreen := NewConnectionScreenWithConfig(ms.config, ms.connectionConfig)
+	return func() tea.Msg {
+		return TransitionMsg{Transition: ScreenTransition{Screen: connScreen, ResetStack: true}}
+	}
+}
+
 // formatConnectedStatus renders the connected status line for the TUI
 // status bar. The format is `Connected to <transport-target> [MCP <version>]`
 // — the bracketed suffix is omitted when the version is empty (which can
@@ -806,14 +821,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "b", "e":
 			// Go back to connection screen to edit connection details
 			ms.logger.Info("User requested to go back to connection screen")
-			connScreen := NewConnectionScreenWithConfig(ms.config, ms.connectionConfig)
-			return ms, func() tea.Msg {
-				return TransitionMsg{
-					Transition: ScreenTransition{
-						Screen: connScreen,
-					},
-				}
-			}
+			return ms, ms.leaveForConnectionScreen()
 		}
 		return ms, nil
 	}
@@ -983,23 +991,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		// Disconnect and return to connection screen
 		ms.logger.Info("User requested disconnect")
-
-		// Disconnect from the MCP server
-		ms.stopFeeds()
-		if err := ms.mcpService.Disconnect(); err != nil {
-			ms.logger.Error("Failed to disconnect cleanly", debug.F("error", err))
-			// Continue with transition even if disconnect fails
-		}
-
-		// Transition to connection screen with previous config
-		connScreen := NewConnectionScreenWithConfig(ms.config, ms.connectionConfig)
-		return ms, func() tea.Msg {
-			return TransitionMsg{
-				Transition: ScreenTransition{
-					Screen: connScreen,
-				},
-			}
-		}
+		return ms, ms.leaveForConnectionScreen()
 
 	case "e":
 		// View schema error details for current tool (only in Tools tab)
