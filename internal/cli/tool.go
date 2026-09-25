@@ -14,6 +14,7 @@ import (
 	"github.com/mattn/go-isatty"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+	"github.com/standardbeagle/mcp-tui/internal/debug"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
@@ -172,6 +173,11 @@ a server-flagged-destructive tool.`,
 		"Call the tool as an MCP task: print the task handle instead of waiting (see 'mcp-tui task')")
 	cmd.Flags().Int64("ttl", 0, "With --task: requested task retention in milliseconds (2025-11-25 tasks only)")
 	cmd.Flags().Bool("wait", false, "With --task: poll the task to its end and print its result")
+
+	// Arguments that break the input schema are refused by default; a test
+	// client also needs to send them to see how the server rejects them.
+	cmd.Flags().Bool(flagSkipArgValidation, false,
+		"Send arguments that do not match the tool's input schema, reporting the violation on stderr")
 
 	return cmd
 }
@@ -559,11 +565,23 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 	// Check the whole schema, including what no key=value argument
 	// expresses (if/then/else, not, patternProperties, nested structure),
 	// before the call goes out.
+	// --skip-arg-validation still checks, and reports, but sends: this is a
+	// test client, and a server's answer to bad arguments is worth seeing.
+	skipArgValidation, err := cmd.Flags().GetBool(flagSkipArgValidation)
+	if err != nil {
+		return err
+	}
 	if validateErr := inputSchema.Validate(toolArgs); validateErr != nil {
-		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
-			fmt.Fprintf(os.Stderr, "❌ Arguments do not match the tool's input schema\n")
+		if !skipArgValidation {
+			if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
+				fmt.Fprintf(os.Stderr, "❌ Arguments do not match the tool's input schema\n")
+			}
+			return fmt.Errorf("tool %q: %w (--%s sends them anyway)", toolName, validateErr, flagSkipArgValidation)
 		}
-		return fmt.Errorf("tool %q: %w", toolName, validateErr)
+		debug.Warn("Sending tool arguments that do not match the input schema",
+			debug.F("tool", toolName), debug.F("violation", validateErr.Error()))
+		// On stderr whatever the output format, like the other warnings.
+		fmt.Fprintf(os.Stderr, "⚠ Sending anyway (--%s): %v\n", flagSkipArgValidation, validateErr)
 	}
 
 	strictOutput, err := cmd.Flags().GetBool("strict-output")
@@ -606,6 +624,9 @@ func (tc *ToolCommand) handleCall(cmd *cobra.Command, args []string) error {
 
 // flagTask is tool call's --task flag.
 const flagTask = "task"
+
+// flagSkipArgValidation is tool call's --skip-arg-validation flag.
+const flagSkipArgValidation = "skip-arg-validation"
 
 // taskFlags are tool call's MCP task options.
 type taskFlags struct {

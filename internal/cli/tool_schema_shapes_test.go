@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -40,7 +41,13 @@ func connectEchoServer(t *testing.T, schemas map[string]string) mcp.Service {
 // arguments the server received.
 func echoedArguments(t *testing.T, svc mcp.Service, tool string, args ...string) (map[string]any, cliRun) {
 	t.Helper()
-	run := runToolCall(t, svc, append([]string{tool}, args...), "--format", "json")
+	return echoedArgumentsWith(t, svc, nil, tool, args...)
+}
+
+// echoedArgumentsWith is echoedArguments with extra flags.
+func echoedArgumentsWith(t *testing.T, svc mcp.Service, flags []string, tool string, args ...string) (map[string]any, cliRun) {
+	t.Helper()
+	run := runToolCall(t, svc, append([]string{tool}, args...), append([]string{"--format", "json"}, flags...)...)
 	if run.err != nil {
 		return nil, run
 	}
@@ -156,6 +163,51 @@ func TestToolCall_ValidatesArgumentsBeforeSending(t *testing.T) {
 		if strings.Contains(run.stdout, "Tool response") {
 			t.Errorf("%v: the call reached the server:\n%s", c.args, run.stdout)
 		}
+	}
+}
+
+// --skip-arg-validation sends arguments that break the input schema as
+// they are, reporting the violation on stderr; without it the call is
+// refused, and the refusal says how to send it anyway.
+func TestToolCall_SkipArgValidationSendsTheBrokenArguments(t *testing.T) {
+	svc := connectEchoServer(t, map[string]string{"ship": shippingSchema})
+	args := []string{"mode=file", "x-retries=three", `address={"zip":94107}`}
+
+	refused := runToolCall(t, svc, append([]string{"ship"}, args...))
+	if refused.err == nil || !strings.Contains(refused.err.Error(), "--"+flagSkipArgValidation) {
+		t.Errorf("refusal = %v, want one pointing at --%s", refused.err, flagSkipArgValidation)
+	}
+
+	got, run := echoedArgumentsWith(t, svc, []string{"--" + flagSkipArgValidation}, "ship", args...)
+	if run.err != nil {
+		t.Fatalf("--%s call refused: %v\n%s", flagSkipArgValidation, run.err, run.stderr)
+	}
+	want := map[string]any{"mode": "file", "x-retries": "three", "address": map[string]any{"zip": float64(94107)}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("server received %#v, want the arguments as given %#v", got, want)
+	}
+	if !strings.Contains(run.stderr, "match the input schema at ") {
+		t.Errorf("stderr does not report the violation:\n%s", run.stderr)
+	}
+}
+
+// A task call honours --skip-arg-validation the same way.
+func TestToolCallTask_SkipArgValidationSendsTheBrokenArguments(t *testing.T) {
+	svc, ts := connectTaskService(t, testutil.MRTRProtocolVersion)
+	// render_report requires quarter.
+	refused := runToolCall(t, svc, []string{testutil.TaskToolName}, "--task")
+	if refused.err == nil || !strings.Contains(refused.err.Error(), "--"+flagSkipArgValidation) {
+		t.Errorf("refusal = %v, want one pointing at --%s", refused.err, flagSkipArgValidation)
+	}
+	run := runToolCall(t, svc, []string{testutil.TaskToolName}, "--task", "--"+flagSkipArgValidation)
+	if run.err != nil {
+		t.Fatalf("--task --%s: %v\n%s", flagSkipArgValidation, run.err, run.stderr)
+	}
+	if id := ts.NextTask(t); !strings.Contains(run.stdout, "Task "+id) {
+		t.Errorf("stdout = %q, want task %s created", run.stdout, id)
+	}
+	if !strings.Contains(run.stderr, "missing properties") {
+		t.Errorf("stderr does not report the violation:\n%s", run.stderr)
 	}
 }
 
