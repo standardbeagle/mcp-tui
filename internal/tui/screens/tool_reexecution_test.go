@@ -12,6 +12,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// The text of the results the re-execution tests feed the screen.
+const (
+	executionResultText = "Test result"
+	repeatedResultText  = "Result"
+)
+
 func TestToolReExecutionIndicators(t *testing.T) {
 	t.Run("execution_count_increments", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test-tool"}
@@ -36,7 +42,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &mcp.CallToolResult{
 				Content: []mcp.Content{
-					mcp.Content{Type: "text", Text: "Result 1"}, // Same result
+					{Type: "text", Text: "Result 1"}, // Same result
 				},
 			},
 		})
@@ -55,7 +61,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &mcp.CallToolResult{
 				Content: []mcp.Content{
-					mcp.Content{Type: "text", Text: "Test result"},
+					{Type: "text", Text: executionResultText},
 				},
 			},
 		})
@@ -82,7 +88,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &mcp.CallToolResult{
 				Content: []mcp.Content{
-					mcp.Content{Type: "text", Text: "Result"},
+					{Type: "text", Text: repeatedResultText},
 				},
 			},
 		})
@@ -96,7 +102,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &mcp.CallToolResult{
 				Content: []mcp.Content{
-					mcp.Content{Type: "text", Text: "Result"}, // Same result
+					{Type: "text", Text: repeatedResultText}, // Same result
 				},
 			},
 		})
@@ -130,7 +136,7 @@ func TestToolReExecutionIndicators(t *testing.T) {
 			ts.Update(toolExecutionCompleteMsg{
 				Result: &mcp.CallToolResult{
 					Content: []mcp.Content{
-						mcp.Content{Type: "text", Text: "Result"},
+						{Type: "text", Text: repeatedResultText},
 					},
 				},
 			})
@@ -191,7 +197,7 @@ func TestToolExecutionCounterPersistence(t *testing.T) {
 		ts.Update(toolExecutionCompleteMsg{
 			Result: &mcp.CallToolResult{
 				Content: []mcp.Content{
-					mcp.Content{Type: "text", Text: fmt.Sprintf("Result %d", i)},
+					{Type: "text", Text: fmt.Sprintf("Result %d", i)},
 				},
 			},
 		})

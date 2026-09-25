@@ -28,7 +28,7 @@ const shipToolSchema = `{"type": "object",
 // service and the tool as it lists it.
 func connectShipServer(t *testing.T) (mcp.Service, mcp.Tool) {
 	t.Helper()
-	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "shipper", Version: "1.0.0"}, nil)
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "shipper", Version: "0.4.2"}, nil)
 	server.AddTool(&officialMCP.Tool{Name: shipTool, InputSchema: json.RawMessage(shipToolSchema)},
 		func(_ context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
 			return &officialMCP.CallToolResult{Content: []officialMCP.Content{

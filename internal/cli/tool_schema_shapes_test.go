@@ -47,7 +47,7 @@ func echoedArguments(t *testing.T, svc mcp.Service, tool string, args ...string)
 // echoedArgumentsWith is echoedArguments with extra flags.
 func echoedArgumentsWith(t *testing.T, svc mcp.Service, flags []string, tool string, args ...string) (map[string]any, cliRun) {
 	t.Helper()
-	run := runToolCall(t, svc, append([]string{tool}, args...), append([]string{"--format", "json"}, flags...)...)
+	run := runToolCall(t, svc, append([]string{tool}, args...), append([]string{"--format=json"}, flags...)...)
 	if run.err != nil {
 		return nil, run
 	}
@@ -191,7 +191,7 @@ func TestToolCall_SkipArgValidationSendsTheBrokenArguments(t *testing.T) {
 	}
 }
 
-// A task call honours --skip-arg-validation the same way.
+// A task call honors --skip-arg-validation the same way.
 func TestToolCallTask_SkipArgValidationSendsTheBrokenArguments(t *testing.T) {
 	svc, ts := connectTaskService(t, testutil.MRTRProtocolVersion)
 	// render_report requires quarter.

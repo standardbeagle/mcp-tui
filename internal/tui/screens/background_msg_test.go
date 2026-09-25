@@ -14,7 +14,7 @@ import (
 // are routed end to end in the app package's tests.
 func TestScreenWorkReportsAreBackgroundMsgs(t *testing.T) {
 	for _, msg := range []tea.Msg{
-		resourceSubscriptionChangedMsg{URI: "file:///var/log/deploy.log", Subscribed: true},
+		resourceSubscriptionChangedMsg{URI: deployLogURI, Subscribed: true},
 		toolSpinnerTickMsg{},
 		resourceTemplateCompletionsMsg{variable: "owner"},
 		resourceTemplateReadMsg{},
@@ -30,7 +30,7 @@ func TestScreenWorkReportsAreBackgroundMsgs(t *testing.T) {
 // next.
 func TestMainScreenSpinnerTickIsBackgroundWork(t *testing.T) {
 	ms := NewMainScreen(&config.Config{}, &config.ConnectionConfig{
-		Type: config.TransportStdio, Command: "npx", Args: []string{"@modelcontextprotocol/server-everything"},
+		Type: config.TransportStdio, Command: "uvx", Args: []string{"mcp-server-time"},
 	})
 	_, cmd := ms.handleConnectionStarted(ConnectionStartedMsg{})
 	if _, ok := cmd().(BackgroundMsg); !ok {

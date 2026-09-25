@@ -29,7 +29,7 @@ func TestToolScreen_CLICommandQuotesValuesForTheShell(t *testing.T) {
 		"quotes": {"type": "string"},
 		"blank": {"type": "string"},
 		"count": {"type": "integer"},
-		"tags": {"type": "array", "items": {"type": "string"}}
+		"labels": {"type": "array", "items": {"type": "string"}}
 	}}`), &schema); err != nil {
 		t.Fatal(err)
 	}
@@ -38,21 +38,21 @@ func TestToolScreen_CLICommandQuotesValuesForTheShell(t *testing.T) {
 		Command: "/opt/my servers/$SRV",
 		Args:    []string{"--banner=it's", "line1\nline2"},
 	}
-	ts := NewToolScreen(mcp.Tool{Name: "echo", InputSchema: schema}, connectionConfigService{conn: conn})
+	ts := NewToolScreen(mcp.Tool{Name: "archive_logs", InputSchema: schema}, connectionConfigService{conn: conn})
 	values := map[string]string{
 		"home":   "$HOME and ${PATH}",
 		"cmd":    "`id` $(whoami)",
 		"quotes": `it's "quoted" \ back\slash`,
 		"blank":  "",
 		"count":  "$((1+1))",
-		"tags":   `["a b", "$x"]`,
+		"labels": `["a b", "$x"]`,
 	}
 	for name, value := range values {
 		ts.setField(t, name, value)
 	}
 
 	want := []string{"--porcelain", "--transport", string(config.TransportStdio),
-		"--cmd", conn.Command, "--args", strings.Join(conn.Args, ","), "tool", "call", "echo"}
+		"--cmd", conn.Command, "--args", strings.Join(conn.Args, ","), "tool", "call", "archive_logs"}
 	for _, field := range ts.fields {
 		// An empty field is not sent, so the command leaves it out.
 		if v := values[field.name]; v != "" {
