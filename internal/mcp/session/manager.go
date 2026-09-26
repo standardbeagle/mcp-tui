@@ -14,6 +14,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // healthCheckTimeout bounds a single health-check ping so a hung server
@@ -33,6 +34,22 @@ func SessionLabel(cs *officialMCP.ClientSession) string {
 	}
 	if res := cs.InitializeResult(); res != nil && protocol.IsStateless(res.ProtocolVersion) {
 		return StatelessSessionLabel
+	}
+	return ""
+}
+
+// transportEndpoint returns the redacted URL an HTTP transport connects to,
+// or "" for any other transport. A wrapping transport (the tasks link)
+// exposes the SDK transport through Unwrap.
+func transportEndpoint(transport officialMCP.Transport) string {
+	if wrapper, ok := transport.(interface{ Unwrap() officialMCP.Transport }); ok {
+		transport = wrapper.Unwrap()
+	}
+	switch t := transport.(type) {
+	case *officialMCP.StreamableClientTransport:
+		return redact.URL(t.Endpoint)
+	case *officialMCP.SSEClientTransport:
+		return redact.URL(t.Endpoint)
 	}
 	return ""
 }
@@ -246,8 +263,9 @@ func (m *Manager) Connect(
 
 		// Classify and handle the error
 		classified := m.errorHandler.HandleError(connectCtx, err, errors.OperationSessionConnect, map[string]interface{}{
-			transportTypeKey: transportType,
-			"session_state":  "connecting",
+			transportTypeKey:            transportType,
+			"session_state":             "connecting",
+			errors.ErrorContextEndpoint: transportEndpoint(transport),
 		})
 
 		if !aborted {

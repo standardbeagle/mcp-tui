@@ -78,6 +78,10 @@ func (t *linkedTransport) Connect(ctx context.Context) (officialMCP.Connection, 
 	return &observedConn{Connection: conn, link: t.link}, nil
 }
 
+// Unwrap returns the SDK transport the link wraps, so callers can read its
+// configuration (the HTTP endpoint).
+func (t *linkedTransport) Unwrap() officialMCP.Transport { return t.inner }
+
 // connSender writes the link's messages on an SDK connection.
 type connSender struct {
 	conn officialMCP.Connection

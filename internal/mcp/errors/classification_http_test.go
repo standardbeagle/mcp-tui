@@ -16,6 +16,7 @@ func TestClassifyHandshakeHTTPStatus(t *testing.T) {
 	tests := []struct {
 		name        string
 		transport   string
+		endpoint    string
 		err         error
 		wantMessage string
 		wantAction  string
@@ -33,6 +34,22 @@ func TestClassifyHandshakeHTTPStatus(t *testing.T) {
 			err:         errors.New(`calling "server/discover": sending "server/discover": Method Not Allowed`),
 			wantMessage: "HTTP 405 Method Not Allowed",
 			wantAction:  "--transport sse",
+		},
+		{
+			name:        "streamable POST to an SSE endpoint's /sse path",
+			transport:   "http",
+			endpoint:    "http://127.0.0.1:8932/sse",
+			err:         errors.New(`calling "initialize": sending "initialize": Bad Request`),
+			wantMessage: "HTTP 400 Bad Request",
+			wantAction:  "The URL path ends in /sse, where SSE servers listen: use --transport sse",
+		},
+		{
+			name:        "streamable POST refused with 400 at another path",
+			transport:   "http",
+			endpoint:    "http://127.0.0.1:8932/events",
+			err:         errors.New(`calling "initialize": sending "initialize": Bad Request`),
+			wantMessage: "HTTP 400 Bad Request",
+			wantAction:  "If this is an SSE endpoint, use --transport sse",
 		},
 		{
 			name:        "SSE GET to a streamable HTTP endpoint",
@@ -53,8 +70,9 @@ func TestClassifyHandshakeHTTPStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			classified := classifier.Classify(tt.err, map[string]interface{}{
-				"operation":      OperationSessionConnect,
-				"transport_type": tt.transport,
+				"operation":          OperationSessionConnect,
+				"transport_type":     tt.transport,
+				ErrorContextEndpoint: tt.endpoint,
 			})
 			assert.Equal(t, CategoryClientConfig, classified.Category)
 			assert.Contains(t, classified.Message, tt.wantMessage)

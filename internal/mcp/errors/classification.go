@@ -94,6 +94,12 @@ func (c ErrorCategory) String() string {
 // never became a session, so it is classified differently from one lost later.
 const OperationSessionConnect = "session_connect"
 
+// ErrorContextEndpoint is the errContext key carrying the (redacted) URL an
+// HTTP transport connected to. The SDK's handshake errors name only an HTTP
+// status, so the URL's path is the classifier's evidence for which
+// transport the endpoint speaks.
+const ErrorContextEndpoint = "endpoint"
+
 // ErrorSeverity represents the severity level of an error
 type ErrorSeverity int
 
@@ -190,7 +196,8 @@ func (ec *ErrorClassifier) Classify(err error, errContext map[string]interface{}
 
 	if operation == OperationSessionConnect {
 		transport := fmt.Sprint(errContext["transport_type"])
-		if message, actions, ok := diagnoseHandshakeHTTPStatus(err, transport); ok {
+		endpoint, _ := errContext[ErrorContextEndpoint].(string)
+		if message, actions, ok := diagnoseHandshakeHTTPStatus(err, transport, endpoint); ok {
 			return &ClassifiedError{
 				Category: CategoryClientConfig,
 				Severity: SeverityError,

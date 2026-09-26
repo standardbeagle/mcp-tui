@@ -3,6 +3,7 @@ package errors
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -41,10 +42,21 @@ func statusCodeForText(text string) int {
 	return 0
 }
 
+// endpointIsSSEPath reports whether endpoint's path ends in /sse, the path
+// SSE servers conventionally serve.
+func endpointIsSSEPath(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(u.Path, "/")), "/sse")
+}
+
 // diagnoseHandshakeHTTPStatus explains a session handshake that the server
 // answered with an HTTP error status, naming the status and the flag or path
-// to change. ok is false for any other error.
-func diagnoseHandshakeHTTPStatus(err error, transport string) (message string, actions []string, ok bool) {
+// to change. endpoint is the URL connected to ("" if unknown). ok is false
+// for any other error.
+func diagnoseHandshakeHTTPStatus(err error, transport, endpoint string) (message string, actions []string, ok bool) {
 	errStr := err.Error()
 	if transport == "sse" {
 		m := sseStatusPattern.FindStringSubmatch(errStr)
@@ -71,6 +83,13 @@ func diagnoseHandshakeHTTPStatus(err error, transport string) (message string, a
 	}
 	code := statusCodeForText(m[1])
 	message = fmt.Sprintf("The server refused the MCP handshake (POST answered HTTP %d %s)", code, m[1])
+	// An SSE server refuses a POST to its stream path with 400 or 405.
+	if code != http.StatusNotFound && endpointIsSSEPath(endpoint) {
+		return message, []string{
+			"The URL path ends in /sse, where SSE servers listen: use --transport sse",
+			"Run with --debug to see each HTTP exchange",
+		}, true
+	}
 	switch code {
 	case http.StatusNotFound:
 		return message, []string{
@@ -85,6 +104,7 @@ func diagnoseHandshakeHTTPStatus(err error, transport string) (message string, a
 	}
 	return message, []string{
 		"Check that the server speaks streamable HTTP at this path",
+		"If this is an SSE endpoint, use --transport sse",
 		"Run with --debug to see each HTTP exchange",
 	}, true
 }
