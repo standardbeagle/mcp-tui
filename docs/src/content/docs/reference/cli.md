@@ -95,7 +95,7 @@ mcp-tui [global-flags] tool <list|describe|call> [args]
 ```
 
 - `tool list` — print every tool as its name (what `tool call` takes), then its title when it has one, its annotation markers, description and icons: `search_tickets — Search tickets [R][I]`. A legend under the total explains the markers: `[R]` read-only, `[D]` destructive, `[I]` idempotent, `[O]` open world. Flags names that break SEP-986 (1-128 chars of `A-Z a-z 0-9 _ - .`) and warns on stderr about tools the SDK dropped from `tools/list` for invalid `x-mcp-header` annotations (`droppedTools` in JSON).
-- `tool describe <name>` — print the tool's full JSON Schema.
+- `tool describe <name>` — print the tool's name with its markers, its title, the annotation hints the server declared (`Annotations: readOnlyHint=true, idempotentHint=true, openWorldHint=false`), its description, and its input and output schemas as indented JSON. The SDK hands schemas over as maps, so their keys print sorted, not in the server's order; `--format json` prints the whole tool.
 - `tool call <name> [key=value | key:=<json> ...]` — invoke the tool.
   `key=value` converts the value to the type the input schema declares,
   following same-document `$ref`s (JSON pointers, `$anchor`s, references

@@ -395,8 +395,9 @@ func findTool(tools []mcp.Tool, name string) *mcp.Tool {
 	return nil
 }
 
-// printToolDetailText renders the `tool describe` text output: the display
-// name with annotation badges, description, and the input schema.
+// printToolDetailText renders the `tool describe` text output: the name
+// with annotation badges, title, declared annotations, description, and the
+// input and output schemas.
 func printToolDetailText(foundTool *mcp.Tool) {
 	// Define styles for tool details
 	labelStyle := lipgloss.NewStyle().
@@ -410,21 +411,18 @@ func printToolDetailText(foundTool *mcp.Tool) {
 	descriptionStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("15")) // White
 
-	schemaStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("10")). // Green
-		MarginLeft(2)
-
-	// Display tool details. The header line shows the human title (DisplayName)
-	// followed by annotation badges so the operator sees risk hints up front.
-	header := toolNameStyle.Render(foundTool.DisplayName())
+	// The header names the tool as tool call takes it, followed by the
+	// annotation badges so the operator sees risk hints up front.
+	header := toolNameStyle.Render(foundTool.Name)
 	if badges := renderCLIBadges(foundTool); badges != "" {
 		header = header + " " + badges
 	}
 	fmt.Println(labelStyle.Render("Tool:"), header)
-	// Echo the raw Name when it differs from the display name so
-	// scripts have an unambiguous identifier to reference.
-	if foundTool.DisplayName() != foundTool.Name {
-		fmt.Println(labelStyle.Render("Name:"), foundTool.Name)
+	if title := foundTool.DisplayName(); title != foundTool.Name {
+		fmt.Println(labelStyle.Render("Title:"), title)
+	}
+	if hints := declaredToolHints(foundTool.Annotations); hints != "" {
+		fmt.Println(labelStyle.Render("Annotations:"), hints)
 	}
 
 	if foundTool.Description != "" {
@@ -433,22 +431,53 @@ func printToolDetailText(foundTool *mcp.Tool) {
 		fmt.Println(descriptionStyle.Render("  " + foundTool.Description))
 	}
 
-	// Display input schema if available
-	if len(foundTool.InputSchema) > 0 {
-		fmt.Println()
-		fmt.Println(labelStyle.Render("Input Schema:"))
+	printSchemaSection(labelStyle.Render("Input Schema:"), foundTool.InputSchema)
+	printSchemaSection(labelStyle.Render("Output Schema:"), foundTool.OutputSchema)
+}
 
-		// Pretty print the JSON schema
-		schemaJSON, err := json.MarshalIndent(foundTool.InputSchema, "", "  ")
-		if err != nil {
-			fmt.Printf("  Error formatting schema: %v\n", err)
-		} else {
-			// Apply styling to each line
-			lines := strings.Split(string(schemaJSON), "\n")
-			for _, line := range lines {
-				fmt.Println(schemaStyle.Render(line))
-			}
-		}
+// declaredToolHints lists the annotation hints a server set, e.g.
+// "readOnlyHint=true, openWorldHint=false". readOnlyHint and idempotentHint
+// arrive without their false values (omitempty), so only true shows.
+func declaredToolHints(a *mcp.ToolAnnotations) string {
+	if a == nil {
+		return ""
+	}
+	var hints []string
+	if a.ReadOnlyHint {
+		hints = append(hints, "readOnlyHint=true")
+	}
+	if a.DestructiveHint != nil {
+		hints = append(hints, fmt.Sprintf("destructiveHint=%t", *a.DestructiveHint))
+	}
+	if a.IdempotentHint {
+		hints = append(hints, "idempotentHint=true")
+	}
+	if a.OpenWorldHint != nil {
+		hints = append(hints, fmt.Sprintf("openWorldHint=%t", *a.OpenWorldHint))
+	}
+	return strings.Join(hints, ", ")
+}
+
+// printSchemaSection prints a labelled, indented JSON schema; nothing when
+// the tool has none. The SDK hands schemas over as maps, so keys come out
+// sorted rather than in the server's order.
+func printSchemaSection(label string, schema map[string]interface{}) {
+	if len(schema) == 0 {
+		return
+	}
+	schemaStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("10")). // Green
+		MarginLeft(2)
+
+	fmt.Println()
+	fmt.Println(label)
+	schemaJSON, err := json.MarshalIndent(schema, "", "  ")
+	if err != nil {
+		fmt.Printf("  Error formatting schema: %v\n", err)
+		return
+	}
+	for _, line := range strings.Split(string(schemaJSON), "\n") {
+		fmt.Println(schemaStyle.Render(line))
 	}
 }
 
