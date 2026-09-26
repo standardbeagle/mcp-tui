@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -459,6 +458,10 @@ With --format json each update is one JSON object per line: {"time","uri"}.`,
 	return cmd
 }
 
+// watchTimeLayout stamps `resource watch` updates: RFC 3339 to the
+// millisecond, fixed width, so lines stay aligned.
+const watchTimeLayout = "2006-01-02T15:04:05.000Z07:00"
+
 // resourceUpdateLine is one `resource watch --format json` output line.
 type resourceUpdateLine struct {
 	Time string `json:"time"`
@@ -490,7 +493,7 @@ func (p *resourceUpdatePrinter) observe(e *notifications.Entry) {
 		return
 	}
 	p.received++
-	stamp := e.Time.Format(time.RFC3339Nano)
+	stamp := e.Time.Format(watchTimeLayout)
 	if p.jsonOutput {
 		line, err := json.Marshal(resourceUpdateLine{Time: stamp, URI: params.URI})
 		if err != nil {

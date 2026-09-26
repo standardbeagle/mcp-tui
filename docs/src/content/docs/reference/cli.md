@@ -182,7 +182,7 @@ mcp-tui [global-flags] resource <list|get|templates|complete|watch> [args]
   for the URI.
 - `resource templates` — list RFC 6570 URI templates from `resources/templates/list` (alias: `tmpl`).
 - `resource complete <uri-template> <var>=<prefix>` — variable suggestions via `completion/complete` (JSON output).
-- `resource watch <uri> [--count N]` — subscribe and print one line per `notifications/resources/updated` (JSON lines with `--format json`) until Ctrl-C, `--count` updates, or an explicit `--timeout`; a timeout before `--count` updates exits non-zero. Uses a per-URI `subscriptions/listen` stream on 2026-07-28, `resources/subscribe` before; refused when the server lacks `resources.subscribe`.
+- `resource watch <uri> [--count N]` — subscribe and print one line per `notifications/resources/updated`, stamped with the time it arrived to the millisecond (`2026-09-26T14:02:11.123+02:00  updated  acme://status/queue`; JSON lines `{"time","uri"}` with `--format json`) until Ctrl-C, `--count` updates, or an explicit `--timeout`; a timeout before `--count` updates exits non-zero. Uses a per-URI `subscriptions/listen` stream on 2026-07-28, `resources/subscribe` before; refused when the server lacks `resources.subscribe`.
 
 ## `prompt` subcommand
 
