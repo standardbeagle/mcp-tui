@@ -38,3 +38,20 @@ func TestSaveConnections_TightensExistingPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestDisplayName(t *testing.T) {
+	tests := map[string]string{
+		"my-server":      "My Server",
+		"über-tool":      "Über Tool",
+		"éclair":         "Éclair",
+		"github.copilot": "Github.Copilot",
+		"a/b":            "A/B",
+		"snake_case":     "Snake_case",
+		"":               "",
+	}
+	for id, want := range tests {
+		if got := displayName(id); got != want {
+			t.Errorf("displayName(%q) = %q, want %q", id, got, want)
+		}
+	}
+}

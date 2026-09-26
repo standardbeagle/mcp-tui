@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
@@ -14,16 +15,22 @@ import (
 )
 
 // displayName renders a server id like "my-server" as "My Server" for the
-// connections list. ASCII-only: ids are config keys, so byte-wise casing is
-// fine here.
+// connections list: hyphens become spaces and the first rune after any
+// character other than a letter, digit or underscore is title-cased, as
+// the deprecated strings.Title did. Ids are JSON keys, so any Unicode.
 func displayName(id string) string {
-	words := strings.Split(strings.ReplaceAll(id, "-", " "), " ")
-	for i, w := range words {
-		if w != "" {
-			words[i] = strings.ToUpper(w[:1]) + w[1:]
+	atWordStart := true
+	return strings.Map(func(r rune) rune {
+		if r == '-' {
+			r = ' '
 		}
-	}
-	return strings.Join(words, " ")
+		out := r
+		if atWordStart {
+			out = unicode.ToTitle(r)
+		}
+		atWordStart = !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+		return out
+	}, id)
 }
 
 // ConnectionEntry represents a saved connection configuration
