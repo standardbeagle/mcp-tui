@@ -25,7 +25,8 @@ const (
 const validatingPrefix = "validating "
 
 // argumentError turns err, from validating instance against schema (both
-// as decoded JSON), into an *ArgumentError naming the offending argument.
+// as decoded JSON), into an *ArgumentError naming the offending argument
+// and explaining the rule it broke.
 func argumentError(err error, schema, instance any) *ArgumentError {
 	paths, reason := schemaPaths(err)
 	out := &ArgumentError{Reason: reason, SchemaPath: "root"}
@@ -33,7 +34,15 @@ func argumentError(err error, schema, instance any) *ArgumentError {
 		return out
 	}
 	out.SchemaPath = paths[len(paths)-1]
-	out.Argument = locate(schema, paths, instance)
+	argument, value, known := locate(schema, paths, instance)
+	out.Argument = argument
+	failed := schema
+	if out.SchemaPath != "root" {
+		failed = schemaAt(schema, out.SchemaPath)
+	}
+	if known {
+		out.Reason = explainRule(reason, asObject(failed), value, argument == "")
+	}
 	return out
 }
 
@@ -54,8 +63,9 @@ func schemaPaths(err error) (paths []string, reason string) {
 
 // locate follows paths, the schemas validation descended through, over
 // schema and instance, and returns the path of the value that failed in
-// the arguments, "" for the arguments as a whole.
-func locate(schema any, paths []string, instance any) string {
+// the arguments ("" for the arguments as a whole) and that value. known is
+// false when the path holds a * and so no single value.
+func locate(schema any, paths []string, instance any) (argument string, value any, known bool) {
 	var loc location
 	node := schema
 	prev := ""
@@ -78,15 +88,19 @@ func locate(schema any, paths []string, instance any) string {
 			// A schema named by its $id rather than a path: where it sits
 			// is unknown, so the rest of the location is too.
 			loc.any()
-			return loc.String()
+			return loc.String(), nil, false
 		}
 		prev = pointer
 	}
-	return loc.String()
+	return loc.String(), instance, !loc.unknown
 }
 
-// location is a path in the arguments, built one step at a time.
-type location struct{ b strings.Builder }
+// location is a path in the arguments, built one step at a time. unknown
+// records a step that several keys or indices match.
+type location struct {
+	b       strings.Builder
+	unknown bool
+}
 
 func (l *location) key(k string) {
 	if l.b.Len() > 0 {
@@ -98,10 +112,16 @@ func (l *location) key(k string) {
 func (l *location) index(i int) { l.b.WriteString("[" + strconv.Itoa(i) + "]") }
 
 // any marks a step that several keys match.
-func (l *location) any() { l.key("*") }
+func (l *location) any() {
+	l.key("*")
+	l.unknown = true
+}
 
 // anyIndex marks a step that several indices match.
-func (l *location) anyIndex() { l.b.WriteString("[*]") }
+func (l *location) anyIndex() {
+	l.b.WriteString("[*]")
+	l.unknown = true
+}
 
 func (l *location) String() string { return l.b.String() }
 

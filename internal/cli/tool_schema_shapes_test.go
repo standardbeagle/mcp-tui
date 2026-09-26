@@ -186,7 +186,7 @@ func TestToolCall_SkipArgValidationSendsTheBrokenArguments(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("server received %#v, want the arguments as given %#v", got, want)
 	}
-	if !strings.Contains(run.stderr, "match the input schema at ") {
+	if !strings.Contains(run.stderr, "(input schema at ") {
 		t.Errorf("stderr does not report the violation:\n%s", run.stderr)
 	}
 }
@@ -206,7 +206,7 @@ func TestToolCallTask_SkipArgValidationSendsTheBrokenArguments(t *testing.T) {
 	if id := ts.NextTask(t); !strings.Contains(run.stdout, "Task "+id) {
 		t.Errorf("stdout = %q, want task %s created", run.stdout, id)
 	}
-	if !strings.Contains(run.stderr, "missing properties") {
+	if !strings.Contains(run.stderr, "missing required argument") {
 		t.Errorf("stderr does not report the violation:\n%s", run.stderr)
 	}
 }

@@ -99,7 +99,7 @@ T-1043  low      open     Dark mode for the agent console
 
 $ bin/mcp-tui --transport http --url http://127.0.0.1:8931/mcp tool call search_tickets status=open limit=500
 ❌ Arguments do not match the tool's input schema
-Error: tool "search_tickets": argument "limit" does not match the input schema at /properties/limit: maximum: 500/1 is greater than 50.000000 (--skip-arg-validation sends them anyway)
+Error: tool "search_tickets": argument "limit": 500 is greater than the maximum 50 (input schema at /properties/limit) (--skip-arg-validation sends them anyway)
 
 $ bin/mcp-tui --watch-notifications --server-log-level info --transport http --url http://127.0.0.1:8931/mcp tool call escalate_ticket ticket_id=T-1041
 15:38:39.998  progress  token=mcp-tui-1 1/4 "Paging the on-call engineer"

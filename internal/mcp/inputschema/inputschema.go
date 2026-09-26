@@ -156,15 +156,18 @@ type ArgumentError struct {
 	// SchemaPath is the JSON pointer of the subschema the value failed, as
 	// jsonschema-go reports it; "root" is the root schema.
 	SchemaPath string
-	// Reason is jsonschema-go's message for the failed keyword.
+	// Reason says which rule the value broke, with the value and the
+	// schema's limit ("500 is greater than the maximum 50"); for a keyword
+	// explainRule does not cover, or a value the path does not pin down,
+	// it is jsonschema-go's own message.
 	Reason string
 }
 
 func (e *ArgumentError) Error() string {
 	if e.Argument == "" {
-		return fmt.Sprintf("arguments do not match the input schema at %s: %s", e.SchemaPath, e.Reason)
+		return fmt.Sprintf("arguments: %s (input schema at %s)", e.Reason, e.SchemaPath)
 	}
-	return fmt.Sprintf("argument %q does not match the input schema at %s: %s", e.Argument, e.SchemaPath, e.Reason)
+	return fmt.Sprintf("argument %q: %s (input schema at %s)", e.Argument, e.Reason, e.SchemaPath)
 }
 
 // UnionKind picks the alternative of a KindUnion parameter that value's
