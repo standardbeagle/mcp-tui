@@ -31,17 +31,35 @@ func TestShowsCallProgress(t *testing.T) {
 }
 
 // TestProgressLine_RedrawsOneLine pins that progress redraws a single
-// stderr line and ends it once the call returns.
+// stderr line and erases it once the call returns: the SDK can hand over
+// the last notifications/progress after the response, so a line left in
+// place could show a stale 3/4 above a finished result.
 func TestProgressLine_RedrawsOneLine(t *testing.T) {
 	var stderr bytes.Buffer
 	ctx, finish := progressLine(context.Background(), &stderr)
 	report := observerOf(t, ctx)
-	report(mcp.Progress{Token: "mcp-tui-1", Progress: 1, Total: 2, Message: "compiling"})
-	report(mcp.Progress{Token: "mcp-tui-1", Progress: 2, Total: 2, Message: "linking"})
+	report(mcp.Progress{Token: "mcp-tui-1", Progress: 3, Total: 4, Message: "raising priority"})
+	report(mcp.Progress{Token: "mcp-tui-1", Progress: 4, Total: 4, Message: "posting to #support"})
 	finish()
-	want := "\r\x1b[K⏳ 1/2 (50%) · compiling\r\x1b[K⏳ 2/2 (100%) · linking\n"
+	want := "\r\x1b[K⏳ 3/4 (75%) · raising priority\r\x1b[K⏳ 4/4 (100%) · posting to #support\r\x1b[K"
 	if got := stderr.String(); got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+// TestProgressLine_IgnoresProgressAfterFinish pins that a notification
+// delivered after the call returned draws nothing: the result may already
+// be printing.
+func TestProgressLine_IgnoresProgressAfterFinish(t *testing.T) {
+	var stderr bytes.Buffer
+	ctx, finish := progressLine(context.Background(), &stderr)
+	report := observerOf(t, ctx)
+	report(mcp.Progress{Token: "mcp-tui-1", Progress: 3, Total: 4, Message: "raising priority"})
+	finish()
+	stderr.Reset()
+	report(mcp.Progress{Token: "mcp-tui-1", Progress: 4, Total: 4, Message: "posting to #support"})
+	if stderr.Len() != 0 {
+		t.Errorf("stderr after finish = %q, want nothing", stderr.String())
 	}
 }
 

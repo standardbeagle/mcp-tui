@@ -45,8 +45,9 @@ mcp-tui [global-flags] <subcommand> [subcommand-flags] [args]
 `tool call`, `prompt execute` and `resource get` send a `progressToken` with
 every request, a fresh one for each multi round-trip round. While the call
 runs, the server's latest `notifications/progress` for it is redrawn on one
-stderr line (`⏳ 2/4 (50%) · linking`). The line is drawn only in text
-mode, without `--porcelain`, and only when stderr is a terminal. JSON output
+stderr line (`⏳ 2/4 (50%) · linking`) and erased when the call returns,
+before the result prints; a notification that arrives after that is not
+drawn. The line is drawn only in text mode, without `--porcelain`, and only when stderr is a terminal. JSON output
 carries no progress; use `--watch-notifications` to stream every progress
 notification.
 

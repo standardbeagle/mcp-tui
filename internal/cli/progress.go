@@ -32,21 +32,30 @@ func callProgress(
 }
 
 // progressLine attaches a progress observer to ctx that redraws one line of
-// w with the latest notification; the returned func ends that line.
+// w with the latest notification; the returned func erases that line and
+// stops drawing. The SDK delivers a response as soon as it reads it but
+// queues notifications for a handler goroutine, so the server's last
+// notifications/progress can arrive after the call returned: a line left in
+// place could read 3/4 above a finished result, and a late draw could land
+// in the middle of it.
 func progressLine(ctx context.Context, w io.Writer) (progressCtx context.Context, finish func()) {
 	var mu sync.Mutex
-	drawn := false
+	drawn, finished := false, false
 	observe := func(p mcp.Progress) {
 		mu.Lock()
 		defer mu.Unlock()
+		if finished {
+			return
+		}
 		fmt.Fprintf(w, "\r\x1b[K⏳ %s", p.Summary())
 		drawn = true
 	}
 	finish = func() {
 		mu.Lock()
 		defer mu.Unlock()
+		finished = true
 		if drawn {
-			fmt.Fprintln(w)
+			fmt.Fprint(w, "\r\x1b[K")
 			drawn = false
 		}
 	}
