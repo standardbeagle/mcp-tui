@@ -242,9 +242,14 @@ lists fails as inconclusive. The spec asks this of `tools/list` only. When the
 SDK served the second list from its TTL cache, the probe fetches it again on a
 new session so both lists come from the server.
 
-Each probe prints `PASS`, `WARN` or `FAIL`; the summary counts all three
-(`N passed, N warned, N failed`). A warning keeps `"pass": true` and adds
-`"warn": true` in `--json` output, and does not change the exit code.
+Each probe prints `PASS`, `WARN`, `FAIL` or `SKIP`; the summary counts all four
+(`N passed, N warned, N failed, N skipped`). A warning keeps `"pass": true` and adds
+`"warn": true` in `--json` output, and does not change the exit code. A probe
+the target cannot run (`verify <url>` has no stdio target for
+`seterror-content`; `verify --cmd …` has no URL for the first five) is
+skipped: `"pass": true, "skipped": true` with the reason in `"error"`, counted
+as passing as `conform` counts it. Naming such a probe with `--probe` is a
+usage error instead.
 
 ## `conform` subcommand
 

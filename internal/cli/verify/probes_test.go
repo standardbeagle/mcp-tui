@@ -387,8 +387,9 @@ func TestRunAll_SkipsProbesThatNeedMissingTarget(t *testing.T) {
 	url := toolNamesServer(t, "get_weather")
 
 	results := RunAll(context.Background(), &Target{URL: url})
-	// Every HTTP probe should run; seterror-content should be present
-	// with a Pass=false and a "stdio command target" error.
+	// Every HTTP probe should run; seterror-content cannot, so it is
+	// skipped (counted as passing, as conform counts it) with a
+	// "stdio command target" reason.
 	if len(results) != len(AllProbes) {
 		t.Fatalf("got %d results, want %d", len(results), len(AllProbes))
 	}
@@ -396,8 +397,8 @@ func TestRunAll_SkipsProbesThatNeedMissingTarget(t *testing.T) {
 	for _, r := range results {
 		if r.Name == "seterror-content" {
 			foundStdio = true
-			if r.Pass {
-				t.Errorf("seterror-content should not pass without --cmd")
+			if !r.Pass || !r.Skipped {
+				t.Errorf("seterror-content should be skipped without --cmd, got %+v", r)
 			}
 			if !strings.Contains(r.Error, "stdio command target") {
 				t.Errorf("error should mention missing stdio command: %q", r.Error)

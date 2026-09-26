@@ -47,8 +47,10 @@ func (c *VerifyCommand) CreateCommand() *cobra.Command {
 
 Each probe sends a single targeted request and reports PASS, WARN or FAIL
 plus a human-readable fix suggestion. WARN marks a SHOULD-level finding and
-does not fail the run. The exit code is 0 when no probe fails and 1 when any
-does.
+does not fail the run. A probe the target cannot run (an HTTP probe without
+a URL, seterror-content without --cmd) is reported as SKIP and, as in
+conform, does not fail the run. The exit code is 0 when no probe fails and
+1 when any does.
 
 Probes:
   cross-origin         server rejects POST with foreign Origin (SDK v1.4.1+)
@@ -72,7 +74,7 @@ Examples:
       --args "@modelcontextprotocol/server-everything,stdio" --tool failing_tool
 
 Exit codes:
-  0  no probe failed (warnings allowed)
+  0  no probe failed (warnings and skips allowed)
   1  one or more probes failed (or no probes ran)`,
 		RunE: c.RunE,
 	}
@@ -204,18 +206,24 @@ func writeVerifyJSON(w io.Writer, results []verify.ProbeResult) error {
 }
 
 // writeVerifyText prints a human-friendly summary. Each probe gets one
-// line "PASS/WARN/FAIL <name>" plus indented "error:"/"fix:" lines for
-// warnings and failures.
+// line "PASS/WARN/FAIL/SKIP <name>" plus indented "error:"/"fix:" lines
+// for warnings and failures, and the reason for a skip.
 func writeVerifyText(w io.Writer, results []verify.ProbeResult) {
 	for _, r := range results {
 		status := "PASS"
 		switch {
+		case r.Skipped:
+			status = "SKIP"
 		case r.Warn:
 			status = "WARN"
 		case !r.Pass:
 			status = "FAIL"
 		}
 		fmt.Fprintf(w, "%s  %s\n", status, r.Name)
+		if r.Skipped {
+			fmt.Fprintf(w, "      %s\n", r.Error)
+			continue
+		}
 		if !r.Pass || r.Warn {
 			if r.Error != "" {
 				fmt.Fprintf(w, "      error: %s\n", r.Error)
@@ -225,14 +233,16 @@ func writeVerifyText(w io.Writer, results []verify.ProbeResult) {
 			}
 		}
 	}
-	pass, warn, fail := tally(results)
-	fmt.Fprintf(w, "\n%d passed, %d warned, %d failed\n", pass, warn, fail)
+	pass, warn, fail, skip := tally(results)
+	fmt.Fprintf(w, "\n%d passed, %d warned, %d failed, %d skipped\n", pass, warn, fail, skip)
 }
 
-// tally counts clean passes, warnings and failures.
-func tally(results []verify.ProbeResult) (pass, warn, fail int) {
+// tally counts clean passes, warnings, failures and skips.
+func tally(results []verify.ProbeResult) (pass, warn, fail, skip int) {
 	for _, r := range results {
 		switch {
+		case r.Skipped:
+			skip++
 		case r.Warn:
 			warn++
 		case r.Pass:
@@ -241,5 +251,5 @@ func tally(results []verify.ProbeResult) (pass, warn, fail int) {
 			fail++
 		}
 	}
-	return pass, warn, fail
+	return pass, warn, fail, skip
 }

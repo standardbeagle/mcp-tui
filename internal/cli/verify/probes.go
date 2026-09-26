@@ -30,14 +30,18 @@ import (
 //	Pass  — true when the server's behavior matches the expected contract
 //	Warn  — true when the server breaks a SHOULD-level rule: Pass stays
 //	        true (the exit code ignores it) and Error/Fix say what and why
-//	Error — concrete failure or warning detail (empty on a clean pass)
+//	Skipped — true when the probe could not run against this target (it
+//	        checked nothing): Pass stays true, as conform counts a skipped
+//	        scenario, and Error says why
+//	Error — concrete failure, warning or skip detail (empty on a clean pass)
 //	Fix   — human-readable suggestion the user can apply (empty on a clean pass)
 type ProbeResult struct {
-	Name  string `json:"name"`
-	Pass  bool   `json:"pass"`
-	Warn  bool   `json:"warn,omitempty"`
-	Error string `json:"error,omitempty"`
-	Fix   string `json:"fix,omitempty"`
+	Name    string `json:"name"`
+	Pass    bool   `json:"pass"`
+	Skipped bool   `json:"skipped,omitempty"`
+	Warn    bool   `json:"warn,omitempty"`
+	Error   string `json:"error,omitempty"`
+	Fix     string `json:"fix,omitempty"`
 }
 
 // Target carries everything a probe needs to drive a remote server. For HTTP
@@ -180,14 +184,11 @@ func RunAll(ctx context.Context, target *Target) []ProbeResult {
 			return results
 		default:
 		}
-		// Skip stdio probes when target has no Command — caller may not
-		// have wanted them. Same for HTTP probes when URL is empty.
+		// A probe the target cannot run checked nothing: skip it rather
+		// than fail the server for the shape of the command line, as
+		// conform does.
 		if problem := TargetProblem(name, target); problem != "" {
-			fix := "rerun `mcp-tui verify --cmd <command> --args <args>` to spawn the server"
-			if IsHTTPProbe(name) {
-				fix = "rerun `mcp-tui verify <url>` against the HTTP/streamable-HTTP endpoint"
-			}
-			results = append(results, ProbeResult{Name: name, Pass: false, Error: problem, Fix: fix})
+			results = append(results, ProbeResult{Name: name, Pass: true, Skipped: true, Error: problem})
 			continue
 		}
 		results = append(results, Run(ctx, name, target))

@@ -23,11 +23,13 @@ mcp-tui --transport http --url http://localhost:8000/mcp capabilities
 
 Each probe sends a single targeted request and reports PASS, WARN or FAIL plus
 a human-readable fix suggestion. WARN marks a server that breaks a SHOULD in
-the spec: it is reported with its fix but does not fail the run. Every probe drives its own short-lived
+the spec: it is reported with its fix but does not fail the run. A probe the
+target cannot run is reported as SKIP with the reason (`probe requires a stdio
+command target`) and, as in `conform`, counts as passing. Every probe drives its own short-lived
 connection, so there is no persistent-session overhead.
 
 ```bash
-mcp-tui verify http://localhost:8000/mcp                 # all HTTP probes
+mcp-tui verify http://localhost:8000/mcp                 # all probes; seterror-content skipped
 mcp-tui verify --probe cross-origin http://localhost:8000/mcp
 mcp-tui verify --json http://localhost:8000/mcp | jq '.results[]|select(.pass==false)'
 ```
