@@ -26,6 +26,9 @@ type config struct {
 	sseAddr   string
 	oauth     bool
 	misbehave bool
+	// Handshake faults, stdio only.
+	stdoutBanner   bool
+	ignoreDiscover bool
 }
 
 func main() {
@@ -36,6 +39,10 @@ func main() {
 	flag.BoolVar(&cfg.oauth, "oauth", false, "protect -http's /mcp with bearer tokens from the embedded authorization server")
 	flag.BoolVar(&cfg.misbehave, "misbehave", false, "break the rules `mcp-tui verify` probes: an invalid tool name, "+
 		"an unstable tools/list order, an error result without content")
+	flag.BoolVar(&cfg.stdoutBanner, "stdout-banner", false, "with -stdio: print a banner to stdout before serving, "+
+		"the log line that corrupts the stdio transport")
+	flag.BoolVar(&cfg.ignoreDiscover, "ignore-discover", false, "with -stdio: never answer server/discover, "+
+		"like a server that ignores methods it does not know")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -54,6 +61,8 @@ func run(ctx context.Context, cfg config) error {
 		return errors.New("choose a transport: -stdio, -http <addr> and/or -sse <addr>")
 	case cfg.oauth && cfg.httpAddr == "":
 		return errors.New("-oauth protects the streamable HTTP endpoint; add -http <addr>")
+	case (cfg.stdoutBanner || cfg.ignoreDiscover) && !cfg.stdio:
+		return errors.New("-stdout-banner and -ignore-discover are stdio faults; add -stdio")
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -68,10 +77,19 @@ func run(ctx context.Context, cfg config) error {
 		return nil
 	})
 	if cfg.stdio {
+		if cfg.stdoutBanner {
+			if err := printStdoutBanner(); err != nil {
+				return err
+			}
+		}
+		var transport mcp.Transport = &mcp.StdioTransport{}
+		if cfg.ignoreDiscover {
+			transport = &discoverIgnoringTransport{inner: transport}
+		}
 		g.Go(func() error {
 			// Stdin closing ends the session and, with it, the server.
 			defer stopQueue()
-			return server.Run(ctx, &mcp.StdioTransport{})
+			return server.Run(ctx, transport)
 		})
 		return g.Wait()
 	}

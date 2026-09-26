@@ -19,6 +19,8 @@ go build -o bin/demo-server ./docs/recordings/demo-server
 | `-sse 127.0.0.1:8932` | legacy SSE at `/sse` (for showing a transport mismatch) |
 | `-oauth` | with `-http`: `/mcp` needs a bearer token from the embedded authorization server |
 | `-misbehave` | breaks three rules `mcp-tui verify` checks (below) |
+| `-stdout-banner` | with `-stdio`: prints `Acme support desk listening on stdio` to stdout before serving, the log line that corrupts the stdio transport |
+| `-ignore-discover` | with `-stdio`: never answers `server/discover`, like a pre-2026-07-28 server that ignores methods it does not know instead of answering `-32601` |
 
 `-http` and `-sse` can run together; `-stdio` runs alone. Both HTTP flags
 refuse any address that is not loopback (`127.0.0.1`, `::1`, `localhost`).
