@@ -57,3 +57,25 @@ func TestStrictErrorsFlagRegistered(t *testing.T) {
 	}
 	t.Fatal("could not find `tool call` subcommand")
 }
+
+// A call whose result is isError:true must not also be announced as a
+// success: the text output said "✅ Tool executed successfully" directly
+// above "⚠ Tool reported an error".
+func TestToolResultNotice(t *testing.T) {
+	tests := []struct {
+		name      string
+		isError   bool
+		porcelain bool
+		want      string
+	}{
+		{"success", false, false, "✅ Tool executed successfully"},
+		{"success, porcelain", false, true, ""},
+		{"error result", true, false, "⚠ Tool returned an error result (isError:true)"},
+		{"error result, porcelain", true, true, "⚠ Tool returned an error result (isError:true)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, toolResultNotice(tt.isError, tt.porcelain))
+		})
+	}
+}

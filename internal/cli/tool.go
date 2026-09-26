@@ -842,8 +842,10 @@ func printToolResult(out resultOutput, result *mcp.CallToolResult) error {
 	}
 
 	// Text output format
-	if out.format == OutputFormatText && !out.porcelain {
-		fmt.Fprintf(os.Stderr, "✅ Tool executed successfully\n\n")
+	if out.format == OutputFormatText {
+		if notice := toolResultNotice(result.IsError, out.porcelain); notice != "" {
+			fmt.Fprintf(os.Stderr, "%s\n\n", notice)
+		}
 	}
 
 	// Display results.
@@ -856,7 +858,6 @@ func printToolResult(out resultOutput, result *mcp.CallToolResult) error {
 	// that read isError-flagged payloads from stdout keep working by
 	// default.
 	if result.IsError {
-		fmt.Fprintln(os.Stderr, "⚠ Tool reported an error (isError:true)")
 		fmt.Println("Error response from tool:")
 	} else {
 		fmt.Println("Tool response:")
@@ -1053,4 +1054,17 @@ func tryFormatJSON(text string) string {
 	}
 
 	return string(formatted)
+}
+
+// toolResultNotice is the stderr line announcing a tool call's outcome in
+// text mode: success only without --porcelain, an isError:true result always
+// (it is the tool-layer error channel). Never both.
+func toolResultNotice(isError, porcelain bool) string {
+	if isError {
+		return "⚠ Tool returned an error result (isError:true)"
+	}
+	if porcelain {
+		return ""
+	}
+	return "✅ Tool executed successfully"
 }
