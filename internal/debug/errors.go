@@ -46,7 +46,10 @@ func ProtocolErrorCode(code int64, method string) ErrorCode {
 	}
 }
 
-// MCPError is an error named after the MCP error code it carries.
+// MCPError is an error named after the MCP error code it carries. Message
+// is the whole explanation: Error() leaves out Cause, whose text is the SDK's
+// call chain and, over HTTP, the status the error arrived with ("rejected by
+// transport: Bad Request"), which says nothing the code does not.
 type MCPError struct {
 	Code    ErrorCode `json:"code"`
 	Message string    `json:"message"`
@@ -55,9 +58,6 @@ type MCPError struct {
 
 // Error implements the error interface
 func (e *MCPError) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("%s: %s (caused by: %v)", e.Code, e.Message, e.Cause)
-	}
 	return fmt.Sprintf("%s: %s", e.Code, e.Message)
 }
 

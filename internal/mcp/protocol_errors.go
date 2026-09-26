@@ -16,19 +16,21 @@ import (
 
 // nameProtocolError wraps err in a debug.MCPError named after the MCP error
 // code its JSON-RPC error carries (debug.ProtocolErrorCode), so the CLI and
-// TUI, which print err.Error(), show the name next to the server's message.
+// TUI, which print err.Error(), show the name next to the server's message
+// and nothing of the transport it arrived through.
 // Errors without a JSON-RPC error, or whose code MCP gives no meaning, come
 // back unchanged. The original error stays reachable through Unwrap.
 func nameProtocolError(err error, method string) error {
 	var wireCode int64
+	var wireMessage string
 	var wireData json.RawMessage
 	var wire *jsonrpc.Error
 	var taskWire *tasks.RPCError // the error of a request sent by the tasks link
 	switch {
 	case errors.As(err, &wire):
-		wireCode, wireData = wire.Code, wire.Data
+		wireCode, wireMessage, wireData = wire.Code, wire.Message, wire.Data
 	case errors.As(err, &taskWire):
-		wireCode, wireData = taskWire.Code, taskWire.Data
+		wireCode, wireMessage, wireData = taskWire.Code, taskWire.Message, taskWire.Data
 	default:
 		return err
 	}
@@ -36,7 +38,7 @@ func nameProtocolError(err error, method string) error {
 	if code == "" {
 		return err
 	}
-	message := fmt.Sprintf("JSON-RPC error %d from %s", wireCode, method)
+	message := fmt.Sprintf("%s (JSON-RPC error %d from %s)", wireMessage, wireCode, method)
 	switch code {
 	case debug.ErrorCodeURLElicitationRequired:
 		message += urlElicitationSteps(wireData)

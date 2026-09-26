@@ -5,12 +5,14 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
 // errorNamesServer serves one resource whose handler answers with the
@@ -86,6 +88,49 @@ func TestService_Errors_CarryProtocolNames(t *testing.T) {
 				if !errors.As(err, &wire) {
 					t.Errorf("%s: error %q lost the JSON-RPC error", tc.name, err)
 				}
+			}
+		})
+	}
+}
+
+// TestService_ReadResource_NotFoundOverHTTP pins the resource-not-found
+// message over streamable HTTP on both protocols. On 2026-07-28 the server
+// answers with HTTP 400 carrying the JSON-RPC error, and the SDK's error
+// text adds "rejected by transport: Bad Request"; the message names the
+// code, the URI and the server's words, not the HTTP status.
+func TestService_ReadResource_NotFoundOverHTTP(t *testing.T) {
+	for _, pinned := range []string{"", "2025-11-25"} {
+		t.Run("pin="+pinned, func(t *testing.T) {
+			url := testutil.ServeStreamableHTTP(t, testutil.StreamableHTTPHandler(errorNamesServer(), pinned))
+			svc := NewService()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := svc.Connect(ctx, &configPkg.ConnectionConfig{
+				Type: configPkg.TransportHTTP, URL: url, ProtocolVersion: pinned,
+			}); err != nil {
+				t.Fatalf("connect: %v", err)
+			}
+			t.Cleanup(func() { _ = svc.Disconnect() })
+
+			const uri = "file:///archive/missing.tar"
+			_, err := svc.ReadResource(ctx, uri)
+			if err == nil {
+				t.Fatal("reading an unknown resource succeeded")
+			}
+			text := err.Error()
+			for _, want := range []string{string(debug.ErrorCodeResourceNotFound), uri, "-32602"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("error %q lacks %q", text, want)
+				}
+			}
+			for _, noise := range []string{"rejected by transport", "Bad Request"} {
+				if strings.Contains(text, noise) {
+					t.Errorf("error %q carries the transport's %q", text, noise)
+				}
+			}
+			var wire *jsonrpc.Error
+			if !errors.As(err, &wire) {
+				t.Errorf("error %q lost the JSON-RPC error", text)
 			}
 		})
 	}
