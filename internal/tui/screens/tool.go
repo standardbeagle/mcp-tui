@@ -862,12 +862,27 @@ func (ts *ToolScreen) startTaskCmd(args map[string]interface{}) tea.Cmd {
 
 // handleKeyMsg handles keyboard input
 func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Don't process keys while executing
+	// A running call takes no keys but the ways out.
 	if ts.executing {
-		if msg.String() == keyCtrlC {
-			// Allow canceling during execution
+		if msg.String() == keyCtrlC || msg.String() == keyEsc {
 			return ts, func() tea.Msg { return BackMsg{} }
 		}
+		return ts, nil
+	}
+
+	if ts.result.picking && ts.result.shown() {
+		return ts.handleResultViewKey(msg)
+	}
+
+	// The screen-wide keys work whatever has focus: typed into a focused
+	// field they did nothing, and the screen looked stuck.
+	switch msg.String() {
+	case keyCtrlC:
+		return ts.copyResultOrBack()
+	case keyEsc:
+		return ts, func() tea.Msg { return BackMsg{} }
+	}
+	if ts.result.shown() && ts.handleResultScrollKey(msg) {
 		return ts, nil
 	}
 
@@ -883,19 +898,16 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Special handling for result scrolling (when not in viewing mode)
-	if ts.result.shown() && !ts.result.picking {
-		if handled := ts.handleResultScrollKey(msg); handled {
-			return ts, nil
-		}
-	}
-
-	// Special handling for result viewing mode
-	if ts.result.picking && ts.result.shown() {
-		return ts.handleResultViewKey(msg)
-	}
-
 	return ts.handleToolbarKey(msg)
+}
+
+// inputFocused reports whether the cursor is in a text input (a form field
+// or the raw JSON editor), which takes Home and End for itself.
+func (ts *ToolScreen) inputFocused() bool {
+	if ts.rawJSONMode {
+		return ts.cursor == 0
+	}
+	return ts.cursor < len(ts.fields)
 }
 
 // handleToolbarKey handles the keys of the shared toolbar: task mode,
@@ -915,10 +927,6 @@ func (ts *ToolScreen) handleToolbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ts.toggleCLICommandDisplay()
 		return ts, nil
 
-	case keyCtrlC:
-		// Copy result to clipboard if available
-		return ts.copyResultOrBack()
-
 	case "v":
 		// Enter result viewing mode if we have results
 		if ts.result.shown() && len(ts.result.fields) > 0 {
@@ -928,7 +936,7 @@ func (ts *ToolScreen) handleToolbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 
-	case keyEsc, "b", keyAltLeft:
+	case "b", keyAltLeft:
 		// Go back to previous screen
 		return ts, func() tea.Msg { return BackMsg{} }
 
@@ -963,15 +971,7 @@ func (ts *ToolScreen) handleRawJSONKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ts.cursor = 1
 		return ts, nil
 	case keyEnter:
-		// If on input, move to button; if on button, execute
-		if ts.cursor == 0 {
-			ts.rawJSONInput.Blur()
-			ts.cursor = 1
-			return ts, nil
-		}
-		return ts, nil
-	case keyEsc:
-		return ts, func() tea.Msg { return BackMsg{} }
+		return ts.submit()
 	case keyToggleArgValidation:
 		ts.toggleArgValidation()
 		return ts, nil
@@ -991,7 +991,10 @@ func (ts *ToolScreen) handleFieldKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 
 	// Handle navigation keys before passing to textinput
 	switch msg.String() {
-	case keyTab, keyDown, keyEnter:
+	case keyEnter:
+		model, cmd := ts.submit()
+		return model, cmd, true
+	case keyTab, keyDown:
 		// Don't pass these to textinput, handle navigation
 	case keyShiftTab, keyUp:
 		// Don't pass these to textinput, handle navigation
@@ -1022,8 +1025,6 @@ func (ts *ToolScreen) handleFieldKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 	case "ctrl+n":
 		ts.toggleSendNull(field)
 		return ts, nil, true
-	case keyEsc:
-		// Don't pass to textinput, handle escape
 	case "ctrl+v":
 		ts.pasteIntoField(field)
 		return ts, nil, true
@@ -1164,15 +1165,7 @@ func (ts *ToolScreen) activateCursorButton() (tea.Model, tea.Cmd) {
 	// Handle enter based on current position
 	switch ts.cursor {
 	case executePos:
-		// Execute button — gate destructive tools behind a confirm overlay.
-		// The check uses the same IsDestructive() helper as the CLI prompt
-		// so behavior stays in lock-step across the two surfaces.
-		if ts.tool.IsDestructive() && !ts.confirmBypassed {
-			ts.pendingConfirm = true
-			return ts, openConfirmOverlay(&ts.tool)
-		}
-		cmd := ts.executeTool()
-		return ts, cmd
+		return ts.submit()
 	case cliPos:
 		// CLI button
 		ts.cliCommand = ts.generateCLICommand()
@@ -1190,6 +1183,17 @@ func (ts *ToolScreen) activateCursorButton() (tea.Model, tea.Cmd) {
 		return ts, func() tea.Msg { return BackMsg{} }
 	}
 	return ts, nil
+}
+
+// submit executes the tool with the form's arguments, as the Execute button
+// and Enter in an input do. A destructive tool waits behind a confirm
+// overlay, the same IsDestructive() check as the CLI prompt.
+func (ts *ToolScreen) submit() (tea.Model, tea.Cmd) {
+	if ts.tool.IsDestructive() && !ts.confirmBypassed {
+		ts.pendingConfirm = true
+		return ts, openConfirmOverlay(&ts.tool)
+	}
+	return ts, ts.executeTool()
 }
 
 // renderToolBadges produces a colored representation of the tool's

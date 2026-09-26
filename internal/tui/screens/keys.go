@@ -12,6 +12,8 @@ const (
 	keyRight    = "right"
 	keyHome     = "home"
 	keyEnd      = "end"
+	keyCtrlHome = "ctrl+home"
+	keyCtrlEnd  = "ctrl+end"
 	keyPgUp     = "pgup"
 	keyPgDown   = "pgdown"
 	keyCtrlC    = "ctrl+c"

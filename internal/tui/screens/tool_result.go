@@ -139,8 +139,9 @@ func prettyPrintResultContent(contents []mcp.Content) string {
 	return resultText.String()
 }
 
-// handleResultScrollKey scrolls the result block. Returns false for keys it
-// does not own so the shared handler can take them.
+// handleResultScrollKey scrolls the result block whatever has focus; Home
+// and End are left to a focused text input, Ctrl+Home and Ctrl+End are
+// not. Returns false for keys it does not own.
 func (ts *ToolScreen) handleResultScrollKey(msg tea.KeyMsg) bool {
 	availableHeight := ts.getResultDisplayHeight()
 
@@ -171,11 +172,15 @@ func (ts *ToolScreen) handleResultScrollKey(msg tea.KeyMsg) bool {
 		if ts.result.scroll > maxScroll {
 			ts.result.scroll = maxScroll
 		}
-	case keyHome:
-		// Jump to top of result
+	case keyCtrlHome, keyHome:
+		if msg.String() == keyHome && ts.inputFocused() {
+			return false
+		}
 		ts.result.scroll = 0
-	case keyEnd:
-		// Jump to bottom of result
+	case keyCtrlEnd, keyEnd:
+		if msg.String() == keyEnd && ts.inputFocused() {
+			return false
+		}
 		ts.result.scroll = max(0, len(ts.result.lines)-availableHeight)
 	default:
 		return false
