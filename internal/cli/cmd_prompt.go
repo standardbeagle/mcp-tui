@@ -151,8 +151,7 @@ func printPromptListText(prompts []mcp.Prompt) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15")). // White
-		MarginBottom(1)
+		Foreground(lipgloss.Color("15")) // White
 
 	promptNameStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -164,8 +163,7 @@ func printPromptListText(prompts []mcp.Prompt) {
 
 	countStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")). // Gray
-		Italic(true).
-		MarginTop(1)
+		Italic(true)
 
 	// Header
 	fmt.Println(headerStyle.Render(fmt.Sprintf("Available Prompts (%d)", len(prompts))))
@@ -183,7 +181,7 @@ func printPromptListText(prompts []mcp.Prompt) {
 
 		// Description (if available)
 		if prompt.Description != "" {
-			fmt.Println(descriptionStyle.Render(prompt.Description))
+			fmt.Println(renderLines(descriptionStyle, prompt.Description))
 		}
 		printIcons(prompt.Icons)
 
@@ -266,8 +264,7 @@ func printPromptDetailText(prompt *mcp.Prompt) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15")). // White
-		MarginBottom(1)
+		Foreground(lipgloss.Color("15")) // White
 
 	promptNameStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -275,8 +272,7 @@ func printPromptDetailText(prompt *mcp.Prompt) {
 
 	sectionStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("14")). // Bright Cyan
-		MarginTop(1)
+		Foreground(lipgloss.Color("14")) // Bright Cyan
 
 	descriptionStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("7")). // Light Gray
@@ -298,7 +294,7 @@ func printPromptDetailText(prompt *mcp.Prompt) {
 	if prompt.Description != "" {
 		fmt.Println()
 		fmt.Println(sectionStyle.Render("Description:"))
-		fmt.Println(descriptionStyle.Render(prompt.Description))
+		fmt.Println(renderLines(descriptionStyle, prompt.Description))
 	}
 
 	// Arguments
@@ -417,8 +413,7 @@ func printPromptResultText(promptName string, result *mcp.GetPromptResult) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15")). // White
-		MarginBottom(1)
+		Foreground(lipgloss.Color("15")) // White
 
 	messageRoleStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -426,8 +421,7 @@ func printPromptResultText(promptName string, result *mcp.GetPromptResult) {
 
 	messageContentStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("7")). // Light Gray
-		MarginLeft(2).
-		MarginBottom(1)
+		MarginLeft(2)
 
 	// Header
 	fmt.Println(headerStyle.Render(fmt.Sprintf("Prompt Execution Result: %s", promptName)))
@@ -448,7 +442,7 @@ func printPromptResultText(promptName string, result *mcp.GetPromptResult) {
 
 		// Message content
 		if message.Content != nil {
-			fmt.Println(messageContentStyle.Render(fmt.Sprintf("Content: %v", message.Content)))
+			fmt.Println(renderLines(messageContentStyle, fmt.Sprintf("Content: %v", message.Content)))
 		}
 	}
 }

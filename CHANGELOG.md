@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Untyped parameters**: a parameter with no `type` takes its type from `const` or a non-null `default` (with a note); otherwise the note says any JSON value is accepted.
 
 ### Fixed
+- **Lines of spaces in CLI text output**: `tool`, `prompt` and `resource` list/get/describe output had lines holding only spaces under headers and around sections, and multi-line descriptions were padded with trailing spaces. Those lines are now empty and no line ends in spaces, so output diffs and copies cleanly.
 - **`resource watch` timestamps** carried nanoseconds (`14:02:11.123456789`); they now stop at milliseconds, in text and JSON.
 - **Progress line stuck short of done**: the CLI progress line could stay at `3/4` above a finished result, because the server's last `notifications/progress` can reach the client after the response. The line is now erased when the call returns, and a later notification is not drawn.
 - **Server logs were invisible in the CLI**: `--server-log-level info` asked the server for logs, but nothing printed them unless `--watch-notifications` was also set. In text mode (not `--porcelain` or JSON) each log notification now prints to stderr as `server log [level] logger: data`.

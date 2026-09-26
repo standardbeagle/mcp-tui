@@ -112,8 +112,7 @@ func printResourceListText(resources []mcp.Resource) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15")). // White
-		MarginBottom(1)
+		Foreground(lipgloss.Color("15")) // White
 
 	resourceURIStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -149,7 +148,7 @@ func printResourceListText(resources []mcp.Resource) {
 
 		// Description (if available)
 		if resource.Description != "" {
-			fmt.Println(descriptionStyle.Render(resource.Description))
+			fmt.Println(renderLines(descriptionStyle, resource.Description))
 		}
 
 		// MIME type (if available)
@@ -231,8 +230,7 @@ func printResourceContentText(resourceURI string, contents []mcp.ResourceContent
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15")). // White
-		MarginBottom(1)
+		Foreground(lipgloss.Color("15")) // White
 
 	uriStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -240,8 +238,7 @@ func printResourceContentText(resourceURI string, contents []mcp.ResourceContent
 
 	sectionStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("14")). // Bright Cyan
-		MarginTop(1)
+		Foreground(lipgloss.Color("14")) // Bright Cyan
 
 	mimeTypeStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("6")). // Cyan
@@ -249,8 +246,7 @@ func printResourceContentText(resourceURI string, contents []mcp.ResourceContent
 
 	contentStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("7")). // Light Gray
-		MarginLeft(2).
-		MarginBottom(1)
+		MarginLeft(2)
 
 	// Header
 	fmt.Println(headerStyle.Render("Resource Content"))
@@ -386,7 +382,7 @@ func (rc *ResourceCommand) runTemplatesCommand(cmd *cobra.Command, _ []string) e
 // a header, then one block per template (URI template, display name,
 // description, MIME type, icons).
 func printResourceTemplatesText(templates []mcp.ResourceTemplate) {
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).MarginBottom(1)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	uriStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")) // Bright Blue
 	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).MarginLeft(2)
 	mimeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).MarginLeft(2).Italic(true)
@@ -404,7 +400,7 @@ func printResourceTemplatesText(templates []mcp.ResourceTemplate) {
 			fmt.Println(descStyle.Render("Name: " + display))
 		}
 		if tpl.Description != "" {
-			fmt.Println(descStyle.Render(tpl.Description))
+			fmt.Println(renderLines(descStyle, tpl.Description))
 		}
 		if tpl.MimeType != "" {
 			fmt.Println(mimeStyle.Render("Type: " + tpl.MimeType))

@@ -239,8 +239,7 @@ func printToolListText(tools []mcp.Tool) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15")). // White
-		MarginBottom(1)
+		Foreground(lipgloss.Color("15")) // White
 
 	toolNameStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -252,8 +251,7 @@ func printToolListText(tools []mcp.Tool) {
 
 	countStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")). // Gray
-		Italic(true).
-		MarginTop(1)
+		Italic(true)
 
 	// Header
 	fmt.Println(headerStyle.Render(fmt.Sprintf("Available Tools (%d)", len(tools))))
@@ -288,7 +286,7 @@ func printToolListText(tools []mcp.Tool) {
 
 		// Description on next line, indented
 		if tool.Description != "" {
-			fmt.Println(descriptionStyle.Render(tool.Description))
+			fmt.Println(renderLines(descriptionStyle, tool.Description))
 		}
 		printIcons(tool.Icons)
 	}
@@ -297,7 +295,7 @@ func printToolListText(tools []mcp.Tool) {
 	fmt.Println()
 	fmt.Println(countStyle.Render(fmt.Sprintf("Total: %d tools", len(tools))))
 	if anyBadges {
-		fmt.Println(countStyle.UnsetMarginTop().Render(toolBadgeLegend))
+		fmt.Println(countStyle.Render(toolBadgeLegend))
 	}
 }
 
@@ -428,7 +426,7 @@ func printToolDetailText(foundTool *mcp.Tool) {
 	if foundTool.Description != "" {
 		fmt.Println()
 		fmt.Println(labelStyle.Render("Description:"))
-		fmt.Println(descriptionStyle.Render("  " + foundTool.Description))
+		fmt.Println(renderLines(descriptionStyle.MarginLeft(2), foundTool.Description))
 	}
 
 	printSchemaSection(labelStyle.Render("Input Schema:"), foundTool.InputSchema)
