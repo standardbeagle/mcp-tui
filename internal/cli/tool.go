@@ -660,11 +660,41 @@ func (tc *ToolCommand) lookupCallTool(ctx context.Context, toolName string, show
 func convertCallArguments(
 	cmd *cobra.Command, toolName string, matchedTool *mcp.Tool, rawArgs []rawCallArg, showNotes bool,
 ) (map[string]interface{}, error) {
+	toolArgs, inputSchema, err := convertRawArguments(toolName, matchedTool, rawArgs, showNotes)
+	if err != nil {
+		return nil, err
+	}
+
+	skipArgValidation, err := cmd.Flags().GetBool(flagSkipArgValidation)
+	if err != nil {
+		return nil, err
+	}
+	if validateErr := inputSchema.Validate(toolArgs); validateErr != nil {
+		if !skipArgValidation {
+			if showNotes {
+				fmt.Fprintf(os.Stderr, "❌ Arguments do not match the tool's input schema\n")
+			}
+			return nil, fmt.Errorf("tool %q: %w (--%s sends them anyway)", toolName, validateErr, flagSkipArgValidation)
+		}
+		debug.Warn("Sending tool arguments that do not match the input schema",
+			debug.F("tool", toolName), debug.F("violation", validateErr.Error()))
+		// On stderr whatever the output format, like the other warnings.
+		fmt.Fprintf(os.Stderr, "⚠ Sending anyway (--%s): %v\n", flagSkipArgValidation, validateErr)
+	}
+	return toolArgs, nil
+}
+
+// convertRawArguments converts each raw argument to the type matchedTool's
+// input schema declares for it, returning the parsed schema so the caller
+// decides how a whole-schema violation is handled.
+func convertRawArguments(
+	toolName string, matchedTool *mcp.Tool, rawArgs []rawCallArg, showNotes bool,
+) (map[string]interface{}, inputschema.Schema, error) {
 	// A schema that does not resolve (a remote $ref, a dangling local one)
 	// is reported rather than treated as permissive.
 	inputSchema, schemaErr := inputschema.Parse(toolName, matchedTool.InputSchema)
 	if schemaErr != nil {
-		return nil, fmt.Errorf("tool %q: %w", toolName, schemaErr)
+		return nil, inputSchema, fmt.Errorf("tool %q: %w", toolName, schemaErr)
 	}
 	if inputSchema.Note != "" && showNotes {
 		fmt.Fprintf(os.Stderr, "ℹ️  Input schema: %s; values are read as JSON\n", inputSchema.Note)
@@ -686,28 +716,11 @@ func convertCallArguments(
 			if showNotes {
 				fmt.Fprintf(os.Stderr, "❌ Invalid argument\n")
 			}
-			return nil, convErr
+			return nil, inputSchema, convErr
 		}
 		toolArgs[raw.key] = parsedValue
 	}
-
-	skipArgValidation, err := cmd.Flags().GetBool(flagSkipArgValidation)
-	if err != nil {
-		return nil, err
-	}
-	if validateErr := inputSchema.Validate(toolArgs); validateErr != nil {
-		if !skipArgValidation {
-			if showNotes {
-				fmt.Fprintf(os.Stderr, "❌ Arguments do not match the tool's input schema\n")
-			}
-			return nil, fmt.Errorf("tool %q: %w (--%s sends them anyway)", toolName, validateErr, flagSkipArgValidation)
-		}
-		debug.Warn("Sending tool arguments that do not match the input schema",
-			debug.F("tool", toolName), debug.F("violation", validateErr.Error()))
-		// On stderr whatever the output format, like the other warnings.
-		fmt.Fprintf(os.Stderr, "⚠ Sending anyway (--%s): %v\n", flagSkipArgValidation, validateErr)
-	}
-	return toolArgs, nil
+	return toolArgs, inputSchema, nil
 }
 
 // flagTask is tool call's --task flag.
