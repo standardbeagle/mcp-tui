@@ -55,7 +55,8 @@ func main() {
 	err := rootCmd.ExecuteContext(ctx)
 	cli.CloseClients()
 	if err != nil {
-		debug.Error("Application failed", debug.F("error", err))
+		// Cobra has printed the error; the log keeps it for --debug only.
+		debug.Debug("Application failed", debug.F("error", err))
 		exitProcess(1)
 	}
 	debug.Flush()
@@ -117,6 +118,9 @@ Examples:
 
 			debug.InitializeLogging(logLevel, debugMode)
 
+			// Flags and args parsed; any error from here on is a run-time
+			// failure, which the usage block would only bury.
+			cmd.SilenceUsage = true
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {

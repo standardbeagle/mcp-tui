@@ -284,7 +284,7 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 
 	conn, err := (&officialMCP.CommandTransport{Command: cmd, TerminateDuration: stdioShutdownGrace}).Connect(ctx)
 	if err != nil {
-		debug.Error("Enhanced STDIO: MCP connection failed", debug.F("error", err))
+		debug.Debug("Enhanced STDIO: MCP connection failed", debug.F("error", err))
 
 		// The SDK's CommandTransport only fails here before or at process
 		// start; once the process is running it returns a connection and any

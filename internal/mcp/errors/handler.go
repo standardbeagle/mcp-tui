@@ -179,15 +179,9 @@ func (eh *ErrorHandler) logClassifiedError(classified *ClassifiedError) {
 		fields = append(fields, debug.F("retryAfter", *classified.RetryAfter))
 	}
 
-	// Log with appropriate level based on severity
-	switch classified.Severity {
-	case SeverityInfo:
-		debug.Info("Classified error: "+classified.Message, fields...)
-	case SeverityWarning:
-		debug.Warn("Classified warning: "+classified.Message, fields...)
-	case SeverityError, SeverityCritical:
-		debug.Error("Classified error: "+classified.Message, fields...)
-	}
+	// The classified error is returned to the caller, which reports it;
+	// logging it above debug would print every failure twice.
+	debug.Debug("Classified "+classified.Severity.String()+": "+classified.Message, fields...)
 }
 
 // GetStatistics returns current error statistics
