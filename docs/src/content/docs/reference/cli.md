@@ -170,8 +170,10 @@ mcp-tui [global-flags] resource <list|get|templates|complete|watch> [args]
 ```
 
 - `resource list` — list all resources.
-- `resource get <uri>` — read and print a resource (alias: `read`). Like
-  `tool call`, it ends with the input rounds and `Served by` when there are any.
+- `resource get <uri>` — read and print a resource (alias: `read`). Binary
+  (`blob`) content prints its MIME type and size, e.g. `Binary content: 223
+  bytes`; `--format json` carries the bytes as base64 in `blob`, as on the
+  wire. Like `tool call`, it ends with the input rounds and `Served by` when there are any.
   On `2026-07-28` it then prints how the SDK served the read, for example
   `Cache: cached · ttl 1m0s · private` (`cache` with `ttlMs`, `cacheScope` and
   `fromCache` in JSON). The SDK answers a repeated read from its TTL cache

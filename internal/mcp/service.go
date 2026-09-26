@@ -1594,7 +1594,7 @@ func (s *service) ReadResource(ctx context.Context, uri string) (*ReadResourceRe
 				URI:      content.URI,
 				MimeType: content.MIMEType,
 				Text:     content.Text,
-				Blob:     string(content.Blob), // Convert []byte to string
+				Blob:     content.Blob,
 			})
 		}
 	}

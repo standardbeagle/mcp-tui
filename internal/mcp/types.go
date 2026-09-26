@@ -444,7 +444,9 @@ type ResourceContents struct {
 	URI      string `json:"uri"`
 	MimeType string `json:"mimeType,omitempty"`
 	Text     string `json:"text,omitempty"`
-	Blob     string `json:"blob,omitempty"`
+	// Blob holds the decoded bytes; encoding/json writes them as base64,
+	// the spec wire form.
+	Blob []byte `json:"blob,omitempty"`
 }
 
 // Prompt represents an MCP prompt

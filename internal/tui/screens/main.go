@@ -2953,9 +2953,8 @@ func (ms *MainScreen) renderResourceContents(builder *strings.Builder) {
 				builder.WriteString(contentStyle.Render(line))
 				builder.WriteString("\n")
 			}
-		} else if content.Blob != "" {
-			// Binary content - show summary
-			builder.WriteString(contentStyle.Render("Binary content (base64 encoded)"))
+		} else if len(content.Blob) > 0 {
+			builder.WriteString(contentStyle.Render("Binary content"))
 			builder.WriteString("\n")
 			builder.WriteString(metaStyle.Render(fmt.Sprintf("Size: %d bytes", len(content.Blob))))
 			builder.WriteString("\n")

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -227,8 +226,8 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 }
 
 // printResourceContentText renders the `resource get` text output: a header,
-// the resource URI, then one block per content item (text, or a hex dump
-// for binary content).
+// the resource URI, then one block per content item (text, or the size of
+// binary content).
 func printResourceContentText(resourceURI string, contents []mcp.ResourceContents) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
@@ -292,10 +291,8 @@ func printResourceContentText(resourceURI string, contents []mcp.ResourceContent
 			// Text content
 			fmt.Println(contentStyle.Render("Text content:"))
 			fmt.Println(content.Text)
-		case content.Blob != "":
-			// Binary content - show hex dump of first few bytes
-			fmt.Println(contentStyle.Render("Binary content:"))
-			displayBinaryContent(content.Blob)
+		case len(content.Blob) > 0:
+			fmt.Println(contentStyle.Render(fmt.Sprintf("Binary content: %d bytes (base64 with --format json)", len(content.Blob))))
 		default:
 			fmt.Println(contentStyle.Render("(No content data available)"))
 		}
@@ -586,60 +583,4 @@ func (rc *ResourceCommand) runWatchCommand(cmd *cobra.Command, args []string) er
 		watchErr = rc.HandleError(err, "unsubscribe from resource")
 	}
 	return watchErr
-}
-
-// displayBinaryContent shows a hex dump of binary content
-func displayBinaryContent(blobData string) {
-	const maxBytes = 256 // Show first 256 bytes
-	const bytesPerLine = 16
-
-	// Decode base64 blob data
-	data, err := base64.StdEncoding.DecodeString(blobData)
-	if err != nil {
-		fmt.Printf("Error decoding binary data: %v\n", err)
-		return
-	}
-
-	dataToShow := data
-	if len(data) > maxBytes {
-		dataToShow = data[:maxBytes]
-	}
-
-	for i := 0; i < len(dataToShow); i += bytesPerLine {
-		// Offset
-		fmt.Printf("%08x  ", i)
-
-		// Hex bytes
-		end := i + bytesPerLine
-		if end > len(dataToShow) {
-			end = len(dataToShow)
-		}
-
-		for j := i; j < end; j++ {
-			fmt.Printf("%02x ", dataToShow[j])
-		}
-
-		// Padding for incomplete lines
-		for j := end; j < i+bytesPerLine; j++ {
-			fmt.Print("   ")
-		}
-
-		// ASCII representation
-		fmt.Print(" |")
-		for j := i; j < end; j++ {
-			if dataToShow[j] >= 32 && dataToShow[j] <= 126 {
-				fmt.Printf("%c", dataToShow[j])
-			} else {
-				fmt.Print(".")
-			}
-		}
-		fmt.Print("|")
-		fmt.Println()
-	}
-
-	if len(data) > maxBytes {
-		fmt.Printf("... (%d more bytes)\n", len(data)-maxBytes)
-	}
-
-	fmt.Printf("\nTotal size: %d bytes\n", len(data))
 }
