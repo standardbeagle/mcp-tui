@@ -46,6 +46,31 @@ func TestFromRequest_LoggingMessage(t *testing.T) {
 	}
 }
 
+// ServerLogLine keeps the whole log record, where the preview truncates it,
+// and ignores notifications that are not logs.
+func TestServerLogLine(t *testing.T) {
+	now := time.Date(2026, 9, 26, 14, 2, 11, 0, time.UTC)
+	longStep := strings.Repeat("paged the on-call engineer; ", 4)
+	entry, ok := FromRequest("notifications/message", makeReq(&officialMCP.LoggingMessageParams{
+		Level: "info", Logger: "acme.desk", Data: map[string]any{"ticket": "T-1042", "step": longStep},
+	}), now)
+	if !ok {
+		t.Fatal("FromRequest ok=false")
+	}
+	line, ok := ServerLogLine(&entry)
+	want := `server log [info] acme.desk: {"step":"` + longStep + `","ticket":"T-1042"}`
+	if !ok || line != want {
+		t.Errorf("ServerLogLine = %q, %v; want %q", line, ok, want)
+	}
+
+	progress, _ := FromRequest("notifications/progress", makeReq(&officialMCP.ProgressNotificationParams{
+		ProgressToken: "call-7", Progress: 2, Total: 4,
+	}), now)
+	if line, ok := ServerLogLine(&progress); ok {
+		t.Errorf("ServerLogLine(progress) = %q, want no line", line)
+	}
+}
+
 // TestFromRequest_ProgressWithTotal renders progress as "n/total" so the
 // user can read the bar at a glance. Total=0 maps to "?" because the spec
 // says zero means unknown.

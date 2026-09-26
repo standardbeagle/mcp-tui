@@ -523,7 +523,24 @@ func (c *BaseCommand) setupService(cmd *cobra.Command, porcelainMode bool) error
 	// SDK receiving goroutine via the service's notifications middleware,
 	// which is installed at createClient time.
 	c.configureWatchNotifications(cmd)
+	c.configureServerLogOutput(cmd, porcelainMode)
 	return nil
+}
+
+// configureServerLogOutput prints the server's log notifications to stderr
+// when --server-log-level asked for them: requesting a level and then
+// showing nothing looks like a server that never logs. Text mode only, not
+// --porcelain; --watch-notifications already prints them.
+func (c *BaseCommand) configureServerLogOutput(cmd *cobra.Command, porcelainMode bool) {
+	if flagString(cmd, "server-log-level") == "" || porcelainMode ||
+		c.GetOutputFormat() != OutputFormatText || flagBool(cmd, "watch-notifications") {
+		return
+	}
+	c.service.AddNotificationObserver(func(e notifications.Entry) {
+		if line, ok := notifications.ServerLogLine(&e); ok {
+			fmt.Fprintln(os.Stderr, line)
+		}
+	})
 }
 
 // configureWatchNotifications registers a notification observer that writes

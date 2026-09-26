@@ -94,13 +94,26 @@ func describeParams(t Type, params officialMCP.Params) (level, preview string) {
 // json.RawMessage, etc.). We marshal it to JSON and truncate so the preview
 // stays single-line even if the server logged a verbose object.
 func formatLoggingData(logger string, data any) string {
-	var b strings.Builder
-	if logger != "" {
-		b.WriteString(logger)
-		b.WriteString(": ")
+	return truncate(loggingText(logger, data), previewMaxLen)
+}
+
+// loggingText is "logger: data", or just the data when no logger is named.
+func loggingText(logger string, data any) string {
+	if logger == "" {
+		return stringifyData(data)
 	}
-	b.WriteString(stringifyData(data))
-	return truncate(b.String(), previewMaxLen)
+	return logger + ": " + stringifyData(data)
+}
+
+// ServerLogLine renders a notifications/message entry in full, e.g.
+// "server log [info] acme.desk: Escalated T-1042 to on-call". ok is false
+// for any other kind of entry.
+func ServerLogLine(e *Entry) (line string, ok bool) {
+	p, isLog := e.Raw.(*officialMCP.LoggingMessageParams)
+	if e.Type != TypeMessage || !isLog || p == nil {
+		return "", false
+	}
+	return fmt.Sprintf("server log [%s] %s", p.Level, loggingText(p.Logger, p.Data)), true
 }
 
 // stringifyData renders the LoggingMessageParams.Data field. Strings are

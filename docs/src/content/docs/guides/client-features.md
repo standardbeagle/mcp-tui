@@ -88,7 +88,9 @@ mcp-tui --roots-file roots.json ... tool call reindex
 
 Servers stream notifications — logging, progress, list-changed, resource
 updates, cancellations, task status. Servers send log notifications only when
-asked: pass `--server-log-level <level>` (`debug` ... `emergency`).
+asked: pass `--server-log-level <level>` (`debug` ... `emergency`). In CLI
+text mode the logs then print to stderr as they arrive, one line each:
+`server log [info] acme.desk: escalate_ticket T-1042: Paging the on-call engineer`.
 
 - **CLI** — `--watch-notifications` writes each notification to stderr as a
   one-line summary, so a pipeline can react to progress or list-changed events
