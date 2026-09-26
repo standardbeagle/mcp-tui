@@ -1331,7 +1331,12 @@ func (s *service) toolResult(
 	// validator round-trips it for normalisation. Validation is silent when
 	// schema is nil (most current servers) so the cost on the no-schema path
 	// is one map lookup.
-	violations := outputvalidation.Validate(outputSchema, result.StructuredContent)
+	// An error result reports the failure in its content; the outputSchema
+	// describes successful results, so only those are validated.
+	var violations []string
+	if !result.IsError {
+		violations = outputvalidation.Validate(outputSchema, result.StructuredContent)
+	}
 	if len(violations) > 0 {
 		debug.Warn("Tool result violates outputSchema",
 			debug.F("tool", toolName),

@@ -328,3 +328,53 @@ func containsAny(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// An error result (isError:true) reports a failure in its content; the
+// outputSchema describes successful results only, as the reference SDKs
+// treat it. Flagging the missing structuredContent there is a false
+// positive against a correct server.
+func TestService_CallTool_ErrorResult_NotValidatedAgainstOutputSchema(t *testing.T) {
+	ctx := context.Background()
+	clientT, serverT := officialMCP.NewInMemoryTransports()
+	server := officialMCP.NewServer(&officialMCP.Implementation{Name: "support-desk", Version: "1.0.0"}, nil)
+	server.AddTool(
+		&officialMCP.Tool{
+			Name:        "search_tickets",
+			InputSchema: &jsonschema.Schema{Type: "object"},
+			OutputSchema: &jsonschema.Schema{
+				Type:       "object",
+				Required:   []string{"tickets"},
+				Properties: map[string]*jsonschema.Schema{"tickets": {Type: "array"}},
+			},
+		},
+		func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+			return &officialMCP.CallToolResult{
+				IsError: true,
+				Content: []officialMCP.Content{&officialMCP.TextContent{Text: "limit must be at most 50"}},
+			}, nil
+		},
+	)
+	ss, err := server.Connect(ctx, serverT, nil)
+	if err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	defer ss.Close()
+
+	svc := NewService().(*service)
+	svc.transportFactory = &fakeTransportFactory{transport: clientT}
+	if err := svc.Connect(ctx, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}); err != nil {
+		t.Fatalf("svc.Connect: %v", err)
+	}
+	defer func() { _ = svc.Disconnect() }()
+
+	result, err := svc.CallTool(ctx, CallToolRequest{Name: "search_tickets"})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected the error result to reach the caller")
+	}
+	if len(result.OutputViolations) != 0 {
+		t.Errorf("OutputViolations = %v, want none for an isError result", result.OutputViolations)
+	}
+}
