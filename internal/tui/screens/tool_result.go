@@ -1,7 +1,6 @@
 package screens
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -33,9 +32,9 @@ const (
 type toolResult struct {
 	call *mcp.CallToolResult // nil until a call completes
 	text string              // pretty-printed content, what Ctrl+C copies
-	// lines are text split for display; wrapped are those lines wrapped to
-	// wrapWidth, the panel's inner width, and are what scrolls. scroll is
-	// the first wrapped line shown.
+	// lines are text's lines as drawn (JSON coloured); wrapped are those
+	// lines wrapped to wrapWidth, the panel's inner width, and are what
+	// scrolls. scroll is the first wrapped line shown.
 	lines     []string
 	wrapped   []string
 	wrapWidth int
@@ -55,12 +54,13 @@ func (r *toolResult) shown() bool {
 // set replaces the shown result with call's, scrolled to the top.
 func (r *toolResult) set(call *mcp.CallToolResult) {
 	*r = toolResult{call: call}
-	if len(call.Content) == 0 {
-		return
-	}
-	r.text = prettyPrintResultContent(call.Content)
+	var shown []string
+	r.text, shown = formatResultBody(call)
 	// A tab's width is the terminal's choice; spaces keep the wrapping true.
-	r.lines = strings.Split(strings.ReplaceAll(r.text, "\t", "    "), "\n")
+	r.lines = make([]string, len(shown))
+	for i, line := range shown {
+		r.lines[i] = strings.ReplaceAll(line, "\t", "    ")
+	}
 	r.parseFields()
 }
 
@@ -118,38 +118,6 @@ func (ts *ToolScreen) resultViewport() (width, height int) {
 	width = max(1, termWidth-resultPanelFrameWidth)
 	probe := ts.renderHeader() + ts.renderResultBlock(width, 1) + ts.renderFooter()
 	return width, max(resultMinHeight, 1+termHeight-lipgloss.Height(probe))
-}
-
-// prettyPrintResultContent renders the call's content blocks, pretty
-// printing text blocks that hold JSON.
-func prettyPrintResultContent(contents []mcp.Content) string {
-	var resultText strings.Builder
-	for i, content := range contents {
-		if i > 0 {
-			resultText.WriteString("\n\n")
-		}
-		if content.Type == "text" {
-			text := content.Text
-			// Try to pretty-print JSON
-			var jsonData interface{}
-			if err := json.Unmarshal([]byte(text), &jsonData); err == nil {
-				if formatted, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
-					resultText.Write(formatted)
-				} else {
-					resultText.WriteString(text)
-				}
-			} else {
-				resultText.WriteString(text)
-			}
-		} else {
-			if jsonBytes, err := json.MarshalIndent(content, "", "  "); err == nil {
-				resultText.Write(jsonBytes)
-			} else {
-				fmt.Fprintf(&resultText, "%v", content)
-			}
-		}
-	}
-	return resultText.String()
 }
 
 // handleResultScrollKey scrolls the result body whatever has focus; Home
@@ -394,13 +362,19 @@ func renderViolationsBanner(violations []string) string {
 	return b.String()
 }
 
-// parseFields extracts copyable fields from a JSON body.
+// parseFields extracts copyable fields from structuredContent, else from a
+// body that is one JSON text block.
 func (r *toolResult) parseFields() {
 	r.fields = []resultField{}
+	if r.call.StructuredContent == nil && r.text == "" {
+		return
+	}
 
-	// Try to parse as JSON
-	var data interface{}
-	if err := json.Unmarshal([]byte(r.text), &data); err != nil {
+	data, ok := normalizeJSON(r.call.StructuredContent)
+	if r.call.StructuredContent == nil || !ok {
+		data, ok = parseJSONText(r.text)
+	}
+	if !ok {
 		// Not JSON, treat as single text field
 		r.fields = append(r.fields, resultField{
 			path:  "result",
