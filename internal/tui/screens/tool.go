@@ -2065,8 +2065,32 @@ func (ts *ToolScreen) renderCLICommandBox(width int) string {
 		Width(width - 2).
 		Foreground(lipgloss.Color("15")) // White text
 
-	builder.WriteString(cliCommandStyle.Render(ts.cliCommand))
+	builder.WriteString(cliCommandStyle.Render(wrapAtSpaces(ts.cliCommand, width-4))) // border and padding
 	builder.WriteString("\n")
+	return builder.String()
+}
+
+// wrapAtSpaces breaks text into lines of at most width cells at its spaces
+// only. lipgloss also breaks after a hyphen, which showed an option such
+// as -stdio as the two words - and stdio. A word longer than a line is
+// left for the box to cut.
+func wrapAtSpaces(text string, width int) string {
+	var builder strings.Builder
+	lineWidth := 0
+	for i, word := range strings.Split(text, " ") {
+		w := lipgloss.Width(word)
+		switch {
+		case i == 0:
+		case lineWidth+1+w > width:
+			builder.WriteString("\n")
+			lineWidth = 0
+		default:
+			builder.WriteString(" ")
+			lineWidth++
+		}
+		builder.WriteString(word)
+		lineWidth += w
+	}
 	return builder.String()
 }
 

@@ -199,16 +199,25 @@ func TestToolScreen_CLICommandIsVisibleWithARealForm(t *testing.T) {
 					return r
 				}, s)
 			}
-			if command := ts.generateCLICommand(); !strings.Contains(squeeze(boxText(plain)), squeeze(command)) {
+			box := boxLines(plain)
+			command := ts.generateCLICommand()
+			if !strings.Contains(squeeze(strings.Join(box, "")), squeeze(command)) {
 				t.Errorf("command %q not shown whole:\n%s", command, plain)
+			}
+			// Wrapped only between words: a break after the hyphen of
+			// -stdio read as the two words - and stdio.
+			for _, word := range strings.Fields(command) {
+				if !slices.ContainsFunc(box, func(line string) bool { return strings.Contains(line, word) }) {
+					t.Errorf("word %q split across lines:\n%s", word, strings.Join(box, "\n"))
+				}
 			}
 		})
 	}
 }
 
-// boxText is the text inside the box under view's "Equivalent CLI command"
-// heading, its lines joined: the wrapped command read back as one.
-func boxText(view string) string {
+// boxLines are the lines inside the box under view's "Equivalent CLI
+// command" heading.
+func boxLines(view string) []string {
 	lines := strings.Split(view, "\n")
 	for i, line := range lines {
 		at := strings.Index(line, "Equivalent CLI command")
@@ -225,7 +234,7 @@ func boxText(view string) string {
 			}
 			inside = append(inside, strings.Trim(strings.TrimSpace(row), "│"))
 		}
-		return strings.Join(inside, "")
+		return inside
 	}
-	return ""
+	return nil
 }
