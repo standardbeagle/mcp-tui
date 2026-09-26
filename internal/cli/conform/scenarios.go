@@ -59,6 +59,10 @@ type Target struct {
 	SamplingTriggerArgs []string
 	ElicitTriggerArgs   []string
 
+	// ToolName is the tool verify.seterror-content calls, as verify's
+	// --tool; empty means that probe's default.
+	ToolName string
+
 	// ToolArguments converts trigger argument pairs into a tool's
 	// arguments against its input schema, rejecting pairs that do not
 	// convert or validate. The CLI supplies `tool call`'s conversion.
@@ -318,9 +322,10 @@ func (r *Runner) dispatch(ctx context.Context, name string) ScenarioResult {
 // because they didn't supply --cmd.
 func (r *Runner) runVerifyProbe(ctx context.Context, probe string) ScenarioResult {
 	tt := verify.Target{
-		URL:     r.target.URL,
-		Command: r.target.Command,
-		Args:    r.target.Args,
+		URL:      r.target.URL,
+		Command:  r.target.Command,
+		Args:     r.target.Args,
+		ToolName: r.target.ToolName,
 	}
 	if problem := verify.TargetProblem(probe, &tt); problem != "" {
 		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: " + problem}
@@ -329,8 +334,11 @@ func (r *Runner) runVerifyProbe(ctx context.Context, probe string) ScenarioResul
 }
 
 // scenarioFromProbe maps a probe's outcome onto a scenario result, keeping
-// the error and fix of a failure or a warning.
+// the error and fix of a failure or a warning, and the reason of a skip.
 func scenarioFromProbe(pr verify.ProbeResult) ScenarioResult {
+	if pr.Skipped {
+		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: " + pr.Error}
+	}
 	res := ScenarioResult{Pass: pr.Pass, Warn: pr.Warn}
 	if !pr.Pass || pr.Warn {
 		res.Error = pr.Error

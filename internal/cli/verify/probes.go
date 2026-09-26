@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -505,7 +506,8 @@ func truncate(s string, n int) string {
 //  2. The result has at least one Content entry with non-empty Text.
 //
 // If the user's target tool doesn't naturally fail, the probe reports
-// inconclusive (Pass=false with a Fix that explains the misconfig).
+// inconclusive (Pass=false with a Fix that explains the misconfig). With
+// no ToolName and no "echo" tool on the server, it is skipped.
 func ProbeSetErrorContent(ctx context.Context, t *Target) ProbeResult {
 	const name = "seterror-content"
 	if t.Command == "" {
@@ -539,6 +541,20 @@ func ProbeSetErrorContent(ctx context.Context, t *Target) ProbeResult {
 		}
 	}
 	defer func() { disconnectProbeService(name, svc) }()
+
+	// "echo" is only a guess at a tool that fails by design; a server
+	// without one leaves the probe nothing to check.
+	if t.ToolName == "" {
+		tools, err := svc.ListTools(ctx)
+		if err != nil {
+			return ProbeResult{Name: name, Pass: false, Error: fmt.Sprintf("tools/list failed: %v", err),
+				Fix: "confirm the server answers tools/list"}
+		}
+		if !slices.ContainsFunc(tools, func(tool mcp.Tool) bool { return tool.Name == toolName }) {
+			return ProbeResult{Name: name, Pass: true, Skipped: true,
+				Error: fmt.Sprintf("server has no %q tool; name a tool that fails by design with --tool", toolName)}
+		}
+	}
 
 	callCtx, callCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer callCancel()

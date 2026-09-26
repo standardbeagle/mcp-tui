@@ -318,6 +318,9 @@ func TestConformCommand_BuildTarget_PreservesStubFlags(t *testing.T) {
 	if err := cmd.Flags().Set("completion-prefix", "Eng"); err != nil {
 		t.Fatal(err)
 	}
+	if err := cmd.Flags().Set("tool", "lookup_customer"); err != nil {
+		t.Fatal(err)
+	}
 
 	target, err := c.buildConformTarget(cmd, nil)
 	if err != nil {
@@ -346,6 +349,9 @@ func TestConformCommand_BuildTarget_PreservesStubFlags(t *testing.T) {
 	}
 	if target.CompletionArgumentValue != "Eng" {
 		t.Errorf("CompletionArgumentValue = %q", target.CompletionArgumentValue)
+	}
+	if target.ToolName != "lookup_customer" {
+		t.Errorf("ToolName = %q, want lookup_customer", target.ToolName)
 	}
 }
 

@@ -86,6 +86,8 @@ Exit codes:
 		"Override the tool name used to trigger elicitation/create (default: startElicitation)")
 	cmd.Flags().StringArray("elicit-trigger-args", nil,
 		"Argument for the elicitation trigger tool as key=value or key:=<json>, as in `tool call` (repeatable)")
+	cmd.Flags().String("tool", "",
+		"(verify.seterror-content) Tool that fails by design, as verify's --tool (default: \"echo\", skipped when absent)")
 	cmd.Flags().String("completion-prompt", "",
 		"Prompt name (or resource template URI when --completion-resource is set) for completion/complete")
 	cmd.Flags().Bool("completion-resource", false,
@@ -203,6 +205,7 @@ func applyConformFlags(cmd *cobra.Command, target *conform.Target) {
 	target.SamplingTriggerArgs = flagStringArray(cmd, "sampling-trigger-args")
 	target.ElicitTriggerArgs = flagStringArray(cmd, "elicit-trigger-args")
 	target.ToolArguments = triggerToolArguments
+	target.ToolName = flagString(cmd, "tool")
 	if v := flagString(cmd, "completion-prompt"); v != "" {
 		target.CompletionPromptName = v
 	}

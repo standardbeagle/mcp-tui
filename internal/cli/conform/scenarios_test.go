@@ -362,6 +362,8 @@ func TestScenarioFromProbe(t *testing.T) {
 		{verify.ProbeResult{Pass: false, Error: "boom", Fix: "mend"}, ScenarioResult{Error: "boom", Detail: "fix: mend"}},
 		{verify.ProbeResult{Pass: true, Warn: true, Error: orderChanged, Fix: "sort"},
 			ScenarioResult{Pass: true, Warn: true, Error: orderChanged, Detail: "fix: sort"}},
+		{verify.ProbeResult{Pass: true, Skipped: true, Error: "no tool to call"},
+			ScenarioResult{Pass: true, Skipped: true, Error: "skipped: no tool to call"}},
 	}
 	for _, c := range cases {
 		if got := scenarioFromProbe(c.probe); got != c.want {
