@@ -49,3 +49,37 @@ func TestRunner_ToolsCall_SkipsWhenEveryToolNeedsArguments(t *testing.T) {
 		t.Errorf("want a skip about arguments, got %+v", res)
 	}
 }
+
+// addRejectingTool registers a tool whose schema accepts {} but whose
+// handler reports a tool error for it, like lookup_customer given neither
+// customer_id nor email.
+func addRejectingTool(s *officialMCP.Server, name string) {
+	s.AddTool(&officialMCP.Tool{Name: name, InputSchema: ticketSchema(false)},
+		func(_ context.Context, _ *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+			return &officialMCP.CallToolResult{IsError: true,
+				Content: []officialMCP.Content{&officialMCP.TextContent{Text: "give a customer_id or an email"}}}, nil
+		})
+}
+
+// A tool error for the empty arguments does not show a tool running;
+// tools.call moves on to the next candidate that answers without one.
+func TestRunner_ToolsCall_MovesPastToolErrors(t *testing.T) {
+	res := runToolsCall(t, func(s *officialMCP.Server) {
+		addRejectingTool(s, "a_rejects_empty")
+		addTicketTool(s, "b_takes_nothing", false)
+	})
+	if !res.Pass || res.Skipped || !strings.Contains(res.Detail, "b_takes_nothing") {
+		t.Errorf("want a pass calling b_takes_nothing, got %+v", res)
+	}
+}
+
+// When every candidate answers the empty arguments with a tool error, no
+// tool ran, so tools.call skips and says which tools refused.
+func TestRunner_ToolsCall_SkipsWhenEveryCandidateErrors(t *testing.T) {
+	res := runToolsCall(t, func(s *officialMCP.Server) {
+		addRejectingTool(s, "rejects_empty")
+	})
+	if !res.Skipped || !strings.Contains(res.Error, "rejects_empty") {
+		t.Errorf("want a skip naming rejects_empty, got %+v", res)
+	}
+}

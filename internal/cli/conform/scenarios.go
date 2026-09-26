@@ -279,9 +279,9 @@ func (r *Runner) dispatch(ctx context.Context, name string) ScenarioResult {
 	case "tools.list":
 		return r.scenarioToolsList(ctx)
 	case "tools.call":
-		return r.scenarioToolsCall(ctx, false)
+		return r.scenarioToolsCall(ctx)
 	case "tools.call.isError":
-		return r.scenarioToolsCall(ctx, true)
+		return r.scenarioToolsCallIsError(ctx)
 	case "resources.list":
 		return r.scenarioResourcesList(ctx)
 	case "resources.read":
@@ -384,110 +384,112 @@ func (r *Runner) scenarioToolsList(ctx context.Context) ScenarioResult {
 	}
 }
 
-// scenarioToolsCall picks the first available tool and invokes it. When
-// expectIsError is true, the scenario only passes if the result has
-// IsError=true with non-empty Content (validates the v1.6.0 contract). When
-// expectIsError is false, the scenario picks a non-destructive tool (or
-// any tool, if no annotations are exposed) and asserts a non-error result.
-//
-// If the server has no tools, both variants are Skipped.
-func (r *Runner) scenarioToolsCall(ctx context.Context, expectIsError bool) ScenarioResult {
-	svc, err := r.ensureConnected(ctx)
-	if err != nil {
-		return failResult(err.Error(), "")
+// scenarioToolsCall calls tools a call without arguments can run —
+// non-destructive (mcp-tui treats a nil destructiveHint as not destructive,
+// see Tool.IsDestructive) and with an input schema that accepts {} — in
+// order, and passes on the first that answers without a tool error. A tool
+// error for the empty arguments shows the tool refusing them, not running,
+// so the next candidate is tried; when every candidate refuses, or there is
+// none, the scenario skips.
+func (r *Runner) scenarioToolsCall(ctx context.Context) ScenarioResult {
+	svc, tools, skip := r.listToolsForCall(ctx)
+	if tools == nil {
+		return skip
 	}
-	tools, err := svc.ListTools(ctx)
-	if err != nil {
-		return failResult("ListTools failed: "+err.Error(), "")
+	var refused []string
+	for i := range tools {
+		tool := &tools[i]
+		if tool.IsDestructive() || argumentsRequired(tool) != "" {
+			continue
+		}
+		res, fail := callWithoutArguments(ctx, svc, tool.Name)
+		if res == nil {
+			return fail
+		}
+		if !res.IsError {
+			return ScenarioResult{Pass: true,
+				Detail: fmt.Sprintf("tool %q returned %d content blocks", tool.Name, len(res.Content))}
+		}
+		refused = append(refused, fmt.Sprintf("%s: %s", tool.Name, firstText(res)))
 	}
-	if len(tools) == 0 {
-		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: server has no tools"}
-	}
-
-	pick := pickScenarioTool(tools, expectIsError)
-	if pick == nil {
+	if len(refused) == 0 {
 		return ScenarioResult{Pass: true, Skipped: true,
 			Error: "skipped: every non-destructive tool needs arguments (conform calls tools with none)"}
 	}
+	return ScenarioResult{Pass: true, Skipped: true,
+		Error: "skipped: every tool conform could call without arguments returned a tool error (" +
+			strings.Join(refused, "; ") + ")"}
+}
 
+// scenarioToolsCallIsError calls a tool whose name suggests it fails by
+// design, else the first tool, without arguments, and passes when the
+// result has IsError=true with non-empty Content (the v1.6.0 contract; an
+// input-validation failure must come back that way too). A tool that
+// succeeds leaves nothing to check, so the scenario skips.
+func (r *Runner) scenarioToolsCallIsError(ctx context.Context) ScenarioResult {
+	svc, tools, skip := r.listToolsForCall(ctx)
+	if tools == nil {
+		return skip
+	}
+	pick := &tools[0]
+	for i, t := range tools {
+		lc := strings.ToLower(t.Name)
+		if strings.Contains(lc, "error") || strings.Contains(lc, "fail") || strings.Contains(lc, "invalid") {
+			pick = &tools[i]
+			break
+		}
+	}
+	res, fail := callWithoutArguments(ctx, svc, pick.Name)
+	if res == nil {
+		return fail
+	}
+	if !res.IsError {
+		return ScenarioResult{Pass: true, Skipped: true,
+			Error: fmt.Sprintf("skipped: tool %q did not return IsError=true (no failing tool found)", pick.Name)}
+	}
+	if len(res.Content) == 0 {
+		return failResult(
+			fmt.Sprintf("tool %q returned IsError=true with empty Content", pick.Name),
+			"SDK v1.6.0 contract requires Content payload on isError responses",
+		)
+	}
+	return ScenarioResult{Pass: true,
+		Detail: fmt.Sprintf("tool %q returned IsError=true with %d content blocks", pick.Name, len(res.Content))}
+}
+
+// listToolsForCall connects and lists tools for the tools.call scenarios.
+// tools is nil when the scenario is over: result is then its failure, or
+// its skip when the server has no tools.
+func (r *Runner) listToolsForCall(ctx context.Context) (svc mcp.Service, tools []mcp.Tool, result ScenarioResult) {
+	svc, err := r.ensureConnected(ctx)
+	if err != nil {
+		return nil, nil, failResult(err.Error(), "")
+	}
+	tools, err = svc.ListTools(ctx)
+	if err != nil {
+		return nil, nil, failResult("ListTools failed: "+err.Error(), "")
+	}
+	if len(tools) == 0 {
+		return nil, nil, ScenarioResult{Pass: true, Skipped: true, Error: "skipped: server has no tools"}
+	}
+	return svc, tools, ScenarioResult{}
+}
+
+// callWithoutArguments calls toolName with {}. res is nil when the call
+// failed at the protocol level, with fail describing it: never acceptable,
+// since tool failures, input validation included, must come back as
+// CallToolResult{IsError:true}.
+func callWithoutArguments(ctx context.Context, svc mcp.Service, toolName string) (res *mcp.CallToolResult, fail ScenarioResult) {
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	res, callErr := svc.CallTool(callCtx, mcp.CallToolRequest{Name: pick.Name, Arguments: map[string]any{}})
-	if callErr != nil && res == nil {
-		// A JSON-RPC protocol error path — never acceptable for either
-		// branch (input-validation errors must come back as IsError per
-		// v1.5.0).
-		return failResult(
-			fmt.Sprintf("CallTool(%q) returned JSON-RPC error: %v", pick.Name, callErr),
+	res, err := svc.CallTool(callCtx, mcp.CallToolRequest{Name: toolName, Arguments: map[string]any{}})
+	if res == nil {
+		return nil, failResult(
+			fmt.Sprintf("CallTool(%q) returned JSON-RPC error: %v", toolName, err),
 			"isError tool failures must surface as CallToolResult{IsError:true}, not as a JSON-RPC error",
 		)
 	}
-	if res == nil {
-		return failResult(fmt.Sprintf("CallTool(%q) returned nil result", pick.Name), "")
-	}
-	return checkScenarioToolResult(pick.Name, res, expectIsError)
-}
-
-// pickScenarioTool chooses the tool a tools.call scenario invokes.
-//
-// When expectIsError is true it prefers tools whose name suggests
-// failure-by-design, falling back to the first tool: called without its
-// arguments, that tool's input-validation failure must still come back as
-// IsError with content.
-//
-// Otherwise it picks a non-destructive tool (or an unannotated one, since
-// mcp-tui treats nil destructiveHint as not-destructive — see
-// Tool.IsDestructive) that the empty argument object satisfies, so the call
-// runs the tool rather than its argument validation; nil when there is none.
-func pickScenarioTool(tools []mcp.Tool, expectIsError bool) *mcp.Tool {
-	for i, t := range tools {
-		if expectIsError {
-			// Heuristic: tools whose name suggests failure-by-design.
-			lc := strings.ToLower(t.Name)
-			if strings.Contains(lc, "error") || strings.Contains(lc, "fail") || strings.Contains(lc, "invalid") {
-				return &tools[i]
-			}
-		} else if !t.IsDestructive() && argumentsRequired(&tools[i]) == "" {
-			return &tools[i]
-		}
-	}
-	if expectIsError {
-		return &tools[0]
-	}
-	return nil
-}
-
-// checkScenarioToolResult evaluates the tools.call result against the
-// scenario variant: expectIsError=true asserts the v1.6.0 contract
-// (IsError=true with non-empty Content), expectIsError=false accepts any
-// answered call.
-func checkScenarioToolResult(toolName string, res *mcp.CallToolResult, expectIsError bool) ScenarioResult {
-	if expectIsError {
-		if !res.IsError {
-			return ScenarioResult{
-				Pass:    true,
-				Skipped: true,
-				Error:   fmt.Sprintf("skipped: tool %q did not return IsError=true (no failing tool found)", toolName),
-			}
-		}
-		if len(res.Content) == 0 {
-			return failResult(
-				fmt.Sprintf("tool %q returned IsError=true with empty Content", toolName),
-				"SDK v1.6.0 contract requires Content payload on isError responses",
-			)
-		}
-		return ScenarioResult{Pass: true,
-			Detail: fmt.Sprintf("tool %q returned IsError=true with %d content blocks", toolName, len(res.Content))}
-	}
-	if res.IsError {
-		return ScenarioResult{
-			Pass: true,
-			Detail: fmt.Sprintf("tool %q returned IsError=true "+
-				"(acceptable for happy-path scenario — server reported a tool-level error rather than crashing)", toolName),
-		}
-	}
-	return ScenarioResult{Pass: true,
-		Detail: fmt.Sprintf("tool %q returned %d content blocks", toolName, len(res.Content))}
+	return res, ScenarioResult{}
 }
 
 // scenarioResourcesList drives resources/list. Empty list is allowed.
