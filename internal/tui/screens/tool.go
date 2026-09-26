@@ -322,7 +322,7 @@ func (ts *ToolScreen) initStyles() {
 	ts.titleStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("13")).
 		Bold(true).
-		Margin(1, 0)
+		MarginBottom(1)
 
 	ts.labelStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("7"))
@@ -925,7 +925,7 @@ func (ts *ToolScreen) handleToolbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ts.result.shown() && len(ts.result.fields) > 0 {
 			ts.result.picking = true
 			ts.result.fieldCursor = 0
-			ts.SetStatus("Navigate with ↑/↓, Enter to copy field, v/Esc to exit", StatusInfo)
+			ts.SetStatus("", StatusInfo)
 		}
 		return ts, nil
 
@@ -1924,7 +1924,7 @@ func (ts *ToolScreen) renderFooter() string {
 
 	// Status message
 	if statusMsg, level := ts.StatusMessage(); statusMsg != "" {
-		builder.WriteString("\n\n")
+		builder.WriteString("\n")
 		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColorFor(level))).Bold(true)
 		builder.WriteString(ts.fitWidth(statusStyle).Render(statusMsg))
 	}
@@ -1984,22 +1984,41 @@ func statusColorFor(level StatusLevel) string {
 	}
 }
 
-// currentHelpText computes the help line for the current state: viewing a
-// result, a result shown, a field focused, or a button focused.
+// currentHelpText is the help for what has focus: the field picker, or the
+// result's keys (when one is shown) above the form's.
 func (ts *ToolScreen) currentHelpText() string {
-	switch {
-	case ts.result.picking:
+	if ts.result.picking {
 		return "↑/↓ PgUp/PgDn Home/End: Select field • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Back to result"
-	case ts.result.shown():
-		if len(ts.result.fields) > 1 {
-			return "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • " +
-				"Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+	}
+	if !ts.result.shown() {
+		return ts.focusHelpText()
+	}
+	return ts.resultHelpText() + "\n" + ts.focusHelpText()
+}
+
+// resultHelpText names the result's keys that work from where the cursor
+// is: a focused text input keeps plain Home and End, and letters.
+func (ts *ToolScreen) resultHelpText() string {
+	ends := "Home/End"
+	if ts.inputFocused() {
+		ends = "Ctrl+Home/End"
+	}
+	help := "Result: PgUp/PgDn • Shift+↑/↓ • " + ends + ": Scroll • Ctrl+C: Copy all"
+	if len(ts.result.fields) > 1 && !ts.inputFocused() {
+		help += " • v: Pick a field"
+	}
+	return help
+}
+
+// focusHelpText is the help for the field or button the cursor is on.
+func (ts *ToolScreen) focusHelpText() string {
+	switch {
+	case ts.inputFocused():
+		helpText := "Tab: Navigate • Enter: Execute • Ctrl+V: Paste • Ctrl+T: Task mode • " +
+			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • Esc: Back"
+		if ts.rawJSONMode {
+			return helpText
 		}
-		return "c: CLI command • Ctrl+C: Copy result • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll • " +
-			"Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
-	case ts.cursor < len(ts.fields):
-		helpText := "Tab: Navigate • Enter: Submit • c: CLI command • Ctrl+V: Paste • Ctrl+T: Task mode • " +
-			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b: Back • Esc: Back"
 		if f := ts.fields[ts.cursor]; f.nullable && !f.expanded {
 			helpText = "Ctrl+N: Null • " + helpText
 		}
@@ -2012,12 +2031,15 @@ func (ts *ToolScreen) currentHelpText() string {
 			helpText = "Ctrl+A: Add element • " + helpText
 		}
 		return helpText
-	case ts.cursor == len(ts.fields):
+	}
+	executePos, cliPos, _ := ts.buttonPositions()
+	switch ts.cursor {
+	case executePos:
 		return "Enter: Execute • Tab: Navigate • c: CLI command • Ctrl+T: Task mode • " +
-			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b: Back • Esc: Back"
-	case ts.cursor == len(ts.fields)+1:
-		return "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b: Back • Esc: Back"
+			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • b/Esc: Back"
+	case cliPos:
+		return "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b/Esc: Back"
 	default:
-		return "Tab: Navigate • Enter: Go back • c: CLI command • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
+		return "Enter: Go back • Tab: Navigate • c: CLI command • Ctrl+L: Debug Log • b/Alt+←/Esc: Back"
 	}
 }

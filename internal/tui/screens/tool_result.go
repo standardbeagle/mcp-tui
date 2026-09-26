@@ -329,7 +329,14 @@ func (ts *ToolScreen) resultPosition(width, height int) string {
 	}
 	first := clampScroll(ts.result.scroll, total, height)
 	last := min(total, first+height)
-	return fmt.Sprintf("lines %d–%d of %d (%d%%)", first+1, last, total, last*100/total)
+	position := fmt.Sprintf("lines %d–%d of %d (%d%%)", first+1, last, total, last*100/total)
+	if first > 0 {
+		position += " • PgUp ▲"
+	}
+	if last < total {
+		position += " • PgDn ▼"
+	}
+	return position
 }
 
 // renderFieldPicker draws the height rows of the field picker around the
