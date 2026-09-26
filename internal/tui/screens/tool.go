@@ -42,6 +42,9 @@ type ToolScreen struct {
 	// Form fields
 	fields []toolField
 	cursor int // current field index
+	// formScroll is the first field shown when the form is taller than
+	// the rows the screen leaves it.
+	formScroll int
 
 	// Raw JSON mode (when schema parsing fails)
 	rawJSONMode  bool            // Whether we're in raw JSON input mode
@@ -1620,8 +1623,26 @@ func (ts *ToolScreen) fitWidth(style lipgloss.Style) lipgloss.Style {
 	return style.Width(ts.formWidth())
 }
 
-// renderHeader builds everything above the result block.
+// renderHeader builds everything above the result block. The form's fields
+// get the rows the rest of the screen leaves them, so the title, the
+// buttons and what follows them stay on screen however long the form is.
 func (ts *ToolScreen) renderHeader() string {
+	top, bottom := ts.renderHeaderTop(), ts.renderHeaderBottom()
+	if ts.rawJSONMode || len(ts.fields) == 0 {
+		return top + bottom
+	}
+	_, termHeight := ts.termSize()
+	rest := top + bottom
+	if !ts.sideBySide() {
+		rest += ts.renderResultBlock(ts.resultBodyWidth(), resultMinHeight)
+	}
+	rest += ts.renderFooter()
+	return top + ts.renderFormFields(termHeight-lipgloss.Height(rest)) + bottom
+}
+
+// renderHeaderTop builds the title, state lines and schema banner, and the
+// raw JSON editor or the no-parameters note in place of a form.
+func (ts *ToolScreen) renderHeaderTop() string {
 	var builder strings.Builder
 
 	builder.WriteString(ts.renderTitleLine())
@@ -1631,7 +1652,6 @@ func (ts *ToolScreen) renderHeader() string {
 
 	builder.WriteString(ts.renderSchemaBanner())
 
-	// Raw JSON mode - show single input for JSON arguments
 	switch {
 	case ts.rawJSONMode:
 		builder.WriteString(ts.labelStyle.Render("Arguments (JSON):"))
@@ -1643,13 +1663,16 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString(ts.inputBox(style).Render(ts.rawJSONInput.View()))
 		builder.WriteString("\n\n")
 	case len(ts.fields) == 0:
-		// Form fields or message if no fields
 		builder.WriteString(ts.labelStyle.Render("This tool requires no parameters."))
 		builder.WriteString("\n\n")
-	default:
-		ts.renderFormFields(&builder)
 	}
+	return builder.String()
+}
 
+// renderHeaderBottom builds the buttons, the running call's status and the
+// tool's description.
+func (ts *ToolScreen) renderHeaderBottom() string {
+	var builder strings.Builder
 	ts.renderButtonsRow(&builder)
 	ts.renderExecutionStatus(&builder)
 
@@ -1659,7 +1682,6 @@ func (ts *ToolScreen) renderHeader() string {
 		builder.WriteString(ts.fitWidth(ts.labelStyle).Render(ts.tool.Description))
 		builder.WriteString("\n")
 	}
-
 	return builder.String()
 }
 
@@ -1736,27 +1758,89 @@ func (ts *ToolScreen) renderSchemaBanner() string {
 	return builder.String()
 }
 
-// renderFormFields renders the form fields, one labeled input each.
-func (ts *ToolScreen) renderFormFields(builder *strings.Builder) {
+// renderFormFields renders the form fields, one labeled input each, in at
+// most rows lines: a longer form shows the fields from formScroll on, the
+// focused one among them (the last one while a button has focus), and
+// counts the fields left out above and below.
+func (ts *ToolScreen) renderFormFields(rows int) string {
+	n := len(ts.fields)
+	chunks := make([]string, n)
+	heights := make([]int, n)
+	total := 0
 	for i := range ts.fields {
-		field := &ts.fields[i]
-		builder.WriteString(ts.fitWidth(ts.labelStyle).Render(ts.fieldLabel(field) + ":"))
-		builder.WriteString("\n")
+		chunks[i] = ts.renderFormField(i)
+		heights[i] = lipgloss.Height(chunks[i]) - 1 // the chunk ends in a newline
+		total += heights[i]
+	}
+	if total <= rows {
+		ts.formScroll = 0
+		return strings.Join(chunks, "")
+	}
 
-		// Render the textinput model
-		builder.WriteString(ts.renderFieldInput(i, field))
-		builder.WriteString("\n")
-
-		// Show validation error message
-		if field.validationError != "" {
-			validationStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("9")).
-				Italic(true)
-			builder.WriteString(validationStyle.Render("  ⚠ " + field.validationError))
-			builder.WriteString("\n")
+	fits := func(first, last int) bool {
+		h := 0
+		for i := first; i <= last; i++ {
+			h += heights[i]
 		}
+		if first > 0 {
+			h++
+		}
+		if last < n-1 {
+			h++
+		}
+		return h <= rows
+	}
+	focus := min(ts.cursor, n-1)
+	ts.formScroll = min(ts.formScroll, focus)
+	for ts.formScroll < focus && !fits(ts.formScroll, focus) {
+		ts.formScroll++
+	}
+	last := focus
+	for last+1 < n && fits(ts.formScroll, last+1) {
+		last++
+	}
+
+	var builder strings.Builder
+	if ts.formScroll > 0 {
+		builder.WriteString(ts.helpStyle.Render(fmt.Sprintf("▲ %s above (↑/Shift+Tab)", moreFields(ts.formScroll))))
 		builder.WriteString("\n")
 	}
+	builder.WriteString(strings.Join(chunks[ts.formScroll:last+1], ""))
+	if last < n-1 {
+		builder.WriteString(ts.helpStyle.Render(fmt.Sprintf("▼ %s below (↓/Tab)", moreFields(n-1-last))))
+		builder.WriteString("\n")
+	}
+	return builder.String()
+}
+
+// moreFields counts the form fields a window leaves out: "1 more field".
+func moreFields(count int) string {
+	if count == 1 {
+		return "1 more field"
+	}
+	return fmt.Sprintf("%d more fields", count)
+}
+
+// renderFormField renders field i: its label, its input, its validation
+// error and a blank line.
+func (ts *ToolScreen) renderFormField(i int) string {
+	var builder strings.Builder
+	field := &ts.fields[i]
+	builder.WriteString(ts.fitWidth(ts.labelStyle).Render(ts.fieldLabel(field) + ":"))
+	builder.WriteString("\n")
+
+	builder.WriteString(ts.renderFieldInput(i, field))
+	builder.WriteString("\n")
+
+	if field.validationError != "" {
+		validationStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("9")).
+			Italic(true)
+		builder.WriteString(validationStyle.Render("  ⚠ " + field.validationError))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("\n")
+	return builder.String()
 }
 
 // fieldLabel builds a field's label: indented name, type indicator,

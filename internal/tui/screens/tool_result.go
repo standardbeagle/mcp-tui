@@ -143,6 +143,11 @@ func (ts *ToolScreen) resultColumnWidth() int {
 	return width
 }
 
+// resultBodyWidth is the result panel's inner width.
+func (ts *ToolScreen) resultBodyWidth() int {
+	return max(1, ts.resultColumnWidth()-resultPanelFrameWidth)
+}
+
 // resultViewport is the result body's size: the panel's inner width, and
 // the rows the terminal leaves once the panel's own lines are drawn, and
 // below the form also the header and footer. The View and the scroll keys
@@ -150,7 +155,7 @@ func (ts *ToolScreen) resultColumnWidth() int {
 // measured by drawing it one row tall.
 func (ts *ToolScreen) resultViewport() (width, height int) {
 	_, termHeight := ts.termSize()
-	width = max(1, ts.resultColumnWidth()-resultPanelFrameWidth)
+	width = ts.resultBodyWidth()
 	probe := ts.renderResultBlock(width, 1)
 	if ts.sideBySide() {
 		probe = strings.TrimSuffix(probe, "\n")
