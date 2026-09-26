@@ -121,3 +121,29 @@ func TestToolResultFieldPickerKeepsTheSelectionOnScreen(t *testing.T) {
 		t.Errorf("selected field key150 not shown:\n%s", view)
 	}
 }
+
+// A field's box holds one row at any value length and spans the terminal:
+// its text input was wider than the box, so a long value broke onto a
+// second row, and the box stayed 62 columns on any terminal.
+func TestToolFieldBoxFitsItsInput(t *testing.T) {
+	ts, _ := echoToolScreen(t, 1)
+	ts.UpdateSize(layoutWidth, layoutHeight)
+	ts.fields[0].input.SetValue(strings.Repeat("x", 400))
+
+	view := ts.View()
+	requireFitsTerminal(t, view)
+	lines := strings.Split(view, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(line, "╭") {
+			continue
+		}
+		if w := lipgloss.Width(line); w != layoutWidth {
+			t.Errorf("field box is %d wide, want %d", w, layoutWidth)
+		}
+		if !strings.HasPrefix(lines[i+2], "╰") {
+			t.Errorf("field box is more than one row:\n%s", strings.Join(lines[i:i+4], "\n"))
+		}
+		return
+	}
+	t.Fatal("no field box in view")
+}

@@ -168,6 +168,7 @@ func NewToolScreen(tool *mcp.Tool, service mcp.Service) *ToolScreen {
 
 	// Parse tool schema to create fields
 	ts.parseSchema()
+	ts.sizeInputs()
 
 	return ts
 }
@@ -330,14 +331,12 @@ func (ts *ToolScreen) initStyles() {
 	ts.inputStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("4")).
-		Padding(0, 1).
-		Width(60)
+		Padding(0, 1)
 
 	ts.selectedStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("6")).
-		Padding(0, 1).
-		Width(60)
+		Padding(0, 1)
 
 	ts.buttonStyle = lipgloss.NewStyle().
 		Padding(0, 2).
@@ -389,7 +388,6 @@ func (ts *ToolScreen) parseSchema() {
 	ts.rawJSONInput = textinput.New()
 	ts.rawJSONInput.Placeholder = `{"key": "value"}`
 	ts.rawJSONInput.CharLimit = 0
-	ts.rawJSONInput.Width = 60
 }
 
 // fieldsFromSchema builds one text input per schema parameter, in name
@@ -406,7 +404,6 @@ func fieldsFromParams(params []inputschema.Param, depth int) []toolField {
 		p := &params[i]
 		input := textinput.New()
 		input.CharLimit = 0 // No limit
-		input.Width = 58    // Slightly smaller than the border width
 		switch p.Kind {
 		case inputschema.KindNumber:
 			input.Placeholder = "Enter a number"
@@ -653,6 +650,7 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		ts.UpdateSize(msg.Width, msg.Height)
+		ts.sizeInputs()
 		return ts, nil
 
 	case tea.KeyMsg:
@@ -855,6 +853,9 @@ func (ts *ToolScreen) startTaskCmd(args map[string]interface{}) tea.Cmd {
 
 // handleKeyMsg handles keyboard input
 func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Sub-forms add fields; size them before the key can reach one.
+	ts.sizeInputs()
+
 	// A running call takes no keys but the ways out.
 	if ts.executing {
 		if msg.String() == keyCtrlC || msg.String() == keyEsc {
@@ -1638,12 +1639,11 @@ func (ts *ToolScreen) renderHeader() string {
 	case ts.rawJSONMode:
 		builder.WriteString(ts.labelStyle.Render("Arguments (JSON):"))
 		builder.WriteString("\n")
-		inputView := ts.rawJSONInput.View()
+		style := ts.inputStyle
 		if ts.cursor == 0 {
-			builder.WriteString(ts.selectedStyle.Render(inputView))
-		} else {
-			builder.WriteString(ts.inputStyle.Render(inputView))
+			style = ts.selectedStyle
 		}
+		builder.WriteString(ts.inputBox(style).Render(ts.rawJSONInput.View()))
 		builder.WriteString("\n\n")
 	case len(ts.fields) == 0:
 		// Form fields or message if no fields
@@ -1678,7 +1678,7 @@ func (ts *ToolScreen) renderTitleLine() string {
 	}
 	if ts.taskMode {
 		builder.WriteString("  ")
-		builder.WriteString(ts.selectedStyle.Render("[task mode]"))
+		builder.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true).Render("[task mode]"))
 	}
 	if ts.skipArgValidation {
 		builder.WriteString("  ")
@@ -1812,18 +1812,32 @@ func (ts *ToolScreen) renderFieldInput(i int, field *toolField) string {
 	switch {
 	case field.validationError != "" && ts.cursor == i:
 		// Red border for validation errors
-		errorStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("9")).
-			Padding(0, 1).
-			Width(60)
-		return errorStyle.Render(inputView)
+		return ts.inputBox(ts.selectedStyle.BorderForeground(lipgloss.Color("9"))).Render(inputView)
 	case ts.cursor == i:
-		// Focused style
-		return ts.selectedStyle.Render(inputView)
+		return ts.inputBox(ts.selectedStyle).Render(inputView)
 	default:
-		// Normal style
-		return ts.inputStyle.Render(inputView)
+		return ts.inputBox(ts.inputStyle).Render(inputView)
+	}
+}
+
+// inputBox is style spanning the terminal: the box around a text input.
+func (ts *ToolScreen) inputBox(style lipgloss.Style) lipgloss.Style {
+	termWidth, _ := ts.termSize()
+	return style.Width(termWidth - 2) // the border
+}
+
+// sizeInputs fits every text input to its box, so a long value scrolls
+// inside one row. The input scrolls its value as it updates, so the width
+// must be right before a key reaches it, not only when it is drawn.
+func (ts *ToolScreen) sizeInputs() {
+	termWidth, _ := ts.termSize()
+	fit := func(input *textinput.Model) {
+		// The box's border and padding, the input's prompt and its cursor.
+		input.Width = max(1, termWidth-2-2-lipgloss.Width(input.Prompt)-1)
+	}
+	fit(&ts.rawJSONInput)
+	for i := range ts.fields {
+		fit(&ts.fields[i].input)
 	}
 }
 
