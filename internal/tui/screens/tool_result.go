@@ -8,30 +8,24 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
-// Layout constants for result scrolling
 const (
-	// resultReservedHeightBase is the base height reserved for UI elements
-	// (title, description, buttons, execution header, help, status)
-	resultReservedHeightBase = 15
-
-	// resultHeightPerField is the height consumed by each form field
-	resultHeightPerField = 3
-
-	// resultMinHeight is the minimum height for the result display area
-	resultMinHeight = 5
-
-	// defaultTermWidth is the fallback terminal width if not detected
-	defaultTermWidth = 80
-
-	// defaultTermHeight is the fallback terminal height if not detected
+	// defaultTermWidth and defaultTermHeight stand in until the terminal
+	// reports its size.
+	defaultTermWidth  = 80
 	defaultTermHeight = 30
 
-	// resultWidthMargin is the margin subtracted from terminal width for result display
-	resultWidthMargin = 6
+	// resultMinHeight is the fewest body rows the result panel shows, even
+	// when the form leaves less room.
+	resultMinHeight = 5
+
+	// resultPanelFrameWidth is what the panel's border and padding take
+	// from the terminal's width.
+	resultPanelFrameWidth = 4
 )
 
 // toolResult is the last tool call's result as the tool screen shows it:
@@ -39,9 +33,13 @@ const (
 type toolResult struct {
 	call *mcp.CallToolResult // nil until a call completes
 	text string              // pretty-printed content, what Ctrl+C copies
-	// lines are text split for scrolling; scroll is the first line shown.
-	lines  []string
-	scroll int
+	// lines are text split for display; wrapped are those lines wrapped to
+	// wrapWidth, the panel's inner width, and are what scrolls. scroll is
+	// the first wrapped line shown.
+	lines     []string
+	wrapped   []string
+	wrapWidth int
+	scroll    int
 	// fields are the leaf values of a JSON body; picking is the mode that
 	// selects one (v) to copy, fieldCursor the one selected.
 	fields      []resultField
@@ -61,8 +59,35 @@ func (r *toolResult) set(call *mcp.CallToolResult) {
 		return
 	}
 	r.text = prettyPrintResultContent(call.Content)
-	r.lines = strings.Split(r.text, "\n")
+	// A tab's width is the terminal's choice; spaces keep the wrapping true.
+	r.lines = strings.Split(strings.ReplaceAll(r.text, "\t", "    "), "\n")
 	r.parseFields()
+}
+
+// wrappedLines is the body wrapped to width columns, wrapped again only
+// when width changes. Wrapping here, not in the panel, keeps the panel's
+// height fixed and the line counter counting the lines shown.
+func (r *toolResult) wrappedLines(width int) []string {
+	if r.wrapped != nil && r.wrapWidth == width {
+		return r.wrapped
+	}
+	r.wrapWidth = width
+	r.wrapped = make([]string, 0, len(r.lines))
+	for _, line := range r.lines {
+		r.wrapped = append(r.wrapped, strings.Split(ansi.Hardwrap(line, width, true), "\n")...)
+	}
+	return r.wrapped
+}
+
+// scrollBy moves the body delta lines, kept within the body.
+func (r *toolResult) scrollBy(delta, width, height int) {
+	r.scroll = clampScroll(r.scroll+delta, len(r.wrappedLines(width)), height)
+}
+
+// clampScroll keeps a scroll offset between the top and the last full page
+// of total lines, height at a time.
+func clampScroll(scroll, total, height int) int {
+	return max(0, min(scroll, total-height))
 }
 
 // resultField represents a parsed field from JSON result
@@ -72,39 +97,27 @@ type resultField struct {
 	raw   interface{} // Raw value
 }
 
-// getResultDisplayHeight calculates the available height for result display.
-// Used by scroll handlers; View() recomputes the same value dynamically with
-// actual header/footer measurements when the result is present.
-func (ts *ToolScreen) getResultDisplayHeight() int {
-	termHeight := ts.Height()
-	if termHeight == 0 {
-		termHeight = defaultTermHeight
+// termSize is the terminal's size, or the defaults until it is known.
+func (ts *ToolScreen) termSize() (width, height int) {
+	width, height = ts.Width(), ts.Height()
+	if width == 0 {
+		width = defaultTermWidth
 	}
-
-	reservedHeight := resultReservedHeightBase + len(ts.fields)*resultHeightPerField
-	availableHeight := termHeight - reservedHeight
-	if availableHeight < resultMinHeight {
-		availableHeight = resultMinHeight
+	if height == 0 {
+		height = defaultTermHeight
 	}
-	return availableHeight
+	return width, height
 }
 
-// resultChromeHeight is overhead inside the result block: leading blank,
-// execution info line, "Result:" label, border (2), trailing blank/scroll/hint.
-const resultChromeHeight = 7
-
-// computeResultDisplayHeight derives result body height from actual rendered
-// header/footer heights so the panel fills available screen space.
-func (ts *ToolScreen) computeResultDisplayHeight(headerH, footerH int) int {
-	termHeight := ts.Height()
-	if termHeight == 0 {
-		termHeight = defaultTermHeight
-	}
-	avail := termHeight - headerH - footerH - resultChromeHeight
-	if avail < resultMinHeight {
-		avail = resultMinHeight
-	}
-	return avail
+// resultViewport is the result body's size: the panel's inner width, and
+// the rows left once the header, footer and the panel's own lines are
+// drawn. The View and the scroll keys both use it, so a page is the page
+// shown. The panel's own lines are measured by drawing it one row tall.
+func (ts *ToolScreen) resultViewport() (width, height int) {
+	termWidth, termHeight := ts.termSize()
+	width = max(1, termWidth-resultPanelFrameWidth)
+	probe := ts.renderHeader() + ts.renderResultBlock(width, 1) + ts.renderFooter()
+	return width, max(resultMinHeight, 1+termHeight-lipgloss.Height(probe))
 }
 
 // prettyPrintResultContent renders the call's content blocks, pretty
@@ -139,69 +152,63 @@ func prettyPrintResultContent(contents []mcp.Content) string {
 	return resultText.String()
 }
 
-// handleResultScrollKey scrolls the result block whatever has focus; Home
+// handleResultScrollKey scrolls the result body whatever has focus; Home
 // and End are left to a focused text input, Ctrl+Home and Ctrl+End are
 // not. Returns false for keys it does not own.
 func (ts *ToolScreen) handleResultScrollKey(msg tea.KeyMsg) bool {
-	availableHeight := ts.getResultDisplayHeight()
-
-	switch msg.String() {
-	case "ctrl+up":
-		// Scroll result up
-		if ts.result.scroll > 0 {
-			ts.result.scroll--
-		}
-	case "ctrl+down":
-		// Scroll result down
-		maxScroll := max(0, len(ts.result.lines)-availableHeight)
-		if ts.result.scroll < maxScroll {
-			ts.result.scroll++
-		}
+	key := msg.String()
+	if (key == keyHome || key == keyEnd) && ts.inputFocused() {
+		return false
+	}
+	width, height := ts.resultViewport()
+	page := max(1, height-1) // one line of overlap keeps the reader's place
+	switch key {
+	case "ctrl+up", "shift+up":
+		ts.result.scrollBy(-1, width, height)
+	case "ctrl+down", "shift+down":
+		ts.result.scrollBy(1, width, height)
 	case keyPgUp:
-		// Page up in result
-		pageSize := max(1, availableHeight-2)
-		ts.result.scroll -= pageSize
-		if ts.result.scroll < 0 {
-			ts.result.scroll = 0
-		}
+		ts.result.scrollBy(-page, width, height)
 	case keyPgDown:
-		// Page down in result
-		pageSize := max(1, availableHeight-2)
-		maxScroll := max(0, len(ts.result.lines)-availableHeight)
-		ts.result.scroll += pageSize
-		if ts.result.scroll > maxScroll {
-			ts.result.scroll = maxScroll
-		}
+		ts.result.scrollBy(page, width, height)
 	case keyCtrlHome, keyHome:
-		if msg.String() == keyHome && ts.inputFocused() {
-			return false
-		}
 		ts.result.scroll = 0
 	case keyCtrlEnd, keyEnd:
-		if msg.String() == keyEnd && ts.inputFocused() {
-			return false
-		}
-		ts.result.scroll = max(0, len(ts.result.lines)-availableHeight)
+		ts.result.scrollBy(len(ts.result.wrappedLines(width)), width, height)
 	default:
 		return false
 	}
 	return true
 }
 
-// handleResultViewKey handles keys in result viewing mode; other keys are
+// handleResultViewKey handles keys in the field picker; other keys are
 // ignored there.
 func (ts *ToolScreen) handleResultViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	last := len(ts.result.fields) - 1
 	switch msg.String() {
 	case keyUp, "k":
-		if ts.result.fieldCursor > 0 {
-			ts.result.fieldCursor--
-		}
+		ts.result.fieldCursor = max(0, ts.result.fieldCursor-1)
 		return ts, nil
 
 	case keyDown, "j":
-		if ts.result.fieldCursor < len(ts.result.fields)-1 {
-			ts.result.fieldCursor++
+		ts.result.fieldCursor = min(last, ts.result.fieldCursor+1)
+		return ts, nil
+
+	case keyPgUp, keyPgDown:
+		_, height := ts.resultViewport()
+		page := max(1, height-1)
+		if msg.String() == keyPgUp {
+			page = -page
 		}
+		ts.result.fieldCursor = max(0, min(last, ts.result.fieldCursor+page))
+		return ts, nil
+
+	case keyHome, "g":
+		ts.result.fieldCursor = 0
+		return ts, nil
+
+	case keyEnd, "G":
+		ts.result.fieldCursor = last
 		return ts, nil
 
 	case keyEnter, "c", "y":
@@ -216,12 +223,6 @@ func (ts *ToolScreen) handleResultViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 
-	case "v":
-		// Exit result viewing mode
-		ts.result.picking = false
-		ts.SetStatus("", StatusInfo)
-		return ts, nil
-
 	case keyCtrlC:
 		// Copy entire result
 		if err := ts.copyToClipboard(ts.result.text); err == nil {
@@ -231,8 +232,7 @@ func (ts *ToolScreen) handleResultViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return ts, nil
 
-	case keyEsc, "q":
-		// Exit result viewing mode
+	case "v", keyEsc, "q":
 		ts.result.picking = false
 		ts.SetStatus("", StatusInfo)
 		return ts, nil
@@ -242,96 +242,99 @@ func (ts *ToolScreen) handleResultViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return ts, nil
 }
 
-// renderResultBlock builds the result section, sized to fill remaining
-// vertical space between the header and footer.
-func (ts *ToolScreen) renderResultBlock(header, footer string) string {
-	if !ts.result.shown() {
-		return ""
-	}
-
+// renderResultBlock draws the result: a heading line, the output-schema
+// violations, the panel holding height rows of the body (or of the field
+// picker) width columns wide, and the round trace.
+func (ts *ToolScreen) renderResultBlock(width, height int) string {
 	var builder strings.Builder
+	builder.WriteString(ts.renderResultHeading(width, height))
 	builder.WriteString("\n")
 
-	// Show execution header with count and timestamp
-	execInfoStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("99")).
-		Bold(true)
+	// outputSchema violations are warnings, not errors: the body still
+	// shows below, but the operator sees the contract was not honored
+	// before reading it.
+	builder.WriteString(renderViolationsBanner(ts.result.call.OutputViolations))
 
-	execInfo := fmt.Sprintf("Execution #%d", ts.executionCount)
-	if ts.executionCount > 1 {
-		execInfo = fmt.Sprintf("✨ Execution #%d", ts.executionCount)
+	var body string
+	if ts.result.picking && len(ts.result.fields) > 0 {
+		body = ts.renderFieldPicker(width, height)
+	} else {
+		lines := ts.result.wrappedLines(width)
+		ts.result.scroll = clampScroll(ts.result.scroll, len(lines), height)
+		body = strings.Join(lines[ts.result.scroll:min(len(lines), ts.result.scroll+height)], "\n")
 	}
-	execInfo += fmt.Sprintf(" • %s", ts.lastExecution.Format("15:04:05"))
-
-	builder.WriteString(execInfoStyle.Render(execInfo))
+	panel := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Width(width + 2).
+		Height(height)
+	builder.WriteString(panel.Render(body))
 	builder.WriteString("\n")
 
-	// isError:true is the v1.5.0 channel for tool-layer errors (e.g. input
-	// validation failures, business-rule violations) — the call completed
-	// and the server responded with a structured payload tagged as an error.
-	// We render a red, padded banner above the result body to make this
-	// distinct from:
-	//   - JSON-RPC protocol errors (handled separately via ts.LastError(),
-	//     rendered in the footer with a different "Error: <message>" format)
-	//   - outputSchema violations (rendered just below as a yellow banner)
-	// The banner header still reads "Error Result:" inline so the result
-	// label stays unambiguous when the user reads top-down.
+	if trace := renderResultTrailer(ts.result.call.Rounds, ts.result.call.Server); trace != "" {
+		builder.WriteString(trace)
+		builder.WriteString("\n")
+	}
+	return builder.String()
+}
+
+// renderResultHeading is the one line above the panel: whether the tool
+// reported an error, which execution this is, and where the panel is in
+// the body (or the picker in the fields).
+//
+// isError:true is a tool-layer error (bad input, a business rule): the
+// call completed and the server answered with a payload flagged as an
+// error. Its red banner sets it apart from a JSON-RPC error, shown in the
+// footer as "Error: <message>", and from outputSchema violations, shown
+// in yellow below.
+func (ts *ToolScreen) renderResultHeading(width, height int) string {
+	var heading strings.Builder
 	if ts.result.call.IsError {
 		errBannerStyle := lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("15")). // white text
 			Background(lipgloss.Color("9")).  // red background
 			Padding(0, 1)
-		builder.WriteString(errBannerStyle.Render("⚠ Tool reported an error (isError:true)"))
-		builder.WriteString("\n")
-		builder.WriteString(ts.errorStyle.Render("Error Result:"))
+		heading.WriteString(errBannerStyle.Render("⚠ Tool reported an error (isError:true)"))
+		heading.WriteString(" ")
+		heading.WriteString(ts.errorStyle.Render("Error Result:"))
 	} else {
-		builder.WriteString(ts.labelStyle.Render("Result:"))
-	}
-	builder.WriteString("\n")
-
-	// outputSchema violations (Tier 2 schema validation) are surfaced as a
-	// yellow warning banner above the result body so the operator notices
-	// the mismatch before reading the (possibly malformed) payload. The
-	// banner is intentionally non-blocking — the result still renders below
-	// — because the spec calls these "warnings, not errors": consumers may
-	// still want to see the data, they just need to know the contract was
-	// not honored.
-	builder.WriteString(renderViolationsBanner(ts.result.call.OutputViolations))
-
-	headerH := lipgloss.Height(header)
-	footerH := lipgloss.Height(footer)
-	availableHeight := ts.computeResultDisplayHeight(headerH, footerH)
-
-	// The round trace sits under the result body; shrink the body so the
-	// trace stays on screen.
-	roundTrace := renderResultTrailer(ts.result.call.Rounds, ts.result.call.Server)
-	if roundTrace != "" {
-		availableHeight = max(resultMinHeight, availableHeight-lipgloss.Height(roundTrace)-1)
+		heading.WriteString(ts.labelStyle.Bold(true).Render("Result:"))
 	}
 
-	termWidth := ts.Width()
-	if termWidth == 0 {
-		termWidth = defaultTermWidth
+	execInfo := fmt.Sprintf(" Execution #%d", ts.executionCount)
+	if ts.executionCount > 1 {
+		execInfo = fmt.Sprintf(" ✨ Execution #%d", ts.executionCount)
 	}
+	execInfo += " • " + ts.lastExecution.Format("15:04:05")
+	heading.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).Render(execInfo))
 
-	if ts.result.picking && len(ts.result.fields) > 0 {
-		ts.renderFieldPicker(&builder)
-	} else {
-		ts.renderScrolledResult(&builder, availableHeight, termWidth)
+	position := ts.resultPosition(width, height)
+	if position != "" {
+		heading.WriteString(ts.helpStyle.Render(" • " + position))
 	}
-	builder.WriteString("\n")
-	if roundTrace != "" {
-		builder.WriteString(roundTrace)
-		builder.WriteString("\n")
-	}
-
-	return builder.String()
+	return ansi.Truncate(heading.String(), width+resultPanelFrameWidth, "…")
 }
 
-// renderFieldPicker renders the result-field picker of viewing mode.
-func (ts *ToolScreen) renderFieldPicker(builder *strings.Builder) {
-	fieldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+// resultPosition says where the panel is: the lines shown of the body, or
+// the field selected in the picker. "" when the body fits the panel.
+func (ts *ToolScreen) resultPosition(width, height int) string {
+	if ts.result.picking && len(ts.result.fields) > 0 {
+		return fmt.Sprintf("field %d of %d", ts.result.fieldCursor+1, len(ts.result.fields))
+	}
+	total := len(ts.result.wrappedLines(width))
+	if total <= height {
+		return ""
+	}
+	first := clampScroll(ts.result.scroll, total, height)
+	last := min(total, first+height)
+	return fmt.Sprintf("lines %d–%d of %d (%d%%)", first+1, last, total, last*100/total)
+}
+
+// renderFieldPicker draws the height rows of the field picker around the
+// selected field, each cut to width.
+func (ts *ToolScreen) renderFieldPicker(width, height int) string {
 	selectedFieldStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("240")).
 		Foreground(lipgloss.Color("15")).
@@ -342,93 +345,23 @@ func (ts *ToolScreen) renderFieldPicker(builder *strings.Builder) {
 	valueStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("10"))
 
-	builder.WriteString(fieldStyle.Render("Select a field to copy its value:"))
-	builder.WriteString("\n\n")
-
-	for i, field := range ts.result.fields {
-		var line string
+	fields := ts.result.fields
+	first := clampScroll(ts.result.fieldCursor-height/2, len(fields), height)
+	rows := make([]string, 0, height)
+	for i := first; i < min(len(fields), first+height); i++ {
+		marker := "  "
 		if i == ts.result.fieldCursor {
-			line = fmt.Sprintf("▶ %s = %s",
-				pathStyle.Render(field.path),
-				valueStyle.Render(field.value))
-			builder.WriteString(selectedFieldStyle.Render(line))
-		} else {
-			line = fmt.Sprintf("  %s = %s",
-				pathStyle.Render(field.path),
-				valueStyle.Render(field.value))
-			builder.WriteString(line)
+			marker = "▶ "
 		}
-		builder.WriteString("\n")
+		// A value's newlines would break the one row per field.
+		value := strings.ReplaceAll(fields[i].value, "\n", "⏎")
+		row := ansi.Truncate(marker+pathStyle.Render(fields[i].path)+" = "+valueStyle.Render(value), width, "…")
+		if i == ts.result.fieldCursor {
+			row = selectedFieldStyle.Render(row)
+		}
+		rows = append(rows, row)
 	}
-
-	viewHelpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")).
-		Italic(true)
-	builder.WriteString("\n")
-	builder.WriteString(viewHelpStyle.Render(
-		"↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
-}
-
-// renderScrolledResult renders the visible window of the result body with
-// the scroll indicator and the view-fields hint.
-func (ts *ToolScreen) renderScrolledResult(builder *strings.Builder, availableHeight, termWidth int) {
-	lines := ts.result.lines
-	if lines == nil {
-		lines = []string{}
-	}
-
-	startIdx := ts.result.scroll
-	endIdx := startIdx + availableHeight
-	if startIdx >= len(lines) {
-		startIdx = max(0, len(lines)-1)
-	}
-	if endIdx > len(lines) {
-		endIdx = len(lines)
-	}
-	visibleLines := lines[startIdx:endIdx]
-
-	resultStyle := ts.resultStyle.
-		Width(termWidth - resultWidthMargin).
-		Height(availableHeight)
-
-	resultContent := strings.Join(visibleLines, "\n")
-	builder.WriteString(resultStyle.Render(resultContent))
-
-	if len(lines) > availableHeight {
-		builder.WriteString("\n")
-
-		scrollStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243")).
-			Italic(true)
-
-		builder.WriteString(scrollStyle.Render(resultScrollIndicator(startIdx, endIdx, len(lines))))
-	}
-
-	if len(ts.result.fields) > 1 {
-		builder.WriteString("\n")
-		hintStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243")).
-			Italic(true)
-		builder.WriteString(hintStyle.Render("Press 'v' to view fields • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll"))
-	}
-}
-
-// resultScrollIndicator describes the visible result window and the scroll
-// keys that move it.
-func resultScrollIndicator(startIdx, endIdx, total int) string {
-	canScrollUp := startIdx > 0
-	canScrollDown := endIdx < total
-
-	switch {
-	case canScrollUp && canScrollDown:
-		return fmt.Sprintf("↑ Ctrl+Up/Down: Scroll (line %d-%d/%d) ↓", startIdx+1, endIdx, total)
-	case canScrollUp:
-		return fmt.Sprintf("↑ Ctrl+Up: Scroll up (line %d-%d/%d)", startIdx+1, endIdx, total)
-	case canScrollDown:
-		return fmt.Sprintf("Ctrl+Down: Scroll down (line %d-%d/%d) ↓", startIdx+1, endIdx, total)
-	default:
-		return fmt.Sprintf("Line %d-%d/%d", startIdx+1, endIdx, total)
-	}
+	return strings.Join(rows, "\n")
 }
 
 // renderViolationsBanner renders the yellow output-schema violations

@@ -101,7 +101,6 @@ type ToolScreen struct {
 	selectedStyle       lipgloss.Style
 	buttonStyle         lipgloss.Style
 	selectedButtonStyle lipgloss.Style
-	resultStyle         lipgloss.Style
 	errorStyle          lipgloss.Style
 	warningStyle        lipgloss.Style
 	helpStyle           lipgloss.Style
@@ -350,12 +349,6 @@ func (ts *ToolScreen) initStyles() {
 		Background(lipgloss.Color("6")).
 		Foreground(lipgloss.Color("0")).
 		Bold(true)
-
-	ts.resultStyle = lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("8")).
-		Padding(1).
-		Width(80)
 
 	ts.errorStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("9")).
@@ -1609,8 +1602,19 @@ func fieldTypeValidationError(field *toolField, value string) string {
 func (ts *ToolScreen) View() string {
 	header := ts.renderHeader()
 	footer := ts.renderFooter()
-	result := ts.renderResultBlock(header, footer)
-	return header + result + footer
+	if !ts.result.shown() {
+		return header + footer
+	}
+	width, height := ts.resultViewport()
+	return header + ts.renderResultBlock(width, height) + footer
+}
+
+// fitWidth is style wrapping its text to the terminal's width, so what is
+// measured is what is drawn: a line the terminal wraps itself is one line
+// to lipgloss.Height and two on screen.
+func (ts *ToolScreen) fitWidth(style lipgloss.Style) lipgloss.Style {
+	width, _ := ts.termSize()
+	return style.Width(width)
 }
 
 // renderHeader builds everything above the result block.
@@ -1622,7 +1626,7 @@ func (ts *ToolScreen) renderHeader() string {
 	builder.WriteString(ts.renderStateLines())
 
 	if ts.tool.Description != "" {
-		builder.WriteString(ts.labelStyle.Render(ts.tool.Description))
+		builder.WriteString(ts.fitWidth(ts.labelStyle).Render(ts.tool.Description))
 		builder.WriteString("\n")
 	}
 	builder.WriteString("\n")
@@ -1732,7 +1736,7 @@ func (ts *ToolScreen) renderSchemaBanner() string {
 func (ts *ToolScreen) renderFormFields(builder *strings.Builder) {
 	for i := range ts.fields {
 		field := &ts.fields[i]
-		builder.WriteString(ts.labelStyle.Render(ts.fieldLabel(field) + ":"))
+		builder.WriteString(ts.fitWidth(ts.labelStyle).Render(ts.fieldLabel(field) + ":"))
 		builder.WriteString("\n")
 
 		// Render the textinput model
@@ -1908,21 +1912,21 @@ func (ts *ToolScreen) renderFooter() string {
 	// Error message
 	if err := ts.LastError(); err != nil {
 		builder.WriteString("\n")
-		builder.WriteString(ts.errorStyle.Render(fmt.Sprintf("Error: %v", err)))
+		builder.WriteString(ts.fitWidth(ts.errorStyle).Render(fmt.Sprintf("Error: %v", err)))
 		builder.WriteString("\n")
 	}
 
 	// Help text
 	builder.WriteString("\n")
 	if helpText := ts.currentHelpText(); helpText != "" {
-		builder.WriteString(ts.helpStyle.Render(helpText))
+		builder.WriteString(ts.fitWidth(ts.helpStyle).Render(helpText))
 	}
 
 	// Status message
 	if statusMsg, level := ts.StatusMessage(); statusMsg != "" {
 		builder.WriteString("\n\n")
 		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColorFor(level))).Bold(true)
-		builder.WriteString(statusStyle.Render(statusMsg))
+		builder.WriteString(ts.fitWidth(statusStyle).Render(statusMsg))
 	}
 
 	return builder.String()
@@ -1944,13 +1948,14 @@ func (ts *ToolScreen) renderCLICommandBox() string {
 	builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command (POSIX shell):"))
 	builder.WriteString("\n")
 
-	// CLI command box - no fixed width to prevent wrapping
-	// Let the content determine the natural width
+	// The box wraps a long command inside the terminal; the clipboard
+	// holds it on one line.
+	termWidth, _ := ts.termSize()
 	cliCommandStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("6")). // Cyan border
-		Padding(1).
-		Width(0).                        // No wrapping - let content define width naturally
+		Padding(0, 1).
+		Width(termWidth - 2).
 		Foreground(lipgloss.Color("15")) // White text
 
 	builder.WriteString(cliCommandStyle.Render(ts.cliCommand))
@@ -1984,8 +1989,7 @@ func statusColorFor(level StatusLevel) string {
 func (ts *ToolScreen) currentHelpText() string {
 	switch {
 	case ts.result.picking:
-		// Already shown inline help for viewing mode
-		return ""
+		return "↑/↓ PgUp/PgDn Home/End: Select field • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Back to result"
 	case ts.result.shown():
 		if len(ts.result.fields) > 1 {
 			return "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • " +
