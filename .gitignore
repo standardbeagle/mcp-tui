@@ -42,3 +42,8 @@ binaries/
 
 # Claude Code agent worktrees
 /.claude/worktrees/
+
+# Demo recordings: built binaries and engine output (published files live in docs/public/videos)
+/docs/recordings/.bin/
+/docs/recordings/demos/*/out/
+/docs/recordings/workspace/

@@ -1,0 +1,8 @@
+{
+  "name": "mcp-tui-recordings",
+  "private": true,
+  "description": "Pinned MCP servers the demo recordings run against, so tapes start them in milliseconds instead of through a cold npx fetch.",
+  "dependencies": {
+    "@modelcontextprotocol/server-everything": "2026.8.31"
+  }
+}

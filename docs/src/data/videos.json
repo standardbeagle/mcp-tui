@@ -1,0 +1,62 @@
+{
+  "verify-a-tool": {
+    "title": "Verify an MCP tool in seconds",
+    "description": "Connect to a server, pick a tool, fill the form mcp-tui builds from its input schema, run it, and copy the same call as a CLI command.",
+    "readmeLoop": true
+  },
+  "cli-to-ci": {
+    "title": "From a manual run to a CI script",
+    "description": "Every TUI action has a CLI equivalent: copy one call with c, export the whole session as a replay script with Ctrl+E, and gate CI on exit codes and JSON output.",
+    "readmeLoop": true
+  },
+  "schema-validation": {
+    "title": "Schema validation before the call goes out",
+    "description": "mcp-tui checks arguments against the tool's full input schema and names the argument and rule that broke it, then lets you send the bad call anyway to see how the server rejects it.",
+    "readmeLoop": false
+  },
+  "handshake-errors": {
+    "title": "Transport and handshake mistakes, named",
+    "description": "A wrong URL path, the wrong transport, a server logging to stdout, a server that ignores server/discover: each one is diagnosed with the fix, not a generic timeout.",
+    "readmeLoop": true
+  },
+  "debug-screen": {
+    "title": "Every message and every HTTP exchange",
+    "description": "The debug screen shows the JSON-RPC traffic in both directions, per-request HTTP timing, the OAuth flow step by step, capabilities and notifications.",
+    "readmeLoop": false
+  },
+  "verify-conform": {
+    "title": "Conformance and security probes for CI",
+    "description": "verify probes a server for spec and security gaps; conform runs the whole scenario matrix and writes a JUnit report your CI can show.",
+    "readmeLoop": true
+  },
+  "async-progress-tasks": {
+    "title": "Progress, server logs, tasks and subscriptions",
+    "description": "Watch progress notifications and server logs while a long tool runs, run a call as an MCP task and wait for it, and follow a resource as it changes.",
+    "readmeLoop": false
+  },
+  "oauth": {
+    "title": "OAuth from discovery to token",
+    "description": "mcp-tui discovers the authorization server from a 401, gets a token by client credentials or by dynamic registration and the browser flow, and caches it.",
+    "readmeLoop": false
+  },
+  "tools-metadata": {
+    "title": "Tool metadata at a glance",
+    "description": "Names, titles, annotations and output schemas for every tool, and a confirmation before any tool that declares itself destructive.",
+    "readmeLoop": false
+  },
+  "resources-prompts": {
+    "title": "Resources, templates and prompts",
+    "description": "List and read resources of any type, complete URI template variables, and render prompts with their arguments.",
+    "readmeLoop": false
+  },
+  "elicitation-sampling": {
+    "title": "Answer elicitation and sampling requests",
+    "description": "When a tool needs input mid-call, mcp-tui shows the server's form or its sampling request, interactively in the TUI or from stub flags in the CLI.",
+    "readmeLoop": false
+  },
+  "protocol-versions": {
+    "title": "Pin and inspect MCP protocol versions",
+    "description": "See which protocol version a server negotiated, pin an older one, and read the multi round-trip input rounds a 2026-07-28 call took.",
+    "readmeLoop": false
+  }
+}

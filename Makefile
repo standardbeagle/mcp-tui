@@ -18,7 +18,7 @@ GOLANGCI_LINT=$(GOCMD) run github.com/golangci/golangci-lint/v2/cmd/golangci-lin
 # Build flags
 LDFLAGS=-ldflags "-X main.version=$(VERSION)"
 
-.PHONY: all build clean test race fmt-check ci coverage lint fmt vet deps install dev release help
+.PHONY: all build clean test race fmt-check ci coverage lint fmt vet deps install dev release help demo-bins demo demos
 
 # Default target
 all: clean deps lint test build
@@ -138,3 +138,26 @@ help:
 	@echo "  test-servers - Test with problematic MCP servers"
 	@echo "  run        - Build and run the TUI"
 	@echo "  help       - Show this help"
+# Demo videos for the docs site and README. The agnt demo engine records each
+# docs/recordings/demos/<name>/demo.json (VHS takes, title cards, logo
+# overlay); publish.mjs then writes the site's video files. See
+# docs/recordings/README.md.
+DEMO_ENGINE ?= $(HOME)/work/core/agnt/docs-site/screenshots/engine/demo.mjs
+RECORDINGS = docs/recordings
+DEMO_NAMES = $(notdir $(wildcard $(RECORDINGS)/demos/*))
+
+demo-bins:
+	$(GOBUILD) -o $(RECORDINGS)/.bin/mcp-tui .
+	$(GOBUILD) -o $(RECORDINGS)/.bin/demo-server ./$(RECORDINGS)/demo-server
+	cd $(RECORDINGS) && npm ci --no-audit --no-fund
+
+# make demo NAME=verify-a-tool [DEMOFLAGS=--only=<segment>|--assemble-only]
+demo: demo-bins
+	@test -n "$(NAME)" || (echo "usage: make demo NAME=<demo>  (one of: $(DEMO_NAMES))"; exit 2)
+	node $(DEMO_ENGINE) $(abspath $(RECORDINGS)/demos/$(NAME)) $(DEMOFLAGS)
+	node $(RECORDINGS)/publish.mjs $(NAME)
+
+demos: demo-bins
+	@for name in $(DEMO_NAMES); do \
+		node $(DEMO_ENGINE) $(abspath $(RECORDINGS)/demos)/$$name && node $(RECORDINGS)/publish.mjs $$name || exit 1; \
+	done
