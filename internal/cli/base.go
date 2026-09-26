@@ -832,8 +832,10 @@ func (c *BaseCommand) GetService() mcp.Service {
 type listSpec[T any] struct {
 	// docKey is the JSON document key for the items ("prompts", ...).
 	docKey string
-	// fetch performs the list RPC.
-	fetch func(ctx context.Context) ([]T, error)
+	// fetch performs the list RPC. It is a method expression
+	// (mcp.Service.ListPrompts) so the service is resolved only after
+	// ValidateConnection; a method value would dereference a nil service.
+	fetch func(svc mcp.Service, ctx context.Context) ([]T, error)
 	// progressFetch / progressFail / progressOK are the stderr progress
 	// lines for the text, non-porcelain path.
 	progressFetch string
@@ -864,7 +866,7 @@ func runListFetch[T any](c *BaseCommand, cmd *cobra.Command, spec listSpec[T]) (
 		fmt.Fprint(os.Stderr, spec.progressFetch)
 	}
 
-	items, err = spec.fetch(ctx)
+	items, err = spec.fetch(c.service, ctx)
 	if err != nil {
 		if c.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprint(os.Stderr, spec.progressFail)

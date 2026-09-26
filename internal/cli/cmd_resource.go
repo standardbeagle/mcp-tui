@@ -88,7 +88,7 @@ func (rc *ResourceCommand) createGetCommand() *cobra.Command {
 func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) error {
 	resources, jsonDone, err := runListFetch(rc.BaseCommand, cmd, listSpec[mcp.Resource]{
 		docKey:        "resources",
-		fetch:         rc.GetService().ListResources,
+		fetch:         mcp.Service.ListResources,
 		progressFetch: "📁 Fetching available resources...\n",
 		progressFail:  "❌ Failed to retrieve resources\n",
 		progressOK:    "✅ Resources retrieved successfully\n\n",
@@ -367,7 +367,7 @@ func (rc *ResourceCommand) createCompleteCommand() *cobra.Command {
 func (rc *ResourceCommand) runTemplatesCommand(cmd *cobra.Command, _ []string) error {
 	templates, jsonDone, err := runListFetch(rc.BaseCommand, cmd, listSpec[mcp.ResourceTemplate]{
 		docKey:        "resourceTemplates",
-		fetch:         rc.GetService().ListResourceTemplates,
+		fetch:         mcp.Service.ListResourceTemplates,
 		progressFetch: "🧩 Fetching resource templates...\n",
 		progressFail:  "❌ Failed to retrieve resource templates\n",
 		progressOK:    "✅ Resource templates retrieved\n\n",

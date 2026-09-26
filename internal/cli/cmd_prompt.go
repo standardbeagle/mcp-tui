@@ -125,7 +125,7 @@ func (pc *PromptCommand) createExecuteCommand() *cobra.Command {
 func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error {
 	prompts, jsonDone, err := runListFetch(pc.BaseCommand, cmd, listSpec[mcp.Prompt]{
 		docKey:        "prompts",
-		fetch:         pc.GetService().ListPrompts,
+		fetch:         mcp.Service.ListPrompts,
 		progressFetch: "📋 Fetching available prompts...\n",
 		progressFail:  "❌ Failed to retrieve prompts\n",
 		progressOK:    "✅ Prompts retrieved successfully\n\n",
