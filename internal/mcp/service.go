@@ -463,7 +463,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	sessionOptions := &officialMCP.ClientSessionOptions{ProtocolVersion: config.ProtocolVersion}
 	err = sessionManager.Connect(ctx, client, linkedTransport, contextStrategy, transportConfig.Type, sessionOptions)
 	if err != nil {
-		return connectFailureError(ctx, transport, err)
+		return connectFailureError(ctx, transport, handshake, err)
 	}
 
 	if clientSession := sessionManager.GetSession(); clientSession != nil {
@@ -504,7 +504,7 @@ func (s *service) prepareOAuthHandler(
 
 // connectFailureError turns a failed session handshake into the error the
 // caller should see, killing a stdio server whose handshake ran out of time.
-func connectFailureError(ctx context.Context, transport officialMCP.Transport, err error) error {
+func connectFailureError(ctx context.Context, transport officialMCP.Transport, handshake *handshakeTrace, err error) error {
 	// A stdio server that dies during startup fails the handshake with an
 	// opaque EOF. Its stderr says what actually went wrong, so prefer that.
 	var startupErr error
@@ -521,6 +521,12 @@ func connectFailureError(ctx context.Context, transport officialMCP.Transport, e
 	}
 	if startupErr != nil {
 		return startupErr
+	}
+	// A running stdio server that let discover time out ignored it. Over
+	// HTTP the same symptom has other causes (a hung POST, a dropped TCP
+	// connect), so it is only diagnosed where the process is known alive.
+	if _, isStdio := transport.(transports.ServerKiller); isStdio && ctx.Err() != nil && handshake.discoverWentUnanswered() {
+		return &discoverUnansweredError{cause: err}
 	}
 	return fmt.Errorf("failed to connect to MCP server: %w", err)
 }

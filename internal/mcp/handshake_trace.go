@@ -29,6 +29,9 @@ type handshakeTrace struct {
 	serverSupported   []string
 	discoverErr       string
 	initializeSent    string
+	// discoverUnanswered is set when a server/discover ended with the
+	// caller's context rather than any answer from the server.
+	discoverUnanswered bool
 }
 
 func newHandshakeTrace() *handshakeTrace { return &handshakeTrace{} }
@@ -73,6 +76,7 @@ func (h *handshakeTrace) recordDiscover(requested string, res officialMCP.Result
 		return
 	}
 	h.discoverErr = errorText(err)
+	h.discoverUnanswered = errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 	var rpcErr *jsonrpc.Error
 	if errors.As(err, &rpcErr) && rpcErr.Code == officialMCP.CodeUnsupportedProtocolVersion && len(rpcErr.Data) > 0 {
 		var data officialMCP.UnsupportedProtocolVersionData
@@ -112,6 +116,34 @@ func (h *handshakeTrace) logResult(requested string, res *officialMCP.Initialize
 	}
 	debug.Info("Protocol version negotiated", fields...)
 }
+
+// discoverWentUnanswered reports whether the server never answered a
+// server/discover before the caller gave up.
+func (h *handshakeTrace) discoverWentUnanswered() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.discoverUnanswered
+}
+
+// discoverUnansweredError reports a server that never answered
+// server/discover, the first request of the 2026-07-28 handshake, so the
+// handshake ran out of time. A server must answer a method it does not know
+// with -32601, which makes the SDK fall back to initialize at once; one that
+// drops the request instead stalls every connection until its deadline. The
+// cause (the deadline) stays reachable through Unwrap.
+type discoverUnansweredError struct {
+	cause error
+}
+
+func (e *discoverUnansweredError) Error() string {
+	return "the server never answered server/discover, the first request of the MCP 2026-07-28 handshake, " +
+		"so the handshake ran out of time. A server must answer a method it does not know with error " +
+		"-32601 (method not found), which lets the client fall back to initialize; this one ignored it.\n\n" +
+		"Suggestion: pin --protocol-version 2025-11-25 to start with initialize, and report the ignored " +
+		"request to the server's maintainers"
+}
+
+func (e *discoverUnansweredError) Unwrap() error { return e.cause }
 
 func discoverRequestedVersion(req officialMCP.Request) string {
 	p, ok := req.GetParams().(*officialMCP.DiscoverParams)

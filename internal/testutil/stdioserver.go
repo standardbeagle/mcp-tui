@@ -32,6 +32,9 @@ const (
 	// stdioServerPIDFileEnv names a file the server writes its process ID to
 	// before anything else.
 	stdioServerPIDFileEnv = "MCP_TUI_TEST_STDIO_SERVER_PIDFILE"
+	// stdioServerDropsDiscoverEnv makes the server read server/discover and
+	// never answer it, like servers that ignore methods they do not know.
+	stdioServerDropsDiscoverEnv = "MCP_TUI_TEST_STDIO_SERVER_DROPS_DISCOVER"
 	// stdioServerSilent, as the value of stdioServerEnv, makes the server
 	// never answer and ignore its stdin closing.
 	stdioServerSilent = "silent"
@@ -72,6 +75,10 @@ type StdioServerOptions struct {
 	// Silent makes a server that never answers the handshake and ignores
 	// its stdin closing, so only a signal stops it.
 	Silent bool
+	// DropsDiscover makes a server that never answers server/discover but
+	// answers initialize: a pre-2026-07-28 server that ignores unknown
+	// methods instead of answering them with -32601.
+	DropsDiscover bool
 }
 
 // StdioServer returns the command and environment that start the stdio test
@@ -97,6 +104,9 @@ func StdioServer(t *testing.T, opts StdioServerOptions) (command string, env map
 	}
 	if opts.Silent {
 		env[stdioServerEnv] = stdioServerSilent
+	}
+	if opts.DropsDiscover {
+		env[stdioServerDropsDiscoverEnv] = "1"
 	}
 	return exe, env
 }
@@ -195,7 +205,38 @@ func serveStdio() error {
 	if downgrade := os.Getenv(stdioServerDowngradeEnv); downgrade != "" && starts > 1 {
 		transport = &downgradingTransport{inner: transport, version: downgrade}
 	}
+	if os.Getenv(stdioServerDropsDiscoverEnv) != "" {
+		transport = &discoverDroppingTransport{inner: transport}
+	}
 	return server.Run(context.Background(), transport)
+}
+
+// discoverDroppingTransport hides every server/discover request from the
+// server, so the client's discover goes unanswered.
+type discoverDroppingTransport struct {
+	inner officialMCP.Transport
+}
+
+func (d *discoverDroppingTransport) Connect(ctx context.Context) (officialMCP.Connection, error) {
+	conn, err := d.inner.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &discoverDroppingConn{Connection: conn}, nil
+}
+
+type discoverDroppingConn struct {
+	officialMCP.Connection
+}
+
+func (c *discoverDroppingConn) Read(ctx context.Context) (jsonrpc.Message, error) {
+	for {
+		msg, err := c.Connection.Read(ctx)
+		if req, ok := msg.(*jsonrpc.Request); ok && err == nil && req.Method == "server/discover" {
+			continue
+		}
+		return msg, err
+	}
 }
 
 // recordStart appends a start to path and returns how many there have been.
