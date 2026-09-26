@@ -36,11 +36,13 @@ func exportSession(service mcp.Service) (string, StatusLevel) {
 	scriptPath := base + ".sh"
 
 	// Session events can carry message payloads, so both files are
-	// owner-only; run the script via `sh <path>` rather than ./<path>.
+	// owner-only. The script is a bash script (set -o pipefail), documented
+	// as runnable directly, so the owner keeps the execute bit.
 	if err := os.WriteFile(jsonPath, eventsJSON, 0o600); err != nil {
 		return fmt.Sprintf("Failed to write %s: %v", jsonPath, err), StatusError
 	}
-	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+	//nolint:gosec // G306: 0700 is owner-only; the execute bit is the point.
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
 		return fmt.Sprintf("Failed to write %s: %v", scriptPath, err), StatusError
 	}
 
