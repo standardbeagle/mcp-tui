@@ -337,7 +337,7 @@ func (s *ElicitationScreen) submit() (tea.Model, tea.Cmd) {
 		return s, func() tea.Msg { return BackMsg{} }
 	}
 	if s.isURLMode() {
-		s.pending.Resolve(&officialMCP.ElicitResult{Action: "accept"})
+		s.pending.Resolve(&officialMCP.ElicitResult{Action: elicitation.ActionAccept})
 		return s, func() tea.Msg { return BackMsg{} }
 	}
 

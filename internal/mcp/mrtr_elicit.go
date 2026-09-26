@@ -10,6 +10,7 @@ import (
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/elicitation"
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
@@ -72,7 +73,7 @@ func elicitForm(
 	if err != nil {
 		return nil, err
 	}
-	if res.Action != "accept" || schema == nil || res.Content == nil {
+	if res.Action != elicitation.ActionAccept || schema == nil || res.Content == nil {
 		return res, nil
 	}
 	resolved, err := schema.Resolve(nil)

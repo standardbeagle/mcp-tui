@@ -22,7 +22,7 @@ const (
 	viewModeDiscovery = "discovery"
 )
 
-// ConnectionScreenConnectionScreen handles MCP server connection setup
+// ConnectionScreen handles MCP server connection setup
 type ConnectionScreen struct {
 	*BaseScreen
 	config *config.Config
@@ -1180,13 +1180,13 @@ func discoveredFileCardContent(file *models.DiscoveredConfigFile) string {
 // formatIconFor returns the icon for a discovered config file format.
 func formatIconFor(format string) string {
 	switch format {
-	case "claude-desktop":
+	case models.FormatClaudeDesktop:
 		return "🤖"
-	case "vscode":
+	case models.FormatVSCode:
 		return "📝"
-	case "mcp-tui":
+	case models.FormatMCPTUI:
 		return "🔧"
-	case "package.json":
+	case models.FormatPackageJSON:
 		return "📦"
 	default:
 		return "📄"

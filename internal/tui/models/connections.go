@@ -513,11 +513,11 @@ func (cm *ConnectionsManager) GetRecentConnections() []*ConnectionEntry {
 
 // Discovered config file formats (DiscoveredConfigFile.Format).
 const (
-	formatClaudeDesktop = "claude-desktop"
-	formatVSCode        = "vscode"
-	formatMCPtui        = "mcp-tui"
-	formatPackageJSON   = "package.json"
-	formatUnknown       = "unknown"
+	FormatClaudeDesktop = "claude-desktop"
+	FormatVSCode        = "vscode"
+	FormatMCPTUI        = "mcp-tui"
+	FormatPackageJSON   = "package.json"
+	FormatUnknown       = "unknown"
 )
 
 // DiscoveredConfigFile represents a configuration file found in the filesystem
@@ -623,7 +623,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	}
 	if err := json.Unmarshal(data, &claudeConfig); err == nil &&
 		claudeConfig.MCPServers != nil && len(claudeConfig.MCPServers) > 0 {
-		dc.Format = formatClaudeDesktop
+		dc.Format = FormatClaudeDesktop
 		serverCount = len(claudeConfig.MCPServers)
 		dc.Servers = extractJSONObjectServers(claudeConfig.MCPServers)
 	} else {
@@ -633,7 +633,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 		}
 		if err := json.Unmarshal(data, &vscodeConfig); err == nil &&
 			vscodeConfig.Servers != nil && len(vscodeConfig.Servers) > 0 {
-			dc.Format = formatVSCode
+			dc.Format = FormatVSCode
 			serverCount = len(vscodeConfig.Servers)
 			dc.Servers = extractJSONObjectServers(vscodeConfig.Servers)
 		} else {
@@ -641,11 +641,11 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 			var nativeConfig ConnectionsConfig
 			if err := json.Unmarshal(data, &nativeConfig); err == nil &&
 				nativeConfig.Servers != nil && len(nativeConfig.Servers) > 0 {
-				dc.Format = formatMCPtui
+				dc.Format = FormatMCPTUI
 				serverCount = len(nativeConfig.Servers)
 				dc.Servers = cm.extractNativeServers(nativeConfig.Servers)
 			} else {
-				dc.Format = formatUnknown
+				dc.Format = FormatUnknown
 			}
 		}
 	}
@@ -653,7 +653,7 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	dc.ServerCount = serverCount
 
 	// Only return files with valid MCP configuration (serverCount > 0)
-	if serverCount == 0 || dc.Format == formatUnknown {
+	if serverCount == 0 || dc.Format == FormatUnknown {
 		return nil
 	}
 
@@ -770,11 +770,11 @@ func (cm *ConnectionsManager) isMoreRelevant(a, b *DiscoveredConfigFile) bool {
 
 	// Format priority: mcp-tui > claude-desktop > vscode > package.json > unknown
 	formatPriority := map[string]int{
-		formatMCPtui:        1,
-		formatClaudeDesktop: 2,
-		formatVSCode:        3,
-		formatPackageJSON:   4,
-		formatUnknown:       5,
+		FormatMCPTUI:        1,
+		FormatClaudeDesktop: 2,
+		FormatVSCode:        3,
+		FormatPackageJSON:   4,
+		FormatUnknown:       5,
 	}
 
 	aPrio, aExists := formatPriority[a.Format]
