@@ -15,12 +15,16 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/debug"
 )
 
-// stdioShutdownGrace is how long closing the connection waits for the server
-// to exit after its stdin closes, and again after SIGTERM, before escalating
-// (the spec's stdio shutdown sequence, which names no duration). The SDK's 5s
-// default is paid in full by every one-shot CLI call against a server that
-// keeps timers running after EOF, which is most Node servers.
-const stdioShutdownGrace = 2 * time.Second
+// The spec's stdio shutdown sequence (close stdin, then SIGTERM, then
+// SIGKILL) names no durations. SIGTERM is itself a graceful stop, where a
+// server runs its cleanup, so the wait before it is short: every one-shot
+// CLI call against a server that keeps timers running after EOF (most Node
+// servers) pays it in full, as it paid the SDK's 5s default. The wait before
+// SIGKILL stays long enough for that cleanup.
+const (
+	stdinCloseGrace = 500 * time.Millisecond
+	sigtermGrace    = 2 * time.Second
+)
 
 // serverStdin is the write side of a stdio server connection. Closing it ends
 // the server the way the spec prescribes: close stdin, wait, SIGTERM, wait,
@@ -29,7 +33,6 @@ const stdioShutdownGrace = 2 * time.Second
 type serverStdin struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
-	grace time.Duration
 
 	closeOnce sync.Once
 	closeErr  error
@@ -48,30 +51,30 @@ func (s *serverStdin) shutdown() error {
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- s.cmd.Wait() }()
-	wait := func() (error, bool) {
+	wait := func(grace time.Duration) (error, bool) {
 		select {
 		case err := <-exited:
 			return err, true
-		case <-time.After(s.grace):
+		case <-time.After(grace):
 			return nil, false
 		}
 	}
-	if err, ok := wait(); ok {
+	if err, ok := wait(stdinCloseGrace); ok {
 		return err
 	}
 	// Signal fails where SIGTERM does not exist (Windows); go straight to kill.
 	if s.cmd.Process.Signal(syscall.SIGTERM) == nil {
-		if _, ok := wait(); ok {
+		if _, ok := wait(sigtermGrace); ok {
 			debug.Warn("Enhanced STDIO: server did not exit after its stdin closed; stopped with SIGTERM",
-				debug.F("grace", s.grace))
+				debug.F("grace", stdinCloseGrace))
 			return nil
 		}
 	}
 	if err := s.cmd.Process.Kill(); err != nil && !stderrors.Is(err, os.ErrProcessDone) {
 		return fmt.Errorf("killing server process %d: %w", s.cmd.Process.Pid, err)
 	}
-	if _, ok := wait(); ok {
-		debug.Warn("Enhanced STDIO: server ignored stdin close and SIGTERM; killed", debug.F("grace", s.grace))
+	if _, ok := wait(sigtermGrace); ok {
+		debug.Warn("Enhanced STDIO: server ignored stdin close and SIGTERM; killed", debug.F("grace", sigtermGrace))
 		return nil
 	}
 	return fmt.Errorf("server process %d did not exit after SIGKILL", s.cmd.Process.Pid)

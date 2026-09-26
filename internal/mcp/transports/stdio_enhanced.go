@@ -326,7 +326,7 @@ func startServer(ctx context.Context, cmd *exec.Cmd, prefix *stdoutPrefix) (offi
 	transport := &officialMCP.IOTransport{
 		// The connection closes by closing stdin, never stdout.
 		Reader: io.NopCloser(io.TeeReader(stdout, prefix)),
-		Writer: &serverStdin{cmd: cmd, stdin: stdin, grace: stdioShutdownGrace},
+		Writer: &serverStdin{cmd: cmd, stdin: stdin},
 	}
 	return transport.Connect(ctx)
 }

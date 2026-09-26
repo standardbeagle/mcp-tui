@@ -28,7 +28,9 @@ func TestStdioCloseStopsServerThatIgnoresStdinClose(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Errorf("Close() = %v, want nil for a server stopped by the shutdown signal", err)
 	}
-	if elapsed := time.Since(start); elapsed >= 4*time.Second {
-		t.Errorf("Close took %v, want under the SDK's 5s default grace", elapsed)
+	// SIGTERM is itself graceful, so the wait before it is short: a one-shot
+	// CLI call pays it every time.
+	if elapsed := time.Since(start); elapsed >= 1500*time.Millisecond {
+		t.Errorf("Close took %v, want the server signalled within about 500ms of its stdin closing", elapsed)
 	}
 }
