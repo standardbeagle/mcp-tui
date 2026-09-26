@@ -10,6 +10,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/privatefile"
 )
 
 // displayName renders a server id like "my-server" as "My Server" for the
@@ -328,22 +329,28 @@ func (cm *ConnectionsManager) getIconForServerType(serverType string) string {
 
 // SaveConnections saves the current connections to disk
 func (cm *ConnectionsManager) SaveConnections() error {
-	// Ensure config directory exists. Entries can carry headers and env
-	// values (i.e. credentials), so the directory is owner-only like the
-	// OAuth token cache.
+	// Entries can carry headers and env values (i.e. credentials), so the
+	// directory and file are owner-only like the OAuth token cache.
+	// MkdirAll leaves an existing directory's mode alone, so a directory
+	// created 0755 by an older release is tightened explicitly. The cwd
+	// fallback (no home directory) is not ours to chmod.
 	dir := filepath.Dir(cm.filePath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
+	if dir != "." {
+		//nolint:gosec // G302: a directory needs the execute bit to be entered; 0700 is owner-only.
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return fmt.Errorf("failed to restrict config directory: %w", err)
+		}
+	}
 
-	// Marshal to JSON with indentation
 	data, err := json.MarshalIndent(cm.config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal connections: %w", err)
 	}
 
-	// Write to file
-	if err := os.WriteFile(cm.filePath, data, 0o600); err != nil {
+	if err := privatefile.Write(cm.filePath, data); err != nil {
 		return fmt.Errorf("failed to write connections file: %w", err)
 	}
 

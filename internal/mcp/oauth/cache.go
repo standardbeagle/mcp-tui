@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+
+	"github.com/standardbeagle/mcp-tui/internal/privatefile"
 )
 
 // TokenCache persists OAuth sessions between mcp-tui invocations so the
@@ -205,30 +207,8 @@ func (c *FileTokenCache) Save(key string, session *Session) error {
 		return fmt.Errorf("oauth: marshal session: %w", err)
 	}
 
-	// Atomic write: temp file in same directory, then rename.
-	tmp, err := os.CreateTemp(c.dir, ".tok-*")
-	if err != nil {
-		return fmt.Errorf("oauth: create temp token file: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() {
-		// On any failure path, remove the temp file. On success rename
-		// has already moved it so this is a noop.
-		_ = os.Remove(tmpName)
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("oauth: chmod temp token file: %w", err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("oauth: write temp token file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("oauth: close temp token file: %w", err)
-	}
-	if err := os.Rename(tmpName, c.path(key)); err != nil {
-		return fmt.Errorf("oauth: rename token file: %w", err)
+	if err := privatefile.Write(c.path(key), data); err != nil {
+		return fmt.Errorf("oauth: save token file: %w", err)
 	}
 	return nil
 }
