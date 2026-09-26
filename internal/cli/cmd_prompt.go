@@ -440,9 +440,21 @@ func printPromptResultText(promptName string, result *mcp.GetPromptResult) {
 		// Message role
 		fmt.Println(messageRoleStyle.Render(fmt.Sprintf("Role: %s", message.Role)))
 
-		// Message content
-		if message.Content != nil {
-			fmt.Println(renderLines(messageContentStyle, fmt.Sprintf("Content: %v", message.Content)))
+		for _, content := range message.Content {
+			fmt.Println(renderLines(messageContentStyle, promptContentText(content)))
 		}
 	}
+}
+
+// promptContentText is a prompt message's content block as printed: text
+// as is, any other block (image, audio, resource) as indented JSON.
+func promptContentText(content mcp.Content) string {
+	if content.Type == mcp.ContentTypeText {
+		return content.Text
+	}
+	contentJSON, err := json.MarshalIndent(content, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("(%s content that cannot be shown: %v)", content.Type, err)
+	}
+	return string(contentJSON)
 }
