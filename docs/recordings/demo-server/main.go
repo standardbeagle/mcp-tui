@@ -21,9 +21,10 @@ import (
 )
 
 type config struct {
-	stdio    bool
-	httpAddr string
-	sseAddr  string
+	stdio     bool
+	httpAddr  string
+	sseAddr   string
+	misbehave bool
 }
 
 func main() {
@@ -31,6 +32,8 @@ func main() {
 	flag.BoolVar(&cfg.stdio, "stdio", false, "serve MCP over stdin/stdout")
 	flag.StringVar(&cfg.httpAddr, "http", "", "serve streamable HTTP at /mcp on this loopback address, e.g. 127.0.0.1:8931")
 	flag.StringVar(&cfg.sseAddr, "sse", "", "serve the legacy SSE transport at /sse on this loopback address, e.g. 127.0.0.1:8932")
+	flag.BoolVar(&cfg.misbehave, "misbehave", false, "break the rules `mcp-tui verify` probes: an invalid tool name, "+
+		"an unstable tools/list order, an error result without content")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -51,7 +54,7 @@ func run(ctx context.Context, cfg config) error {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	queue := &liveQueue{}
-	server := newDeskServer(queue, logger)
+	server := newDeskServer(queue, cfg.misbehave, logger)
 
 	g, ctx := errgroup.WithContext(ctx)
 	queueCtx, stopQueue := context.WithCancel(ctx)

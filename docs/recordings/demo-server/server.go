@@ -57,8 +57,9 @@ func (q *liveQueue) run(ctx context.Context, server *mcp.Server, logger *slog.Lo
 	}
 }
 
-// newDeskServer builds the Acme support desk MCP server.
-func newDeskServer(queue *liveQueue, logger *slog.Logger) *mcp.Server {
+// newDeskServer builds the Acme support desk MCP server. With misbehave set
+// it breaks three rules that `mcp-tui verify` checks (see README.md).
+func newDeskServer(queue *liveQueue, misbehave bool, logger *slog.Logger) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:        serverName,
 		Title:       "Acme Support Desk",
@@ -74,10 +75,35 @@ func newDeskServer(queue *liveQueue, logger *slog.Logger) *mcp.Server {
 		SubscribeHandler:   subscribeToQueue,
 		UnsubscribeHandler: func(context.Context, *mcp.UnsubscribeRequest) error { return nil },
 	})
-	registerTools(server, logger)
+	registerTools(server, misbehave, logger)
 	registerResources(server, queue)
 	registerPrompts(server)
+	if misbehave {
+		server.AddReceivingMiddleware(reverseEveryOtherToolsList())
+	}
 	return server
+}
+
+// reverseEveryOtherToolsList deliberately breaks the 2026-07-28 SHOULD that
+// tools/list keep a stable order: every second answer comes back reversed.
+func reverseEveryOtherToolsList() mcp.Middleware {
+	var lists atomic.Int64
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			if method != "tools/list" || err != nil || lists.Add(1)%2 == 1 {
+				return res, err
+			}
+			listed, ok := res.(*mcp.ListToolsResult)
+			if !ok {
+				return nil, fmt.Errorf("tools/list returned %T", res)
+			}
+			reversed := *listed
+			reversed.Tools = slices.Clone(listed.Tools)
+			slices.Reverse(reversed.Tools)
+			return &reversed, nil
+		}
+	}
 }
 
 func subscribeToQueue(_ context.Context, req *mcp.SubscribeRequest) error {

@@ -24,7 +24,7 @@ var deskToolNames = []string{
 func TestToolsListOverStreamableHTTP(t *testing.T) {
 	testutil.RequireLocalListener(t)
 	logger := slog.New(slog.DiscardHandler)
-	srv := httptest.NewServer(newStreamableHandler(newDeskServer(&liveQueue{}, logger), logger))
+	srv := httptest.NewServer(newStreamableHandler(newDeskServer(&liveQueue{}, false, logger), logger))
 	t.Cleanup(srv.Close)
 
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {

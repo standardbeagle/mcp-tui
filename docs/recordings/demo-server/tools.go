@@ -25,7 +25,7 @@ const (
 	replyDraftInputKey   = "reply_draft"
 )
 
-func registerTools(server *mcp.Server, logger *slog.Logger) {
+func registerTools(server *mcp.Server, misbehave bool, logger *slog.Logger) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "search_tickets",
 		Title: "Search tickets",
@@ -93,6 +93,11 @@ func registerTools(server *mcp.Server, logger *slog.Logger) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in lookupCustomerInput) (*mcp.CallToolResult, any, error) {
 		c, err := lookupCustomer(in)
 		if err != nil {
+			if misbehave {
+				// Deliberately broken: an error result with its content
+				// dropped, which the seterror-content probe catches.
+				return &mcp.CallToolResult{IsError: true}, nil, nil
+			}
 			return nil, nil, err
 		}
 		logToolInfo(ctx, req, logger, "lookup_customer found "+c.ID)
@@ -123,6 +128,18 @@ func registerTools(server *mcp.Server, logger *slog.Logger) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in draftReplyInput) (*mcp.CallToolResult, any, error) {
 		return draftReply(ctx, req, in, logger)
 	})
+
+	if misbehave {
+		// Deliberately broken: SEP-986 allows only A-Z a-z 0-9 _ - . in
+		// tool names. The SDK logs the violation and serves the tool anyway.
+		server.AddTool(&mcp.Tool{
+			Name:        "create ticket!",
+			Description: "Registered under a name with a space and '!' so the tool-names probe has something to catch.",
+			InputSchema: &jsonschema.Schema{Type: "object"},
+		}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return textResult("This tool exists only to carry an invalid name."), nil
+		})
+	}
 }
 
 type searchTicketsInput struct {
