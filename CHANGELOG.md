@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Untyped parameters**: a parameter with no `type` takes its type from `const` or a non-null `default` (with a note); otherwise the note says any JSON value is accepted.
 
 ### Fixed
+- **`tool list` hid the callable name**: a tool with a title was listed only by its title (`Search tickets [R][I]`), so the name to pass to `tool call` was nowhere on screen. Each tool now leads with its name, the title beside it (`search_tickets — Search tickets [R][I]`), and a legend explains the `[R]`/`[D]`/`[I]`/`[O]` markers.
 - **Prompt arguments printed as Go maps**: `prompt get` and the TUI prompt viewer showed `• ticket_id: map[description:e.g. T-1041 required:true]`, in random order. They now show `• ticket_id (required): e.g. T-1041` in the order the server declared, and `conform` completes the first declared argument rather than a random one.
 - **Binary resources**: `resource get` on a `blob` resource printed "Error decoding binary data: illegal base64", and `--format json` wrote the blob as garbled raw bytes. Text output now names the MIME type and size; JSON carries the blob as base64, as on the wire. The TUI resource viewer no longer labels the bytes "base64 encoded".
 - **Stuck on the tool screen**: with the cursor in a form field, `Ctrl+C`, `PgUp`/`PgDn` and `Ctrl+↑/↓` were typed into the field and did nothing, and `Esc` did nothing while a call ran. They now work from anywhere on the screen; `Enter` in a field executes, as the help line said.

@@ -233,8 +233,8 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 }
 
 // printToolListText renders the `tool list` text output: a header, one
-// block per tool (name with badges, schema problem, description, icons),
-// then the total count.
+// block per tool (name, title and badges, schema problem, description,
+// icons), then the total count and, when any tool has badges, their legend.
 func printToolListText(tools []mcp.Tool) {
 	// Define styles
 	headerStyle := lipgloss.NewStyle().
@@ -259,19 +259,27 @@ func printToolListText(tools []mcp.Tool) {
 	fmt.Println(headerStyle.Render(fmt.Sprintf("Available Tools (%d)", len(tools))))
 	fmt.Println(strings.Repeat("─", 40))
 
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("7")) // Light Gray
+
 	// Display tools in a nice format
+	anyBadges := false
 	for i, tool := range tools {
 		// Add spacing between tools
 		if i > 0 {
 			fmt.Println()
 		}
 
-		// Tool name + badges. DisplayName surfaces server-supplied titles.
-		// Badges are rendered with renderCLIBadges so the color palette
-		// matches the TUI tool list.
-		header := toolNameStyle.Render(tool.DisplayName())
+		// The name leads: it is what tool call takes. A server-supplied
+		// title follows it. Badges are rendered with renderCLIBadges so the
+		// color palette matches the TUI tool list.
+		header := toolNameStyle.Render(tool.Name)
+		if title := tool.DisplayName(); title != tool.Name {
+			header += " — " + titleStyle.Render(title)
+		}
 		if badges := renderCLIBadges(&tool); badges != "" {
 			header = header + " " + badges
+			anyBadges = true
 		}
 		fmt.Println(header)
 		if problem := mcp.ToolNameProblem(tool.Name); problem != "" {
@@ -288,7 +296,13 @@ func printToolListText(tools []mcp.Tool) {
 	// Footer
 	fmt.Println()
 	fmt.Println(countStyle.Render(fmt.Sprintf("Total: %d tools", len(tools))))
+	if anyBadges {
+		fmt.Println(countStyle.UnsetMarginTop().Render(toolBadgeLegend))
+	}
 }
+
+// toolBadgeLegend explains the annotation markers renderCLIBadges prints.
+const toolBadgeLegend = "[R] read-only  [D] destructive  [I] idempotent  [O] open world"
 
 // printIcons prints one indented "Icon:" line per icon (SEP-973); icons are
 // described, never fetched.
