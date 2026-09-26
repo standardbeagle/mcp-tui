@@ -86,9 +86,10 @@ func TestEnhancedErrorHandlingEndToEnd(t *testing.T) {
 				Args:    quickExitArgs,
 			},
 			// This will fail at MCP protocol initialization level (not a real MCP server)
-			// but should pass pre-flight validation (command executes successfully)
+			// but should pass pre-flight validation (command executes successfully).
+			// It prints "test" to stdout, which the error quotes.
 			expectedErrorContains: []string{
-				"MCP initialization failed",
+				`not a JSON-RPC message: "test"`,
 			},
 			expectedErrorNotContains: []string{
 				"server startup failed",
@@ -286,8 +287,7 @@ func TestWorkingServerCompatibility(t *testing.T) {
 	service.SetDebugMode(true)
 
 	// The server stays up 2s after printing, far longer than reading one
-	// line takes, and then exits: the SDK's close waits for a server that
-	// ignores its closed stdin, up to 5s, and this keeps the test short.
+	// line takes, and then exits.
 	runningCmd, runningArgs := testutil.ServerPrintsThenSleeps(t, "MCP server running on stdio", 2)
 	connectionConfig := &config.ConnectionConfig{
 		Type:    config.TransportStdio,
@@ -305,8 +305,13 @@ func TestWorkingServerCompatibility(t *testing.T) {
 	if err == nil {
 		t.Fatal("Connect succeeded against a server that never speaks MCP")
 	}
-	if !strings.Contains(err.Error(), "invalid character 'M'") {
-		t.Errorf("Connect error = %v, want the announcement rejected as invalid JSON", err)
+	// Logging to stdout is the most common stdio handshake failure: the
+	// error quotes what the server wrote and says where logs belong.
+	if !strings.Contains(err.Error(), `"MCP server running on stdio"`) {
+		t.Errorf("Connect error = %v, want it to quote the line the server wrote to stdout", err)
+	}
+	if !strings.Contains(err.Error(), "stderr") {
+		t.Errorf("Connect error = %v, want it to say logs belong on stderr", err)
 	}
 	if strings.Contains(err.Error(), "server startup failed") {
 		t.Errorf("a running server was classified as a startup failure: %v", err)

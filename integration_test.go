@@ -315,8 +315,8 @@ func TestStdioServerIntegration(t *testing.T) {
 		// Should not contain validation errors
 		assert.NotContains(t, outputStr, "command validation failed")
 
-		// Should contain MCP-related error
-		assert.Contains(t, outputStr, "MCP initialization failed")
+		// The stand-in prints "test" to stdout; the error quotes it.
+		assert.Contains(t, outputStr, `not a JSON-RPC message: "test"`)
 	})
 }
 
@@ -347,7 +347,7 @@ func TestNaturalCLIConnectionString(t *testing.T) {
 
 	assert.Error(t, err, "a server that never speaks MCP must fail the handshake")
 	assert.Contains(t, outputStr, "Starting process: "+serverCmd)
-	assert.Contains(t, outputStr, "MCP initialization failed")
+	assert.Contains(t, outputStr, `not a JSON-RPC message: "test"`)
 	assert.NotContains(t, outputStr, "no MCP server connection specified")
 }
 

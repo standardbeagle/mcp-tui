@@ -5,6 +5,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
@@ -45,9 +46,10 @@ type EnhancedSTDIOTransport struct {
 	env     []string // nil inherits the environment
 
 	mu       sync.Mutex
-	cmd      *exec.Cmd   // the most recently started process
-	stderr   *syncBuffer // stderr of the most recently started process
-	startErr error       // set when the process could not be started at all
+	cmd      *exec.Cmd     // the most recently started process
+	stderr   *syncBuffer   // stderr of the most recently started process
+	stdout   *stdoutPrefix // start of stdout of the most recently started process
+	startErr error         // set when the process could not be started at all
 }
 
 // createEnhancedSTDIOTransport creates an enhanced STDIO transport.
@@ -272,23 +274,23 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 	debug.Debug("Enhanced STDIO: Establishing MCP connection",
 		debug.F("command", e.command))
 
-	// A new process per connection. The SDK wires stdin/stdout; stderr is
-	// ours to capture for diagnostics.
+	// A new process per connection. stderr and the start of stdout are kept
+	// for diagnosing a failed handshake.
 	cmd := exec.Command(e.command, e.args...) //nolint:gosec // G204: validated by ValidateCommand at creation
 	cmd.Env = e.env
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
+	stdout := &stdoutPrefix{}
 	e.mu.Lock()
-	e.cmd, e.stderr, e.startErr = cmd, stderr, nil
+	e.cmd, e.stderr, e.stdout, e.startErr = cmd, stderr, stdout, nil
 	e.mu.Unlock()
 
-	conn, err := (&officialMCP.CommandTransport{Command: cmd, TerminateDuration: stdioShutdownGrace}).Connect(ctx)
+	conn, err := startServer(ctx, cmd, stdout)
 	if err != nil {
 		debug.Debug("Enhanced STDIO: MCP connection failed", debug.F("error", err))
 
-		// The SDK's CommandTransport only fails here before or at process
-		// start; once the process is running it returns a connection and any
-		// protocol failure surfaces later, during the initialize handshake.
+		// The failure is before or at process start; once the process runs,
+		// protocol failures surface later, during the initialize handshake.
 		startErr := fmt.Errorf("failed to start server command: %w", err)
 
 		// Remember it: the caller that sees this failure is the MCP client
@@ -302,37 +304,31 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 	}
 
 	debug.Debug("Enhanced STDIO: MCP connection established successfully")
-	return &stdioConn{Connection: conn}, nil
+	return conn, nil
 }
 
-// stdioShutdownGrace is how long Close waits, after closing the server's
-// stdin, for it to exit before sending SIGTERM (the spec's stdio shutdown
-// sequence, which names no duration). The SDK's 5s default is paid in full by
-// every one-shot CLI call against a server that keeps timers running after
-// EOF, which is most Node servers.
-const stdioShutdownGrace = 2 * time.Second
-
-// stdioConn reports a server stopped by signal during Close as the shutdown
-// the spec prescribes rather than as a failed close. The SDK returns the
-// server's wait status, which for a signalled process is an *exec.ExitError
-// with no exit code.
-type stdioConn struct {
-	officialMCP.Connection
-	warnOnce sync.Once
-}
-
-func (c *stdioConn) Close() error {
-	err := c.Connection.Close()
-	var exitErr *exec.ExitError
-	if stderrors.As(err, &exitErr) && exitErr.ExitCode() == -1 {
-		c.warnOnce.Do(func() {
-			debug.Warn("Enhanced STDIO: server did not exit after its stdin closed; stopped by signal",
-				debug.F("grace", stdioShutdownGrace),
-				debug.F("status", exitErr.String()))
-		})
-		return nil
+// startServer starts cmd and returns the SDK connection over its stdin and
+// stdout, teeing stdout into prefix. It replaces the SDK's CommandTransport,
+// whose pipes cannot be observed, with the same framing (IOTransport) and the
+// same shutdown sequence (serverStdin).
+func startServer(ctx context.Context, cmd *exec.Cmd, prefix *stdoutPrefix) (officialMCP.Connection, error) {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
 	}
-	return err
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	transport := &officialMCP.IOTransport{
+		// The connection closes by closing stdin, never stdout.
+		Reader: io.NopCloser(io.TeeReader(stdout, prefix)),
+		Writer: &serverStdin{cmd: cmd, stdin: stdin, grace: stdioShutdownGrace},
+	}
+	return transport.Connect(ctx)
 }
 
 // startupDiagnosticWait bounds how long StartupError waits for a failing
@@ -366,10 +362,18 @@ func (e *EnhancedSTDIOTransport) KillServer() error {
 func (e *EnhancedSTDIOTransport) StartupError(ctx context.Context) error {
 	// The process never started: that error is already precise.
 	e.mu.Lock()
-	startErr, stderr := e.startErr, e.stderr
+	startErr, stderr, stdout := e.startErr, e.stderr, e.stdout
 	e.mu.Unlock()
 	if startErr != nil {
 		return startErr
+	}
+
+	// A running server that wrote something other than JSON-RPC to stdout:
+	// the handshake read it, so it is already here.
+	if stdout != nil {
+		if line, ok := firstNonJSONLine(stdout.Bytes()); ok {
+			return &errors.StdoutNotJSONRPCError{Command: e.command, Line: line}
+		}
 	}
 
 	deadline := time.Now().Add(startupDiagnosticWait)
