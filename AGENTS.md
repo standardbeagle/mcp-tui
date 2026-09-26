@@ -93,7 +93,9 @@ docs/                    Astro docs site（dev.standardbeagle.com）
 
 ## Exposure Posture
 
-唯一 listener：OAuth callback（auth-code 及 enterprise IdP 登入共用；`internal/mcp/oauth/local_server.go`），`loopback`，預設 `127.0.0.1` ephemeral port；`--oauth-redirect-host` 限 loopback（`Config.Validate` 驗）。Caps：header 16 KiB、read/write/idle 10s、並連 8、僅 `GET /callback`、唯首個 state 相符之回調成流、shutdown 限 5s。詳見 `.claude/rules/architecture.md`。
+產品唯一 listener：OAuth callback（auth-code 及 enterprise IdP 登入共用；`internal/mcp/oauth/local_server.go`），`loopback`，預設 `127.0.0.1` ephemeral port；`--oauth-redirect-host` 限 loopback（`Config.Validate` 驗）。Caps：header 16 KiB、read/write/idle 10s、並連 8、僅 `GET /callback`、唯首個 state 相符之回調成流、shutdown 限 5s。詳見 `.claude/rules/architecture.md`。
+
+錄影用 demo server（`docs/recordings/demo-server`，非產品）：`-http`（`/mcp`，`-oauth` 則同 listener 兼 authorization server）與 `-sse`（`/sse`），皆 `loopback`，非 loopback 位址即拒。Caps：並連 32、header 32 KiB、body 1 MiB、read header 10s／read 30s／idle 60s、write 30s；MCP POST write 10 min，流（GET、SSE、`subscriptions/listen`）無 write 期限，body 讀畢即除 read 期限；stateful session 閒 10 min 即閉；shutdown 限 5s。
 
 出站 auth 請求（discovery、registration、token、refresh，enterprise IdP 登入與 token exchange 亦然）皆經 `newAuthHTTPClient`（唯一產品呼處：`oauth.NewHandler`），timeout 30s；其 transport（`internal/mcp/oauth/dialguard.go`）於 dial 時拒私網、link-local、CGNAT、multicast、unspecified 位址，loopback 恆許（同 go-sdk `IsPrivateOrReserved`；SDK 僅於裸 `*http.Transport` 行之，追蹤包裝使其失效，故自行復之）。`--oauth-allow-private-network` 放行，每次放行記 Warn（含位址類別）。缺口：設 HTTP proxy 則守停（同 SDK）；呼者自帶自 dial 之 transport 則不守（production 傳 nil）；SDK URL 檢查仍拒 discovered URL 中之字面私網 IP，旗不能放行。
 

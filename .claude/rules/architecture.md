@@ -36,6 +36,7 @@ No active migrations. Document ongoing migrations here.
 | Listener | Code | Posture | Caps |
 |---|---|---|---|
 | OAuth callback (auth-code grant and enterprise IdP sign-in) | `internal/mcp/oauth/local_server.go` | `loopback` (`127.0.0.1` default; `--oauth-redirect-host` must be `localhost`, `127.0.0.0/8` or `::1`, enforced in `Config.Validate`; ephemeral port) | `MaxHeaderBytes` 16 KiB; `ReadHeaderTimeout`/`ReadTimeout`/`WriteTimeout`/`IdleTimeout` 10s; 8 concurrent connections (extra closed on arrival); only `GET /callback` routed (all else 404/405); only the first callback echoing the flow's `state` completes it, others get 400; shutdown bounded at 5s |
+| Demo server for recordings (not shipped): `-http` streamable HTTP at `/mcp` (plus the embedded authorization server with `-oauth`), `-sse` legacy SSE at `/sse` | `docs/recordings/demo-server/http.go`, `oauth.go` | `loopback` (a non-loopback `-http`/`-sse` address is refused at startup) | `MaxHeaderBytes` 32 KiB; bodies 1 MiB; `ReadHeaderTimeout` 10s, `ReadTimeout` 30s (lifted once an MCP body is read), `WriteTimeout` 30s (MCP POST 10 min; streams — GET, SSE, `subscriptions/listen` — none), `IdleTimeout` 60s; 32 concurrent connections (extra closed on arrival); idle stateful MCP sessions closed after 10 min; OAuth: 64 registered clients, 1024 live codes+tokens; shutdown bounded at 5s |
 
 Known gaps: none open for this listener. The concurrent-connection cap is enforced in `ConnState` (close on `StateNew`), so a connection past the cap is accepted by the kernel before it is closed.
 
