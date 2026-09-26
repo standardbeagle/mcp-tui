@@ -24,6 +24,9 @@ type ScreenManager struct {
 	// queuedOverlays wait for the open overlay to close, oldest first; see
 	// openOverlay.
 	queuedOverlays []screens.Screen
+	// size is the last terminal size; every screen shown is told it, since
+	// the terminal reports it only at startup and on resize.
+	size tea.WindowSizeMsg
 }
 
 // NewScreenManager creates a new screen manager
@@ -184,16 +187,20 @@ func (sm *ScreenManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// If we have an overlay screen, route messages to it first
-	if sm.overlayScreen != nil {
-		cmd := sm.updateWithOverlay(msg)
+	// A resize reaches the screen under an overlay too, which is shown
+	// again when the overlay closes.
+	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		sm.size = wsMsg
+		cmd := sm.deliverToCurrent(wsMsg)
+		if sm.overlayScreen != nil {
+			cmd = tea.Batch(cmd, sm.deliverToOverlay(wsMsg))
+		}
 		return sm, cmd
 	}
 
-	// Handle window size messages for all screens
-	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
-		// Update current screen size
-		cmd := sm.deliverToCurrent(wsMsg)
+	// If we have an overlay screen, route messages to it first
+	if sm.overlayScreen != nil {
+		cmd := sm.updateWithOverlay(msg)
 		return sm, cmd
 	}
 
@@ -210,6 +217,14 @@ func (sm *ScreenManager) deliverToCurrent(msg tea.Msg) tea.Cmd {
 		sm.currentScreen = newScreen
 	}
 	return cmd
+}
+
+// sizeCurrent tells the current screen the terminal size, once known.
+func (sm *ScreenManager) sizeCurrent() tea.Cmd {
+	if sm.size.Width == 0 {
+		return nil
+	}
+	return sm.deliverToCurrent(sm.size)
 }
 
 // deliverToOverlay sends msg to the open overlay and stores the returned
@@ -284,7 +299,7 @@ func (sm *ScreenManager) updateMainFlow(msg tea.Msg) tea.Cmd {
 			debug.F("from", sm.getCurrentScreenName()),
 			debug.F("to", msg.Transition.Screen.Name()))
 
-		return sm.currentScreen.Init()
+		return tea.Batch(sm.sizeCurrent(), sm.currentScreen.Init())
 
 	case screens.ToggleOverlayMsg:
 		// Toggle on the overlay
@@ -305,7 +320,7 @@ func (sm *ScreenManager) updateMainFlow(msg tea.Msg) tea.Cmd {
 				debug.F("to", previousScreen.Name()))
 
 			sm.currentScreen = previousScreen
-			return nil
+			return sm.sizeCurrent()
 		}
 
 		// No previous screen, handle as quit
@@ -333,7 +348,11 @@ func (sm *ScreenManager) openOverlay(overlay screens.Screen) tea.Cmd {
 	}
 	sm.overlayScreen = overlay
 	sm.logger.Info("Opening overlay screen", debug.F("overlay", overlay.Name()))
-	return overlay.Init()
+	var sizeCmd tea.Cmd
+	if sm.size.Width != 0 {
+		sizeCmd = sm.deliverToOverlay(sm.size)
+	}
+	return tea.Batch(sizeCmd, sm.overlayScreen.Init())
 }
 
 // closeOverlay closes the open overlay and shows the next queued one.
