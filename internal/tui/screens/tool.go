@@ -1118,7 +1118,7 @@ func (ts *ToolScreen) handleFieldKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 	case keyShiftTab, keyUp:
 		// Don't pass these to textinput, handle navigation
 	case "ctrl+t":
-		// Task mode toggle, handled below
+		// Task mode toggle, handled by handleToolbarKey
 	case keyToggleArgValidation:
 		ts.toggleArgValidation()
 		return ts, nil, true

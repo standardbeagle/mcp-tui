@@ -882,7 +882,7 @@ func (ms *MainScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleCommandKey handles the command keys: refresh, subscribe, debug
 // overlay, export, the roots/tasks overlays, re-authenticate, disconnect and
-// the schema-error overlay. handled is false for keys it does not own.
+// the schema-error overlay. It is the last key handler; other keys are ignored.
 func (ms *MainScreen) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "r":

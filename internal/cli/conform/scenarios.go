@@ -456,6 +456,8 @@ func checkScenarioToolResult(toolName string, res *mcp.CallToolResult, expectIsE
 	return ScenarioResult{Pass: true,
 		Detail: fmt.Sprintf("tool %q returned %d content blocks", toolName, len(res.Content))}
 }
+
+// scenarioResourcesList drives resources/list. Empty list is allowed.
 func (r *Runner) scenarioResourcesList(ctx context.Context) ScenarioResult {
 	svc, err := r.ensureConnected(ctx)
 	if err != nil {
