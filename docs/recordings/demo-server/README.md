@@ -122,7 +122,7 @@ Draft reply to Dana Whitfield on T-1041 (friendly tone):
 Hi Dana, thanks for flagging this.
 
 $ bin/mcp-tui --transport http --url http://127.0.0.1:8931/mcp resource watch acme://status/queue --count 1
-2026-09-26T15:41:47.081576026-05:00  updated  acme://status/queue
+2026-09-26T15:41:47.081-05:00  updated  acme://status/queue
 
 $ bin/mcp-tui --transport http --url http://127.0.0.1:8932/sse tool list
 Error: … calling "initialize": sending "initialize": Bad Request
