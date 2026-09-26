@@ -228,7 +228,7 @@ mcp-tui verify [url|--cmd <cmd>]
 |------|-------------|
 | `--probe <name>` | Run a single probe (see list below) |
 | `--json` | Machine-readable JSON output |
-| `--tool <name>` | (`seterror-content`) Tool to call, default `echo` |
+| `--tool <name>` | (`seterror-content`) Tool that fails by design; default `echo`, and the probe is skipped when the server has no `echo` tool |
 
 Probes: `cross-origin`, `dns-rebind`, `content-type`, `origin-header`,
 `mcp-method-headers`, `seterror-content`, `tool-names`, `list-order`. The first five need a URL target;
@@ -267,7 +267,10 @@ mcp-tui conform [url|--cmd <cmd>]
 | `--scenario <name>` | Run a single scenario |
 | `--report-junit <path>` | Write a JUnit XML report (for CI) |
 | `--sampling-trigger-tool <name>` | Tool that triggers `sampling/createMessage` (default `sampleLLM`) |
+| `--sampling-trigger-args <key=value>` | Argument for the sampling trigger tool, `key=value` or `key:=<json>` as in `tool call`; repeatable |
 | `--elicit-trigger-tool <name>` | Tool that triggers `elicitation/create` (default `startElicitation`) |
+| `--elicit-trigger-args <key=value>` | Argument for the elicitation trigger tool; repeatable |
+| `--tool <name>` | Tool that fails by design, for `verify.seterror-content` (as `verify --tool`) |
 | `--completion-prompt <name>` | Prompt name (or template URI with `--completion-resource`) for `completion/complete` |
 | `--completion-resource` | Treat `--completion-prompt` as a resource template URI |
 | `--completion-arg <name>` | Argument name for `completion/complete` |
@@ -281,6 +284,10 @@ probes as `verify.<probe-name>`: `verify.cross-origin`, `verify.dns-rebind`,
 `verify.content-type`, `verify.origin-header`, `verify.mcp-method-headers`,
 `verify.seterror-content`, `verify.tool-names` and `verify.list-order`. A probe the target cannot
 run is reported as `skipped: probe requires a … target` and counts as passing.
+`sampling.createMessage` and `elicitation.create` pass only on an observed
+round trip: the trigger tool made the server send the request and the stub
+answered it. A trigger tool whose required arguments were not given with
+`--sampling-trigger-args`/`--elicit-trigger-args` is skipped.
 The stub flags from
 [Client features](/mcp-tui/guides/client-features/) apply here too.
 

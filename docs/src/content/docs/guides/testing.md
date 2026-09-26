@@ -49,7 +49,8 @@ The first five probes require a URL target. `tool-names` and `list-order` take
 a URL or a stdio `--cmd`. `list-order` makes sure both lists reach the server:
 when the SDK answered the second from its TTL cache, it asks again on a new
 session. `seterror-content` runs against a stdio server and takes an
-optional `--tool` (default `echo`):
+optional `--tool`, a tool that fails by design. Without `--tool` it calls
+`echo`, and is skipped when the server has no `echo` tool:
 
 ```bash
 mcp-tui verify --probe seterror-content --cmd npx \
@@ -84,14 +85,34 @@ to shape a completion request:
 | Flag | Purpose |
 |------|---------|
 | `--sampling-trigger-tool` | Tool that triggers `sampling/createMessage` (default `sampleLLM`) |
+| `--sampling-trigger-args` | An argument for that tool, `key=value` or `key:=<json>` as in `tool call`; repeat for more |
 | `--elicit-trigger-tool` | Tool that triggers `elicitation/create` (default `startElicitation`) |
+| `--elicit-trigger-args` | An argument for that tool, as `--sampling-trigger-args` |
+| `--tool` | Tool that fails by design, for `verify.seterror-content` (as `verify --tool`) |
 | `--completion-prompt` | Prompt name (or template URI with `--completion-resource`) for `completion/complete` |
 | `--completion-resource` | Treat `--completion-prompt` as a resource template URI |
 | `--completion-arg` | Argument name for `completion/complete` |
 | `--completion-prefix` | Prefix value for `completion/complete` |
 
 The sampling and elicitation scenarios reply with the stub flags described in
-[Client features](/mcp-tui/guides/client-features/).
+[Client features](/mcp-tui/guides/client-features/). They pass only when
+calling the trigger tool made the server send `sampling/createMessage`
+(resp. `elicitation/create`) and the stub answered it; a trigger tool that
+returns without asking fails. Arguments are converted and checked against
+the tool's input schema like `tool call`'s, and nothing is made up for a
+required argument: a trigger tool that needs arguments you did not pass is
+skipped with a message naming the flag.
+
+```bash
+mcp-tui conform http://localhost:8000/mcp \
+  --sampling-trigger-tool draft_reply --sampling-trigger-args ticket_id=T-1042 \
+  --sampling-stub "Thanks, we are on it."
+```
+
+`tools.call` calls non-destructive tools whose input schema accepts no
+arguments, in order, and passes on the first that answers without a tool
+error; it is skipped when none does. `completion.complete` is skipped when
+the server does not declare the `completions` capability.
 
 ## CI with JUnit
 

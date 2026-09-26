@@ -131,8 +131,13 @@ Error: … calling "initialize": sending "initialize": Bad Request
 Verify and conform:
 
 ```console
+$ bin/mcp-tui verify http://127.0.0.1:8931/mcp
+SKIP  seterror-content
+      probe requires a stdio command target
+7 passed, 0 warned, 0 failed, 1 skipped
+
 $ bin/mcp-tui verify http://127.0.0.1:8931/mcp --cmd bin/demo-server --args -stdio --tool lookup_customer
-8 passed, 0 warned, 0 failed
+8 passed, 0 warned, 0 failed, 0 skipped
 
 $ bin/demo-server -http 127.0.0.1:8941 -misbehave &
 $ bin/mcp-tui verify http://127.0.0.1:8941/mcp --cmd bin/demo-server --args -stdio,-misbehave --tool lookup_customer
@@ -142,21 +147,33 @@ FAIL  tool-names
       error: "create ticket!": tool name breaks SEP-986: invalid characters " ", "!" (allowed: A-Z a-z 0-9 _ - .)
 WARN  list-order
       error: tools/list returned the same tools in a different order: …
-5 passed, 1 warned, 2 failed
+5 passed, 1 warned, 2 failed, 0 skipped
 
-$ bin/mcp-tui conform http://127.0.0.1:8931/mcp
-17 passed, 0 warned, 0 failed, 4 skipped
+$ bin/mcp-tui conform http://127.0.0.1:8931/mcp \
+    --sampling-trigger-tool draft_reply --sampling-trigger-args ticket_id=T-1042 --sampling-stub 'Hi Dana' \
+    --elicit-trigger-tool schedule_callback --elicit-trigger-args ticket_id=T-1042 \
+    --elicit-stub '{"time":"2026-09-29T15:00:00Z","phone":"+1 555 0142"}'
+PASS  tools.call                           84ms
+      tool "search_tickets" returned 1 content blocks
+PASS  sampling.createMessage              217ms
+      server sent 1 sampling/createMessage via tool "draft_reply", answered by the stub; tool result isError=false
+PASS  elicitation.create                  194ms
+      server sent 1 elicitation/create via tool "schedule_callback", answered by the stub; tool result isError=false
+SKIP  notifications                      5130ms
+      no notifications observed in 5s window
+SKIP  verify.seterror-content               0ms
+      probe requires a stdio command target
+19 passed, 0 warned, 0 failed, 2 skipped
 ```
 
-`conform`'s sampling and elicitation scenarios call their trigger tool
-without the arguments `draft_reply` and `schedule_callback` require, so
-with `--sampling-trigger-tool`/`--elicit-trigger-tool` they report PASS on
-an argument-validation error rather than a real round trip.
-
-`verify <url>` alone also runs `seterror-content`, which needs a stdio
-target, so pass `--cmd`/`--args` too. A `-misbehave` server's `list-order`
-order flips with every `tools/list` it has answered, so which order comes
-first varies between takes.
+Without `--sampling-trigger-args`/`--elicit-trigger-args`, `draft_reply`
+and `schedule_callback` are skipped with a message naming the flag: they
+require `ticket_id`, and a call without it would never reach the round
+trip. `conform --cmd bin/demo-server --args -stdio` needs `--tool
+lookup_customer` for `verify.seterror-content`; without it that probe is
+skipped, as the server has no `echo` tool. A `-misbehave` server's
+`list-order` order flips with every `tools/list` it has answered, so which
+order comes first varies between takes.
 
 OAuth (`bin/demo-server -http 127.0.0.1:8951 -oauth`; `--oauth-cache -`
 keeps each take from reusing a cached token):
