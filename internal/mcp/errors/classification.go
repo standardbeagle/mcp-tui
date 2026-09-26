@@ -127,6 +127,9 @@ type ClassifiedError struct {
 	Context     map[string]interface{}
 	Recoverable bool
 	RetryAfter  *time.Duration
+	// Actions, when set, replace the category's generic recovery actions
+	// with ones specific to this failure.
+	Actions []string
 }
 
 func (e *ClassifiedError) Error() string {
@@ -171,6 +174,20 @@ func (ec *ErrorClassifier) Classify(err error, errContext map[string]interface{}
 	var operation string
 	if op, ok := errContext["operation"].(string); ok {
 		operation = op
+	}
+
+	if operation == OperationSessionConnect {
+		transport := fmt.Sprint(errContext["transport_type"])
+		if message, actions, ok := diagnoseHandshakeHTTPStatus(err, transport); ok {
+			return &ClassifiedError{
+				Category: CategoryClientConfig,
+				Severity: SeverityError,
+				Message:  message,
+				Cause:    err,
+				Context:  errContext,
+				Actions:  actions,
+			}
+		}
 	}
 
 	// Analyze error type and content
@@ -533,6 +550,9 @@ func protocolMessage(err error, errStr string) string {
 func (ec *ErrorClassifier) GetRecoveryActions(classified *ClassifiedError) []string {
 	if classified == nil {
 		return nil
+	}
+	if len(classified.Actions) > 0 {
+		return classified.Actions
 	}
 
 	var actions []string
