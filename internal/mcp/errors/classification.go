@@ -176,6 +176,18 @@ func (ec *ErrorClassifier) Classify(err error, errContext map[string]interface{}
 		operation = op
 	}
 
+	// A token refresh can fail on any request, not only the handshake.
+	if message, actions, ok := diagnoseTokenEndpointRejection(err); ok {
+		return &ClassifiedError{
+			Category: CategoryAuthentication,
+			Severity: SeverityError,
+			Message:  message,
+			Cause:    err,
+			Context:  errContext,
+			Actions:  actions,
+		}
+	}
+
 	if operation == OperationSessionConnect {
 		transport := fmt.Sprint(errContext["transport_type"])
 		if message, actions, ok := diagnoseHandshakeHTTPStatus(err, transport); ok {
