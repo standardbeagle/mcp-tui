@@ -36,7 +36,7 @@ func TestCallProgressLine(t *testing.T) {
 // completes.
 func TestToolScreen_ShowsProgressWhileExecuting(t *testing.T) {
 	ts := NewToolScreen(&imcp.Tool{Name: "build"}, nil)
-	ts.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	ts.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	ts.executing = true
 	observe := ts.callProgress.start()
 	observe(imcp.Progress{Token: "mcp-tui-1", Progress: 1, Total: 3, Message: "compiling"})

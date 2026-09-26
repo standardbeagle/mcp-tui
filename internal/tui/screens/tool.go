@@ -1599,23 +1599,25 @@ func fieldTypeValidationError(field *toolField, value string) string {
 	return ""
 }
 
-// View renders the tool screen
+// View renders the tool screen: the form with the result right of it on a
+// wide terminal, else below it; either way the result runs to the bottom.
 func (ts *ToolScreen) View() string {
-	header := ts.renderHeader()
-	footer := ts.renderFooter()
-	if !ts.result.shown() {
-		return header + footer
-	}
 	width, height := ts.resultViewport()
-	return header + ts.renderResultBlock(width, height) + footer
+	block := ts.renderResultBlock(width, height)
+	if !ts.sideBySide() {
+		return ts.renderHeader() + block + ts.renderFooter()
+	}
+	_, termHeight := ts.termSize()
+	form := lipgloss.NewStyle().Width(ts.formWidth()).MaxHeight(termHeight).
+		Render(ts.renderHeader() + ts.renderFooter())
+	return lipgloss.JoinHorizontal(lipgloss.Top, form, columnGap, strings.TrimSuffix(block, "\n"))
 }
 
-// fitWidth is style wrapping its text to the terminal's width, so what is
+// fitWidth is style wrapping its text to the form's width, so what is
 // measured is what is drawn: a line the terminal wraps itself is one line
 // to lipgloss.Height and two on screen.
 func (ts *ToolScreen) fitWidth(style lipgloss.Style) lipgloss.Style {
-	width, _ := ts.termSize()
-	return style.Width(width)
+	return style.Width(ts.formWidth())
 }
 
 // renderHeader builds everything above the result block.
@@ -1625,11 +1627,6 @@ func (ts *ToolScreen) renderHeader() string {
 	builder.WriteString(ts.renderTitleLine())
 	builder.WriteString("\n")
 	builder.WriteString(ts.renderStateLines())
-
-	if ts.tool.Description != "" {
-		builder.WriteString(ts.fitWidth(ts.labelStyle).Render(ts.tool.Description))
-		builder.WriteString("\n")
-	}
 	builder.WriteString("\n")
 
 	builder.WriteString(ts.renderSchemaBanner())
@@ -1655,6 +1652,13 @@ func (ts *ToolScreen) renderHeader() string {
 
 	ts.renderButtonsRow(&builder)
 	ts.renderExecutionStatus(&builder)
+
+	// The description follows the form, so a long one does not push the
+	// fields down.
+	if ts.tool.Description != "" {
+		builder.WriteString(ts.fitWidth(ts.labelStyle).Render(ts.tool.Description))
+		builder.WriteString("\n")
+	}
 
 	return builder.String()
 }
@@ -1820,20 +1824,19 @@ func (ts *ToolScreen) renderFieldInput(i int, field *toolField) string {
 	}
 }
 
-// inputBox is style spanning the terminal: the box around a text input.
+// inputBox is style spanning the form: the box around a text input.
 func (ts *ToolScreen) inputBox(style lipgloss.Style) lipgloss.Style {
-	termWidth, _ := ts.termSize()
-	return style.Width(termWidth - 2) // the border
+	return style.Width(ts.formWidth() - 2) // the border
 }
 
 // sizeInputs fits every text input to its box, so a long value scrolls
 // inside one row. The input scrolls its value as it updates, so the width
 // must be right before a key reaches it, not only when it is drawn.
 func (ts *ToolScreen) sizeInputs() {
-	termWidth, _ := ts.termSize()
+	formWidth := ts.formWidth()
 	fit := func(input *textinput.Model) {
 		// The box's border and padding, the input's prompt and its cursor.
-		input.Width = max(1, termWidth-2-2-lipgloss.Width(input.Prompt)-1)
+		input.Width = max(1, formWidth-2-2-lipgloss.Width(input.Prompt)-1)
 	}
 	fit(&ts.rawJSONInput)
 	for i := range ts.fields {
@@ -1962,14 +1965,13 @@ func (ts *ToolScreen) renderCLICommandBox() string {
 	builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command (POSIX shell):"))
 	builder.WriteString("\n")
 
-	// The box wraps a long command inside the terminal; the clipboard
-	// holds it on one line.
-	termWidth, _ := ts.termSize()
+	// The box wraps a long command inside the form; the clipboard holds it
+	// on one line.
 	cliCommandStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("6")). // Cyan border
 		Padding(0, 1).
-		Width(termWidth - 2).
+		Width(ts.formWidth() - 2).
 		Foreground(lipgloss.Color("15")) // White text
 
 	builder.WriteString(cliCommandStyle.Render(ts.cliCommand))

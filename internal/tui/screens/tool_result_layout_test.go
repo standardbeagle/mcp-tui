@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
@@ -146,4 +147,112 @@ func TestToolFieldBoxFitsItsInput(t *testing.T) {
 		return
 	}
 	t.Fatal("no field box in view")
+}
+
+const (
+	wideWidth  = 160
+	wideHeight = 40
+)
+
+// panelColumn is the column the result panel's top border starts at in
+// view, or -1 when there is no panel.
+func panelColumn(view string) int {
+	for _, line := range strings.Split(ansi.Strip(view), "\n") {
+		if i := strings.Index(line, "┌"); i >= 0 {
+			return lipgloss.Width(line[:i])
+		}
+	}
+	return -1
+}
+
+// requireFillsTerminal fails unless view is exactly width x height: the
+// result panel runs to the bottom of the screen.
+func requireFillsTerminal(t *testing.T, view string, width, height int) {
+	t.Helper()
+	if h := lipgloss.Height(view); h != height {
+		t.Errorf("view is %d lines, want the terminal's %d:\n%s", h, height, view)
+	}
+	for i, line := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(line); w > width {
+			t.Errorf("line %d is %d wide, terminal has %d: %q", i, w, width, line)
+		}
+	}
+}
+
+// On a wide terminal the result sits right of the form and runs the
+// terminal's full height, instead of below the form in what is left.
+func TestToolResultBesideTheFormOnAWideTerminal(t *testing.T) {
+	ts, _ := echoToolScreen(t, 1)
+	ts.UpdateSize(wideWidth, wideHeight)
+	showResult(ts, longLinesResult(200))
+
+	view := ts.View()
+	if col := panelColumn(view); col < wideWidth/3 {
+		t.Errorf("panel starts at column %d, want it right of the form:\n%s", col, view)
+	}
+	requireFillsTerminal(t, view, wideWidth, wideHeight)
+
+	ts.Update(tea.KeyMsg{Type: tea.KeyCtrlEnd})
+	if !strings.Contains(ts.View(), "LAST") {
+		t.Errorf("last line not shown after Ctrl+End:\n%s", ts.View())
+	}
+}
+
+// Before any call the result panel is already drawn, filling the screen,
+// so the form does not jump when the first result arrives.
+func TestToolResultPanelShownBeforeTheFirstCall(t *testing.T) {
+	for _, width := range []int{layoutWidth, wideWidth} {
+		tool := mcp.Tool{Name: "echo", InputSchema: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{"message": map[string]interface{}{"type": "string"}},
+		}}
+		ts := NewToolScreen(&tool, nil)
+		ts.Init()
+		ts.UpdateSize(width, wideHeight)
+
+		view := ts.View()
+		wantBeside := width >= wideWidth
+		if col := panelColumn(view); col < 0 || (col > 0) != wantBeside {
+			t.Errorf("width %d: panel starts at column %d, beside the form: %v:\n%s", width, col, wantBeside, view)
+		}
+		requireFillsTerminal(t, view, width, wideHeight)
+	}
+}
+
+// On a narrow terminal the result stays below the form and runs to the
+// bottom of the screen.
+func TestToolResultFillsTheHeightOnANarrowTerminal(t *testing.T) {
+	ts, _ := echoToolScreen(t, 1)
+	ts.UpdateSize(layoutWidth, layoutHeight)
+	showResult(ts, "short")
+
+	view := ts.View()
+	if col := panelColumn(view); col != 0 {
+		t.Errorf("panel starts at column %d, want 0 (below the form)", col)
+	}
+	requireFillsTerminal(t, view, layoutWidth, layoutHeight)
+}
+
+// The fields come first: a long tool description above them pushed the
+// form down, and on a short terminal off screen.
+func TestToolFormFieldsBeforeTheDescription(t *testing.T) {
+	for _, width := range []int{layoutWidth, wideWidth} {
+		tool := mcp.Tool{
+			Name:        "echo",
+			Description: "Echoes the message back to the caller",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{"message": map[string]interface{}{"type": "string"}},
+			},
+		}
+		ts := NewToolScreen(&tool, nil)
+		ts.Init()
+		ts.UpdateSize(width, wideHeight)
+
+		view := ansi.Strip(ts.View())
+		field, description := strings.Index(view, "message [string]"), strings.Index(view, "Echoes the message")
+		if field < 0 || description < 0 || description < field {
+			t.Errorf("width %d: field at %d, description at %d; want the field first:\n%s", width, field, description, view)
+		}
+	}
 }

@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deprecation labels**: logging, sampling, roots (SEP-2577) and the HTTP+SSE transport are marked deprecated in CLI help and the TUI; connecting over SSE logs that it negotiates at most `2025-11-25`.
 
 ### Changed
+- **Tool screen layout (TUI)**: on a terminal 120 columns or wider the result sits right of the form and runs the full height; narrower, it stays below the form and runs to the bottom. The result panel is drawn before the first call, so the form no longer moves when a result arrives. The tool's description follows the fields instead of pushing them down.
 - **MCP SDK**: Upgraded `github.com/modelcontextprotocol/go-sdk` from v1.6.1 to v1.8.0.
 - **Redaction everywhere**: logs, the HTTP Debug tab, the MCP Messages tab, event traces and session exports mask credentials: `Authorization`, `Cookie`, `Set-Cookie`, `Proxy-Authorization` and `DPoP` headers, OAuth parameters in URLs, form, JSON and event-stream bodies, and credentials inside URLs embedded in MCP payloads (for example a device-code URL in a URL elicitation). The session replay script therefore carries `[REDACTED]` where a URL held a credential.
 - **`--oauth-scopes` now takes effect** in the authorization-code flow, replacing the discovered scopes; it was ignored before. The debug log's `Scopes selected` line shows both sets.

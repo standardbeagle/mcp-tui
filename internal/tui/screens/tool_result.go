@@ -23,8 +23,15 @@ const (
 	resultMinHeight = 5
 
 	// resultPanelFrameWidth is what the panel's border and padding take
-	// from the terminal's width.
+	// from the result column's width.
 	resultPanelFrameWidth = 4
+
+	// sideBySideMinWidth is the narrowest terminal that puts the result
+	// right of the form; narrower, it goes below. The form then takes
+	// sideBySideFormShare of the width, and a space sets the columns apart.
+	sideBySideMinWidth  = 120
+	sideBySideFormShare = 0.4
+	columnGap           = " "
 )
 
 // toolResult is the last tool call's result as the tool screen shows it:
@@ -109,14 +116,47 @@ func (ts *ToolScreen) termSize() (width, height int) {
 	return width, height
 }
 
+// sideBySide reports whether the terminal is wide enough to put the result
+// right of the form rather than below it.
+func (ts *ToolScreen) sideBySide() bool {
+	width, _ := ts.termSize()
+	return width >= sideBySideMinWidth
+}
+
+// formWidth is the width the form, its help and status are drawn to: the
+// left column side by side, else the terminal's.
+func (ts *ToolScreen) formWidth() int {
+	width, _ := ts.termSize()
+	if ts.sideBySide() {
+		return int(float64(width) * sideBySideFormShare)
+	}
+	return width
+}
+
+// resultColumnWidth is the width the result block is drawn to: what the
+// form's column leaves side by side, else the terminal's.
+func (ts *ToolScreen) resultColumnWidth() int {
+	width, _ := ts.termSize()
+	if ts.sideBySide() {
+		return width - ts.formWidth() - lipgloss.Width(columnGap)
+	}
+	return width
+}
+
 // resultViewport is the result body's size: the panel's inner width, and
-// the rows left once the header, footer and the panel's own lines are
-// drawn. The View and the scroll keys both use it, so a page is the page
-// shown. The panel's own lines are measured by drawing it one row tall.
+// the rows the terminal leaves once the panel's own lines are drawn, and
+// below the form also the header and footer. The View and the scroll keys
+// both use it, so a page is the page shown. The panel's own lines are
+// measured by drawing it one row tall.
 func (ts *ToolScreen) resultViewport() (width, height int) {
-	termWidth, termHeight := ts.termSize()
-	width = max(1, termWidth-resultPanelFrameWidth)
-	probe := ts.renderHeader() + ts.renderResultBlock(width, 1) + ts.renderFooter()
+	_, termHeight := ts.termSize()
+	width = max(1, ts.resultColumnWidth()-resultPanelFrameWidth)
+	probe := ts.renderResultBlock(width, 1)
+	if ts.sideBySide() {
+		probe = strings.TrimSuffix(probe, "\n")
+	} else {
+		probe = ts.renderHeader() + probe + ts.renderFooter()
+	}
 	return width, max(resultMinHeight, 1+termHeight-lipgloss.Height(probe))
 }
 
@@ -212,8 +252,14 @@ func (ts *ToolScreen) handleResultViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // renderResultBlock draws the result: a heading line, the output-schema
 // violations, the panel holding height rows of the body (or of the field
-// picker) width columns wide, and the round trace.
+// picker) width columns wide, and the round trace. Before the first call
+// the panel is drawn empty, so the form does not move when a result lands.
 func (ts *ToolScreen) renderResultBlock(width, height int) string {
+	if !ts.result.shown() {
+		return ts.labelStyle.Bold(true).Render("Result:") + "\n" +
+			resultPanel(width, height).Render(ts.helpStyle.Render("No result yet — Enter executes the tool")) + "\n"
+	}
+
 	var builder strings.Builder
 	builder.WriteString(ts.renderResultHeading(width, height))
 	builder.WriteString("\n")
@@ -231,13 +277,7 @@ func (ts *ToolScreen) renderResultBlock(width, height int) string {
 		ts.result.scroll = clampScroll(ts.result.scroll, len(lines), height)
 		body = strings.Join(lines[ts.result.scroll:min(len(lines), ts.result.scroll+height)], "\n")
 	}
-	panel := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("8")).
-		Padding(0, 1).
-		Width(width + 2).
-		Height(height)
-	builder.WriteString(panel.Render(body))
+	builder.WriteString(resultPanel(width, height).Render(body))
 	builder.WriteString("\n")
 
 	if trace := renderResultTrailer(ts.result.call.Rounds, ts.result.call.Server); trace != "" {
@@ -245,6 +285,16 @@ func (ts *ToolScreen) renderResultBlock(width, height int) string {
 		builder.WriteString("\n")
 	}
 	return builder.String()
+}
+
+// resultPanel is the bordered box around height rows of width columns.
+func resultPanel(width, height int) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Width(width + 2).
+		Height(height)
 }
 
 // renderResultHeading is the one line above the panel: whether the tool
