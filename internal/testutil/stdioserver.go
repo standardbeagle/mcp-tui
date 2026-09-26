@@ -61,6 +61,12 @@ const (
 // StdioResourceURI is a subscribable resource of the stdio test server.
 const StdioResourceURI = "file:///var/log/app/current.log"
 
+// StdioPromptTriage is a prompt of the stdio test server with a required
+// ticket_id and an optional tone. Its one message names both and the
+// arguments the server process was started with, so a test sees prompt
+// arguments and server arguments apart.
+const StdioPromptTriage = "triage_ticket"
+
 // StdioServerOptions shape a StdioServer.
 type StdioServerOptions struct {
 	// StartsFile counts server starts; see stdioServerStartsEnv. Empty
@@ -170,6 +176,16 @@ func serveStdio() error {
 				{URI: StdioResourceURI, MIMEType: "text/plain", Text: "2026-09-24T10:00:00Z service started"},
 			}}, nil
 		})
+	server.AddPrompt(&officialMCP.Prompt{Name: StdioPromptTriage, Arguments: []*officialMCP.PromptArgument{
+		{Name: "ticket_id", Description: "e.g. T-1041", Required: true},
+		{Name: "tone", Description: "friendly (default), formal or apologetic"},
+	}}, func(_ context.Context, req *officialMCP.GetPromptRequest) (*officialMCP.GetPromptResult, error) {
+		text := fmt.Sprintf("Triage %s in a %s tone (server args: %s)",
+			req.Params.Arguments["ticket_id"], req.Params.Arguments["tone"], strings.Join(os.Args[1:], " "))
+		return &officialMCP.GetPromptResult{Messages: []*officialMCP.PromptMessage{
+			{Role: "user", Content: &officialMCP.TextContent{Text: text}},
+		}}, nil
+	})
 	server.AddTool(&officialMCP.Tool{Name: StdioToolLog, InputSchema: json.RawMessage(`{"type":"object"}`)},
 		func(ctx context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
 			//nolint:staticcheck // SA1019: exercises the pre-2026-07-28 logging the client still supports

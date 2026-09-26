@@ -53,7 +53,7 @@ func TestBuildReplayScript_ResourceAndPrompt(t *testing.T) {
 	for _, want := range []string{
 		"mcp-tui --transport sse --url http://localhost:5001/sse resource get file:///tmp/a.txt",
 		"mcp-tui --transport sse --url http://localhost:5001/sse prompt get greet",
-		"mcp-tui --transport sse --url http://localhost:5001/sse prompt execute summarize --arg topic=cats",
+		"mcp-tui --transport sse --url http://localhost:5001/sse prompt execute summarize topic=cats",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing expected line.\nwant: %s\ngot:\n%s", want, script)

@@ -102,11 +102,16 @@ func (pc *PromptCommand) createGetCommand() *cobra.Command {
 
 // createExecuteCommand creates the prompt execute command
 func (pc *PromptCommand) createExecuteCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:      "execute <prompt-name>",
-		Aliases:  []string{"exec", "run"},
-		Short:    "Execute a prompt",
-		Long:     "Execute a prompt with optional arguments",
+	// Prompt arguments are positional key=value pairs, as for tool call: a
+	// prompt-local --arg flag would shadow the global --arg that passes one
+	// server argument.
+	return &cobra.Command{
+		Use:     "execute <prompt-name> [key=value...]",
+		Aliases: []string{"exec", "run"},
+		Short:   "Execute a prompt",
+		Long: `Execute a prompt with the provided arguments.
+Arguments are key=value pairs, sent as strings.
+Example: prompt execute triage_ticket ticket_id=T-1042 tone=formal`,
 		Args:     cobra.MinimumNArgs(1),
 		PreRunE:  pc.PreRunE,
 		PostRunE: pc.PostRunE,
@@ -114,11 +119,6 @@ func (pc *PromptCommand) createExecuteCommand() *cobra.Command {
 			return pc.runExecuteCommand(cmd, args)
 		},
 	}
-
-	// Add flag for prompt arguments
-	cmd.Flags().StringToStringP("arg", "a", nil, "Prompt arguments (key=value)")
-
-	return cmd
 }
 
 // runListCommand executes the prompt list command
@@ -326,7 +326,7 @@ func findPrompt(prompts []mcp.Prompt, name string) *mcp.Prompt {
 func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) error {
 	promptName := args[0]
 
-	promptArgs, err := validatedPromptArgs(cmd)
+	promptArgs, err := parsePromptArgs(args[1:])
 	if err != nil {
 		return err
 	}
@@ -390,18 +390,23 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 	return nil
 }
 
-// validatedPromptArgs reads the --arg key=value flags of `prompt execute`
-// and validates each pair with validateArgument.
-func validatedPromptArgs(cmd *cobra.Command) (map[string]string, error) {
-	promptArgs, err := cmd.Flags().GetStringToString("arg")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get arguments: %w", err)
-	}
-
-	for key, value := range promptArgs {
-		if err = validateArgument(key, value); err != nil {
+// parsePromptArgs reads the key=value arguments of `prompt execute` and
+// validates each pair with validateArgument. A key given twice is refused
+// rather than silently keeping one of the values.
+func parsePromptArgs(args []string) (map[string]string, error) {
+	promptArgs := make(map[string]string, len(args))
+	for _, arg := range args {
+		key, value, ok := strings.Cut(arg, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid argument format: %s (expected key=value)", arg)
+		}
+		if err := validateArgument(key, value); err != nil {
 			return nil, fmt.Errorf("invalid argument %s: %w", key, err)
 		}
+		if _, dup := promptArgs[key]; dup {
+			return nil, fmt.Errorf("argument %s given more than once", key)
+		}
+		promptArgs[key] = value
 	}
 	return promptArgs, nil
 }

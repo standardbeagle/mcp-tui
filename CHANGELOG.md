@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **OAuth is refused on SSE.** `--oauth-*` flags with `--transport sse` were accepted and silently ignored (the SDK's SSE client cannot carry a token), so the server's 401 looked like an auth-server problem. Connecting now fails with an error naming streamable HTTP. Migration: use `--transport http` (or `streamable-http`) against the server's streamable HTTP endpoint.
 
+- **`prompt execute` takes `key=value` arguments.** Its `--arg`/`-a` flag shadowed the global `--arg` (one server argument), so every `prompt execute` failed with "trying to get stringArray value of flag of type stringToString". Prompt arguments are now positional, as for `tool call`. Migration: `prompt execute triage_ticket --arg ticket_id=T-1042` becomes `prompt execute triage_ticket ticket_id=T-1042`; `--arg` now passes a server argument on every subcommand. Session replay scripts write the new form.
+
 ### Added
 - **Protocol version control**: `--protocol-version` pins the MCP version to request (`2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`) for CLI and TUI; an unsupported value fails before any server starts. The debug log records how the version was negotiated (`server/discover` attempts, versions the server offered, fallback to `initialize`).
 - **Multi round-trip requests (SEP-2322)**: on `2026-07-28`, input requests a server returns from `tools/call`, `prompts/get` and `resources/read` are answered with the configured sampling, elicitation and roots handlers and the call is retried. Each round is logged, and results list the rounds they took: an "Input rounds (SEP-2322)" section in CLI text output, a `rounds` field in JSON, and a trace under the result in the TUI.

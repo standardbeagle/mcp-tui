@@ -108,10 +108,9 @@ func translateRequest(base, method string, params map[string]interface{}) (strin
 			// `prompt get` fetches the prompt without arguments.
 			return fmt.Sprintf("%s prompt get %s", base, shell.Quote(name)), true
 		}
-		// `prompt execute` accepts per-argument --arg flags.
 		cmd := fmt.Sprintf("%s prompt execute %s", base, shell.Quote(name))
 		for _, kv := range args {
-			cmd += " --arg " + shell.Quote(kv)
+			cmd += " " + shell.Quote(kv)
 		}
 		return cmd, true
 

@@ -123,3 +123,23 @@ func TestCreatePromptCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePromptArgs(t *testing.T) {
+	got, err := parsePromptArgs([]string{"ticket_id=T-1042", "note=refund=approved"})
+	if err != nil {
+		t.Fatalf("parsePromptArgs: %v", err)
+	}
+	if got["ticket_id"] != "T-1042" || got["note"] != "refund=approved" || len(got) != 2 {
+		t.Errorf("parsePromptArgs = %v, want ticket_id=T-1042 and note=refund=approved", got)
+	}
+
+	for _, bad := range [][]string{
+		{"ticket_id"},
+		{"ticket_id=T-1042", "ticket_id=T-1043"},
+		{"ticket@id=T-1042"},
+	} {
+		if _, err := parsePromptArgs(bad); err == nil {
+			t.Errorf("parsePromptArgs(%q) accepted a malformed argument list", bad)
+		}
+	}
+}

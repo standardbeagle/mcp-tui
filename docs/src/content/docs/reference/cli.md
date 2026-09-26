@@ -189,7 +189,7 @@ mcp-tui [global-flags] prompt <list|get|execute|complete> [args]
 
 - `prompt list` — list all prompts.
 - `prompt get <name>` — render a prompt template.
-- `prompt execute <name> [--arg key=value ...]` — execute a prompt (aliases: `exec`, `run`). `--arg`/`-a` is repeatable. Ends with the input rounds and `Served by` when there are any.
+- `prompt execute <name> [key=value ...]` — execute a prompt (aliases: `exec`, `run`) with each argument as a `key=value` pair, sent as a string: `prompt execute triage_ticket ticket_id=T-1042 tone=formal`. A key given twice is refused. `--arg` stays the global server-argument flag. Ends with the input rounds and `Served by` when there are any.
 - `prompt complete <name> <var>=<prefix>` — prompt-argument suggestions via `completion/complete`.
 
 ## `server` subcommand
