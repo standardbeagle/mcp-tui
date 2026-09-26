@@ -27,28 +27,6 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
-// Layout constants for result scrolling
-const (
-	// resultReservedHeightBase is the base height reserved for UI elements
-	// (title, description, buttons, execution header, help, status)
-	resultReservedHeightBase = 15
-
-	// resultHeightPerField is the height consumed by each form field
-	resultHeightPerField = 3
-
-	// resultMinHeight is the minimum height for the result display area
-	resultMinHeight = 5
-
-	// defaultTermWidth is the fallback terminal width if not detected
-	defaultTermWidth = 80
-
-	// defaultTermHeight is the fallback terminal height if not detected
-	defaultTermHeight = 30
-
-	// resultWidthMargin is the margin subtracted from terminal width for result display
-	resultWidthMargin = 6
-)
-
 // ToolScreen allows interactive tool execution
 type ToolScreen struct {
 	*BaseScreen
@@ -74,8 +52,8 @@ type ToolScreen struct {
 	executionStart time.Time
 	executionCount int       // Number of times the tool has been executed
 	lastExecution  time.Time // Time of last execution
-	result         *mcp.CallToolResult
-	resultJSON     string // Pretty-printed JSON result
+	// result is the last call's result and how it is being viewed.
+	result toolResult
 	// callProgress is the server's progress on the running call.
 	callProgress callProgress
 
@@ -115,16 +93,6 @@ type ToolScreen struct {
 	// schemaNote says why the input schema's root is not shown as a form
 	// (the raw JSON editor is used instead).
 	schemaNote string
-
-	// Result viewing mode
-	viewingResult bool          // Whether we're in result viewing mode
-	resultFields  []resultField // Parsed JSON fields
-	resultCursor  int           // Current field in result view
-
-	// Result scrolling
-	resultScroll    int      // Scroll offset for result display
-	resultLineCount int      // Total lines in result
-	resultLines     []string // Cached lines from result JSON
 
 	// Styles
 	titleStyle          lipgloss.Style
@@ -186,13 +154,6 @@ func (f *toolField) isElementList() bool {
 	return f.expanded && len(f.itemProperties) > 0
 }
 
-// resultField represents a parsed field from JSON result
-type resultField struct {
-	path  string      // JSON path like "data.id" or "items[0].name"
-	value string      // String representation of the value
-	raw   interface{} // Raw value
-}
-
 // NewToolScreen creates a new tool execution screen
 func NewToolScreen(tool *mcp.Tool, service mcp.Service) *ToolScreen {
 	ts := &ToolScreen{
@@ -210,41 +171,6 @@ func NewToolScreen(tool *mcp.Tool, service mcp.Service) *ToolScreen {
 	ts.parseSchema()
 
 	return ts
-}
-
-// getResultDisplayHeight calculates the available height for result display.
-// Used by scroll handlers; View() recomputes the same value dynamically with
-// actual header/footer measurements when the result is present.
-func (ts *ToolScreen) getResultDisplayHeight() int {
-	termHeight := ts.Height()
-	if termHeight == 0 {
-		termHeight = defaultTermHeight
-	}
-
-	reservedHeight := resultReservedHeightBase + len(ts.fields)*resultHeightPerField
-	availableHeight := termHeight - reservedHeight
-	if availableHeight < resultMinHeight {
-		availableHeight = resultMinHeight
-	}
-	return availableHeight
-}
-
-// resultChromeHeight is overhead inside the result block: leading blank,
-// execution info line, "Result:" label, border (2), trailing blank/scroll/hint.
-const resultChromeHeight = 7
-
-// computeResultDisplayHeight derives result body height from actual rendered
-// header/footer heights so the panel fills available screen space.
-func (ts *ToolScreen) computeResultDisplayHeight(headerH, footerH int) int {
-	termHeight := ts.Height()
-	if termHeight == 0 {
-		termHeight = defaultTermHeight
-	}
-	avail := termHeight - headerH - footerH - resultChromeHeight
-	if avail < resultMinHeight {
-		avail = resultMinHeight
-	}
-	return avail
 }
 
 // clipboardReadWriter is the clipboard boundary ToolScreen reads and writes
@@ -806,23 +732,7 @@ func (ts *ToolScreen) handleExecutionComplete(msg toolExecutionCompleteMsg) {
 		ts.SetError(msg.Error)
 		return
 	}
-	ts.result = msg.Result
-	// Reset scroll state when new result arrives
-	ts.resultScroll = 0
-	ts.resultLines = nil
-	ts.resultLineCount = 0
-
-	// Pretty print JSON result
-	if len(msg.Result.Content) > 0 {
-		ts.resultJSON = prettyPrintResultContent(msg.Result.Content)
-
-		// Cache lines for scrolling (compute once, use in View)
-		ts.resultLines = strings.Split(ts.resultJSON, "\n")
-		ts.resultLineCount = len(ts.resultLines)
-
-		// Parse result fields for viewing
-		ts.parseResultFields()
-	}
+	ts.result.set(msg.Result)
 
 	// Show execution count in status
 	// Tool-result errors (isError:true) are NOT JSON-RPC failures —
@@ -841,38 +751,6 @@ func (ts *ToolScreen) handleExecutionComplete(msg toolExecutionCompleteMsg) {
 		execMsg = fmt.Sprintf("Tool executed successfully (#%d) ✨", ts.executionCount)
 	}
 	ts.SetStatus(execMsg, StatusSuccess)
-}
-
-// prettyPrintResultContent renders the call's content blocks, pretty
-// printing text blocks that hold JSON.
-func prettyPrintResultContent(contents []mcp.Content) string {
-	var resultText strings.Builder
-	for i, content := range contents {
-		if i > 0 {
-			resultText.WriteString("\n\n")
-		}
-		if content.Type == "text" {
-			text := content.Text
-			// Try to pretty-print JSON
-			var jsonData interface{}
-			if err := json.Unmarshal([]byte(text), &jsonData); err == nil {
-				if formatted, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
-					resultText.Write(formatted)
-				} else {
-					resultText.WriteString(text)
-				}
-			} else {
-				resultText.WriteString(text)
-			}
-		} else {
-			if jsonBytes, err := json.MarshalIndent(content, "", "  "); err == nil {
-				resultText.Write(jsonBytes)
-			} else {
-				fmt.Fprintf(&resultText, "%v", content)
-			}
-		}
-	}
-	return resultText.String()
 }
 
 // toolExecutionCompleteMsg signals tool execution is complete
@@ -1006,14 +884,14 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Special handling for result scrolling (when not in viewing mode)
-	if ts.result != nil && !ts.viewingResult {
+	if ts.result.shown() && !ts.result.picking {
 		if handled := ts.handleResultScrollKey(msg); handled {
 			return ts, nil
 		}
 	}
 
 	// Special handling for result viewing mode
-	if ts.viewingResult && ts.result != nil {
+	if ts.result.picking && ts.result.shown() {
 		return ts.handleResultViewKey(msg)
 	}
 
@@ -1043,9 +921,9 @@ func (ts *ToolScreen) handleToolbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "v":
 		// Enter result viewing mode if we have results
-		if ts.result != nil && len(ts.resultFields) > 0 {
-			ts.viewingResult = true
-			ts.resultCursor = 0
+		if ts.result.shown() && len(ts.result.fields) > 0 {
+			ts.result.picking = true
+			ts.result.fieldCursor = 0
 			ts.SetStatus("Navigate with ↑/↓, Enter to copy field, v/Esc to exit", StatusInfo)
 		}
 		return ts, nil
@@ -1186,104 +1064,6 @@ func (ts *ToolScreen) pasteIntoField(field *toolField) {
 	ts.SetStatus("Pasted from clipboard", StatusSuccess)
 }
 
-// handleResultScrollKey scrolls the result block. Returns false for keys it
-// does not own so the shared handler can take them.
-func (ts *ToolScreen) handleResultScrollKey(msg tea.KeyMsg) bool {
-	availableHeight := ts.getResultDisplayHeight()
-
-	switch msg.String() {
-	case "ctrl+up":
-		// Scroll result up
-		if ts.resultScroll > 0 {
-			ts.resultScroll--
-		}
-	case "ctrl+down":
-		// Scroll result down
-		maxScroll := max(0, ts.resultLineCount-availableHeight)
-		if ts.resultScroll < maxScroll {
-			ts.resultScroll++
-		}
-	case keyPgUp:
-		// Page up in result
-		pageSize := max(1, availableHeight-2)
-		ts.resultScroll -= pageSize
-		if ts.resultScroll < 0 {
-			ts.resultScroll = 0
-		}
-	case keyPgDown:
-		// Page down in result
-		pageSize := max(1, availableHeight-2)
-		maxScroll := max(0, ts.resultLineCount-availableHeight)
-		ts.resultScroll += pageSize
-		if ts.resultScroll > maxScroll {
-			ts.resultScroll = maxScroll
-		}
-	case keyHome:
-		// Jump to top of result
-		ts.resultScroll = 0
-	case keyEnd:
-		// Jump to bottom of result
-		ts.resultScroll = max(0, ts.resultLineCount-availableHeight)
-	default:
-		return false
-	}
-	return true
-}
-
-// handleResultViewKey handles keys in result viewing mode; other keys are
-// ignored there.
-func (ts *ToolScreen) handleResultViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case keyUp, "k":
-		if ts.resultCursor > 0 {
-			ts.resultCursor--
-		}
-		return ts, nil
-
-	case keyDown, "j":
-		if ts.resultCursor < len(ts.resultFields)-1 {
-			ts.resultCursor++
-		}
-		return ts, nil
-
-	case keyEnter, "c", "y":
-		// Copy selected field value
-		if ts.resultCursor < len(ts.resultFields) {
-			field := ts.resultFields[ts.resultCursor]
-			if err := ts.copyToClipboard(field.value); err == nil {
-				ts.SetStatus(fmt.Sprintf("Copied '%s' to clipboard!", field.path), StatusSuccess)
-			} else {
-				ts.SetStatus("Failed to copy to clipboard", StatusError)
-			}
-		}
-		return ts, nil
-
-	case "v":
-		// Exit result viewing mode
-		ts.viewingResult = false
-		ts.SetStatus("", StatusInfo)
-		return ts, nil
-
-	case keyCtrlC:
-		// Copy entire result
-		if err := ts.copyToClipboard(ts.resultJSON); err == nil {
-			ts.SetStatus("Copied entire result to clipboard!", StatusSuccess)
-		} else {
-			ts.SetStatus("Failed to copy to clipboard", StatusError)
-		}
-		return ts, nil
-
-	case keyEsc, "q":
-		// Exit result viewing mode
-		ts.viewingResult = false
-		ts.SetStatus("", StatusInfo)
-		return ts, nil
-	}
-
-	// Don't process other keys in viewing mode
-	return ts, nil
-}
-
 // toggleCLICommandDisplay shows or hides the equivalent CLI command.
 func (ts *ToolScreen) toggleCLICommandDisplay() {
 	if ts.showCLICommand {
@@ -1304,8 +1084,8 @@ func (ts *ToolScreen) toggleCLICommandDisplay() {
 // clipboard; with neither available, Ctrl+C goes back.
 func (ts *ToolScreen) copyResultOrBack() (tea.Model, tea.Cmd) {
 	switch {
-	case ts.result != nil && ts.resultJSON != "":
-		if err := ts.copyToClipboard(ts.resultJSON); err == nil {
+	case ts.result.shown() && ts.result.text != "":
+		if err := ts.copyToClipboard(ts.result.text); err == nil {
 			ts.SetStatus("Result copied to clipboard!", StatusSuccess)
 		} else {
 			ts.SetStatus("Failed to copy to clipboard", StatusError)
@@ -2115,218 +1895,6 @@ func (ts *ToolScreen) renderExecutionStatus(builder *strings.Builder) {
 	}
 }
 
-// renderResultBlock builds the result section, sized to fill remaining
-// vertical space between the header and footer.
-func (ts *ToolScreen) renderResultBlock(header, footer string) string {
-	if ts.result == nil {
-		return ""
-	}
-
-	var builder strings.Builder
-	builder.WriteString("\n")
-
-	// Show execution header with count and timestamp
-	execInfoStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("99")).
-		Bold(true)
-
-	execInfo := fmt.Sprintf("Execution #%d", ts.executionCount)
-	if ts.executionCount > 1 {
-		execInfo = fmt.Sprintf("✨ Execution #%d", ts.executionCount)
-	}
-	execInfo += fmt.Sprintf(" • %s", ts.lastExecution.Format("15:04:05"))
-
-	builder.WriteString(execInfoStyle.Render(execInfo))
-	builder.WriteString("\n")
-
-	// isError:true is the v1.5.0 channel for tool-layer errors (e.g. input
-	// validation failures, business-rule violations) — the call completed
-	// and the server responded with a structured payload tagged as an error.
-	// We render a red, padded banner above the result body to make this
-	// distinct from:
-	//   - JSON-RPC protocol errors (handled separately via ts.LastError(),
-	//     rendered in the footer with a different "Error: <message>" format)
-	//   - outputSchema violations (rendered just below as a yellow banner)
-	// The banner header still reads "Error Result:" inline so the result
-	// label stays unambiguous when the user reads top-down.
-	if ts.result.IsError {
-		errBannerStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("15")). // white text
-			Background(lipgloss.Color("9")).  // red background
-			Padding(0, 1)
-		builder.WriteString(errBannerStyle.Render("⚠ Tool reported an error (isError:true)"))
-		builder.WriteString("\n")
-		builder.WriteString(ts.errorStyle.Render("Error Result:"))
-	} else {
-		builder.WriteString(ts.labelStyle.Render("Result:"))
-	}
-	builder.WriteString("\n")
-
-	// outputSchema violations (Tier 2 schema validation) are surfaced as a
-	// yellow warning banner above the result body so the operator notices
-	// the mismatch before reading the (possibly malformed) payload. The
-	// banner is intentionally non-blocking — the result still renders below
-	// — because the spec calls these "warnings, not errors": consumers may
-	// still want to see the data, they just need to know the contract was
-	// not honored.
-	builder.WriteString(renderViolationsBanner(ts.result.OutputViolations))
-
-	headerH := lipgloss.Height(header)
-	footerH := lipgloss.Height(footer)
-	availableHeight := ts.computeResultDisplayHeight(headerH, footerH)
-
-	// The round trace sits under the result body; shrink the body so the
-	// trace stays on screen.
-	roundTrace := renderResultTrailer(ts.result.Rounds, ts.result.Server)
-	if roundTrace != "" {
-		availableHeight = max(resultMinHeight, availableHeight-lipgloss.Height(roundTrace)-1)
-	}
-
-	termWidth := ts.Width()
-	if termWidth == 0 {
-		termWidth = defaultTermWidth
-	}
-
-	if ts.viewingResult && len(ts.resultFields) > 0 {
-		ts.renderFieldPicker(&builder)
-	} else {
-		ts.renderScrolledResult(&builder, availableHeight, termWidth)
-	}
-	builder.WriteString("\n")
-	if roundTrace != "" {
-		builder.WriteString(roundTrace)
-		builder.WriteString("\n")
-	}
-
-	return builder.String()
-}
-
-// renderFieldPicker renders the result-field picker of viewing mode.
-func (ts *ToolScreen) renderFieldPicker(builder *strings.Builder) {
-	fieldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-	selectedFieldStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("240")).
-		Foreground(lipgloss.Color("15")).
-		Bold(true)
-	pathStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("14")).
-		Bold(true)
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("10"))
-
-	builder.WriteString(fieldStyle.Render("Select a field to copy its value:"))
-	builder.WriteString("\n\n")
-
-	for i, field := range ts.resultFields {
-		var line string
-		if i == ts.resultCursor {
-			line = fmt.Sprintf("▶ %s = %s",
-				pathStyle.Render(field.path),
-				valueStyle.Render(field.value))
-			builder.WriteString(selectedFieldStyle.Render(line))
-		} else {
-			line = fmt.Sprintf("  %s = %s",
-				pathStyle.Render(field.path),
-				valueStyle.Render(field.value))
-			builder.WriteString(line)
-		}
-		builder.WriteString("\n")
-	}
-
-	viewHelpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")).
-		Italic(true)
-	builder.WriteString("\n")
-	builder.WriteString(viewHelpStyle.Render(
-		"↑/↓: Navigate • Enter/c/y: Copy field • Ctrl+C: Copy all • v/Esc: Exit view"))
-}
-
-// renderScrolledResult renders the visible window of the result body with
-// the scroll indicator and the view-fields hint.
-func (ts *ToolScreen) renderScrolledResult(builder *strings.Builder, availableHeight, termWidth int) {
-	lines := ts.resultLines
-	if lines == nil {
-		lines = []string{}
-	}
-
-	startIdx := ts.resultScroll
-	endIdx := startIdx + availableHeight
-	if startIdx >= len(lines) {
-		startIdx = max(0, len(lines)-1)
-	}
-	if endIdx > len(lines) {
-		endIdx = len(lines)
-	}
-	visibleLines := lines[startIdx:endIdx]
-
-	resultStyle := ts.resultStyle.
-		Width(termWidth - resultWidthMargin).
-		Height(availableHeight)
-
-	resultContent := strings.Join(visibleLines, "\n")
-	builder.WriteString(resultStyle.Render(resultContent))
-
-	if len(lines) > availableHeight {
-		builder.WriteString("\n")
-
-		scrollStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243")).
-			Italic(true)
-
-		builder.WriteString(scrollStyle.Render(resultScrollIndicator(startIdx, endIdx, len(lines))))
-	}
-
-	if len(ts.resultFields) > 1 {
-		builder.WriteString("\n")
-		hintStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243")).
-			Italic(true)
-		builder.WriteString(hintStyle.Render("Press 'v' to view fields • Ctrl+↑/↓, PgUp/PgDn, Home/End: Scroll"))
-	}
-}
-
-// resultScrollIndicator describes the visible result window and the scroll
-// keys that move it.
-func resultScrollIndicator(startIdx, endIdx, total int) string {
-	canScrollUp := startIdx > 0
-	canScrollDown := endIdx < total
-
-	switch {
-	case canScrollUp && canScrollDown:
-		return fmt.Sprintf("↑ Ctrl+Up/Down: Scroll (line %d-%d/%d) ↓", startIdx+1, endIdx, total)
-	case canScrollUp:
-		return fmt.Sprintf("↑ Ctrl+Up: Scroll up (line %d-%d/%d)", startIdx+1, endIdx, total)
-	case canScrollDown:
-		return fmt.Sprintf("Ctrl+Down: Scroll down (line %d-%d/%d) ↓", startIdx+1, endIdx, total)
-	default:
-		return fmt.Sprintf("Line %d-%d/%d", startIdx+1, endIdx, total)
-	}
-}
-
-// renderViolationsBanner renders the yellow output-schema violations
-// banner, or "" when the result honored its schema.
-func renderViolationsBanner(violations []string) string {
-	if len(violations) == 0 {
-		return ""
-	}
-	// Yellow + bold matches the schema-error warning palette used
-	// elsewhere on this screen so the visual treatment is consistent.
-	warnStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("220"))
-	bulletStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("220"))
-	var b strings.Builder
-	b.WriteString(warnStyle.Render(fmt.Sprintf("⚠ Output schema violations (%d):", len(violations))))
-	b.WriteString("\n")
-	for _, v := range violations {
-		b.WriteString(bulletStyle.Render("  • " + v))
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
 // renderFooter builds everything below the result block.
 func (ts *ToolScreen) renderFooter() string {
 	var builder strings.Builder
@@ -2411,11 +1979,11 @@ func statusColorFor(level StatusLevel) string {
 // result, a result shown, a field focused, or a button focused.
 func (ts *ToolScreen) currentHelpText() string {
 	switch {
-	case ts.viewingResult:
+	case ts.result.picking:
 		// Already shown inline help for viewing mode
 		return ""
-	case ts.result != nil:
-		if len(ts.resultFields) > 1 {
+	case ts.result.shown():
+		if len(ts.result.fields) > 1 {
 			return "v: View fields • c: CLI command • Ctrl+C: Copy all • Ctrl+↑/↓: Scroll • " +
 				"Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
 		}
@@ -2443,76 +2011,5 @@ func (ts *ToolScreen) currentHelpText() string {
 		return "Enter: Show CLI command • Tab: Navigate • c: CLI toggle • Ctrl+L: Debug Log • b: Back • Esc: Back"
 	default:
 		return "Tab: Navigate • Enter: Go back • c: CLI command • Ctrl+L: Debug Log • b/Alt+←: Back • Esc: Back"
-	}
-}
-
-// parseResultFields extracts copyable fields from JSON result
-func (ts *ToolScreen) parseResultFields() {
-	ts.resultFields = []resultField{}
-
-	// Try to parse as JSON
-	var data interface{}
-	if err := json.Unmarshal([]byte(ts.resultJSON), &data); err != nil {
-		// Not JSON, treat as single text field
-		ts.resultFields = append(ts.resultFields, resultField{
-			path:  "result",
-			value: ts.resultJSON,
-			raw:   ts.resultJSON,
-		})
-		return
-	}
-
-	// Recursively extract fields
-	ts.extractFields("", data)
-
-	// Sort fields by path for consistent ordering
-	sort.Slice(ts.resultFields, func(i, j int) bool {
-		return ts.resultFields[i].path < ts.resultFields[j].path
-	})
-}
-
-// extractFields recursively extracts fields from JSON data
-func (ts *ToolScreen) extractFields(prefix string, data interface{}) {
-	switch v := data.(type) {
-	case map[string]interface{}:
-		for key, value := range v {
-			path := key
-			if prefix != "" {
-				path = prefix + "." + key
-			}
-
-			switch val := value.(type) {
-			case map[string]interface{}, []interface{}:
-				// Recurse into nested structures
-				ts.extractFields(path, val)
-			default:
-				// Leaf value
-				strVal := fmt.Sprintf("%v", value)
-				if strVal != "" && strVal != "null" {
-					ts.resultFields = append(ts.resultFields, resultField{
-						path:  path,
-						value: strVal,
-						raw:   value,
-					})
-				}
-			}
-		}
-
-	case []interface{}:
-		for i, item := range v {
-			path := fmt.Sprintf("%s[%d]", prefix, i)
-			ts.extractFields(path, item)
-		}
-
-	default:
-		// Leaf value
-		strVal := fmt.Sprintf("%v", v)
-		if strVal != "" && strVal != "null" && prefix != "" {
-			ts.resultFields = append(ts.resultFields, resultField{
-				path:  prefix,
-				value: strVal,
-				raw:   v,
-			})
-		}
 	}
 }

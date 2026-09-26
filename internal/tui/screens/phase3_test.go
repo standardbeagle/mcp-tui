@@ -34,15 +34,14 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 		ts.clipboard = clip
 
 		// Simulate a result
-		ts.result = &mcp.CallToolResult{
+		ts.result.set(&mcp.CallToolResult{
 			Content: []mcp.Content{
 				{
 					Type: "text",
 					Text: "Test result",
 				},
 			},
-		}
-		ts.resultJSON = "Test result"
+		})
 
 		// Press Ctrl+C
 		model, _ := ts.Update(tea.KeyMsg{Type: tea.KeyCtrlC})

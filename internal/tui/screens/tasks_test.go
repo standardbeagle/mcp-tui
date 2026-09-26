@@ -169,8 +169,8 @@ func TestToolScreen_TaskMode(t *testing.T) {
 			break
 		}
 	}
-	if screen.result == nil || !strings.Contains(screen.resultJSON, tuiReport) {
-		t.Fatalf("result = %+v", screen.result)
+	if !screen.result.shown() || !strings.Contains(screen.result.text, tuiReport) {
+		t.Fatalf("result = %+v", screen.result.call)
 	}
 	if known := svc.KnownTasks(); len(known) != 1 || known[0].Status != tasks.StatusCompleted {
 		t.Errorf("KnownTasks = %+v", known)
