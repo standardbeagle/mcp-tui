@@ -63,6 +63,7 @@ type ToolScreen struct {
 	// CLI command state
 	cliCommand     string // Generated CLI command
 	showCLICommand bool   // Whether to show the CLI command
+	cliCopied      bool   // Whether the shown CLI command reached the clipboard
 
 	// pendingConfirm tracks an outstanding destructive-tool confirm overlay so
 	// the user's Y/N decision (delivered via ConfirmDecisionMsg) can resume
@@ -1069,12 +1070,20 @@ func (ts *ToolScreen) toggleCLICommandDisplay() {
 		ts.SetStatus("CLI command hidden", StatusInfo)
 		return
 	}
+	ts.showCLICommandBox()
+}
+
+// showCLICommandBox shows the equivalent CLI command and copies it to the
+// clipboard.
+func (ts *ToolScreen) showCLICommandBox() {
 	ts.cliCommand = ts.generateCLICommand()
 	ts.showCLICommand = true
-	if err := ts.copyToClipboard(ts.cliCommand); err == nil {
-		ts.SetStatus("CLI command copied to clipboard and displayed below!", StatusSuccess)
+	err := ts.copyToClipboard(ts.cliCommand)
+	ts.cliCopied = err == nil
+	if ts.cliCopied {
+		ts.SetStatus("CLI command copied to clipboard", StatusSuccess)
 	} else {
-		ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
+		ts.SetStatus(fmt.Sprintf("CLI command shown; clipboard copy failed: %v", err), StatusWarning)
 	}
 }
 
@@ -1164,16 +1173,7 @@ func (ts *ToolScreen) activateCursorButton() (tea.Model, tea.Cmd) {
 	case executePos:
 		return ts.submit()
 	case cliPos:
-		// CLI button
-		ts.cliCommand = ts.generateCLICommand()
-		ts.showCLICommand = true
-
-		// Copy to clipboard
-		if err := ts.copyToClipboard(ts.cliCommand); err == nil {
-			ts.SetStatus("CLI command copied to clipboard and displayed below!", StatusSuccess)
-		} else {
-			ts.SetStatus("CLI command displayed below (clipboard copy failed)", StatusWarning)
-		}
+		ts.showCLICommandBox()
 		return ts, nil
 	case backPos:
 		// Back button
@@ -1604,6 +1604,7 @@ func fieldTypeValidationError(field *toolField, value string) string {
 
 // View renders the tool screen: the form with the result right of it on a
 // wide terminal, else below it; either way the result runs to the bottom.
+// The CLI command box, when shown, heads the result column.
 func (ts *ToolScreen) View() string {
 	width, height := ts.resultViewport()
 	block := ts.renderResultBlock(width, height)
@@ -1613,7 +1614,8 @@ func (ts *ToolScreen) View() string {
 	_, termHeight := ts.termSize()
 	form := lipgloss.NewStyle().Width(ts.formWidth()).MaxHeight(termHeight).
 		Render(ts.renderHeader() + ts.renderFooter())
-	return lipgloss.JoinHorizontal(lipgloss.Top, form, columnGap, strings.TrimSuffix(block, "\n"))
+	column := ts.renderCLICommandBox(ts.resultColumnWidth()) + strings.TrimSuffix(block, "\n")
+	return lipgloss.JoinHorizontal(lipgloss.Top, form, columnGap, column)
 }
 
 // fitWidth is style wrapping its text to the form's width, so what is
@@ -1669,11 +1671,16 @@ func (ts *ToolScreen) renderHeaderTop() string {
 	return builder.String()
 }
 
-// renderHeaderBottom builds the buttons, the running call's status and the
-// tool's description.
+// renderHeaderBottom builds the buttons, the CLI command box under them
+// below the form (side by side it heads the result column instead), the
+// running call's status and the tool's description.
 func (ts *ToolScreen) renderHeaderBottom() string {
 	var builder strings.Builder
 	ts.renderButtonsRow(&builder)
+	if !ts.sideBySide() && ts.showCLICommand {
+		builder.WriteString(ts.renderCLICommandBox(ts.formWidth()))
+		builder.WriteString("\n")
+	}
 	ts.renderExecutionStatus(&builder)
 
 	// The description follows the form, so a long one does not push the
@@ -2008,8 +2015,6 @@ func (ts *ToolScreen) renderExecutionStatus(builder *strings.Builder) {
 func (ts *ToolScreen) renderFooter() string {
 	var builder strings.Builder
 
-	builder.WriteString(ts.renderCLICommandBox())
-
 	// Error message
 	if err := ts.LastError(); err != nil {
 		builder.WriteString("\n")
@@ -2033,39 +2038,34 @@ func (ts *ToolScreen) renderFooter() string {
 	return builder.String()
 }
 
-// renderCLICommandBox renders the equivalent CLI command box, or "" when it
-// is hidden.
-func (ts *ToolScreen) renderCLICommandBox() string {
+// renderCLICommandBox renders the equivalent CLI command box width columns
+// wide, headed by whether it reached the clipboard; "" when it is hidden.
+func (ts *ToolScreen) renderCLICommandBox(width int) string {
 	if !ts.showCLICommand || ts.cliCommand == "" {
 		return ""
 	}
 	var builder strings.Builder
-	builder.WriteString("\n")
 
-	// CLI command header
+	heading := "Equivalent CLI command (POSIX shell) · copied to clipboard"
+	if !ts.cliCopied {
+		heading = "Equivalent CLI command (POSIX shell) · clipboard copy failed"
+	}
 	cliHeaderStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("14")). // Cyan
-		Bold(true)
-	builder.WriteString(cliHeaderStyle.Render("Equivalent CLI Command (POSIX shell):"))
+		Bold(true).
+		Width(width)
+	builder.WriteString(cliHeaderStyle.Render(heading))
 	builder.WriteString("\n")
 
-	// The box wraps a long command inside the form; the clipboard holds it
-	// on one line.
+	// The box wraps a long command; the clipboard holds it on one line.
 	cliCommandStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("6")). // Cyan border
 		Padding(0, 1).
-		Width(ts.formWidth() - 2).
+		Width(width - 2).
 		Foreground(lipgloss.Color("15")) // White text
 
 	builder.WriteString(cliCommandStyle.Render(ts.cliCommand))
-	builder.WriteString("\n")
-
-	// CLI command help
-	cliHelpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")).
-		Italic(true)
-	builder.WriteString(cliHelpStyle.Render("Copy this command to run the same tool call from the command line"))
 	builder.WriteString("\n")
 	return builder.String()
 }

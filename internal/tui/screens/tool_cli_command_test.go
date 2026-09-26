@@ -2,10 +2,16 @@ package screens
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
@@ -150,4 +156,76 @@ func TestToolScreen_CLICommandRefusesRawJSONTheCLICannotPass(t *testing.T) {
 			t.Errorf("raw %s: command = %q, want a # comment naming %s", tc.raw, command, tc.want)
 		}
 	}
+}
+
+// The CLI command box was drawn under the buttons and the description, so
+// with a real form it landed below the terminal and pressing c or the CLI
+// button seemed to do nothing. It is drawn where the eye is, whole, with
+// the copy outcome beside it, on a wide and a narrow terminal alike.
+func TestToolScreen_CLICommandIsVisibleWithARealForm(t *testing.T) {
+	conn := &config.ConnectionConfig{
+		Type:    config.TransportStdio,
+		Command: "/home/demo/bin/demo-server",
+		Args:    []string{"-stdio"},
+	}
+	for _, size := range []struct{ width, height int }{{140, 40}, {100, 30}} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			ts := NewToolScreen(searchTicketsTool(t), connectionConfigService{conn: conn})
+			ts.clipboard = &memoryClipboard{}
+			ts.Init()
+			ts.UpdateSize(size.width, size.height)
+			ts.setField(t, "query", "printer on fire")
+			ts.setField(t, "status", "open")
+
+			_, cliPos, _ := ts.buttonPositions()
+			for ts.cursor != cliPos {
+				ts.Update(tea.KeyMsg{Type: tea.KeyTab})
+			}
+			ts.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+			view := ts.View()
+			if h := lipgloss.Height(view); h > size.height {
+				t.Fatalf("view is %d lines, terminal has %d:\n%s", h, size.height, view)
+			}
+			plain := ansi.Strip(view)
+			if !strings.Contains(plain, "copied to clipboard") {
+				t.Errorf("copy outcome not shown:\n%s", plain)
+			}
+			squeeze := func(s string) string {
+				return strings.Map(func(r rune) rune {
+					if unicode.IsSpace(r) || strings.ContainsRune("│╭╮╰╯─", r) {
+						return -1
+					}
+					return r
+				}, s)
+			}
+			if command := ts.generateCLICommand(); !strings.Contains(squeeze(boxText(plain)), squeeze(command)) {
+				t.Errorf("command %q not shown whole:\n%s", command, plain)
+			}
+		})
+	}
+}
+
+// boxText is the text inside the box under view's "Equivalent CLI command"
+// heading, its lines joined: the wrapped command read back as one.
+func boxText(view string) string {
+	lines := strings.Split(view, "\n")
+	for i, line := range lines {
+		at := strings.Index(line, "Equivalent CLI command")
+		if at < 0 {
+			continue
+		}
+		// Only the box's own columns: the form may sit left of it.
+		col := lipgloss.Width(line[:at])
+		var inside []string
+		for _, row := range lines[min(i+2, len(lines)):] {
+			row = ansi.Cut(row, col, lipgloss.Width(row))
+			if strings.HasPrefix(row, "╰") {
+				break
+			}
+			inside = append(inside, strings.Trim(strings.TrimSpace(row), "│"))
+		}
+		return strings.Join(inside, "")
+	}
+	return ""
 }

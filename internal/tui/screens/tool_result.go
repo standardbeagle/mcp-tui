@@ -150,7 +150,8 @@ func (ts *ToolScreen) resultBodyWidth() int {
 
 // resultViewport is the result body's size: the panel's inner width, and
 // the rows the terminal leaves once the panel's own lines are drawn, and
-// below the form also the header and footer. The View and the scroll keys
+// below the form also the header and footer (side by side, the CLI command
+// box above it). The View and the scroll keys
 // both use it, so a page is the page shown. The panel's own lines are
 // measured by drawing it one row tall.
 func (ts *ToolScreen) resultViewport() (width, height int) {
@@ -158,7 +159,7 @@ func (ts *ToolScreen) resultViewport() (width, height int) {
 	width = ts.resultBodyWidth()
 	probe := ts.renderResultBlock(width, 1)
 	if ts.sideBySide() {
-		probe = strings.TrimSuffix(probe, "\n")
+		probe = ts.renderCLICommandBox(ts.resultColumnWidth()) + strings.TrimSuffix(probe, "\n")
 	} else {
 		probe = ts.renderHeader() + probe + ts.renderFooter()
 	}
