@@ -305,8 +305,8 @@ func printPromptDetailText(prompt *mcp.Prompt) {
 	if len(prompt.Arguments) > 0 {
 		fmt.Println()
 		fmt.Println(sectionStyle.Render("Arguments:"))
-		for key, value := range prompt.Arguments {
-			fmt.Println(argumentStyle.Render(fmt.Sprintf("• %s: %v", key, value)))
+		for _, arg := range prompt.Arguments {
+			fmt.Println(argumentStyle.Render("• " + mcp.DescribePromptArgument(arg)))
 		}
 	}
 }

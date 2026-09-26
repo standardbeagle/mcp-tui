@@ -3012,8 +3012,8 @@ func (ms *MainScreen) renderPromptMetadata() string {
 		b.WriteString(metaStyle.Render("Arguments:"))
 		b.WriteString("\n")
 		argStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).MarginLeft(2)
-		for key, value := range ms.selectedPrompt.Arguments {
-			b.WriteString(argStyle.Render(fmt.Sprintf("• %s: %v", key, value)))
+		for _, arg := range ms.selectedPrompt.Arguments {
+			b.WriteString(argStyle.Render("• " + mcp.DescribePromptArgument(arg)))
 			b.WriteString("\n")
 		}
 	}

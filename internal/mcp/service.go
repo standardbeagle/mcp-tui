@@ -1643,20 +1643,15 @@ func convertPromptPage(page *officialMCP.ListPromptsResult) []Prompt {
 		if prompt == nil {
 			continue
 		}
-		// Convert PromptArgument slice to map[string]interface{}
-		argumentsMap := make(map[string]interface{})
+		arguments := make([]officialMCP.PromptArgument, 0, len(prompt.Arguments))
 		for _, arg := range prompt.Arguments {
 			if arg != nil {
-				// Validate argument name is not empty
 				if arg.Name == "" {
 					debug.Error("Prompt argument has empty name",
 						debug.F("prompt", prompt.Name))
 					continue
 				}
-				argumentsMap[arg.Name] = map[string]interface{}{
-					"description": arg.Description,
-					"required":    arg.Required,
-				}
+				arguments = append(arguments, *arg)
 			}
 		}
 
@@ -1664,7 +1659,7 @@ func convertPromptPage(page *officialMCP.ListPromptsResult) []Prompt {
 			Name:        prompt.Name,
 			Title:       prompt.Title,
 			Description: prompt.Description,
-			Arguments:   argumentsMap,
+			Arguments:   arguments,
 			Icons:       append([]officialMCP.Icon(nil), prompt.Icons...),
 		})
 	}

@@ -449,13 +449,27 @@ type ResourceContents struct {
 	Blob []byte `json:"blob,omitempty"`
 }
 
-// Prompt represents an MCP prompt
+// Prompt represents an MCP prompt. Arguments keep the order the server
+// declared them in.
 type Prompt struct {
-	Name        string                 `json:"name"`
-	Title       string                 `json:"title,omitempty"`
-	Description string                 `json:"description,omitempty"`
-	Arguments   map[string]interface{} `json:"arguments,omitempty"`
-	Icons       []officialMCP.Icon     `json:"icons,omitempty"`
+	Name        string                       `json:"name"`
+	Title       string                       `json:"title,omitempty"`
+	Description string                       `json:"description,omitempty"`
+	Arguments   []officialMCP.PromptArgument `json:"arguments,omitempty"`
+	Icons       []officialMCP.Icon           `json:"icons,omitempty"`
+}
+
+// DescribePromptArgument renders one prompt argument for display:
+// "ticket_id (required): e.g. T-1041".
+func DescribePromptArgument(arg officialMCP.PromptArgument) string {
+	line := arg.Name
+	if arg.Required {
+		line += " (required)"
+	}
+	if arg.Description != "" {
+		line += ": " + arg.Description
+	}
+	return line
 }
 
 func (p *Prompt) DisplayName() string {

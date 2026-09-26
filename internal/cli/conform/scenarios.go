@@ -731,14 +731,11 @@ func (r *Runner) buildCompletionRequest(ctx context.Context, svc mcp.Service) (m
 		if len(p.Arguments) == 0 {
 			continue
 		}
-		// Pick the first argument key.
-		for argName := range p.Arguments {
-			return mcp.CompleteRequest{
-				Ref:           mcp.PromptRef(p.Name),
-				ArgumentName:  argName,
-				ArgumentValue: "",
-			}, "", nil
-		}
+		return mcp.CompleteRequest{
+			Ref:           mcp.PromptRef(p.Name),
+			ArgumentName:  p.Arguments[0].Name,
+			ArgumentValue: "",
+		}, "", nil
 	}
 	// No prompt-with-args fallback — try resource templates.
 	tpls, terr := svc.ListResourceTemplates(ctx)
