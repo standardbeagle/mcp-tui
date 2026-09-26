@@ -24,6 +24,7 @@ type config struct {
 	stdio     bool
 	httpAddr  string
 	sseAddr   string
+	oauth     bool
 	misbehave bool
 }
 
@@ -32,6 +33,7 @@ func main() {
 	flag.BoolVar(&cfg.stdio, "stdio", false, "serve MCP over stdin/stdout")
 	flag.StringVar(&cfg.httpAddr, "http", "", "serve streamable HTTP at /mcp on this loopback address, e.g. 127.0.0.1:8931")
 	flag.StringVar(&cfg.sseAddr, "sse", "", "serve the legacy SSE transport at /sse on this loopback address, e.g. 127.0.0.1:8932")
+	flag.BoolVar(&cfg.oauth, "oauth", false, "protect -http's /mcp with bearer tokens from the embedded authorization server")
 	flag.BoolVar(&cfg.misbehave, "misbehave", false, "break the rules `mcp-tui verify` probes: an invalid tool name, "+
 		"an unstable tools/list order, an error result without content")
 	flag.Parse()
@@ -50,6 +52,8 @@ func run(ctx context.Context, cfg config) error {
 		return errors.New("-stdio cannot be combined with -http or -sse")
 	case !cfg.stdio && cfg.httpAddr == "" && cfg.sseAddr == "":
 		return errors.New("choose a transport: -stdio, -http <addr> and/or -sse <addr>")
+	case cfg.oauth && cfg.httpAddr == "":
+		return errors.New("-oauth protects the streamable HTTP endpoint; add -http <addr>")
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -96,8 +100,9 @@ func run(ctx context.Context, cfg config) error {
 	return g.Wait()
 }
 
-// streamableMux routes /mcp. The endpoint keeps the host exactly as -http
-// names it, with the bound port.
+// streamableMux routes /mcp and, with -oauth, the authorization server.
+// The issuer keeps the host exactly as -http names it (with the bound port),
+// because clients compare it with the URL they were given.
 func streamableMux(cfg config, ln net.Listener, server *mcp.Server, logger *slog.Logger) (http.Handler, string, error) {
 	host, _, err := net.SplitHostPort(cfg.httpAddr)
 	if err != nil {
@@ -110,7 +115,13 @@ func streamableMux(cfg config, ln net.Listener, server *mcp.Server, logger *slog
 	origin := "http://" + net.JoinHostPort(host, strconv.Itoa(tcpAddr.Port))
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", newStreamableHandler(server, logger))
+	mcpHandler := newStreamableHandler(server, logger)
+	if cfg.oauth {
+		as := newAuthServer(origin, logger)
+		as.register(mux)
+		mcpHandler = as.requireBearer(mcpHandler)
+	}
+	mux.Handle("/mcp", mcpHandler)
 	return mux, origin + "/mcp", nil
 }
 
