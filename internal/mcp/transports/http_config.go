@@ -1,55 +1,62 @@
 package transports
 
 import (
+	"net"
 	"net/http"
 	"time"
 )
 
-// DefaultHTTPClientConfig returns sensible defaults for HTTP client configuration
+// Phase bounds shared by both HTTP transports. A server that accepts a
+// request and never answers is cut off after responseHeaderTimeout; once
+// headers arrive, a streamed body may run indefinitely.
+const (
+	dialTimeout           = 10 * time.Second
+	tlsHandshakeTimeout   = 10 * time.Second
+	responseHeaderTimeout = 30 * time.Second
+)
+
+// DefaultHTTPClientConfig returns the streamable HTTP client configuration.
 func DefaultHTTPClientConfig() *HTTPClientConfig {
 	return &HTTPClientConfig{
-		Timeout:           30 * time.Second,
-		AllowNoTimeout:    false,
-		EnableCompression: true,
-		MaxIdleConns:      100,
-		IdleConnTimeout:   90 * time.Second,
+		DialTimeout:           dialTimeout,
+		TLSHandshakeTimeout:   tlsHandshakeTimeout,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+		EnableCompression:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
 	}
 }
 
 // SSEHTTPClientConfig returns configuration optimized for SSE streams
 func SSEHTTPClientConfig() *HTTPClientConfig {
 	return &HTTPClientConfig{
-		Timeout:           0, // No timeout for SSE streams
-		AllowNoTimeout:    true,
-		EnableCompression: false, // Avoid compression for real-time streams
-		MaxIdleConns:      10,
-		IdleConnTimeout:   300 * time.Second, // Longer for persistent connections
+		DialTimeout:           dialTimeout,
+		TLSHandshakeTimeout:   tlsHandshakeTimeout,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+		EnableCompression:     false, // Avoid compression for real-time streams
+		MaxIdleConns:          10,
+		IdleConnTimeout:       300 * time.Second, // Longer for persistent connections
 	}
 }
 
-// CreateHTTPClient creates an HTTP client with the specified configuration
+// CreateHTTPClient creates an HTTP client with the specified configuration.
+// It sets no http.Client Timeout: that bounds the whole exchange, body
+// included, and so cuts every long-lived response stream.
 func CreateHTTPClient(config *HTTPClientConfig) *http.Client {
 	if config == nil {
 		config = DefaultHTTPClientConfig()
 	}
 
 	transport := &http.Transport{
-		MaxIdleConns:       config.MaxIdleConns,
-		IdleConnTimeout:    config.IdleConnTimeout,
-		DisableCompression: !config.EnableCompression,
-		DisableKeepAlives:  false,
+		DialContext:           (&net.Dialer{Timeout: config.DialTimeout, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   config.TLSHandshakeTimeout,
+		ResponseHeaderTimeout: config.ResponseHeaderTimeout,
+		MaxIdleConns:          config.MaxIdleConns,
+		IdleConnTimeout:       config.IdleConnTimeout,
+		DisableCompression:    !config.EnableCompression,
 	}
 
-	client := &http.Client{
-		Transport: transport,
-	}
-
-	// Only set timeout if allowed (SSE streams need no timeout)
-	if !config.AllowNoTimeout || config.Timeout > 0 {
-		client.Timeout = config.Timeout
-	}
-
-	return client
+	return &http.Client{Transport: transport}
 }
 
 // GetHTTPClientForTransport returns an appropriately configured HTTP client for the transport type

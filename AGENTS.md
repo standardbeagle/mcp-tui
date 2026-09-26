@@ -68,12 +68,12 @@ docs/                    Astro docs site（dev.standardbeagle.com）
 
 **STDIO**（最穩，薦用）：`officialMCP.CommandTransport{Command: cmd}`。二 exec 處（`transports/factory.go`、`transports/stdio_enhanced.go`）皆先行 `config.ValidateCommand`。stderr 自捕以供診斷；不預跑 command。
 
-**Streamable HTTP / HTTP**：`officialMCP.StreamableClientTransport`。HTTP client timeout 30s。Client 必 accept `application/json` 與 `text/event-stream`。
+**Streamable HTTP / HTTP**：`officialMCP.StreamableClientTransport`。HTTP client 無整體 `Timeout`（其斷 `subscriptions/listen` 與 SSE 回應之長流）；唯限各段（`transports/http_config.go`）：dial 10s、TLS 握手 10s、候 response headers 30s。headers 既至，body 之滯由呼者 ctx 限之。Client 必 accept `application/json` 與 `text/event-stream`。
 
 **SSE**（deprecated）：`officialMCP.SSEClientTransport`。最高協商 2025-11-25，連時記 Warn。SDK SSE client 無 OAuthHandler，故 OAuth 於 SSE（及 stdio）連線時即拒（`validateOAuthTransport`）。
 - **CRITICAL**：connection context 必為 `context.Background()`（`sseContextStrategy`），勿用 CLI timeout context，否則殺 hanging GET。Operation context 可用呼者之 ctx。
 - 握手（至首 `endpoint` event 與 initialize 回應）仍受呼者期限：期限先至，session manager 即取消連線而返；握手既成，流續用 Background 長開。
-- HTTP client `Timeout: 0`（`transports/http_config.go`）。
+- HTTP client `Timeout: 0`，各段之限同 streamable HTTP（`transports/http_config.go`）。
 - 流程：GET /sse → 首 event `endpoint` 帶 session URL → POST 至該 endpoint（202）→ responses 經 SSE stream 回。
 - Infinite redirect loops 多示 server bug，非 SDK。
 

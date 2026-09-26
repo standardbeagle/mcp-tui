@@ -85,11 +85,16 @@ type TransportFactory interface {
 	GetSupportedTypes() []TransportType
 }
 
-// HTTPClientConfig holds HTTP client configuration options
+// HTTPClientConfig holds HTTP client configuration options. It bounds each
+// phase of an exchange up to the response headers, never the whole exchange:
+// SSE responses and 2026-07-28 subscriptions/listen streams stay open for as
+// long as the session does. A body that stalls after its headers is bounded
+// by the caller's request context.
 type HTTPClientConfig struct {
-	Timeout           time.Duration
-	AllowNoTimeout    bool // For SSE streams
-	EnableCompression bool
-	MaxIdleConns      int
-	IdleConnTimeout   time.Duration
+	DialTimeout           time.Duration
+	TLSHandshakeTimeout   time.Duration
+	ResponseHeaderTimeout time.Duration // from request written to response headers read
+	EnableCompression     bool
+	MaxIdleConns          int
+	IdleConnTimeout       time.Duration
 }

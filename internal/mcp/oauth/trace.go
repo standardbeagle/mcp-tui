@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
-	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
@@ -42,6 +42,10 @@ func IsLogComponent(component string) bool {
 // responses are a few KiB; anything larger passes through undescribed.
 const maxTracedAuthBody = 256 << 10
 
+// authRequestTimeout bounds each auth exchange (discovery, registration,
+// token grant, refresh) end to end.
+const authRequestTimeout = 30 * time.Second
+
 // newAuthHTTPClient returns a copy of base whose transport traces every auth
 // exchange: the generic HTTP trace line ("oauth-http") plus a structured
 // event naming the step (metadata discovery, registration, token grant or
@@ -49,15 +53,14 @@ const maxTracedAuthBody = 256 << 10
 // Authorize and refreshes inside its token source, all through this client,
 // so this is the one hook that sees every step the SDK does not expose.
 //
-// A nil base gets the standard non-streaming timeout (transports'
-// DefaultHTTPClientConfig): no auth exchange is a long-lived stream, and an
-// unbounded one would hang Authorize, or a refresh, forever.
+// A nil base gets authRequestTimeout: no auth exchange is a long-lived
+// stream, and an unbounded one would hang Authorize, or a refresh, forever.
 //
 // Every dial is refused for a non-public address unless allowPrivateNetwork
 // (see guardedTransport).
 func newAuthHTTPClient(base *http.Client, allowPrivateNetwork bool) *http.Client {
 	if base == nil {
-		base = &http.Client{Timeout: transports.DefaultHTTPClientConfig().Timeout}
+		base = &http.Client{Timeout: authRequestTimeout}
 	}
 	client := *base
 	client.Transport = &authTraceTransport{
