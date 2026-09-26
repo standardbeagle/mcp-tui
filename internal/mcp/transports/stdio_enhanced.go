@@ -282,7 +282,7 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 	e.cmd, e.stderr, e.startErr = cmd, stderr, nil
 	e.mu.Unlock()
 
-	conn, err := (&officialMCP.CommandTransport{Command: cmd}).Connect(ctx)
+	conn, err := (&officialMCP.CommandTransport{Command: cmd, TerminateDuration: stdioShutdownGrace}).Connect(ctx)
 	if err != nil {
 		debug.Error("Enhanced STDIO: MCP connection failed", debug.F("error", err))
 
@@ -302,7 +302,37 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 	}
 
 	debug.Debug("Enhanced STDIO: MCP connection established successfully")
-	return conn, nil
+	return &stdioConn{Connection: conn}, nil
+}
+
+// stdioShutdownGrace is how long Close waits, after closing the server's
+// stdin, for it to exit before sending SIGTERM (the spec's stdio shutdown
+// sequence, which names no duration). The SDK's 5s default is paid in full by
+// every one-shot CLI call against a server that keeps timers running after
+// EOF, which is most Node servers.
+const stdioShutdownGrace = 2 * time.Second
+
+// stdioConn reports a server stopped by signal during Close as the shutdown
+// the spec prescribes rather than as a failed close. The SDK returns the
+// server's wait status, which for a signalled process is an *exec.ExitError
+// with no exit code.
+type stdioConn struct {
+	officialMCP.Connection
+	warnOnce sync.Once
+}
+
+func (c *stdioConn) Close() error {
+	err := c.Connection.Close()
+	var exitErr *exec.ExitError
+	if stderrors.As(err, &exitErr) && exitErr.ExitCode() == -1 {
+		c.warnOnce.Do(func() {
+			debug.Warn("Enhanced STDIO: server did not exit after its stdin closed; stopped by signal",
+				debug.F("grace", stdioShutdownGrace),
+				debug.F("status", exitErr.String()))
+		})
+		return nil
+	}
+	return err
 }
 
 // startupDiagnosticWait bounds how long StartupError waits for a failing
