@@ -634,11 +634,15 @@ func (r *Runner) scenarioNotifications(ctx context.Context) ScenarioResult {
 // argument and probes the empty-prefix completion. An empty result list is
 // a normal "no matches" outcome and counts as a pass.
 //
-// Skipped when the server has no prompts AND no resource templates.
+// Skipped when the server does not declare the completions capability, or
+// has no prompts AND no resource templates.
 func (r *Runner) scenarioCompletion(ctx context.Context) ScenarioResult {
 	svc, err := r.ensureConnected(ctx)
 	if err != nil {
 		return failResult(err.Error(), "")
+	}
+	if info := svc.GetServerInfo(); info == nil || info.Capabilities["completions"] == nil {
+		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: server does not declare the completions capability"}
 	}
 	req, skipReason, buildErr := r.buildCompletionRequest(ctx, svc)
 	if buildErr != nil {
