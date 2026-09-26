@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/standardbeagle/mcp-tui/internal/cli/conform"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
@@ -345,6 +346,49 @@ func TestConformCommand_BuildTarget_PreservesStubFlags(t *testing.T) {
 	}
 	if target.CompletionArgumentValue != "Eng" {
 		t.Errorf("CompletionArgumentValue = %q", target.CompletionArgumentValue)
+	}
+}
+
+// TestConformCommand_TriggerArgsUseToolCallConversion confirms
+// --sampling-trigger-args and --elicit-trigger-args reach the target and
+// convert as `tool call` arguments do: typed by the tool's input schema,
+// and refused when they break it.
+func TestConformCommand_TriggerArgsUseToolCallConversion(t *testing.T) {
+	c := NewConformCommand()
+	cmd := withConformParentFlags(c.CreateCommand())
+	for flag, value := range map[string]string{
+		"url":                   "http://127.0.0.1:1",
+		"sampling-trigger-args": "ticket_id=T-1042",
+		"elicit-trigger-args":   "limit=3",
+	} {
+		if err := cmd.Flags().Set(flag, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target, err := c.buildConformTarget(cmd, nil)
+	if err != nil {
+		t.Fatalf("buildConformTarget: %v", err)
+	}
+	if len(target.SamplingTriggerArgs) != 1 || target.SamplingTriggerArgs[0] != "ticket_id=T-1042" {
+		t.Errorf("SamplingTriggerArgs = %q", target.SamplingTriggerArgs)
+	}
+	if len(target.ElicitTriggerArgs) != 1 || target.ElicitTriggerArgs[0] != "limit=3" {
+		t.Fatalf("ElicitTriggerArgs = %q", target.ElicitTriggerArgs)
+	}
+
+	tool := &mcp.Tool{Name: "search", InputSchema: map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"limit": map[string]any{"type": "integer", "maximum": 50}},
+	}}
+	args, err := target.ToolArguments(tool, target.ElicitTriggerArgs)
+	if err != nil {
+		t.Fatalf("ToolArguments: %v", err)
+	}
+	if args["limit"] != int64(3) {
+		t.Errorf("limit = %#v, want int64(3)", args["limit"])
+	}
+	if _, err := target.ToolArguments(tool, []string{"limit=500"}); err == nil {
+		t.Error("limit=500 breaks the schema's maximum; want an error")
 	}
 }
 

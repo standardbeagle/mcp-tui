@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/standardbeagle/mcp-tui/internal/cli/verify"
@@ -50,6 +51,18 @@ type Target struct {
 	// ElicitTriggerTool overrides the default "startElicitation" tool name
 	// used by the elicitation scenario.
 	ElicitTriggerTool string
+
+	// SamplingTriggerArgs and ElicitTriggerArgs are the trigger tools'
+	// arguments as `tool call` key=value (or key:=<json>) pairs. Nothing
+	// is invented for a required argument left out: the scenario skips
+	// and names the flag instead.
+	SamplingTriggerArgs []string
+	ElicitTriggerArgs   []string
+
+	// ToolArguments converts trigger argument pairs into a tool's
+	// arguments against its input schema, rejecting pairs that do not
+	// convert or validate. The CLI supplies `tool call`'s conversion.
+	ToolArguments func(tool *mcp.Tool, pairs []string) (map[string]any, error)
 
 	// CompletionPromptName is the prompt name (or resource template URI when
 	// CompletionRefIsResource=true) used to drive completion/complete. When
@@ -143,6 +156,12 @@ type Runner struct {
 	svc     mcp.Service
 	connErr error // sticky: caches the first connect failure so subsequent scenarios short-circuit
 	mu      sync.Mutex
+
+	// samplingAnswered and elicitAnswered count the server-to-client
+	// requests the stubs answered, so a round-trip scenario can tell a
+	// real round trip from a trigger tool that returned without one.
+	samplingAnswered atomic.Int64
+	elicitAnswered   atomic.Int64
 }
 
 // NewRunner builds a Runner for the supplied target without connecting. The
@@ -205,7 +224,9 @@ func (r *Runner) ensureConnected(ctx context.Context) (mcp.Service, error) {
 	// sampling/createMessage or elicitation/create at any point during the
 	// session will then receive a canned reply rather than hanging.
 	if r.target.SamplingStub != "" {
-		svc.SetSamplingHandler(sampling.NewTextStubHandler(r.target.SamplingStub))
+		svc.SetSamplingHandler(answeredSampling{
+			next: sampling.NewTextStubHandler(r.target.SamplingStub), answered: &r.samplingAnswered,
+		})
 	}
 	if r.target.ElicitStub != "" {
 		eh, err := elicitation.NewJSONStubHandler(r.target.ElicitStub)
@@ -213,7 +234,7 @@ func (r *Runner) ensureConnected(ctx context.Context) (mcp.Service, error) {
 			r.connErr = fmt.Errorf("invalid elicit stub: %w", err)
 			return nil, r.connErr
 		}
-		svc.SetElicitationHandler(eh)
+		svc.SetElicitationHandler(answeredElicitation{next: eh, answered: &r.elicitAnswered})
 	}
 
 	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -272,9 +293,9 @@ func (r *Runner) dispatch(ctx context.Context, name string) ScenarioResult {
 	case "prompts.get":
 		return r.scenarioPromptsGet(ctx)
 	case "sampling.createMessage":
-		return r.scenarioSampling(ctx)
+		return r.scenarioRoundTrip(ctx, r.samplingRoundTrip())
 	case "elicitation.create":
-		return r.scenarioElicitation(ctx)
+		return r.scenarioRoundTrip(ctx, r.elicitationRoundTrip())
 	case "notifications":
 		return r.scenarioNotifications(ctx)
 	case "completion.complete":
@@ -555,91 +576,6 @@ func (r *Runner) scenarioPromptsGet(ctx context.Context) ScenarioResult {
 	return ScenarioResult{Pass: true, Detail: fmt.Sprintf("prompt %q returned %d messages", pick.Name, len(res.Messages))}
 }
 
-// scenarioSampling exercises sampling/createMessage by calling a tool that
-// is known to trigger the request (default name "sampleLLM" matches the
-// reference server-everything tool). The stub handler set on the service
-// before connect supplies the canned reply.
-//
-// Skipped when no SamplingStub is configured (the run cannot block waiting
-// for a human reply) or when the trigger tool isn't advertised.
-func (r *Runner) scenarioSampling(ctx context.Context) ScenarioResult {
-	if r.target.SamplingStub == "" {
-		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: --sampling-stub not set"}
-	}
-	svc, err := r.ensureConnected(ctx)
-	if err != nil {
-		return failResult(err.Error(), "")
-	}
-	toolName := r.target.SamplingTriggerTool
-	if toolName == "" {
-		toolName = "sampleLLM"
-	}
-	tools, err := svc.ListTools(ctx)
-	if err != nil {
-		return failResult("ListTools failed: "+err.Error(), "")
-	}
-	if !hasToolNamed(tools, toolName) {
-		return ScenarioResult{Pass: true, Skipped: true,
-			Error: fmt.Sprintf("skipped: server has no %q tool to trigger sampling", toolName)}
-	}
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	// The arguments default to a known-safe shape for server-everything's
-	// sampleLLM. Other servers that name the trigger tool the same will
-	// either accept the arguments or return IsError=true — the scenario
-	// only asserts the tool ran (i.e. the round-trip didn't time out).
-	args := map[string]any{
-		"prompt":    "ping",
-		"maxTokens": 8,
-	}
-	res, callErr := svc.CallTool(callCtx, mcp.CallToolRequest{Name: toolName, Arguments: args})
-	if callErr != nil && res == nil {
-		return failResult(fmt.Sprintf("CallTool(%q) returned JSON-RPC error: %v", toolName, callErr), "")
-	}
-	if res == nil {
-		return failResult(fmt.Sprintf("CallTool(%q) returned nil result", toolName), "")
-	}
-	return ScenarioResult{Pass: true,
-		Detail: fmt.Sprintf("sampling round-trip completed via tool %q (isError=%t, %d content blocks)",
-			toolName, res.IsError, len(res.Content))}
-}
-
-// scenarioElicitation exercises elicitation/create by calling a tool that
-// triggers the request (default "startElicitation"). Same skip semantics as
-// the sampling scenario — needs an ElicitStub and a trigger tool.
-func (r *Runner) scenarioElicitation(ctx context.Context) ScenarioResult {
-	if r.target.ElicitStub == "" {
-		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: --elicit-stub not set"}
-	}
-	svc, err := r.ensureConnected(ctx)
-	if err != nil {
-		return failResult(err.Error(), "")
-	}
-	toolName := r.target.ElicitTriggerTool
-	if toolName == "" {
-		toolName = "startElicitation"
-	}
-	tools, err := svc.ListTools(ctx)
-	if err != nil {
-		return failResult("ListTools failed: "+err.Error(), "")
-	}
-	if !hasToolNamed(tools, toolName) {
-		return ScenarioResult{Pass: true, Skipped: true,
-			Error: fmt.Sprintf("skipped: server has no %q tool to trigger elicitation", toolName)}
-	}
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	res, callErr := svc.CallTool(callCtx, mcp.CallToolRequest{Name: toolName})
-	if callErr != nil && res == nil {
-		return failResult(fmt.Sprintf("CallTool(%q) returned JSON-RPC error: %v", toolName, callErr), "")
-	}
-	if res == nil {
-		return failResult(fmt.Sprintf("CallTool(%q) returned nil result", toolName), "")
-	}
-	return ScenarioResult{Pass: true,
-		Detail: fmt.Sprintf("elicitation round-trip completed via tool %q (isError=%t)", toolName, res.IsError)}
-}
-
 // scenarioNotifications connects and waits up to 5s for at least one
 // server-to-client notification on the captured stream. Many servers fire
 // notifications/initialized or tools/list_changed promptly; if the target
@@ -769,16 +705,6 @@ func extractFirstTemplateVar(uri string) string {
 		return ""
 	}
 	return uri[openIdx+1 : openIdx+1+closeIdx]
-}
-
-// hasToolNamed reports whether tools contains an entry with the given name.
-func hasToolNamed(tools []mcp.Tool, name string) bool {
-	for _, t := range tools {
-		if t.Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 // failResult is a tiny constructor for the scenario-failed shape.

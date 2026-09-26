@@ -391,23 +391,22 @@ func TestExtractFirstTemplateVar(t *testing.T) {
 	}
 }
 
-// TestHasToolNamed covers the helper that checks whether the connected
-// server advertises a specific tool — used by the sampling/elicitation
-// scenarios to decide whether to skip.
-func TestHasToolNamed(t *testing.T) {
+// TestFindTool covers the lookup the round-trip scenarios use to find
+// their trigger tool.
+func TestFindTool(t *testing.T) {
 	tools := []mcp.Tool{
 		{Name: "alpha"},
 		{Name: "beta"},
 		{Name: "gamma"},
 	}
-	if !hasToolNamed(tools, "beta") {
-		t.Error("hasToolNamed should find beta")
+	if got := findTool(tools, "beta"); got == nil || got.Name != "beta" {
+		t.Errorf("findTool(beta) = %v, want beta", got)
 	}
-	if hasToolNamed(tools, "delta") {
-		t.Error("hasToolNamed should not find delta")
+	if got := findTool(tools, "delta"); got != nil {
+		t.Errorf("findTool(delta) = %v, want nil", got)
 	}
-	if hasToolNamed(nil, "anything") {
-		t.Error("hasToolNamed on nil slice should be false")
+	if got := findTool(nil, "anything"); got != nil {
+		t.Errorf("findTool on nil slice = %v, want nil", got)
 	}
 }
 

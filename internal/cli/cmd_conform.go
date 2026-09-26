@@ -12,6 +12,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/cli/conform"
 	"github.com/standardbeagle/mcp-tui/internal/cli/verify"
+	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
 // ConformCommand exposes the end-to-end conformance suite as a CLI
@@ -59,7 +60,13 @@ Examples:
   mcp-tui conform --report-junit conform.xml http://localhost:8000/mcp
   mcp-tui conform --scenario tools.list http://localhost:8000/mcp
   mcp-tui conform --sampling-stub "ok" --cmd npx \
-      --args "@modelcontextprotocol/server-everything,stdio"
+      --args "@modelcontextprotocol/server-everything,stdio" \
+      --sampling-trigger-args prompt=hello
+
+sampling.createMessage and elicitation.create pass only when the trigger
+tool makes the server send that request and the stub answers it. A trigger
+tool that needs arguments is skipped unless --sampling-trigger-args /
+--elicit-trigger-args supply them.
 
 Exit codes:
   0  every scenario passed (skipped scenarios count as passing)
@@ -73,8 +80,12 @@ Exit codes:
 	cmd.Flags().String("report-junit", "", "Write JUnit XML report to the given file (e.g. conform.xml)")
 	cmd.Flags().String("sampling-trigger-tool", "",
 		"Override the tool name used to trigger sampling/createMessage (default: sampleLLM)")
+	cmd.Flags().StringArray("sampling-trigger-args", nil,
+		"Argument for the sampling trigger tool as key=value or key:=<json>, as in `tool call` (repeatable)")
 	cmd.Flags().String("elicit-trigger-tool", "",
 		"Override the tool name used to trigger elicitation/create (default: startElicitation)")
+	cmd.Flags().StringArray("elicit-trigger-args", nil,
+		"Argument for the elicitation trigger tool as key=value or key:=<json>, as in `tool call` (repeatable)")
 	cmd.Flags().String("completion-prompt", "",
 		"Prompt name (or resource template URI when --completion-resource is set) for completion/complete")
 	cmd.Flags().Bool("completion-resource", false,
@@ -189,6 +200,9 @@ func applyConformFlags(cmd *cobra.Command, target *conform.Target) {
 	if v := flagString(cmd, "elicit-trigger-tool"); v != "" {
 		target.ElicitTriggerTool = v
 	}
+	target.SamplingTriggerArgs = flagStringArray(cmd, "sampling-trigger-args")
+	target.ElicitTriggerArgs = flagStringArray(cmd, "elicit-trigger-args")
+	target.ToolArguments = triggerToolArguments
 	if v := flagString(cmd, "completion-prompt"); v != "" {
 		target.CompletionPromptName = v
 	}
@@ -201,6 +215,25 @@ func applyConformFlags(cmd *cobra.Command, target *conform.Target) {
 	if v := flagString(cmd, "completion-prefix"); v != "" {
 		target.CompletionArgumentValue = v
 	}
+}
+
+// triggerToolArguments converts a trigger tool's key=value pairs as
+// `tool call` does and refuses arguments that break its input schema: a
+// round-trip scenario sent invalid arguments would only test the server's
+// argument validation.
+func triggerToolArguments(tool *mcp.Tool, pairs []string) (map[string]any, error) {
+	rawArgs, err := parseRawCallArgs(pairs, false)
+	if err != nil {
+		return nil, err
+	}
+	args, inputSchema, err := convertRawArguments(tool.Name, tool, rawArgs, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := inputSchema.Validate(args); err != nil {
+		return nil, fmt.Errorf("tool %q: %w", tool.Name, err)
+	}
+	return args, nil
 }
 
 // writeConformText prints a deterministic human-friendly summary. Each
