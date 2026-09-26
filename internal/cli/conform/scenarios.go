@@ -405,6 +405,10 @@ func (r *Runner) scenarioToolsCall(ctx context.Context, expectIsError bool) Scen
 	}
 
 	pick := pickScenarioTool(tools, expectIsError)
+	if pick == nil {
+		return ScenarioResult{Pass: true, Skipped: true,
+			Error: "skipped: every non-destructive tool needs arguments (conform calls tools with none)"}
+	}
 
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -424,12 +428,17 @@ func (r *Runner) scenarioToolsCall(ctx context.Context, expectIsError bool) Scen
 	return checkScenarioToolResult(pick.Name, res, expectIsError)
 }
 
-// pickScenarioTool chooses the tool a tools.call scenario invokes. When
-// expectIsError is true it prefers tools whose name suggests
-// failure-by-design; otherwise it prefers a non-destructive tool (or an
-// unannotated one, since mcp-tui treats nil destructiveHint as
-// not-destructive — see Tool.IsDestructive). The first tool is the
-// fallback when nothing matches.
+// pickScenarioTool chooses the tool a tools.call scenario invokes.
+//
+// When expectIsError is true it prefers tools whose name suggests
+// failure-by-design, falling back to the first tool: called without its
+// arguments, that tool's input-validation failure must still come back as
+// IsError with content.
+//
+// Otherwise it picks a non-destructive tool (or an unannotated one, since
+// mcp-tui treats nil destructiveHint as not-destructive — see
+// Tool.IsDestructive) that the empty argument object satisfies, so the call
+// runs the tool rather than its argument validation; nil when there is none.
 func pickScenarioTool(tools []mcp.Tool, expectIsError bool) *mcp.Tool {
 	for i, t := range tools {
 		if expectIsError {
@@ -438,11 +447,14 @@ func pickScenarioTool(tools []mcp.Tool, expectIsError bool) *mcp.Tool {
 			if strings.Contains(lc, "error") || strings.Contains(lc, "fail") || strings.Contains(lc, "invalid") {
 				return &tools[i]
 			}
-		} else if !t.IsDestructive() {
+		} else if !t.IsDestructive() && argumentsRequired(&tools[i]) == "" {
 			return &tools[i]
 		}
 	}
-	return &tools[0]
+	if expectIsError {
+		return &tools[0]
+	}
+	return nil
 }
 
 // checkScenarioToolResult evaluates the tools.call result against the
