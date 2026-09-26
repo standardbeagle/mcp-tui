@@ -29,9 +29,11 @@ type handshakeTrace struct {
 	serverSupported   []string
 	discoverErr       string
 	initializeSent    string
-	// discoverUnanswered is set when a server/discover ended with the
-	// caller's context rather than any answer from the server.
-	discoverUnanswered bool
+	// discoverPending is set when server/discover is sent and cleared when
+	// the server answers it (result or error). It is read after a handshake
+	// that ran out of time, which the session manager abandons without
+	// waiting for the SDK call, so it must be set before the call returns.
+	discoverPending bool
 }
 
 func newHandshakeTrace() *handshakeTrace { return &handshakeTrace{} }
@@ -44,6 +46,9 @@ func (h *handshakeTrace) middleware() officialMCP.Middleware {
 			switch method {
 			case methodServerDiscover:
 				requested := discoverRequestedVersion(req)
+				h.mu.Lock()
+				h.discoverPending = true
+				h.mu.Unlock()
 				res, err := next(ctx, method, req)
 				h.recordDiscover(requested, res, err)
 				return res, err
@@ -68,6 +73,7 @@ func (h *handshakeTrace) recordDiscover(requested string, res officialMCP.Result
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.discoverRequested = append(h.discoverRequested, requested)
+	h.discoverPending = errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 	if dr, ok := res.(*officialMCP.DiscoverResult); ok && err == nil {
 		h.serverSupported = dr.SupportedVersions
 		debug.Debug("Handshake: server/discover answered",
@@ -76,7 +82,6 @@ func (h *handshakeTrace) recordDiscover(requested string, res officialMCP.Result
 		return
 	}
 	h.discoverErr = errorText(err)
-	h.discoverUnanswered = errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 	var rpcErr *jsonrpc.Error
 	if errors.As(err, &rpcErr) && rpcErr.Code == officialMCP.CodeUnsupportedProtocolVersion && len(rpcErr.Data) > 0 {
 		var data officialMCP.UnsupportedProtocolVersionData
@@ -122,7 +127,7 @@ func (h *handshakeTrace) logResult(requested string, res *officialMCP.Initialize
 func (h *handshakeTrace) discoverWentUnanswered() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.discoverUnanswered
+	return h.discoverPending
 }
 
 // discoverUnansweredError reports a server that never answered
