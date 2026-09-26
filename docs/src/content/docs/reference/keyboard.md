@@ -34,7 +34,7 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 | Key | Action |
 |-----|--------|
 | `Tab` / `↓`, `Shift+Tab` / `↑` | Move between fields and buttons |
-| `Enter` | Execute (on the Execute button) |
+| `Enter` | Execute (in a field, the raw JSON editor, or on the Execute button) |
 | `Ctrl+T` | Toggle task mode: Execute calls the tool as an MCP task and follows it |
 | `Ctrl+O` | Toggle sending arguments that break the input schema: by default such a call is refused; while on (`[schema violations sent]` in the title) it is sent, the violation is shown under the title, and the copied CLI command carries `--skip-arg-validation` |
 | `Ctrl+N` | On a nullable field: send null (again to go back to the typed value) |
@@ -42,8 +42,13 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 | `Ctrl+A` | On an array of objects open as a list, or in one of its elements: add an element at the end (on a closed one: open it). Elsewhere the text input's own Ctrl+A (line start) |
 | `Ctrl+X` | In an element of an array of objects: remove that element; the rest are numbered again |
 | `c` | Show and copy the equivalent CLI command (POSIX shell syntax; each word single-quoted as needed). Server arguments are written one `--arg` each. Raw JSON arguments are written as one `key:=<json>` per top-level key; JSON the CLI cannot take (not an object, or a key other than letters, digits, `_` and `-`) gives a `#` line naming the problem instead of a command |
-| `v` | Browse the result's fields |
-| `Esc` / `b` | Back |
+| `PgUp` / `PgDn` | Page through the result, from anywhere on the screen |
+| `Shift+↑` / `Shift+↓`, `Ctrl+↑` / `Ctrl+↓` | Scroll the result one line |
+| `Ctrl+Home` / `Ctrl+End` | Jump to the result's top or bottom; `Home` / `End` do the same off a text input |
+| `Ctrl+C` | Copy the result (without a result: back) |
+| `v` | Pick one of the result's fields to copy (off a text input): `↑`/`↓`, `PgUp`/`PgDn`, `Home`/`End` select, `Enter`/`c`/`y` copy, `v`/`Esc` return |
+| `Esc` | Back, also while a call runs (the call is not cancelled) |
+| `b` / `Alt+←` | Back (off a text input) |
 
 ## Tasks screen
 
