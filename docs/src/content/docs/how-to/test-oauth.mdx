@@ -1,0 +1,65 @@
+---
+title: Test an MCP server's OAuth
+description: Connect to an OAuth-protected MCP server with mcp-tui - client credentials, dynamic client registration and the browser authorization-code flow with PKCE - and see each step of discovery and token exchange.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+An MCP server behind OAuth answers the first request with `401` and a
+`WWW-Authenticate` challenge pointing at its protected-resource metadata.
+mcp-tui follows it to the authorization server, gets a token, caches it, and
+logs every step.
+
+<DemoVideo name="oauth" />
+
+## Without credentials
+
+```bash
+mcp-tui --url http://127.0.0.1:8933/mcp tool list
+```
+
+```
+Error: failed to connect to MCP server: The server refused the MCP handshake (POST answered HTTP 401 Unauthorized): calling "initialize": sending "initialize": Unauthorized
+
+Suggested actions:
+  • The server requires OAuth: sign in with --oauth-dynamic-registration (browser flow), or --oauth-client-id / --oauth-client-secret for a pre-registered client
+  • Run with --debug to see the server's WWW-Authenticate challenge
+```
+
+## Client credentials
+
+A client ID and secret select the client-credentials grant, which needs no
+browser, so it suits CI:
+
+```bash
+mcp-tui --url http://127.0.0.1:8933/mcp \
+  --oauth-client-id acme-demo --oauth-client-secret demo-secret \
+  --log-level info tool list
+```
+
+At `--log-level info` each step is logged under `[oauth]`: the 401
+challenge, the protected resource metadata (RFC 9728), the authorization
+server metadata (RFC 8414), the token request and response, and the cached
+token. Codes, state and tokens are logged only as present or absent.
+
+## Dynamic registration and the browser
+
+```bash
+mcp-tui --url http://127.0.0.1:8933/mcp --oauth-dynamic-registration tool list
+```
+
+```
+⏳ Establishing connection (timeout: 10s)...
+🔐 Sign in to 127.0.0.1:8933 in the browser window that just opened (waiting for the redirect to 127.0.0.1:44953)
+✅ Connected successfully
+```
+
+mcp-tui registers a client (RFC 7591), opens the authorization URL with PKCE
+(S256), and receives the redirect on a loopback listener. The time you spend
+signing in does not count against `--timeout`; the wait is capped at 5
+minutes. When no browser can be started, it prints the URL to open by hand.
+The next run uses the cached token and opens nothing.
+
+The [OAuth guide](/mcp-tui/guides/oauth/) covers Client ID Metadata
+Documents, enterprise managed authorization, the token cache and the
+private-network guard.

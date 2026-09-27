@@ -1,0 +1,44 @@
+---
+title: Answer MCP elicitation and sampling requests
+description: When an MCP tool needs input mid-call, mcp-tui shows the server's elicitation form or sampling request in the TUI, or answers it from stub flags in the CLI, on protocol 2026-07-28 and earlier.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+A tool can stop and ask: elicitation asks the user for structured input,
+sampling asks the client's model to write something. On 2026-07-28 the tool
+answers with input requests and the client retries with the answers
+(SEP-2322); on 2025-11-25 the server sends `elicitation/create` or
+`sampling/createMessage` to the client directly. mcp-tui handles both.
+
+<DemoVideo name="elicitation-sampling" />
+
+## In the TUI
+
+When a request arrives, mcp-tui opens a screen for it:
+
+- **Elicitation**: a form built from the requested schema. Fill it and
+  accept, or decline or cancel. URL-mode elicitation shows the URL and its
+  host, and opens nothing by itself.
+- **Sampling**: the messages the server wants completed, with a reply to
+  write or approve.
+
+The tool call resumes once you answer, and the result lists the input
+rounds it took.
+
+## In the CLI
+
+Scripts answer with stubs:
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp tool call schedule_callback ticket_id=T-1041 \
+  --elicit-stub '{"time":"2026-10-02T15:00:00Z"}'
+
+mcp-tui --url http://127.0.0.1:8931/mcp tool call draft_reply ticket_id=T-1042 \
+  --sampling-stub "Thanks for the report, we're on it."
+```
+
+`--elicit-stub-file` and `--sampling-stub-file` read the reply from a file;
+`--sampling-tool-use` answers with a `tool_use` block. Sampling (with roots
+and logging) is deprecated as of 2026-07-28 (SEP-2577), and mcp-tui marks it
+so; elicitation is not. See [Client features](/mcp-tui/guides/client-features/).

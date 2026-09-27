@@ -11,10 +11,11 @@ CLI mode is the foundation for automation. Every TUI action has an equivalent CL
 - name: Verify MCP server health
   run: |
     mcp-tui --transport http --url ${{ env.MCP_URL }} tool list
-    mcp-tui --transport http --url ${{ env.MCP_URL }} tool call ping
+    mcp-tui --transport http --url ${{ env.MCP_URL }} tool call search_tickets status=open --strict-errors
 ```
 
-Non-zero exit fails the step. See [CLI mode](/mcp-tui/guides/cli/#exit-codes) for the full table.
+`search_tickets` is a tool of the [demo server](/mcp-tui/how-to/#follow-along-with-the-demo-server);
+call one of your server's tools. Non-zero exit fails the step. See [CLI mode](/mcp-tui/guides/cli/#exit-codes) for the full table.
 
 ## JSON output
 
@@ -33,7 +34,7 @@ subcommand.
 only the payload. Combine it with `-f json` for clean machine-readable output:
 
 ```bash
-mcp-tui --porcelain ... tool call ping -f json
+mcp-tui --porcelain ... tool call search_tickets status=open -f json
 ```
 
 ## Conformance in CI
@@ -46,10 +47,11 @@ mcp-tui conform --report-junit conform.xml --transport http --url "$MCP_URL"
 ```
 
 `verify` runs the lighter behavior-probe suite (cross-origin, DNS-rebind,
-content-type, origin-header, MCP-method-headers, seterror-content):
+content-type, origin-header, MCP-method-headers, seterror-content, tool-names,
+list-order):
 
 ```bash
-mcp-tui verify -- "$MCP_URL"
+mcp-tui verify "$MCP_URL"
 mcp-tui verify --json "$MCP_URL" | jq '.results[]|select(.pass==false)'
 ```
 

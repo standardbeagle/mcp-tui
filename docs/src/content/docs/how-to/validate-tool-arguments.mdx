@@ -1,0 +1,56 @@
+---
+title: Validate MCP tool arguments against the input schema
+description: mcp-tui checks tool arguments against the full JSON Schema before sending a call, names the argument and rule that broke it, and can send a bad call anyway to see how the server rejects it.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+<DemoVideo name="schema-validation" />
+
+## A call that breaks the schema is not sent
+
+`search_tickets` accepts `limit` from 1 to 50:
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp tool call search_tickets limit=500
+```
+
+```
+❌ Arguments do not match the tool's input schema
+Error: tool "search_tickets": argument "limit": 500 is greater than the maximum 50 (input schema at /properties/limit) (--skip-arg-validation sends them anyway)
+```
+
+The check covers the whole schema: types, `minimum`/`maximum`, lengths,
+`pattern`, `enum`, `const`, `required`, nested objects and arrays, and rules
+no single field shows (`if`/`then`/`else`, `not`, `patternProperties`).
+Same-document `$ref`s are followed. The error names the argument
+(`filter.customer_id`, `tags[0]`) and the schema path.
+
+`key=value` arguments are converted to the declared type first, so
+`limit=3` sends the number 3 and `id=0123` for a string field keeps the
+leading zero. `key:=<json>` sends a JSON literal as is.
+
+## See how the server handles bad input
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp tool call search_tickets limit=500 --skip-arg-validation
+```
+
+```
+⚠ Sending anyway (--skip-arg-validation): argument "limit": 500 is greater than the maximum 50 (input schema at /properties/limit)
+⚠ Tool returned an error result (isError:true)
+
+Error response from tool:
+validating "arguments": validating root: validating /properties/limit: maximum: 500/1 is greater than 50.000000
+```
+
+The demo server is built on the Go SDK, which validates arguments itself and
+answers with a tool error. A server that accepts the call instead has a
+validation gap worth reporting.
+
+## In the TUI
+
+The form refuses the same call and shows the violation under the title.
+`Ctrl+O` switches to sending such calls anyway (`[schema violations sent]`
+in the title), and the CLI command it copies then carries
+`--skip-arg-validation`.

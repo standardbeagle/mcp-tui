@@ -1,0 +1,64 @@
+---
+title: Pin and inspect MCP protocol versions
+description: See which MCP protocol version a server negotiated, pin an older one with --protocol-version, and read the multi round-trip input rounds of a 2026-07-28 tool call.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+mcp-tui asks for protocol 2026-07-28 by default and falls back as far as the
+server needs. `--protocol-version` pins what it asks for.
+
+<DemoVideo name="protocol-versions" />
+
+## What did the server negotiate?
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp server
+```
+
+```
+Name:        acme-support-desk
+Version:     1.4.0
+Protocol:    2026-07-28
+```
+
+`--log-level info` adds one `Protocol version negotiated` line with every
+attempt: `server/discover` first on 2026-07-28, then `initialize` on
+2025-11-25 if the server rejected discovery.
+
+## Pin a version
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp --protocol-version 2025-11-25 server
+```
+
+Pin `2025-11-25` when a server's tools still call the client directly
+(sampling, elicitation, roots) and fail under 2026-07-28, or when a server
+does not answer `server/discover`. Accepted values are `2026-07-28`,
+`2025-11-25`, `2025-06-18`, `2025-03-26` and `2024-11-05`; anything else
+fails before connecting. The deprecated SSE transport negotiates at most
+2025-11-25.
+
+## Multi round-trip requests
+
+On 2026-07-28 a server may not call the client mid-request. A tool that
+needs input answers with input requests instead; the client answers and
+retries (SEP-2322). mcp-tui runs that loop itself and reports each round:
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp tool call schedule_callback ticket_id=T-1041 \
+  --elicit-stub '{"time":"2026-10-02T15:00:00Z"}'
+```
+
+```
+Tool response:
+Callback booked for T-1041: Dana Whitfield (Northwind Labs) on Fri 2 Oct 2026 at 15:00 UTC, calling the number on file.
+
+Input rounds (SEP-2322):
+  round 1 · tools/call · 18.4ms · request state: no
+    callback_time: elicitation → accept
+```
+
+With `--format json` the rounds are in `rounds`. The
+[2026-07-28 guide](/mcp-tui/guides/protocol-2026-07-28/) covers the other
+changes: stateless sessions, list caching, standard headers.

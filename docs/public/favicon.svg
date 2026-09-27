@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="12" fill="#0b1220"/>
+  <rect x="6" y="10" width="52" height="44" rx="6" fill="#0f172a" stroke="#2563eb" stroke-width="2"/>
+  <circle cx="14" cy="18" r="2" fill="#ef4444"/>
+  <circle cx="22" cy="18" r="2" fill="#f59e0b"/>
+  <circle cx="30" cy="18" r="2" fill="#10b981"/>
+  <text x="14" y="38" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">&gt; mcp</text>
+  <rect x="14" y="42" width="34" height="2" fill="#2563eb"/>
+  <rect x="14" y="46" width="22" height="2" fill="#1e3a8a"/>
+</svg>

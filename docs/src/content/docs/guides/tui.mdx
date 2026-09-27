@@ -3,16 +3,13 @@ title: TUI Mode
 description: Interactive terminal UI for browsing tools, resources, and prompts on any MCP server.
 ---
 
-import tuiConnect from '../../../assets/recordings/tui-connect.webp';
-import tuiBrowse from '../../../assets/recordings/tui-browse.webp';
+import DemoVideo from '../../../components/DemoVideo.astro';
 
 The TUI is the default when you run `mcp-tui` without a subcommand. It opens to a connection screen with three tabs: **Saved**, **Discovery**, and **Manual**.
 
 ## Connect
 
-<div class="demo-frame">
-  <img src={tuiConnect.src} alt="Tabbed connection screen" loading="lazy" />
-</div>
+<DemoVideo name="verify-a-tool" />
 
 - **Saved** — last successful connections, ready to re-launch.
 - **Discovery** — auto-finds Claude Desktop, VS Code MCP, and native MCP-TUI configs on disk.
@@ -22,9 +19,7 @@ The TUI is the default when you run `mcp-tui` without a subcommand. It opens to 
 
 ## Browse
 
-<div class="demo-frame">
-  <img src={tuiBrowse.src} alt="Browse tools, resources, prompts" loading="lazy" />
-</div>
+<DemoVideo name="elicitation-sampling" />
 
 After connecting, the main screen has four tabs:
 

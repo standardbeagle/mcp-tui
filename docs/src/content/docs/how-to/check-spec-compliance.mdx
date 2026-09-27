@@ -1,0 +1,71 @@
+---
+title: Check an MCP server for spec compliance
+description: Run mcp-tui verify for security and behavior probes and mcp-tui conform for the full MCP scenario matrix, with a JUnit report for CI.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+`verify` runs a set of targeted probes: cross-origin and DNS-rebinding
+protection, content-type and origin handling, standard headers, tool-name
+rules, error-result content, and whether `tools/list` keeps a stable order.
+`conform` runs every protocol scenario plus every probe. Both exit non-zero
+when anything fails.
+
+<DemoVideo name="verify-conform" />
+
+## Probe a server
+
+```bash
+mcp-tui verify http://127.0.0.1:8934/mcp
+```
+
+The server on 8934 is the demo server started with `-misbehave`: it
+advertises a tool named `create ticket!` and reorders `tools/list` between
+calls. `tool-names` fails (SEP-986 allows 1-128 characters of
+`A-Z a-z 0-9 _ - .`), and `list-order` warns, because the 2026-07-28 spec
+says servers SHOULD keep a deterministic order. A warning does not change
+the exit code.
+
+A probe the target cannot run is reported as `SKIP` and counts as passing:
+`seterror-content` needs a stdio server (`--cmd`), and the five HTTP probes
+need a URL.
+
+```bash
+mcp-tui verify --json http://127.0.0.1:8931/mcp | jq '.results[] | select(.pass == false)'
+```
+
+## Run the whole matrix
+
+```bash
+mcp-tui conform --report-junit conform.xml http://127.0.0.1:8931/mcp
+```
+
+`conform` reports `PASS`, `WARN`, `FAIL` or `SKIP` per scenario. A scenario
+passes only on evidence: `sampling.createMessage` and `elicitation.create`
+pass only when the server actually sent the request and the stub answered
+it. Their trigger tools usually need arguments, which you pass with
+`--sampling-trigger-args` and `--elicit-trigger-args`:
+
+```bash
+mcp-tui conform http://127.0.0.1:8931/mcp \
+  --sampling-trigger-tool draft_reply --sampling-trigger-args ticket_id=T-1042 --sampling-stub "Thanks, we're on it." \
+  --elicit-trigger-tool schedule_callback --elicit-trigger-args ticket_id=T-1042 --elicit-stub '{"time":"2026-10-02T15:00:00Z"}'
+```
+
+Without the arguments those two scenarios are skipped, with a message naming
+the flag.
+
+## In CI
+
+```yaml
+- name: MCP conformance
+  run: mcp-tui conform --report-junit conform.xml --url "$MCP_URL"
+- name: Publish report
+  if: always()
+  uses: mikepenz/action-junit-report@v5
+  with:
+    report_paths: conform.xml
+```
+
+The [conformance guide](/mcp-tui/guides/testing/) lists every probe and
+scenario.

@@ -1,0 +1,13 @@
+---
+title: Videos
+description: Recorded runs of mcp-tui against a real MCP server - testing tools, diagnosing handshake errors, OAuth, conformance checks, tasks, resources, prompts and more.
+---
+
+import DemoVideo from '../../components/DemoVideo.astro';
+import videos from '../../data/videos.json';
+
+Every video is a real run of the current mcp-tui against the Acme support
+desk demo server, recorded from a script so it can be recorded again when
+the output changes. The how-to guide beside each one lists the commands.
+
+{Object.keys(videos).map((name) => <DemoVideo name={name} />)}

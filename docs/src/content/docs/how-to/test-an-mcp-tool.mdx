@@ -1,0 +1,60 @@
+---
+title: Test an MCP tool in seconds
+description: Connect mcp-tui to an MCP server, run a tool from a form generated from its input schema, read the formatted result, and copy the same call as a CLI command.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+Point mcp-tui at a server and it opens on the Tools tab. Pick a tool, fill
+the form it builds from the input schema, press Enter, and the result
+appears beside the form.
+
+<DemoVideo name="verify-a-tool" autoplay />
+
+## Connect
+
+```bash
+mcp-tui --cmd demo-server --args -stdio            # a stdio server
+mcp-tui --url http://127.0.0.1:8931/mcp            # a streamable HTTP server
+mcp-tui "npx -y @modelcontextprotocol/server-everything stdio"
+```
+
+With no arguments, mcp-tui opens a connection screen listing the servers it
+found in Claude Desktop, VS Code and its own saved configurations.
+
+## Pick a tool and fill the form
+
+`↑`/`↓` or `j`/`k` move through the tools; the pane on the right shows the
+selected tool's name, annotations and description. `Enter` opens its form.
+
+Each field comes from the input schema, with its type and constraints in the
+label: `status [open | pending | solved | closed]` for an enum,
+`limit [integer 1–50, default 10]` for a bounded integer. Values are
+converted to the declared type as you type. An object field opens as a
+sub-form with `Ctrl+E`, an array of objects as a list of them.
+
+## Run it
+
+`Enter` in any field runs the tool. Before the call goes out, the arguments
+are checked against the whole schema; a call that breaks it is refused, and
+the error names the argument (see
+[Validate tool arguments](/mcp-tui/how-to/validate-tool-arguments/)).
+
+On a terminal 120 columns or wider the result sits to the right of the form.
+Each content block gets its own heading, JSON is coloured, and
+`structuredContent` follows the text when the text does not already repeat
+it. `PgUp`/`PgDn` scroll it from anywhere; `Ctrl+C` copies it.
+
+## Take it to the shell
+
+The CLI button, or `c` off a text field, shows the same call as a shell
+command and copies it:
+
+```bash
+mcp-tui --porcelain --transport stdio --cmd demo-server --arg -stdio tool call search_tickets limit=3 status=open
+```
+
+It is written for scripts: `--porcelain` drops the progress messages, and
+each server argument is its own quoted `--arg`. Paste it into a terminal, a
+script or a CI job. To collect a whole session
+at once, see [Turn manual checks into CI scripts](/mcp-tui/how-to/ci-scripts/).

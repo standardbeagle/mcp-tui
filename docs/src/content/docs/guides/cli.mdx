@@ -3,8 +3,7 @@ title: CLI Mode
 description: Use mcp-tui as a scriptable command-line client. Perfect for CI, smoke tests, and shell pipelines.
 ---
 
-import cliList from '../../../assets/recordings/cli-tool-list.webp';
-import cliCall from '../../../assets/recordings/cli-tool-call.webp';
+import DemoVideo from '../../../components/DemoVideo.astro';
 
 CLI mode is activated by passing a subcommand after the connection flags. The
 subcommands are `tool`, `resource`, `prompt`, `server`, `capabilities`,
@@ -27,13 +26,9 @@ mcp-tui ... tool describe echo
 mcp-tui ... tool call echo message='hello'
 ```
 
-<div class="demo-frame">
-  <img src={cliList.src} alt="tool list output" loading="lazy" />
-</div>
+<DemoVideo name="tools-metadata" />
 
-<div class="demo-frame">
-  <img src={cliCall.src} alt="tool call output" loading="lazy" />
-</div>
+<DemoVideo name="cli-to-ci" />
 
 ## Resources
 
