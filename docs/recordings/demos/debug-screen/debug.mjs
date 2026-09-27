@@ -20,10 +20,10 @@ export default async function run(d) {
   for (const tab of ['MCP Protocol', 'HTTP Debug', 'Auth', 'Statistics', 'Capabilities', 'Notifications']) {
     await t.press('Tab');
     await t.hold(tab === 'MCP Protocol' || tab === 'HTTP Debug' ? 3500 : 2500);
-    if (tab === 'MCP Protocol') {
+    if (tab === 'MCP Protocol' || tab === 'HTTP Debug') {
       await t.press('Enter');
       await t.hold(3500);
-      await t.press('b');                  // back to the list; Esc would quit
+      await t.press('b');                  // back to the list
       await t.hold(600);
     }
   }
