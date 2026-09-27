@@ -2,6 +2,8 @@ package debug
 
 import (
 	"bytes"
+	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -329,5 +331,33 @@ func TestLogger_FlushWaitsForQueuedEntries(t *testing.T) {
 	l.Flush()
 	if got := strings.Count(buf.String(), "entry"); got != 100 {
 		t.Fatalf("after Flush saw %d entries, want 100", got)
+	}
+}
+
+// An error line names the code that logged it. The caller used to be read
+// on the writer goroutine, whose stack holds no caller, so every error line
+// ended in a runtime assembly file (caller=asm_amd64.s:1693).
+func TestLogger_ErrorCallerIsTheCallSite(t *testing.T) {
+	l, buf := testLoggerSetup()
+	defer testLoggerTeardown(l)
+
+	_, _, line, _ := runtime.Caller(0)
+	l.Error("token exchange failed")
+	oauthLog := l.WithComponent("oauth")
+	_, _, componentLine, _ := runtime.Caller(0)
+	oauthLog.Error("Authorization failed")
+	l.Flush()
+
+	output := buf.String()
+	for _, want := range []string{
+		fmt.Sprintf("token exchange failed caller=logger_test.go:%d", line+1),
+		fmt.Sprintf("Authorization failed caller=logger_test.go:%d", componentLine+1),
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("want %q in log output:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, ".s:") {
+		t.Errorf("caller points into the runtime:\n%s", output)
 	}
 }
