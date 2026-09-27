@@ -284,3 +284,17 @@ func TestErrorHandlerNilError(t *testing.T) {
 		t.Error("JSON format of nil error should return nil")
 	}
 }
+
+// Every caller wraps the user-friendly error with what it was doing
+// ("failed to connect to MCP server: ..."), so the message itself leads
+// with the diagnosis, not with the internal operation name.
+func TestCreateUserFriendlyErrorLeadsWithTheDiagnosis(t *testing.T) {
+	eh := NewErrorHandler()
+	classified := eh.HandleError(context.Background(),
+		fmt.Errorf(`calling "initialize": sending "initialize": Not Found`),
+		OperationSessionConnect, map[string]interface{}{"transport_type": "http"})
+	msg := eh.CreateUserFriendlyError(classified).Error()
+	if !strings.HasPrefix(msg, classified.Message) {
+		t.Errorf("message = %q, want it to start with the diagnosis %q", msg, classified.Message)
+	}
+}

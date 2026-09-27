@@ -274,9 +274,8 @@ func (m *Manager) Connect(
 		}
 		cancel()
 
-		// Return user-friendly error
-		userError := m.errorHandler.CreateUserFriendlyError(classified)
-		return fmt.Errorf("session connection failed: %w", userError)
+		// The caller says what failed ("failed to connect to MCP server").
+		return m.errorHandler.CreateUserFriendlyError(classified)
 	}
 
 	if aborted {

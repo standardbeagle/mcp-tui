@@ -330,13 +330,6 @@ func (eh *ErrorHandler) CreateUserFriendlyError(classified *ClassifiedError) err
 		message += fmt.Sprintf("\n\nThis error may be temporary. Retry recommended after %v.", *classified.RetryAfter)
 	}
 
-	// Add context information if available
-	if errContext := classified.Context; errContext != nil {
-		if operation, ok := errContext["operation"].(string); ok {
-			message = fmt.Sprintf("Operation '%s' failed: %s", operation, message)
-		}
-	}
-
 	return &userFriendlyError{message: message, classified: classified}
 }
 
