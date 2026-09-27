@@ -50,12 +50,12 @@ func TestParse_ResolvesLocalRefsAndSimpleUnions(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	for _, want := range []Param{
-		{Name: "assignee", Kind: KindObject, Nullable: true,
+		{Name: "assignee", Kind: KindObject, Nullable: true, Default: json.RawMessage("null"),
 			Properties: []Param{{Name: "login", Kind: KindString, Required: true}}},
 		{Name: "labels", Kind: KindArray, ItemKind: KindObject, Required: true,
 			ItemProperties: []Param{{Name: "color", Kind: KindString}, {Name: "name", Kind: KindString, Required: true}}},
 		{Name: "milestone", Kind: KindInteger, Nullable: true},
-		{Name: "priority", Kind: KindString, Required: true, Description: "How urgent"},
+		{Name: "priority", Kind: KindString, Required: true, Description: "How urgent", Enum: []any{"low", "high"}},
 		{Name: "title", Kind: KindString, Required: true, Description: "Issue title"},
 		{Name: "watchers", Kind: KindArray, ItemKind: KindObject, Nullable: true,
 			ItemProperties: []Param{{Name: "login", Kind: KindString, Required: true}}},
@@ -101,8 +101,8 @@ func TestParse_MultiTypeUnion(t *testing.T) {
 	for _, want := range []Param{
 		{Name: "id", Kind: KindUnion, Union: []Kind{KindInteger, KindString}},
 		{Name: "limit", Kind: KindUnion, Nullable: true, Union: []Kind{KindBoolean, KindNumber, KindString}},
-		{Name: "level", Kind: KindUnion, Nullable: true, Union: []Kind{KindInteger, KindString}},
-		{Name: "retries", Kind: KindInteger},
+		{Name: "level", Kind: KindUnion, Nullable: true, Union: []Kind{KindInteger, KindString}, Enum: []any{1.0, 2.0, "max", nil}},
+		{Name: "retries", Kind: KindInteger, Enum: []any{0.0, 1.0, 3.0}},
 	} {
 		if got, ok := s.Param(want.Name); !ok || !reflect.DeepEqual(got, want) {
 			t.Errorf("param %q = %+v (found %v), want %+v", want.Name, got, ok, want)
@@ -360,7 +360,7 @@ func TestParse_MergesAllOf(t *testing.T) {
 	}
 	for _, want := range []Param{
 		{Name: "name", Kind: KindString, Required: true},
-		{Name: "priority", Kind: KindString, Required: true, Description: "How urgent"},
+		{Name: "priority", Kind: KindString, Required: true, Description: "How urgent", Enum: []any{"low", "high"}},
 		{Name: "size", Kind: KindInteger},
 	} {
 		if got, ok := s.Param(want.Name); !ok || !reflect.DeepEqual(got, want) {
@@ -603,6 +603,35 @@ func TestSchema_ValidateNamesTheArgument(t *testing.T) {
 		}
 		if c.argument != "" && !strings.Contains(err.Error(), `argument "`+c.argument+`"`) {
 			t.Errorf("%v: error text %q does not name the argument", c.args, err)
+		}
+	}
+}
+
+// The values a parameter allows are part of its description: the enum, a
+// number's bounds (inclusive or exclusive) and the default, through a $ref
+// as elsewhere.
+func TestParse_ValueConstraints(t *testing.T) {
+	s, err := Parse("search_tickets", decode(t, `{"type":"object",
+		"$defs": {"Status": {"type": "string", "enum": ["open", "pending", "closed"], "default": "open"}},
+		"properties": {
+			"status": {"$ref": "#/$defs/Status"},
+			"limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+			"ratio": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+			"query": {"type": "string"}
+	}}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	one, fifty, zero := 1.0, 50.0, 0.0
+	for _, want := range []Param{
+		{Name: "limit", Kind: KindInteger, Minimum: &one, Maximum: &fifty, Default: json.RawMessage("10")},
+		{Name: "query", Kind: KindString},
+		{Name: "ratio", Kind: KindNumber, Minimum: &zero, Maximum: &one, ExclusiveMinimum: true, ExclusiveMaximum: true},
+		{Name: "status", Kind: KindString, Enum: []any{"open", "pending", "closed"}, Default: json.RawMessage(`"open"`)},
+	} {
+		got, _ := s.Param(want.Name)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("param %q = %+v, want %+v", want.Name, got, want)
 		}
 	}
 }

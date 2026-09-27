@@ -101,6 +101,15 @@ type Param struct {
 	// Note says what Parse could not express for this parameter and how the
 	// value is read instead; "" when the parameter is fully represented.
 	Note string
+	// Enum lists the values the parameter allows, in schema order; nil
+	// when any value of its Kind is allowed.
+	Enum []any
+	// Minimum and Maximum bound a number, exclusively when
+	// ExclusiveMinimum / ExclusiveMaximum; nil when unbounded.
+	Minimum, Maximum                   *float64
+	ExclusiveMinimum, ExclusiveMaximum bool
+	// Default is the schema's default value as JSON; nil when it has none.
+	Default json.RawMessage
 }
 
 // Schema is a parsed input schema.
@@ -330,6 +339,7 @@ func (w walker) param(prop *jsonschema.Schema, depth int) Param {
 	}
 
 	w.setKind(&p, target)
+	setValueConstraints(&p, target)
 	if p.Kind == KindArray {
 		items := w.arrayItems(target)
 		p.ItemKind = w.itemKind(items)
@@ -345,6 +355,20 @@ func (w walker) param(prop *jsonschema.Schema, depth int) Param {
 		}
 	}
 	return p
+}
+
+// setValueConstraints sets p's Enum, bounds and Default from target. An
+// exclusive bound takes the place of an inclusive one on the same side.
+func setValueConstraints(p *Param, target *jsonschema.Schema) {
+	p.Enum = target.Enum
+	p.Default = target.Default
+	p.Minimum, p.Maximum = target.Minimum, target.Maximum
+	if target.ExclusiveMinimum != nil {
+		p.Minimum, p.ExclusiveMinimum = target.ExclusiveMinimum, true
+	}
+	if target.ExclusiveMaximum != nil {
+		p.Maximum, p.ExclusiveMaximum = target.ExclusiveMaximum, true
+	}
 }
 
 // setKind sets p's Kind, Nullable, Union and Note from the types target

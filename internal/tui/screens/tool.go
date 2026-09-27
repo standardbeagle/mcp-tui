@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -128,7 +129,12 @@ type toolField struct {
 	union        []inputschema.Kind
 	inferredKind inputschema.Kind
 	// note says what the schema could not express for this field.
-	note            string
+	note string
+	// enumLabel lists the values an enum field allows ("open | closed"),
+	// shown in place of its type; limits is its range and default
+	// (" 1–50, default 10"), shown after the type.
+	enumLabel       string
+	limits          string
 	required        bool
 	input           textinput.Model
 	validationError string // Real-time validation error
@@ -438,6 +444,8 @@ func fieldsFromParams(params []inputschema.Param, depth int) []toolField {
 			itemKind:       p.ItemKind,
 			union:          p.Union,
 			note:           p.Note,
+			enumLabel:      enumLabel(p.Enum),
+			limits:         limitsLabel(p),
 			required:       p.Required,
 			input:          input,
 			depth:          depth,
@@ -446,6 +454,61 @@ func fieldsFromParams(params []inputschema.Param, depth int) []toolField {
 		})
 	}
 	return fields
+}
+
+// enumLabel lists an enum's values for a field label: "open | closed";
+// "" for no enum.
+func enumLabel(values []any) string {
+	labels := make([]string, len(values))
+	for i, v := range values {
+		switch v := v.(type) {
+		case string:
+			labels[i] = v
+		case nil:
+			labels[i] = "null"
+		case float64:
+			labels[i] = strconv.FormatFloat(v, 'f', -1, 64)
+		default:
+			labels[i] = fmt.Sprint(v)
+		}
+	}
+	return strings.Join(labels, " | ")
+}
+
+// limitsLabel spells a parameter's range and default for its field label,
+// following the type: " 1–50, default 10", " > 0, ≤ 1", ", default \"new\"";
+// "" for neither.
+func limitsLabel(p *inputschema.Param) string {
+	number := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+	var bounds []string
+	switch {
+	case p.Minimum != nil && p.Maximum != nil && !p.ExclusiveMinimum && !p.ExclusiveMaximum:
+		bounds = append(bounds, number(*p.Minimum)+"–"+number(*p.Maximum))
+	default:
+		if p.Minimum != nil {
+			op := "≥ "
+			if p.ExclusiveMinimum {
+				op = "> "
+			}
+			bounds = append(bounds, op+number(*p.Minimum))
+		}
+		if p.Maximum != nil {
+			op := "≤ "
+			if p.ExclusiveMaximum {
+				op = "< "
+			}
+			bounds = append(bounds, op+number(*p.Maximum))
+		}
+	}
+	label := ""
+	if len(bounds) > 0 {
+		label = " " + strings.Join(bounds, ", ")
+	}
+	if len(p.Default) > 0 {
+		// The default is JSON as the schema wrote it; one line of it.
+		label += ", default " + strings.Join(strings.Fields(string(p.Default)), " ")
+	}
+	return label
 }
 
 // keyToggleSubForm opens and closes an object field's sub-form, or an array
@@ -1873,7 +1936,10 @@ func (ts *ToolScreen) fieldLabel(field *toolField) string {
 	if field.nullable {
 		typeIndicator += "|null"
 	}
-	label += fmt.Sprintf(" [%s]", typeIndicator)
+	if field.enumLabel != "" {
+		typeIndicator = field.enumLabel
+	}
+	label += fmt.Sprintf(" [%s%s]", typeIndicator, field.limits)
 
 	if field.description != "" {
 		label += fmt.Sprintf(" - %s", field.description)
