@@ -52,7 +52,7 @@ fmt-check:
 	fi
 
 # Mirrors the CI workflow. Run this before pushing.
-ci: vet fmt-check test race
+ci: vet fmt-check lint test race
 	@echo "All CI checks passed."
 
 coverage:
@@ -125,7 +125,7 @@ help:
 	@echo "  test       - Run tests"
 	@echo "  race       - Run tests with the race detector"
 	@echo "  fmt-check  - Fail if any file is not gofmt'd"
-	@echo "  ci         - Run everything CI runs (vet, fmt-check, test, race)"
+	@echo "  ci         - Run everything CI runs (vet, fmt-check, lint, test, race)"
 	@echo "  coverage   - Run tests with coverage"
 	@echo "  lint       - Run linter"
 	@echo "  fmt        - Format code"

@@ -34,6 +34,24 @@ jobs:
             exit 1
           fi
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # golangci-lint v2.13.2 needs Go >= 1.26 to build; the module itself
+      # still targets 1.25.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # Same pinned version and invocation as `tman lint` and `make lint`,
+      # configured by .golangci.yml.
+      - name: golangci-lint
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
