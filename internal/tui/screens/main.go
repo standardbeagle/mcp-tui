@@ -2018,7 +2018,8 @@ func (ms *MainScreen) connectToServer() tea.Cmd {
 		if ms.config != nil && ms.config.ConnectionTimeout > 0 {
 			timeout = ms.config.ConnectionTimeout
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		// A browser OAuth sign-in does not count against the timeout.
+		ctx, cancel := oauth.WithTimeoutExcludingSignIn(context.Background(), timeout)
 		defer cancel()
 
 		// Actually connect to the MCP server

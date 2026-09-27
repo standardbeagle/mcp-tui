@@ -806,9 +806,10 @@ func CloseClients() {
 	}
 }
 
-// WithContext creates a context with timeout for the command
+// WithContext creates the command's context: --timeout of running time, not
+// counting a browser OAuth sign-in (which a person takes longer than that).
 func (c *BaseCommand) WithContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), c.timeout)
+	return oauth.WithTimeoutExcludingSignIn(context.Background(), c.timeout)
 }
 
 // PreRunE is a common pre-run function that sets up the client

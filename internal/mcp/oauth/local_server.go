@@ -208,7 +208,16 @@ func (f *LocalServerFetcher) Fetch(
 		f.notify(signInMessage(args.URL, f.RedirectURL(), browserErr))
 	}
 
+	// The user is signing in: that time is not the connect timeout's.
+	resume := pauseForSignIn(ctx)
+	defer resume()
+	signInLimit := time.NewTimer(signInWaitLimit)
+	defer signInLimit.Stop()
+
 	select {
+	case <-signInLimit.C:
+		shutdownCallbackServer(srv, serveErr)
+		return nil, fmt.Errorf("oauth: sign-in not completed within %s", signInWaitLimit)
 	case <-ctx.Done():
 		shutdownCallbackServer(srv, serveErr)
 		if browserErr != nil {
