@@ -3,7 +3,7 @@
     "title": "mcp-tui in 90 seconds",
     "description": "A narrated tour: run a tool from its schema, see a failed connection diagnosed, and run the conformance matrix for CI.",
     "posterAt": 8,
-    "duration": "PT1M33S",
+    "duration": "PT1M34S",
     "uploadDate": "2026-09-27",
     "captions": true
   },
@@ -34,7 +34,7 @@
   "schema-validation": {
     "title": "Schema validation before the call goes out",
     "description": "mcp-tui checks arguments against the tool's full input schema and names the argument and rule that broke it, then lets you send the bad call anyway to see how the server rejects it.",
-    "duration": "PT52S",
+    "duration": "PT1M0S",
     "uploadDate": "2026-09-27",
     "captions": false
   },
@@ -45,7 +45,7 @@
       "from": 6,
       "to": 26
     },
-    "duration": "PT1M36S",
+    "duration": "PT1M25S",
     "uploadDate": "2026-09-27",
     "captions": false,
     "posterAt": 12
@@ -53,7 +53,7 @@
   "debug-screen": {
     "title": "Every message and every HTTP exchange",
     "description": "The debug screen shows the JSON-RPC traffic in both directions, per-request HTTP timing, the OAuth flow step by step, capabilities and notifications.",
-    "duration": "PT41S",
+    "duration": "PT44S",
     "uploadDate": "2026-09-27",
     "captions": false
   },
