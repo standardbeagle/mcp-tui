@@ -15,24 +15,24 @@ Run it, and the result shows beside the form.
 00:00:23.570 --> 00:00:27.678
 The CLI button gives you the same call as a shell command, ready for a script.
 
-00:00:32.550 --> 00:00:35.793
+00:00:34.710 --> 00:00:37.953
 When a server won't connect, mcp-tui says why.
 
-00:00:36.250 --> 00:00:40.611
+00:00:38.410 --> 00:00:42.771
 This server prints a banner to standard out, which breaks the stdio transport.
 
-00:00:40.611 --> 00:00:42.582
+00:00:42.771 --> 00:00:44.742
 mcp-tui quotes the line.
 
-00:00:48.250 --> 00:00:50.543
+00:00:50.410 --> 00:00:52.703
 This one never answers server discover.
 
-00:00:50.543 --> 00:00:53.584
+00:00:52.703 --> 00:00:55.744
 The error names the causes and the flag for each.
 
-00:01:04.670 --> 00:01:09.716
+00:01:06.590 --> 00:01:11.636
 For CI, conform runs every protocol scenario and writes a JUnit report.
 
-00:01:28.930 --> 00:01:31.404
+00:01:29.770 --> 00:01:32.244
 Install it with go install or npm.
 
