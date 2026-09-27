@@ -736,24 +736,29 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ts, nil
 
 	case ConfirmDecisionMsg:
-		// Confirm overlay finished. The ToolName check guards against stale
-		// decisions arriving after the user navigated to a different tool,
-		// which is unlikely with the current screen flow but cheap to defend.
-		if msg.ToolName != ts.tool.Name {
-			return ts, nil
-		}
-		ts.pendingConfirm = false
-		if msg.Approved {
-			ts.confirmBypassed = true
-			ts.SetStatus("Confirmed — executing destructive tool", StatusWarning)
-			cmd := ts.executeTool()
-			return ts, cmd
-		}
-		ts.SetStatus("Execution cancelled by user", StatusInfo)
-		return ts, nil
+		return ts, ts.handleConfirmDecision(msg)
 	}
 
 	return ts, nil
+}
+
+// handleConfirmDecision applies the confirm overlay's answer: run the
+// destructive tool, or report that the user cancelled. The ToolName check
+// guards against stale decisions arriving after the user navigated to a
+// different tool, which is unlikely with the current screen flow but cheap
+// to defend.
+func (ts *ToolScreen) handleConfirmDecision(msg ConfirmDecisionMsg) tea.Cmd {
+	if msg.ToolName != ts.tool.Name {
+		return nil
+	}
+	ts.pendingConfirm = false
+	if msg.Approved {
+		ts.confirmBypassed = true
+		ts.SetStatus("Confirmed — executing destructive tool", StatusWarning)
+		return ts.executeTool()
+	}
+	ts.SetStatus("Execution cancelled by user", StatusInfo)
+	return nil
 }
 
 // handleExecutionComplete applies a finished call: stores the result (or
@@ -917,19 +922,8 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ts.handleResultViewKey(msg)
 	}
 
-	// The screen-wide keys work whatever has focus: typed into a focused
-	// field they did nothing, and the screen looked stuck. Ctrl+D is a
-	// text input's delete-forward too; Delete still does that.
-	switch msg.String() {
-	case keyCtrlC:
-		return ts.copyResultOrBack()
-	case keyEsc:
-		return ts, func() tea.Msg { return BackMsg{} }
-	case keyCtrlL, keyCtrlD, keyF12:
-		return ts, ts.showDebugOverlayCmd()
-	}
-	if ts.result.shown() && ts.handleResultScrollKey(msg) {
-		return ts, nil
+	if model, cmd, handled := ts.handleScreenKey(msg); handled {
+		return model, cmd
 	}
 
 	// Handle raw JSON mode input
@@ -945,6 +939,26 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return ts.handleToolbarKey(msg)
+}
+
+// handleScreenKey handles the screen-wide keys, which work whatever has
+// focus: typed into a focused field they did nothing, and the screen
+// looked stuck. Ctrl+D is a text input's delete-forward too; Delete still
+// does that. A shown result also takes its scroll keys here.
+func (ts *ToolScreen) handleScreenKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	switch msg.String() {
+	case keyCtrlC:
+		model, cmd := ts.copyResultOrBack()
+		return model, cmd, true
+	case keyEsc:
+		return ts, func() tea.Msg { return BackMsg{} }, true
+	case keyCtrlL, keyCtrlD, keyF12:
+		return ts, ts.showDebugOverlayCmd(), true
+	}
+	if ts.result.shown() && ts.handleResultScrollKey(msg) {
+		return ts, nil, true
+	}
+	return ts, nil, false
 }
 
 // inputFocused reports whether the cursor is in a text input (a form field
