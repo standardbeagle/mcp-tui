@@ -2086,8 +2086,8 @@ func (ms *MainScreen) loadTools() tea.Cmd {
 				if description == "" {
 					description = noDescription
 				}
-				toolList = append(toolList, fmt.Sprintf("%s%s%s - %s",
-					toolNameMarker(tool.Name), iconMarker(len(tool.Icons)), tool.DisplayName(), description))
+				toolList = append(toolList, fmt.Sprintf("%s%s - %s",
+					toolNameMarker(tool.Name), tool.DisplayName(), description))
 			}
 		}
 
@@ -2191,7 +2191,7 @@ func buildResourceListItems(
 		if desc == "" {
 			desc = noDescription
 		}
-		out = append(out, fmt.Sprintf("%s%s%s - %s", marks[r.URI], iconMarker(len(r.Icons)), r.DisplayName(), desc))
+		out = append(out, fmt.Sprintf("%s%s - %s", marks[r.URI], r.DisplayName(), desc))
 	}
 	if len(templates) > 0 {
 		out = append(out, "── Templates ──")
@@ -2200,7 +2200,7 @@ func buildResourceListItems(
 			if desc == "" {
 				desc = noDescription
 			}
-			out = append(out, fmt.Sprintf("%s%s - %s", iconMarker(len(t.Icons)), t.DisplayName(), desc))
+			out = append(out, fmt.Sprintf("%s - %s", t.DisplayName(), desc))
 		}
 	}
 	return out, len(resources) + len(templates)
@@ -2210,13 +2210,6 @@ func buildResourceListItems(
 func toolNameMarker(name string) string {
 	if mcp.ToolNameProblem(name) != "" {
 		return "⚠ "
-	}
-	return ""
-}
-
-func iconMarker(count int) string {
-	if count > 0 {
-		return "[icon] "
 	}
 	return ""
 }
@@ -2268,7 +2261,7 @@ func (ms *MainScreen) loadPrompts() tea.Cmd {
 					description = noDescription
 				}
 				promptList = append(promptList,
-					fmt.Sprintf("%s%s - %s", iconMarker(len(prompt.Icons)), prompt.DisplayName(), description))
+					fmt.Sprintf("%s - %s", prompt.DisplayName(), description))
 			}
 		}
 
@@ -2518,7 +2511,7 @@ func (ms *MainScreen) renderToolList() string {
 		}
 
 		// Use DisplayName so server-supplied titles render in the list.
-		displayName := toolNameMarker(tool.Name) + iconMarker(len(tool.Icons)) + tool.DisplayName()
+		displayName := toolNameMarker(tool.Name) + tool.DisplayName()
 
 		if i == selectedIdx {
 			line := fmt.Sprintf("%2d. %s%s%s", i+1, displayName, badges, warningIndicator)

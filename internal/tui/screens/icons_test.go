@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
@@ -76,5 +77,20 @@ func TestMainScreen_DetailPanesListIcons(t *testing.T) {
 				t.Errorf("prompt viewer lacks the icon:\n%s", view)
 			}
 		})
+	}
+}
+
+// The lists showed a literal "[icon]" before every entry with icons: a
+// placeholder, not the icon, that read as part of the name. The lists
+// show names only; the detail views list the icons.
+func TestMainScreen_ListsShowNoIconPlaceholder(t *testing.T) {
+	ms, _ := connectedScreenOn(t, iconServer(), "")
+	ms.UpdateSize(200, 40)
+	for tab, load := range []func() tea.Cmd{ms.loadTools, ms.loadResources, ms.loadPrompts} {
+		ms.activeTab = tab
+		runCmd(t, ms, load())
+		if view := ms.View(); strings.Contains(view, "[icon]") {
+			t.Errorf("tab %d shows the icon placeholder:\n%s", tab, view)
+		}
 	}
 }
