@@ -350,7 +350,7 @@ func TestPreregistered(t *testing.T) {
 func TestLocalServerFetcher_RedirectURL(t *testing.T) {
 	testutil.RequireLocalListener(t)
 
-	f := newLocalServerFetcher("127.0.0.1", 0)
+	f := newLocalServerFetcher("127.0.0.1", 0, nil)
 	defer f.Close() //nolint:errcheck // test cleanup; a close error is not actionable
 
 	u := f.RedirectURL()
@@ -369,7 +369,7 @@ func TestLocalServerFetcher_RedirectURL(t *testing.T) {
 func TestLocalServerFetcher_Fetch_HappyPath(t *testing.T) {
 	testutil.RequireLocalListener(t)
 
-	f := newLocalServerFetcher("127.0.0.1", 0)
+	f := newLocalServerFetcher("127.0.0.1", 0, nil)
 	redirectURL := f.RedirectURL()
 	require.NotEmpty(t, redirectURL)
 
@@ -403,7 +403,7 @@ func TestLocalServerFetcher_Fetch_HappyPath(t *testing.T) {
 func TestLocalServerFetcher_Fetch_OAuthError(t *testing.T) {
 	testutil.RequireLocalListener(t)
 
-	f := newLocalServerFetcher("127.0.0.1", 0)
+	f := newLocalServerFetcher("127.0.0.1", 0, nil)
 	redirectURL := f.RedirectURL()
 
 	fakeAuthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -475,7 +475,7 @@ func driveAuthCode(t *testing.T, h *Handler, srv *mockAuthServer) {
 func installAutoApproveFetcher(t *testing.T, h *Handler) {
 	t.Helper()
 	h.fetcherFactory = func(host string, port int) AuthorizationCodeFetcher {
-		f := newLocalServerFetcher(host, port)
+		f := newLocalServerFetcher(host, port, nil)
 		f.browserOpener = func(target string) error {
 			go func() {
 				// http.Client follows 302 by default, so this single GET

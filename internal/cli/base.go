@@ -255,6 +255,11 @@ func applyConnectionFlags(cmd *cobra.Command, connConfig *config.ConnectionConfi
 	if oauthCfg, oauthErr := BuildOAuthConfig(cmd, connConfig); oauthErr != nil {
 		return oauthErr
 	} else if oauthCfg != nil {
+		// The browser step needs the user; the TUI launcher builds its own
+		// config, so stderr here is the CLI's.
+		if !flagBool(cmd, "porcelain") {
+			oauthCfg.Notify = func(message string) { fmt.Fprintln(os.Stderr, message) }
+		}
 		connConfig.OAuth = oauthCfg
 	}
 

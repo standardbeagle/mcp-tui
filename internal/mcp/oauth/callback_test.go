@@ -77,7 +77,7 @@ func getCallback(redirectURL, code, state string) (*http.Response, error) {
 func TestLocalServerFetcher_RepeatedCallbacksDoNotHang(t *testing.T) {
 	testutil.RequireLocalListener(t)
 	logs := captureAuthLogs(t)
-	f := newLocalServerFetcher("127.0.0.1", 0)
+	f := newLocalServerFetcher("127.0.0.1", 0, nil)
 
 	done := startFetch(t, f, func(redirectURL string) {
 		for _, code := range []string{acceptedCode, "4Jd9QqXcMfVgR7wZ2tLpKA", "hY6b1NnTzC0eWm8uPr3sDg"} {
@@ -104,7 +104,7 @@ func TestLocalServerFetcher_RepeatedCallbacksDoNotHang(t *testing.T) {
 func TestLocalServerFetcher_IgnoresCallbackWithForeignState(t *testing.T) {
 	testutil.RequireLocalListener(t)
 	logs := captureAuthLogs(t)
-	f := newLocalServerFetcher("127.0.0.1", 0)
+	f := newLocalServerFetcher("127.0.0.1", 0, nil)
 
 	done := startFetch(t, f, func(redirectURL string) {
 		go func() {
@@ -136,7 +136,7 @@ func TestLocalServerFetcher_IgnoresCallbackWithForeignState(t *testing.T) {
 // the one redirect path.
 func TestLocalServerFetcher_UnknownPathIs404(t *testing.T) {
 	testutil.RequireLocalListener(t)
-	f := newLocalServerFetcher("127.0.0.1", 0)
+	f := newLocalServerFetcher("127.0.0.1", 0, nil)
 
 	done := startFetch(t, f, func(redirectURL string) {
 		go func() {
@@ -166,7 +166,7 @@ func TestLocalServerFetcher_UnknownPathIs404(t *testing.T) {
 // redirect needs a few KiB at most.
 func TestLocalServerFetcher_OversizedHeadersRejected(t *testing.T) {
 	testutil.RequireLocalListener(t)
-	f := newLocalServerFetcher("127.0.0.1", 0)
+	f := newLocalServerFetcher("127.0.0.1", 0, nil)
 
 	done := startFetch(t, f, func(redirectURL string) {
 		go func() {

@@ -36,6 +36,10 @@ type LocalServerFetcher struct {
 	// directly so we don't need a real browser.
 	browserOpener func(url string) error
 
+	// notify tells the user what the sign-in needs from them (see
+	// Config.Notify); nil leaves it to the log.
+	notify func(message string)
+
 	// listener and bound URL are populated by RedirectURL on first call;
 	// they're created lazily so the constructor doesn't need to bind a
 	// port if Authorize never runs.
@@ -46,7 +50,7 @@ type LocalServerFetcher struct {
 
 // newLocalServerFetcher constructs a LocalServerFetcher. host defaults to
 // "127.0.0.1" when empty; port=0 means "pick an ephemeral port".
-func newLocalServerFetcher(host string, port int) *LocalServerFetcher {
+func newLocalServerFetcher(host string, port int, notify func(message string)) *LocalServerFetcher {
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -54,6 +58,7 @@ func newLocalServerFetcher(host string, port int) *LocalServerFetcher {
 		host:          host,
 		port:          port,
 		browserOpener: openBrowser,
+		notify:        notify,
 	}
 }
 
@@ -198,6 +203,9 @@ func (f *LocalServerFetcher) Fetch(
 	if browserErr != nil {
 		authLog().Warn("Browser did not open; open the authorization URL manually",
 			debug.F("error", redact.Error(browserErr)))
+	}
+	if f.notify != nil {
+		f.notify(signInMessage(args.URL, f.RedirectURL(), browserErr))
 	}
 
 	select {
@@ -362,6 +370,26 @@ func openBrowser(target string) error {
 		return fmt.Errorf("oauth: don't know how to open browser on %s", runtime.GOOS)
 	}
 	return cmd.Start()
+}
+
+// signInMessage is what the user is told at the browser step. With the
+// browser open it names the authorization server; without one the user must
+// open the URL by hand, so the whole URL is printed. That is their own
+// terminal, not a log: the URL's state is single-use and binds to this flow.
+func signInMessage(authURL, redirectURL string, browserErr error) string {
+	wait := "waiting for the redirect to " + urlHost(redirectURL)
+	if browserErr != nil {
+		return fmt.Sprintf("🔐 Open this URL in a browser to sign in (%s):\n   %s", wait, authURL)
+	}
+	return fmt.Sprintf("🔐 Sign in to %s in the browser window that just opened (%s)", urlHost(authURL), wait)
+}
+
+func urlHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "the authorization server"
+	}
+	return u.Host
 }
 
 // logAuthorizationRequest records what the authorization URL asks for:

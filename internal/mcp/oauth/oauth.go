@@ -166,6 +166,12 @@ type Config struct {
 	// EnableDynamicRegistration toggles RFC 7591 dynamic client
 	// registration when ClientID is empty. Defaults true.
 	EnableDynamicRegistration bool
+
+	// Notify, when set, receives what the authorization-code sign-in needs
+	// from the user: to finish it in the browser that opened, or the URL to
+	// open by hand when no browser could be started. The CLI prints it to
+	// stderr; nil leaves it to the log.
+	Notify func(message string)
 }
 
 // Mode infers the OAuth mode from the populated fields. Rules:

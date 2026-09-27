@@ -132,7 +132,7 @@ func NewHandler(cfg *Config, httpClient *http.Client, cache TokenCache) (*Handle
 		cache:      cache,
 		state:      StateIdle,
 		fetcherFactory: func(host string, port int) AuthorizationCodeFetcher {
-			return newLocalServerFetcher(host, port)
+			return newLocalServerFetcher(host, port, cfg.Notify)
 		},
 	}
 
