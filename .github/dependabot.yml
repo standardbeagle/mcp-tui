@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+
+  # The published npm package (launcher and installer).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+
+  # The Astro docs site.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+
+  # The demo recording toolchain.
+  - package-ecosystem: npm
+    directory: /docs/recordings
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
