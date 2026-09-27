@@ -239,12 +239,9 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case keyCtrlC, keyEsc:
-		// Quit the app
-		return ds, tea.Quit
-
-	case "b", keyAltLeft, keyCtrlD, keyCtrlL, keyF12:
-		// Go back to main screen (toggle off the overlay)
+	case keyCtrlC, keyEsc, "b", keyAltLeft, keyCtrlD, keyCtrlL, keyF12:
+		// Close the overlay, back to the screen it was opened from. The
+		// debug screen never quits the application.
 		return ds, func() tea.Msg { return BackMsg{} }
 
 	case keyTab, keyRight:
@@ -336,12 +333,12 @@ func (ds *DebugScreen) handleListNavKey(msg tea.KeyMsg) bool {
 // handleDetailKey handles keys while the MCP message detail view is open.
 func (ds *DebugScreen) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "b", keyAltLeft, keyEnter:
+	case keyEsc, "b", keyAltLeft, keyEnter:
 		ds.showDetail = false
 		return ds, nil
-	case keyCtrlC, keyEsc:
-		// Even in detail view, escape/ctrl+c should quit
-		return ds, tea.Quit
+	case keyCtrlC, keyCtrlD, keyCtrlL, keyF12:
+		ds.showDetail = false
+		return ds, func() tea.Msg { return BackMsg{} }
 	case "c", "y":
 		return ds, ds.copyDetailJSONCmd()
 	}
@@ -593,10 +590,10 @@ func (ds *DebugScreen) viewChrome() (header, footer string) {
 	var builder strings.Builder
 	builder.WriteString("\n")
 	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓/PgUp/PgDn/Home/End: Navigate • Enter: Details (MCP) • c/y: Copy " +
-		"(incl. Capabilities JSON) • Ctrl+E: Export session • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
+		"(incl. Capabilities JSON) • Ctrl+E: Export session • r: Refresh • x: Clear • Esc/Ctrl+C/b/Alt+←: Back"
 	if ds.showDetail {
 		header += "\n" + ds.detailHeading()
-		helpText = "↑↓/PgUp/PgDn/Home/End: Scroll • c/y: Copy JSON • b/Alt+←/Enter: Back"
+		helpText = "↑↓/PgUp/PgDn/Home/End: Scroll • c/y: Copy JSON • Esc/b/Alt+←/Enter: Back • Ctrl+C: Close"
 	}
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Width(ds.Width())
 	builder.WriteString(helpStyle.Render(helpText))
