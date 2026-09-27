@@ -26,8 +26,10 @@ func TestService_StdioDiscoverUnansweredNamesTheCause(t *testing.T) {
 		Type: configPkg.TransportStdio, Command: command, Environment: env,
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "never answered server/discover")
+	require.Contains(t, err.Error(), "did not answer server/discover")
 	require.Contains(t, err.Error(), "--protocol-version 2025-11-25")
+	// A server still starting (a cold npx or pwsh start) is silent too.
+	require.Contains(t, err.Error(), "--timeout")
 	require.NotContains(t, err.Error(), "overloaded")
 	require.ErrorIs(t, err, context.DeadlineExceeded, "the cause stays reachable")
 	svc.sessionManager.WaitForBackgroundCloses()

@@ -130,22 +130,23 @@ func (h *handshakeTrace) discoverWentUnanswered() bool {
 	return h.discoverPending
 }
 
-// discoverUnansweredError reports a server that never answered
-// server/discover, the first request of the 2026-07-28 handshake, so the
-// handshake ran out of time. A server must answer a method it does not know
-// with -32601, which makes the SDK fall back to initialize at once; one that
-// drops the request instead stalls every connection until its deadline. The
+// discoverUnansweredError reports a stdio server that did not answer
+// server/discover, the first request of the 2026-07-28 handshake, before the
+// connect deadline. A running server that ignores methods it does not know
+// (instead of answering -32601, which makes the SDK fall back to initialize
+// at once) stalls every connection this way; so does a server still starting
+// (a cold npx or pwsh start), and from the client the two look the same. The
 // cause (the deadline) stays reachable through Unwrap.
 type discoverUnansweredError struct {
 	cause error
 }
 
 func (e *discoverUnansweredError) Error() string {
-	return "the server never answered server/discover, the first request of the MCP 2026-07-28 handshake, " +
-		"so the handshake ran out of time. A server must answer a method it does not know with error " +
-		"-32601 (method not found), which lets the client fall back to initialize; this one ignored it.\n\n" +
-		"Suggestion: pin --protocol-version 2025-11-25 to start with initialize, and report the ignored " +
-		"request to the server's maintainers"
+	return "the server did not answer server/discover, the first request of the MCP 2026-07-28 handshake, " +
+		"before the connection deadline. Either it ignores methods it does not know (it must answer them " +
+		"with error -32601 so the client can fall back to initialize), or it had not finished starting.\n\n" +
+		"Suggestion: pin --protocol-version 2025-11-25 to start with initialize; if the server is only slow " +
+		"to start (a cold npx download, for one), raise --timeout"
 }
 
 func (e *discoverUnansweredError) Unwrap() error { return e.cause }
