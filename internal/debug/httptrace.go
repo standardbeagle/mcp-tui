@@ -74,8 +74,10 @@ func mcpRequestHeaders(h http.Header) []string {
 // headers, status, duration, response Content-Type, the redacted
 // WWW-Authenticate challenge when present, and connection timings (DNS,
 // connect, TLS, first byte, reuse). A transport failure logs "HTTP exchange
-// failed" with the redacted error instead. Every exchange also reaches the
-// component's HTTPExchangeObserver, if one is registered.
+// failed" with the redacted error instead. Every exchange, at any log
+// level, is kept with its timings in the component's recent history
+// (RecentHTTPExchanges) and reaches the component's HTTPExchangeObserver,
+// if one is registered.
 //
 // Bodies are never read, so streaming responses (SSE) pass through untouched.
 // Wrap the innermost transport of any client whose traffic should be visible
@@ -100,6 +102,7 @@ type connTimings struct {
 	dnsStart, connStart, tlsSt time.Time
 	dns, connect, tls, first   time.Duration
 	reused                     bool
+	localAddr, remoteAddr      string
 }
 
 func (c *connTimings) set(f func()) {
@@ -116,10 +119,10 @@ func (t *httpTraceTransport) RoundTrip(req *http.Request) (*http.Response, error
 	return resp, err
 }
 
+// trace measures every exchange, whatever the log level, since the TUI's
+// HTTP Debug tab lists each with its timings; only the log line waits for
+// debug level.
 func (t *httpTraceTransport) trace(req *http.Request) (*http.Response, error) {
-	if !globalEnabled(LogLevelDebug) {
-		return t.base.RoundTrip(req)
-	}
 	start := time.Now()
 	timings := &connTimings{}
 	trace := &httptrace.ClientTrace{
@@ -135,7 +138,13 @@ func (t *httpTraceTransport) trace(req *http.Request) (*http.Response, error) {
 		TLSHandshakeDone: func(tls.ConnectionState, error) {
 			timings.set(func() { timings.tls = time.Since(timings.tlsSt) })
 		},
-		GotConn:              func(info httptrace.GotConnInfo) { timings.set(func() { timings.reused = info.Reused }) },
+		GotConn: func(info httptrace.GotConnInfo) {
+			timings.set(func() {
+				timings.reused = info.Reused
+				timings.localAddr = info.Conn.LocalAddr().String()
+				timings.remoteAddr = info.Conn.RemoteAddr().String()
+			})
+		},
 		GotFirstResponseByte: func() { timings.set(func() { timings.first = time.Since(start) }) },
 	}
 	traced := req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
@@ -143,24 +152,49 @@ func (t *httpTraceTransport) trace(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(traced)
 
 	timings.mu.Lock()
-	fields := []Field{
-		F("method", req.Method),
-		F("url", redact.RedactedURL(req.URL)),
-		F("duration", time.Since(start)),
-		F("reused", timings.reused),
-		F("dns", timings.dns),
-		F("connect", timings.connect),
-		F("tls", timings.tls),
-		F("first_byte", timings.first),
+	ex := HTTPExchange{
+		Time:          start,
+		Method:        req.Method,
+		URL:           redact.RedactedURL(req.URL),
+		Duration:      time.Since(start),
+		DNS:           timings.dns,
+		Connect:       timings.connect,
+		TLS:           timings.tls,
+		FirstByte:     timings.first,
+		Reused:        timings.reused,
+		LocalAddr:     timings.localAddr,
+		RemoteAddr:    timings.remoteAddr,
+		RequestHeader: req.Header.Clone(),
 	}
 	timings.mu.Unlock()
+	if err != nil {
+		ex.Error = redact.Error(err)
+	} else {
+		ex.Status = resp.StatusCode
+		ex.ResponseHeader = resp.Header.Clone()
+	}
+	recordHTTPExchange(t.component, &ex)
+
+	if !globalEnabled(LogLevelDebug) {
+		return resp, err
+	}
+	fields := []Field{
+		F("method", ex.Method),
+		F("url", ex.URL),
+		F("duration", ex.Duration),
+		F("reused", ex.Reused),
+		F("dns", ex.DNS),
+		F("connect", ex.Connect),
+		F("tls", ex.TLS),
+		F("first_byte", ex.FirstByte),
+	}
 	if mcpHeaders := mcpRequestHeaders(req.Header); len(mcpHeaders) > 0 {
 		fields = append(fields, F("mcp_headers", mcpHeaders))
 	}
 
 	log := Component(t.component)
 	if err != nil {
-		log.Debug("HTTP exchange failed", append(fields, F("error", redact.Error(err)))...)
+		log.Debug("HTTP exchange failed", append(fields, F("error", ex.Error))...)
 		return resp, err
 	}
 	fields = append(fields,
