@@ -73,20 +73,21 @@ func TestTimeoutExcludingSignIn_DerivedContexts(t *testing.T) {
 // The fetcher stops the clock while it waits for the browser redirect, so
 // a sign-in longer than --timeout completes.
 func TestLocalServerFetcher_SignInDoesNotCountAgainstTheTimeout(t *testing.T) {
-	ctx, cancel := WithTimeoutExcludingSignIn(context.Background(), 50*time.Millisecond)
-	defer cancel()
 	f := newLocalServerFetcher("127.0.0.1", 0, nil)
 	redirectURL := f.RedirectURL()
 	require.NotEmpty(t, redirectURL)
 	f.browserOpener = func(string) error {
 		go func() {
-			time.Sleep(200 * time.Millisecond) // the user types a password
+			time.Sleep(700 * time.Millisecond) // the user types a password
 			if resp, err := getCallback(redirectURL, "code-7f3a", callbackState); err == nil {
 				_ = resp.Body.Close()
 			}
 		}()
 		return nil
 	}
+	// Created last: only the sign-in may outlast the timeout, not the setup.
+	ctx, cancel := WithTimeoutExcludingSignIn(context.Background(), 250*time.Millisecond)
+	defer cancel()
 	res, err := f.Fetch(ctx, &auth.AuthorizationArgs{URL: "https://auth.example/authorize?state=" + callbackState})
 	require.NoError(t, err)
 	assert.Equal(t, "code-7f3a", res.Code)
