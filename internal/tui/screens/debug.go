@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/standardbeagle/mcp-tui/internal/debug"
@@ -522,7 +523,10 @@ func (ds *DebugScreen) getCurrentList() []string {
 
 // adjustScrollOffset adjusts the scroll offset to keep selected item visible
 func (ds *DebugScreen) adjustScrollOffset() {
-	maxVisible := 18 // Approximate number of visible log lines
+	maxVisible := notificationWindowRows
+	if ds.activeTab != tabNotifications {
+		_, maxVisible = ds.logListSize()
+	}
 
 	if ds.selectedIndex < ds.scrollOffset {
 		ds.scrollOffset = ds.selectedIndex
@@ -539,19 +543,17 @@ func (ds *DebugScreen) adjustScrollOffset() {
 func (ds *DebugScreen) View() string {
 	var builder strings.Builder
 
-	// Title
-	builder.WriteString(ds.titleStyle.Render("🔍 MCP Debug Console"))
-	builder.WriteString("\n")
-
 	// If showing detail view, render that instead
 	if ds.showDetail {
+		builder.WriteString(ds.titleStyle.Render("🔍 MCP Debug Console"))
+		builder.WriteString("\n")
 		builder.WriteString(ds.renderDetailView())
 		return builder.String()
 	}
 
-	// Tabs
-	builder.WriteString(ds.renderTabs())
-	builder.WriteString("\n\n")
+	header, footer := ds.viewChrome()
+	builder.WriteString(header)
+	builder.WriteString("\n")
 
 	// Content based on active tab
 	switch ds.activeTab {
@@ -571,11 +573,24 @@ func (ds *DebugScreen) View() string {
 		builder.WriteString(ds.renderNotifications())
 	}
 
-	// Help text
-	builder.WriteString("\n\n")
+	builder.WriteString("\n")
+	builder.WriteString(footer)
+
+	return builder.String()
+}
+
+// viewChrome renders what surrounds a tab's content: the title and tab bar
+// above it, ending in a blank line, and the help and status below it,
+// starting with one. Both wrap to the terminal width, so their line counts
+// are the rows they take on screen.
+func (ds *DebugScreen) viewChrome() (header, footer string) {
+	header = ds.titleStyle.Render("🔍 MCP Debug Console") + "\n" + ds.renderTabs() + "\n"
+
+	var builder strings.Builder
+	builder.WriteString("\n")
 	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy " +
 		"(incl. Capabilities JSON) • Ctrl+E: Export session • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Width(ds.Width())
 	builder.WriteString(helpStyle.Render(helpText))
 
 	// Status message
@@ -592,11 +607,24 @@ func (ds *DebugScreen) View() string {
 		default:
 			statusColor = "12" // blue
 		}
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Bold(true)
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Bold(true).Width(ds.Width())
 		builder.WriteString(statusStyle.Render(statusMsg))
 	}
 
-	return builder.String()
+	return header, builder.String()
+}
+
+// logListSize is the list box's lipgloss width (padding included, border
+// not) and the entries it shows. Sized, the box spans the terminal and
+// takes the rows the chrome leaves, less its border, padding and the two
+// scroll indicators; unsized, it keeps 120 columns and 18 entries.
+func (ds *DebugScreen) logListSize() (boxWidth, rows int) {
+	if ds.Width() == 0 || ds.Height() == 0 {
+		return 120, 18
+	}
+	header, footer := ds.viewChrome()
+	boxHeight := ds.Height() - lipgloss.Height(header) - lipgloss.Height(footer)
+	return ds.Width() - 2, max(1, boxHeight-6)
 }
 
 // renderTabs renders the tab bar
@@ -617,41 +645,60 @@ func (ds *DebugScreen) renderTabs() string {
 		}
 	}
 
-	var renderedTabs []string
-
+	// A tab that does not fit the terminal width starts a new row, rather
+	// than the terminal wrapping it mid-label.
+	var rows []string
+	row := ""
 	for i, tab := range tabs {
 		tabText := fmt.Sprintf(" %s ", tab)
 
+		rendered := ds.tabStyle.Render(tabText)
 		if i == ds.activeTab {
-			renderedTabs = append(renderedTabs, selectedTabStyle.Render(tabText))
-		} else {
-			renderedTabs = append(renderedTabs, ds.tabStyle.Render(tabText))
+			rendered = selectedTabStyle.Render(tabText)
+		}
+		switch {
+		case row == "":
+			row = rendered
+		case ds.Width() > 0 && lipgloss.Width(row+"│"+rendered) > ds.Width():
+			rows = append(rows, row)
+			row = rendered
+		default:
+			row += "│" + rendered
 		}
 	}
 
-	return strings.Join(renderedTabs, "│")
+	return strings.Join(append(rows, row), "\n")
 }
+
+// logListLineBreaks flattens an entry onto its one list row.
+var logListLineBreaks = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ")
 
 // renderLogList renders a scrollable list of log entries
 func (ds *DebugScreen) renderLogList(title string, logs []string) string {
+	boxWidth, rows := ds.logListSize()
+	style := ds.logStyle.Width(boxWidth).Height(rows + 4)
 	if len(logs) == 0 {
 		emptyMsg := fmt.Sprintf("No %s available", strings.ToLower(title))
-		return ds.logStyle.Render(emptyMsg)
+		return style.Render(emptyMsg)
 	}
 
 	var listItems []string
-	maxHeight := 18
 
-	// Calculate visible range
-	startIdx := ds.scrollOffset
-	endIdx := min(startIdx+maxHeight, len(logs))
+	// Calculate visible range. A status line shown since the last key
+	// takes rows, so keep the selection in view here as well.
+	startIdx := max(ds.scrollOffset, ds.selectedIndex-rows+1)
+	endIdx := min(startIdx+rows, len(logs))
 
+	// One row per entry: a wrapped or multi-line entry (stderr, a
+	// pretty-printed body) would push the box past its height. Enter and
+	// copy give the whole entry.
+	lineWidth := boxWidth - ds.logStyle.GetHorizontalPadding()
 	for i := startIdx; i < endIdx; i++ {
-		logLine := logs[i]
+		row := logListLineBreaks.Replace(logs[i])
 		if i == ds.selectedIndex {
-			listItems = append(listItems, ds.selectedStyle.Render(fmt.Sprintf("▶ %s", logLine)))
+			listItems = append(listItems, ds.selectedStyle.Render(ansi.Truncate("▶ "+row, lineWidth, "…")))
 		} else {
-			listItems = append(listItems, fmt.Sprintf("  %s", logLine))
+			listItems = append(listItems, ansi.Truncate("  "+row, lineWidth, "…"))
 		}
 	}
 
@@ -663,7 +710,7 @@ func (ds *DebugScreen) renderLogList(title string, logs []string) string {
 		listItems = append(listItems, "  ↓ More entries below ↓")
 	}
 
-	return ds.logStyle.Render(strings.Join(listItems, "\n"))
+	return style.Render(strings.Join(listItems, "\n"))
 }
 
 // renderStats renders MCP protocol statistics
@@ -1447,10 +1494,13 @@ func (ds *DebugScreen) renderNotifications() string {
 	return ds.logStyle.Render(b.String())
 }
 
+// notificationWindowRows is how many notification entries show at once.
+const notificationWindowRows = 12
+
 // renderNotificationWindow renders the visible window of the filtered
 // notification entries with scroll indicators.
 func (ds *DebugScreen) renderNotificationWindow(b *strings.Builder, entries []notifications.Entry) {
-	const maxVisible = 12
+	maxVisible := notificationWindowRows
 	startIdx := ds.scrollOffset
 	if startIdx > len(entries)-maxVisible {
 		startIdx = len(entries) - maxVisible
