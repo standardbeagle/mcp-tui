@@ -75,14 +75,16 @@ func (r *Runner) scenarioRoundTrip(ctx context.Context, rt *roundTrip) ScenarioR
 	tool := findTool(tools, toolName)
 	if tool == nil {
 		return ScenarioResult{Pass: true, Skipped: true,
-			Error: fmt.Sprintf("skipped: server has no %q tool to trigger %s (name one with %s)", toolName, rt.method, rt.toolFlag)}
+			Error: fmt.Sprintf("skipped: server has no %q tool to trigger %s (name one with %s)",
+				toolName, rt.method, rt.toolFlag)}
 	}
 
 	args := map[string]any{}
 	if len(rt.args) == 0 {
 		if problem := argumentsRequired(tool); problem != "" {
 			return ScenarioResult{Pass: true, Skipped: true,
-				Error: fmt.Sprintf("skipped: tool %q needs arguments (%s); pass them with %s key=value", toolName, problem, rt.argsFlag)}
+				Error: fmt.Sprintf("skipped: tool %q needs arguments (%s); pass them with %s key=value",
+					toolName, problem, rt.argsFlag)}
 		}
 	} else {
 		if r.target.ToolArguments == nil {

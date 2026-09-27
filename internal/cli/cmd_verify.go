@@ -86,7 +86,8 @@ Exit codes:
 	cmd.Flags().String("probe", "",
 		fmt.Sprintf("Run a single probe by name (one of: %s)", strings.Join(verify.AllProbes, ", ")))
 	cmd.Flags().Bool("json", false, "Print machine-readable JSON instead of human-formatted output")
-	cmd.Flags().String("tool", "", "(seterror-content) Tool that fails by design (default: \"echo\", skipped when the server has none)")
+	cmd.Flags().String("tool", "",
+		"(seterror-content) Tool that fails by design (default: \"echo\", skipped when the server has none)")
 	cmd.Flags().StringArray("tool-args", nil,
 		"(seterror-content) Argument for --tool as key=value or key:=<json>, converted like `tool call` (repeatable)")
 	return cmd

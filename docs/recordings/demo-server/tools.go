@@ -31,24 +31,35 @@ func registerTools(server *mcp.Server, misbehave bool, logger *slog.Logger) {
 		Title: "Search tickets",
 		Description: "Search the Acme support queue. Filters combine: free-text query, status, tags " +
 			"(a ticket must carry every tag) and an optional priority/customer filter.",
-		Icons:        []mcp.Icon{{Source: logoDataURI(), MIMEType: "image/png", Sizes: []string{"32x32"}}},
-		Annotations:  &mcp.ToolAnnotations{Title: "Search tickets", ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: ptr(false)},
+		Icons: []mcp.Icon{{Source: logoDataURI(), MIMEType: "image/png", Sizes: []string{"32x32"}}},
+		Annotations: &mcp.ToolAnnotations{Title: "Search tickets", ReadOnlyHint: true, IdempotentHint: true,
+			OpenWorldHint: ptr(false)},
 		InputSchema:  searchTicketsInputSchema(),
 		OutputSchema: searchTicketsOutputSchema(),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, in searchTicketsInput) (*mcp.CallToolResult, searchTicketsOutput, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in searchTicketsInput) (
+		*mcp.CallToolResult, searchTicketsOutput, error,
+	) {
 		out, text := searchTickets(in)
-		logToolInfo(ctx, req, logger, fmt.Sprintf("search_tickets matched %d tickets, returned %d", out.Total, len(out.Tickets)))
+		logToolInfo(ctx, req, logger,
+			fmt.Sprintf("search_tickets matched %d tickets, returned %d", out.Total, len(out.Tickets)))
 		return textResult(text), out, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:         "create_ticket",
-		Title:        "Create ticket",
-		Description:  "Open a new ticket for a customer. The demo desk reports the ticket it would create; the queue itself does not change.",
-		Annotations:  &mcp.ToolAnnotations{Title: "Create ticket", DestructiveHint: ptr(false), IdempotentHint: false, OpenWorldHint: ptr(false)},
-		InputSchema:  createTicketInputSchema(),
-		OutputSchema: objectSchema([]string{"id", "status", "priority"}, "id", stringSchema("New ticket ID"), "status", stringSchema("Always open"), "priority", enumSchema("Priority", ticketPriorities)),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, in createTicketInput) (*mcp.CallToolResult, createTicketOutput, error) {
+		Name:  "create_ticket",
+		Title: "Create ticket",
+		Description: "Open a new ticket for a customer. The demo desk reports the ticket it would create; " +
+			"the queue itself does not change.",
+		Annotations: &mcp.ToolAnnotations{Title: "Create ticket", DestructiveHint: ptr(false), IdempotentHint: false,
+			OpenWorldHint: ptr(false)},
+		InputSchema: createTicketInputSchema(),
+		OutputSchema: objectSchema([]string{"id", "status", "priority"},
+			"id", stringSchema("New ticket ID"),
+			"status", stringSchema("Always open"),
+			"priority", enumSchema("Priority", ticketPriorities)),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in createTicketInput) (
+		*mcp.CallToolResult, createTicketOutput, error,
+	) {
 		out := createTicketOutput{ID: nextTicketID, Status: "open", Priority: in.Priority}
 		logToolInfo(ctx, req, logger, fmt.Sprintf("create_ticket opened %s for %s", out.ID, in.Customer.Email))
 		return textResult(fmt.Sprintf("Created %s (%s) for %s <%s>: %s",
@@ -59,7 +70,8 @@ func registerTools(server *mcp.Server, misbehave bool, logger *slog.Logger) {
 		Name:        "delete_ticket",
 		Title:       "Delete ticket",
 		Description: "Permanently delete a ticket and its history.",
-		Annotations: &mcp.ToolAnnotations{Title: "Delete ticket", DestructiveHint: ptr(true), IdempotentHint: true, OpenWorldHint: ptr(false)},
+		Annotations: &mcp.ToolAnnotations{Title: "Delete ticket", DestructiveHint: ptr(true), IdempotentHint: true,
+			OpenWorldHint: ptr(false)},
 		InputSchema: objectSchema([]string{"ticket_id"}, "ticket_id", ticketIDSchema()),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ticketRef) (*mcp.CallToolResult, any, error) {
 		t, ok := findTicket(in.TicketID)
@@ -71,13 +83,15 @@ func registerTools(server *mcp.Server, misbehave bool, logger *slog.Logger) {
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "escalate_ticket",
-		Title:       "Escalate ticket",
-		Description: "Escalate a ticket to the on-call engineer. Runs four steps over about four seconds and reports progress after each.",
+		Name:  "escalate_ticket",
+		Title: "Escalate ticket",
+		Description: "Escalate a ticket to the on-call engineer. Runs four steps over about four seconds " +
+			"and reports progress after each.",
 		Annotations: &mcp.ToolAnnotations{Title: "Escalate ticket", DestructiveHint: ptr(false), OpenWorldHint: ptr(true)},
 		InputSchema: objectSchema([]string{"ticket_id"},
 			"ticket_id", ticketIDSchema(),
-			"reason", &jsonschema.Schema{Type: "string", Title: "Reason", Description: "Why the ticket needs escalating", MaxLength: ptr(200)}),
+			"reason", &jsonschema.Schema{Type: "string", Title: "Reason", Description: "Why the ticket needs escalating",
+				MaxLength: ptr(200)}),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in escalateTicketInput) (*mcp.CallToolResult, any, error) {
 		return escalateTicket(ctx, req, in, logger)
 	})
@@ -86,9 +100,10 @@ func registerTools(server *mcp.Server, misbehave bool, logger *slog.Logger) {
 		Name:        "lookup_customer",
 		Title:       "Look up customer",
 		Description: "Find a customer by ID or email. Unknown customers come back as a tool error.",
-		Annotations: &mcp.ToolAnnotations{Title: "Look up customer", ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: ptr(false)},
+		Annotations: &mcp.ToolAnnotations{Title: "Look up customer", ReadOnlyHint: true, IdempotentHint: true,
+			OpenWorldHint: ptr(false)},
 		InputSchema: objectSchema(nil,
-			"customer_id", &jsonschema.Schema{Type: "string", Title: "Customer ID", Pattern: "^C-[0-9]{4}$", Examples: []any{"C-1001"}},
+			"customer_id", customerIDSchema(),
 			"email", &jsonschema.Schema{Type: "string", Title: "Email", Format: "email"}),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in lookupCustomerInput) (*mcp.CallToolResult, any, error) {
 		c, err := lookupCustomer(in)
@@ -101,7 +116,8 @@ func registerTools(server *mcp.Server, misbehave bool, logger *slog.Logger) {
 			return nil, nil, err
 		}
 		logToolInfo(ctx, req, logger, "lookup_customer found "+c.ID)
-		return textResult(fmt.Sprintf("%s  %s <%s>\nCompany: %s\nPlan:    %s", c.ID, c.Name, c.Email, c.Company, c.Plan)), nil, nil
+		return textResult(fmt.Sprintf("%s  %s <%s>\nCompany: %s\nPlan:    %s",
+			c.ID, c.Name, c.Email, c.Company, c.Plan)), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -112,7 +128,8 @@ func registerTools(server *mcp.Server, misbehave bool, logger *slog.Logger) {
 		Annotations: &mcp.ToolAnnotations{Title: "Schedule callback", DestructiveHint: ptr(false), OpenWorldHint: ptr(false)},
 		InputSchema: objectSchema([]string{"ticket_id"},
 			"ticket_id", ticketIDSchema(),
-			"time", &jsonschema.Schema{Type: "string", Title: "Callback time", Description: "RFC 3339 date-time, e.g. 2026-09-29T15:00:00Z", Format: "date-time"}),
+			"time", &jsonschema.Schema{Type: "string", Title: "Callback time",
+				Description: "RFC 3339 date-time, e.g. 2026-09-29T15:00:00Z", Format: "date-time"}),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in scheduleCallbackInput) (*mcp.CallToolResult, any, error) {
 		return scheduleCallback(ctx, req, in, logger)
 	})
@@ -246,7 +263,9 @@ var escalationSteps = []string{
 
 // escalateTicket walks the escalation steps, reporting progress (when the
 // client sent a progress token) and a log line after each one.
-func escalateTicket(ctx context.Context, req *mcp.CallToolRequest, in escalateTicketInput, logger *slog.Logger) (*mcp.CallToolResult, any, error) {
+func escalateTicket(ctx context.Context, req *mcp.CallToolRequest, in escalateTicketInput, logger *slog.Logger) (
+	*mcp.CallToolResult, any, error,
+) {
 	t, ok := findTicket(in.TicketID)
 	if !ok {
 		return nil, nil, fmt.Errorf("no ticket %s", in.TicketID)
@@ -257,7 +276,8 @@ func escalateTicket(ctx context.Context, req *mcp.CallToolRequest, in escalateTi
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, nil, fmt.Errorf("escalation of %s stopped after %d of %d steps: %w", t.ID, i, len(escalationSteps), ctx.Err())
+			return nil, nil, fmt.Errorf("escalation of %s stopped after %d of %d steps: %w",
+				t.ID, i, len(escalationSteps), ctx.Err())
 		case <-timer.C:
 		}
 		if token != nil {
@@ -307,7 +327,9 @@ type scheduleCallbackInput struct {
 // scheduleCallback books the callback at the given time, or asks the user
 // for one: the first call returns an input request, and the retry carries
 // the answer.
-func scheduleCallback(ctx context.Context, req *mcp.CallToolRequest, in scheduleCallbackInput, logger *slog.Logger) (*mcp.CallToolResult, any, error) {
+func scheduleCallback(ctx context.Context, req *mcp.CallToolRequest, in scheduleCallbackInput, logger *slog.Logger) (
+	*mcp.CallToolResult, any, error,
+) {
 	t, ok := findTicket(in.TicketID)
 	if !ok {
 		return nil, nil, fmt.Errorf("no ticket %s", in.TicketID)
@@ -355,8 +377,10 @@ func callbackTimeElicitation(ticketID string, c *Customer) *mcp.ElicitParams {
 	return &mcp.ElicitParams{
 		Message: fmt.Sprintf("When should Acme call %s (%s) about %s?", c.Name, c.Company, ticketID),
 		RequestedSchema: objectSchema([]string{"time"},
-			"time", &jsonschema.Schema{Type: "string", Title: "Callback time (UTC)", Description: "e.g. 2026-09-29T15:00:00Z", Format: "date-time"},
-			"phone", &jsonschema.Schema{Type: "string", Title: "Phone number", Description: "Leave empty to use the number on file"}),
+			"time", &jsonschema.Schema{Type: "string", Title: "Callback time (UTC)",
+				Description: "e.g. 2026-09-29T15:00:00Z", Format: "date-time"},
+			"phone", &jsonschema.Schema{Type: "string", Title: "Phone number",
+				Description: "Leave empty to use the number on file"}),
 	}
 }
 
@@ -367,7 +391,9 @@ type draftReplyInput struct {
 
 // draftReply asks the client's model for a reply: the first call returns a
 // sampling input request, and the retry carries the model's answer.
-func draftReply(ctx context.Context, req *mcp.CallToolRequest, in draftReplyInput, logger *slog.Logger) (*mcp.CallToolResult, any, error) {
+func draftReply(ctx context.Context, req *mcp.CallToolRequest, in draftReplyInput, logger *slog.Logger) (
+	*mcp.CallToolResult, any, error,
+) {
 	t, ok := findTicket(in.TicketID)
 	if !ok {
 		return nil, nil, fmt.Errorf("no ticket %s", in.TicketID)
@@ -430,7 +456,7 @@ func searchTicketsInputSchema() *jsonschema.Schema {
 			Items: &jsonschema.Schema{Type: "string", Pattern: "^[a-z0-9-]+$"}, MaxItems: ptr(5), UniqueItems: true},
 		"filter", objectSchema(nil,
 			"priority", enumSchema("Priority", ticketPriorities),
-			"customer_id", &jsonschema.Schema{Type: "string", Title: "Customer ID", Pattern: "^C-[0-9]{4}$", Examples: []any{"C-1001"}}),
+			"customer_id", customerIDSchema()),
 	)
 }
 
@@ -459,6 +485,10 @@ func createTicketInputSchema() *jsonschema.Schema {
 		"tags", &jsonschema.Schema{Type: "array", Title: "Tags",
 			Items: &jsonschema.Schema{Type: "string", Pattern: "^[a-z0-9-]+$"}, MaxItems: ptr(5), UniqueItems: true},
 	)
+}
+
+func customerIDSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{Type: "string", Title: "Customer ID", Pattern: "^C-[0-9]{4}$", Examples: []any{"C-1001"}}
 }
 
 func ticketIDSchema() *jsonschema.Schema {

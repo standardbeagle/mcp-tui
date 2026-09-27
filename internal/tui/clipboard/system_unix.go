@@ -29,7 +29,10 @@ var (
 	pbHelper      = helper{copy: []string{"pbcopy"}, paste: []string{"pbpaste"}}
 	waylandHelper = helper{copy: []string{"wl-copy"}, paste: []string{"wl-paste", "--no-newline"}}
 	otherHelpers  = []helper{
-		{copy: []string{"xclip", "-in", "-selection", "clipboard"}, paste: []string{"xclip", "-out", "-selection", "clipboard"}},
+		{
+			copy:  []string{"xclip", "-in", "-selection", "clipboard"},
+			paste: []string{"xclip", "-out", "-selection", "clipboard"},
+		},
 		{copy: []string{"xsel", "--input", "--clipboard"}, paste: []string{"xsel", "--output", "--clipboard"}},
 		{copy: []string{"termux-clipboard-set"}, paste: []string{"termux-clipboard-get"}},
 		{copy: []string{"clip.exe"}, paste: []string{"powershell.exe", "Get-Clipboard"}, trimCRLF: true},

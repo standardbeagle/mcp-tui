@@ -36,8 +36,9 @@ var authActions = map[int][]string{
 // client as `sending "<method>": <text>`, the SSE client as
 // `failed to connect: <text>`.
 var (
-	streamableStatusPattern = regexp.MustCompile(`sending "(?:initialize|server/discover)": (` + statusTextAlternation() + `)`)
-	sseStatusPattern        = regexp.MustCompile(`failed to connect: (` + statusTextAlternation() + `)`)
+	streamableStatusPattern = regexp.MustCompile(
+		`sending "(?:initialize|server/discover)": (` + statusTextAlternation() + `)`)
+	sseStatusPattern = regexp.MustCompile(`failed to connect: (` + statusTextAlternation() + `)`)
 )
 
 func statusTextAlternation() string {

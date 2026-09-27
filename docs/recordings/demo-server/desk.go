@@ -46,10 +46,14 @@ var (
 )
 
 var customers = []Customer{
-	{ID: "C-1001", Name: "Dana Whitfield", Email: "dana@northwind-labs.example", Company: "Northwind Labs", Plan: "Enterprise"},
-	{ID: "C-1002", Name: "Marco Ruiz", Email: "marco@bluepeak.example", Company: "Bluepeak Outfitters", Plan: "Pro"},
-	{ID: "C-1003", Name: "Priya Natarajan", Email: "priya@lumen-health.example", Company: "Lumen Health", Plan: "Enterprise"},
-	{ID: "C-1004", Name: "Tomasz Kowal", Email: "tomasz@kowal-design.example", Company: "Kowal Design", Plan: "Starter"},
+	{ID: "C-1001", Name: "Dana Whitfield", Email: "dana@northwind-labs.example",
+		Company: "Northwind Labs", Plan: "Enterprise"},
+	{ID: "C-1002", Name: "Marco Ruiz", Email: "marco@bluepeak.example",
+		Company: "Bluepeak Outfitters", Plan: "Pro"},
+	{ID: "C-1003", Name: "Priya Natarajan", Email: "priya@lumen-health.example",
+		Company: "Lumen Health", Plan: "Enterprise"},
+	{ID: "C-1004", Name: "Tomasz Kowal", Email: "tomasz@kowal-design.example",
+		Company: "Kowal Design", Plan: "Starter"},
 }
 
 var tickets = []Ticket{

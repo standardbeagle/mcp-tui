@@ -98,7 +98,8 @@ Exit codes:
 		"Tool that fails by design, called by tools.call.isError and verify.seterror-content "+
 			"(defaults: a tool named like error/fail/invalid, and \"echo\")")
 	cmd.Flags().StringArray("tool-args", nil,
-		"(tools.call.isError, verify.seterror-content) Argument for --tool as key=value or key:=<json>, as in `tool call` (repeatable)")
+		"(tools.call.isError, verify.seterror-content) Argument for --tool as key=value or key:=<json>, "+
+			"as in `tool call` (repeatable)")
 	cmd.Flags().String("completion-prompt", "",
 		"Prompt name (or resource template URI when --completion-resource is set) for completion/complete")
 	cmd.Flags().Bool("completion-resource", false,

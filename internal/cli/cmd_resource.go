@@ -288,7 +288,8 @@ func printResourceContentText(resourceURI string, contents []mcp.ResourceContent
 			fmt.Println(contentStyle.Render("Text content:"))
 			fmt.Println(content.Text)
 		case len(content.Blob) > 0:
-			fmt.Println(contentStyle.Render(fmt.Sprintf("Binary content: %d bytes (base64 with --format json)", len(content.Blob))))
+			fmt.Println(contentStyle.Render(fmt.Sprintf(
+				"Binary content: %d bytes (base64 with --format json)", len(content.Blob))))
 		default:
 			fmt.Println(contentStyle.Render("(No content data available)"))
 		}

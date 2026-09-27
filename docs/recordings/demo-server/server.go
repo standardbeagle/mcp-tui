@@ -131,7 +131,9 @@ func registerResources(server *mcp.Server, queue *liveQueue) {
 		Description: "32x32 PNG brand mark.",
 		MIMEType:    "image/png", Size: int64(len(logoPNG())),
 	}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: logoURI, MIMEType: "image/png", Blob: logoPNG()}}}, nil
+		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{
+			{URI: logoURI, MIMEType: "image/png", Blob: logoPNG()},
+		}}, nil
 	})
 
 	server.AddResource(&mcp.Resource{
@@ -139,7 +141,9 @@ func registerResources(server *mcp.Server, queue *liveQueue) {
 		Description: fmt.Sprintf("Queue counters; changes every %s while subscribed.", queueUpdateInterval),
 		MIMEType:    "text/plain",
 	}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: queueURI, MIMEType: "text/plain", Text: queue.snapshot()}}}, nil
+		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{
+			{URI: queueURI, MIMEType: "text/plain", Text: queue.snapshot()},
+		}}, nil
 	})
 
 	server.AddResourceTemplate(&mcp.ResourceTemplate{
@@ -165,7 +169,9 @@ func readTicket(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResou
 	if err != nil {
 		return nil, err
 	}
-	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: uri, MIMEType: "application/json", Text: body}}}, nil
+	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{
+		{URI: uri, MIMEType: "application/json", Text: body},
+	}}, nil
 }
 
 func registerPrompts(server *mcp.Server) {
@@ -209,7 +215,9 @@ func triageTicketPrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetP
 					"Decide the priority, which team owns it and the next step, then draft the first reply in a %s tone. "+
 					"Keep within the service levels below.",
 				t.ID, c.Name, c.Company, c.Plan, t.Subject, t.Status, t.Priority, strings.Join(t.Tags, ", "), t.Body, tone)}},
-			{Role: "user", Content: &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{URI: slaURI, MIMEType: "application/json", Text: slaJSON}}},
+			{Role: "user", Content: &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+				URI: slaURI, MIMEType: "application/json", Text: slaJSON,
+			}}},
 		},
 	}, nil
 }
