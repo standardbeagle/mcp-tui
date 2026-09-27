@@ -739,10 +739,9 @@ func (s *service) validateConnectionState() error {
 
 // createClient creates and configures the MCP client
 func (s *service) createClient() (*officialMCP.Client, error) {
-	// Create implementation info
 	impl := &officialMCP.Implementation{
 		Name:    "mcp-tui",
-		Version: "0.1.0",
+		Version: ClientVersion,
 	}
 	// Capture for the capabilities snapshot. updateServerInfo reads this
 	// after the SDK finishes the initialize handshake.

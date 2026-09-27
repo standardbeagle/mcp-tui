@@ -28,6 +28,8 @@ var (
 )
 
 func main() {
+	mcp.ClientVersion = version
+
 	// Initialize configuration
 	cfg = config.Default()
 
