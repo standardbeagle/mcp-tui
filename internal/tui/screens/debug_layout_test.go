@@ -24,12 +24,12 @@ import (
 func debugScreenAfterToolCall(width, height int) *DebugScreen {
 	ds := NewDebugScreen()
 	ds.Update(tea.WindowSizeMsg{Width: width, Height: height})
-	var general, mcpLogs []string
-	for i := range 60 {
-		general = append(general, fmt.Sprintf(
-			"[21:39:%02d.599] INFO [mcp-http] POST http://127.0.0.1:8931/mcp status=200 duration=4ms dns=0s connect=0s tls=0s first_byte=3ms reuse=true Mcp-Method=tools/call Mcp-Name=get_weather", i))
-		mcpLogs = append(mcpLogs, fmt.Sprintf(
-			"21:39:%02d → request tools/call id=%d {\"name\":\"get_weather\",\"arguments\":{\"city\":\"Minneapolis\",\"units\":\"metric\",\"include_forecast\":true}}", i, i))
+	general, mcpLogs := make([]string, 60), make([]string, 60)
+	for i := range general {
+		general[i] = fmt.Sprintf(
+			"[21:39:%02d.599] INFO [mcp-http] POST http://127.0.0.1:8931/mcp status=200 duration=4ms dns=0s connect=0s tls=0s first_byte=3ms reuse=true Mcp-Method=tools/call Mcp-Name=get_weather", i)
+		mcpLogs[i] = fmt.Sprintf(
+			"21:39:%02d → request tools/call id=%d {\"name\":\"get_weather\",\"arguments\":{\"city\":\"Minneapolis\",\"units\":\"metric\",\"include_forecast\":true}}", i, i)
 	}
 	// A child's stderr and a pretty-printed body carry newlines.
 	general[1] = "[21:39:01.204] WARN [stdio] server stderr line=Traceback (most recent call last):\n  File \"server.py\", line 12, in <module>\nKeyError: 'city'"
