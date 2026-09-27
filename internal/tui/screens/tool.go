@@ -1252,6 +1252,9 @@ func (ts *ToolScreen) executeTool() tea.Cmd {
 		ts.SetError(err)
 		return nil
 	}
+	// The call goes out, so an earlier refusal no longer applies; a
+	// violation it is sent with shows as argumentViolation instead.
+	ts.SetError(nil)
 
 	ts.executing = true
 	ts.executionStart = time.Now()

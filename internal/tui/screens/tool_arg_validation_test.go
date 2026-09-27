@@ -139,3 +139,29 @@ func TestToolScreen_CtrlOInTheRawJSONEditor(t *testing.T) {
 		t.Error("the violation the call is sent with is not kept for display")
 	}
 }
+
+// Once a refused call is sent with Ctrl+O, the refusal is stale: the
+// "⚠ Sent despite the input schema" line names the violation. The red
+// refusal stayed under the form next to the new result.
+func TestToolScreen_SendingClearsTheStaleRefusal(t *testing.T) {
+	svc, tool := connectShipServer(t)
+	ts := NewToolScreen(&tool, svc)
+	ts.Update(tea.WindowSizeMsg{Width: 156, Height: 43})
+	ts.setField(t, "mode", "file")
+	if cmd := ts.executeTool(); cmd != nil {
+		t.Fatal("the call was not refused")
+	}
+	if view := ts.View(); !strings.Contains(view, "Ctrl+O sends them anyway") {
+		t.Fatalf("the refusal is not shown:\n%s", view)
+	}
+
+	ts.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	callResult(t, ts, ts.executeTool())
+	view := ts.View()
+	if strings.Contains(view, "Ctrl+O sends them anyway") || ts.LastError() != nil {
+		t.Errorf("the stale refusal is still shown (error %v):\n%s", ts.LastError(), view)
+	}
+	if !strings.Contains(view, "Sent despite the input schema") {
+		t.Errorf("the violation the call was sent with is not shown:\n%s", view)
+	}
+}
