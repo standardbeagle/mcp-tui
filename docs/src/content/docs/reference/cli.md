@@ -312,7 +312,8 @@ mcp-tui conform [url|--cmd <cmd>]
 | `--sampling-trigger-args <key=value>` | Argument for the sampling trigger tool, `key=value` or `key:=<json>` as in `tool call`; repeatable |
 | `--elicit-trigger-tool <name>` | Tool that triggers `elicitation/create` (default `startElicitation`) |
 | `--elicit-trigger-args <key=value>` | Argument for the elicitation trigger tool; repeatable |
-| `--tool <name>` | Tool that fails by design, for `verify.seterror-content` (as `verify --tool`) |
+| `--tool <name>` | Tool that fails by design, for `tools.call.isError` and `verify.seterror-content` (as `verify --tool`) |
+| `--tool-args <key=value>` | Argument for `--tool` in `tools.call.isError`, `key=value` or `key:=<json>` as in `tool call`; repeatable |
 | `--completion-prompt <name>` | Prompt name (or template URI with `--completion-resource`) for `completion/complete` |
 | `--completion-resource` | Treat `--completion-prompt` as a resource template URI |
 | `--completion-arg <name>` | Argument name for `completion/complete` |
@@ -331,6 +332,10 @@ run is reported as `skipped: probe requires a … target` and counts as passing.
 round trip: the trigger tool made the server send the request and the stub
 answered it. A trigger tool whose required arguments were not given with
 `--sampling-trigger-args`/`--elicit-trigger-args` is skipped.
+`tools.call.isError` with `--tool` calls that tool with `--tool-args` and
+fails unless the result is `isError: true` with non-empty content; without
+`--tool` it calls a tool named like `error`/`fail`/`invalid` (else the first)
+with no arguments and is skipped when the call succeeds.
 The stub flags from
 [Client features](/mcp-tui/guides/client-features/) apply here too.
 

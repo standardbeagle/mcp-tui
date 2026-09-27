@@ -356,7 +356,7 @@ func TestConformCommand_BuildTarget_PreservesStubFlags(t *testing.T) {
 }
 
 // TestConformCommand_TriggerArgsUseToolCallConversion confirms
-// --sampling-trigger-args and --elicit-trigger-args reach the target and
+// --sampling-trigger-args, --elicit-trigger-args and --tool-args reach the target and
 // convert as `tool call` arguments do: typed by the tool's input schema,
 // and refused when they break it.
 func TestConformCommand_TriggerArgsUseToolCallConversion(t *testing.T) {
@@ -366,6 +366,7 @@ func TestConformCommand_TriggerArgsUseToolCallConversion(t *testing.T) {
 		"url":                   "http://127.0.0.1:1",
 		"sampling-trigger-args": "ticket_id=T-1042",
 		"elicit-trigger-args":   "limit=3",
+		"tool-args":             "customer_id=C-4040",
 	} {
 		if err := cmd.Flags().Set(flag, value); err != nil {
 			t.Fatal(err)
@@ -380,6 +381,9 @@ func TestConformCommand_TriggerArgsUseToolCallConversion(t *testing.T) {
 	}
 	if len(target.ElicitTriggerArgs) != 1 || target.ElicitTriggerArgs[0] != "limit=3" {
 		t.Fatalf("ElicitTriggerArgs = %q", target.ElicitTriggerArgs)
+	}
+	if len(target.ToolArgs) != 1 || target.ToolArgs[0] != "customer_id=C-4040" {
+		t.Errorf("ToolArgs = %q", target.ToolArgs)
 	}
 
 	tool := &mcp.Tool{Name: "search", InputSchema: map[string]any{

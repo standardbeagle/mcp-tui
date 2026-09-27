@@ -59,9 +59,14 @@ type Target struct {
 	SamplingTriggerArgs []string
 	ElicitTriggerArgs   []string
 
-	// ToolName is the tool verify.seterror-content calls, as verify's
-	// --tool; empty means that probe's default.
+	// ToolName is the tool that fails by design: tools.call.isError calls
+	// it, as does verify.seterror-content (verify's --tool). Empty means
+	// each check's default: isError picks a tool by name, the probe "echo".
 	ToolName string
+
+	// ToolArgs are ToolName's arguments for tools.call.isError, as
+	// `tool call` key=value (or key:=<json>) pairs.
+	ToolArgs []string
 
 	// ToolArguments converts trigger argument pairs into a tool's
 	// arguments against its input schema, rejecting pairs that do not
@@ -410,7 +415,7 @@ func (r *Runner) scenarioToolsCall(ctx context.Context) ScenarioResult {
 		if tool.IsDestructive() || argumentsRequired(tool) != "" {
 			continue
 		}
-		res, fail := callWithoutArguments(ctx, svc, tool.Name)
+		res, fail := callToolForScenario(ctx, svc, tool.Name, map[string]any{})
 		if res == nil {
 			return fail
 		}
@@ -429,31 +434,55 @@ func (r *Runner) scenarioToolsCall(ctx context.Context) ScenarioResult {
 			strings.Join(refused, "; ") + ")"}
 }
 
-// scenarioToolsCallIsError calls a tool whose name suggests it fails by
-// design, else the first tool, without arguments, and passes when the
-// result has IsError=true with non-empty Content (the v1.6.0 contract; an
-// input-validation failure must come back that way too). A tool that
-// succeeds leaves nothing to check, so the scenario skips.
+// scenarioToolsCallIsError calls the tool named by Target.ToolName with
+// Target.ToolArgs, else a tool whose name suggests it fails by design, else
+// the first tool, without arguments, and passes when the result has
+// IsError=true with non-empty Content (the v1.6.0 contract; an
+// input-validation failure must come back that way too). A picked tool
+// that succeeds leaves nothing to check, so the scenario skips; a named
+// one that succeeds, or is missing, fails, since it was named as failing.
 func (r *Runner) scenarioToolsCallIsError(ctx context.Context) ScenarioResult {
 	svc, tools, skip := r.listToolsForCall(ctx)
 	if tools == nil {
 		return skip
 	}
-	pick := &tools[0]
-	for i, t := range tools {
-		lc := strings.ToLower(t.Name)
-		if strings.Contains(lc, "error") || strings.Contains(lc, "fail") || strings.Contains(lc, "invalid") {
-			pick = &tools[i]
-			break
+	named := r.target.ToolName != ""
+	var pick *mcp.Tool
+	args := map[string]any{}
+	if named {
+		if pick = findTool(tools, r.target.ToolName); pick == nil {
+			return failResult(fmt.Sprintf("server has no tool %q (--tool)", r.target.ToolName), "")
+		}
+		if len(r.target.ToolArgs) > 0 {
+			if r.target.ToolArguments == nil {
+				return failResult("--tool-args given but the runner has no argument conversion", "")
+			}
+			var err error
+			if args, err = r.target.ToolArguments(pick, r.target.ToolArgs); err != nil {
+				return failResult(fmt.Sprintf("--tool-args: %v", err), "")
+			}
+		}
+	} else {
+		pick = &tools[0]
+		for i, t := range tools {
+			lc := strings.ToLower(t.Name)
+			if strings.Contains(lc, "error") || strings.Contains(lc, "fail") || strings.Contains(lc, "invalid") {
+				pick = &tools[i]
+				break
+			}
 		}
 	}
-	res, fail := callWithoutArguments(ctx, svc, pick.Name)
+	res, fail := callToolForScenario(ctx, svc, pick.Name, args)
 	if res == nil {
 		return fail
 	}
 	if !res.IsError {
+		if named {
+			return failResult(fmt.Sprintf("tool %q did not return IsError=true", pick.Name),
+				fmt.Sprintf("--tool names a call that fails by design; result: %s", firstText(res)))
+		}
 		return ScenarioResult{Pass: true, Skipped: true,
-			Error: fmt.Sprintf("skipped: tool %q did not return IsError=true (no failing tool found)", pick.Name)}
+			Error: fmt.Sprintf("skipped: tool %q did not return IsError=true (no failing tool found; name one with --tool)", pick.Name)}
 	}
 	if len(res.Content) == 0 {
 		return failResult(
@@ -483,14 +512,14 @@ func (r *Runner) listToolsForCall(ctx context.Context) (svc mcp.Service, tools [
 	return svc, tools, ScenarioResult{}
 }
 
-// callWithoutArguments calls toolName with {}. res is nil when the call
+// callToolForScenario calls toolName with args. res is nil when the call
 // failed at the protocol level, with fail describing it: never acceptable,
 // since tool failures, input validation included, must come back as
 // CallToolResult{IsError:true}.
-func callWithoutArguments(ctx context.Context, svc mcp.Service, toolName string) (res *mcp.CallToolResult, fail ScenarioResult) {
+func callToolForScenario(ctx context.Context, svc mcp.Service, toolName string, args map[string]any) (res *mcp.CallToolResult, fail ScenarioResult) {
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	res, err := svc.CallTool(callCtx, mcp.CallToolRequest{Name: toolName, Arguments: map[string]any{}})
+	res, err := svc.CallTool(callCtx, mcp.CallToolRequest{Name: toolName, Arguments: args})
 	if res == nil {
 		return nil, failResult(
 			fmt.Sprintf("CallTool(%q) returned JSON-RPC error: %v", toolName, err),
