@@ -51,6 +51,20 @@ var serverSends = map[string]lifetime{
 	"notifications/subscriptions/acknowledged": {since: StatelessVersion},
 }
 
+// clientCapabilityFor maps each server request a client capability invites
+// to that capability's name in the client's initialize request.
+var clientCapabilityFor = map[string]string{
+	"sampling/createMessage": "sampling",
+	"roots/list":             "roots",
+	"elicitation/create":     "elicitation",
+}
+
+// ClientCapabilityFor returns the client capability that invites the server
+// request method, or "" when no capability does.
+func ClientCapabilityFor(method string) string {
+	return clientCapabilityFor[method]
+}
+
 // clientSends is every method an MCP client may send a server; the watcher
 // uses it to tell a server that sent a client's method from one that sent
 // no MCP method at all.

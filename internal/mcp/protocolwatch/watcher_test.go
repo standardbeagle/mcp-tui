@@ -158,6 +158,31 @@ func TestWatcher_Methods(t *testing.T) {
 	}
 }
 
+// initialize is the client's initialize request declaring capabilities.
+func initialize(t *testing.T, capabilities string) *jsonrpc.Request {
+	return &jsonrpc.Request{ID: id(t, 0), Method: "initialize",
+		Params: json.RawMessage(`{"protocolVersion":"2024-11-05","capabilities":` + capabilities + `}`)}
+}
+
+// The go-sdk client declares elicitation on every version, so a server may
+// answer that invitation with elicitation/create even on 2024-11-05, which
+// predates the method. A request the client declared the capability for is
+// the client's doing, not the server's; one it did not declare still is.
+func TestWatcher_ServerRequestTheClientDeclaredIsAccepted(t *testing.T) {
+	elicit := &jsonrpc.Request{ID: id(t, "srv-1"), Method: "elicitation/create", Params: json.RawMessage(`{}`)}
+
+	_, vs, _ := run("2024-11-05", sent(initialize(t, `{"elicitation":{},"roots":{}}`)), received(elicit))
+	if len(vs) != 0 {
+		t.Errorf("declared elicitation: violations %q, want none", messages(vs))
+	}
+
+	_, vs, _ = run("2024-11-05", sent(initialize(t, `{"roots":{}}`)), received(elicit))
+	want := `server sent request "elicitation/create", which MCP 2024-11-05 does not let servers send`
+	if len(vs) != 1 || vs[0].Message != want {
+		t.Errorf("undeclared elicitation: violations %q, want one %q", messages(vs), want)
+	}
+}
+
 // Before the handshake settles the version, any version's method passes.
 func TestWatcher_MethodBeforeVersionIsKnown(t *testing.T) {
 	_, vs, _ := run("", received(notification("notifications/elicitation/complete")))

@@ -61,7 +61,11 @@ negotiated MCP version. mcp-tui watches every connection and reports them:
 - a notification or request with a method the negotiated version does not
   let servers send (a bare `initialized` instead of
   `notifications/initialized`, a client-only method, `sampling/createMessage`
-  on `2026-07-28`, `elicitation/create` before `2025-06-18`);
+  on `2026-07-28`). A `sampling/createMessage`, `roots/list` or
+  `elicitation/create` request is accepted on any version whose `initialize`
+  declared the matching client capability: the client invited it. With an
+  elicitation handler (`--elicit-stub`) the go-sdk client declares
+  `elicitation` even on `2024-11-05`, which predates the method;
 - a message that is not JSON-RPC 2.0: no `"jsonrpc": "2.0"`, not JSON (a log
   line on a stdio server's stdout), a response without an id, or one with
   both or neither of `result` and `error`. An error response with `id: null`
