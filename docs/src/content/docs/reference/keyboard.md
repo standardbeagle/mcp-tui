@@ -47,6 +47,7 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 | `Ctrl+Home` / `Ctrl+End` | Jump to the result's top or bottom; `Home` / `End` do the same off a text input |
 | `Ctrl+C` | Copy the result (without a result: back) |
 | `v` | Pick one of the result's fields to copy (off a text input): `↑`/`↓`, `PgUp`/`PgDn`, `Home`/`End` select, `Enter`/`c`/`y` copy, `v`/`Esc` return |
+| `Ctrl+L` / `Ctrl+D` / `F12` | Open the debug screen, from a field too (there `Ctrl+D` does not delete forward; `Delete` does) |
 | `Esc` | Back, also while a call runs (the call is not cancelled) |
 | `b` / `Alt+←` | Back (off a text input) |
 

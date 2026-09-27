@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
@@ -102,4 +103,43 @@ func TestToolScreenEscLeavesARunningCall(t *testing.T) {
 	ts.executing = true
 	_, cmd := ts.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	requireBack(t, cmd)
+}
+
+// The debug keys opened the debug screen only from the buttons: the cursor
+// starts in a field, which took Ctrl+L and F12 as nothing and Ctrl+D as
+// delete, so from the tool screen the debug screen seemed out of reach.
+// They open it from a field and from the raw JSON editor too, and leave
+// what was typed alone.
+func TestToolScreenDebugKeysWorkFromAnInput(t *testing.T) {
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyCtrlL}, {Type: tea.KeyCtrlD}, {Type: tea.KeyF12}} {
+		t.Run(key.String(), func(t *testing.T) {
+			field, _ := echoToolScreen(t, 1)
+			field.fields[0].input.SetValue("deploy finished")
+			field.fields[0].input.CursorStart()
+			raw := rawJSONToolScreen(t, &config.ConnectionConfig{Type: config.TransportStdio, Command: "tagger"})
+			raw.Init()
+			raw.rawJSONInput.SetValue(`{"id": 7}`)
+			raw.rawJSONInput.CursorStart()
+
+			for name, ts := range map[string]*ToolScreen{"field": field, "raw JSON": raw} {
+				_, cmd := ts.Update(key)
+				if cmd == nil {
+					t.Fatalf("%s: no command", name)
+				}
+				overlay, ok := cmd().(ToggleOverlayMsg)
+				if !ok {
+					t.Fatalf("%s: command does not open an overlay", name)
+				}
+				if _, ok := overlay.Screen.(*DebugScreen); !ok {
+					t.Errorf("%s: overlay is %T, want the debug screen", name, overlay.Screen)
+				}
+			}
+			if v := field.fields[0].input.Value(); v != "deploy finished" {
+				t.Errorf("field = %q, want it untouched", v)
+			}
+			if v := raw.rawJSONInput.Value(); v != `{"id": 7}` {
+				t.Errorf("raw JSON = %q, want it untouched", v)
+			}
+		})
+	}
 }

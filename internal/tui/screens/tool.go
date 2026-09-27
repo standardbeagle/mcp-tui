@@ -936,12 +936,15 @@ func (ts *ToolScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// The screen-wide keys work whatever has focus: typed into a focused
-	// field they did nothing, and the screen looked stuck.
+	// field they did nothing, and the screen looked stuck. Ctrl+D is a
+	// text input's delete-forward too; Delete still does that.
 	switch msg.String() {
 	case keyCtrlC:
 		return ts.copyResultOrBack()
 	case keyEsc:
 		return ts, func() tea.Msg { return BackMsg{} }
+	case keyCtrlL, keyCtrlD, keyF12:
+		return ts, ts.showDebugOverlayCmd()
 	}
 	if ts.result.shown() && ts.handleResultScrollKey(msg) {
 		return ts, nil
@@ -1000,10 +1003,6 @@ func (ts *ToolScreen) handleToolbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "b", keyAltLeft:
 		// Go back to previous screen
 		return ts, func() tea.Msg { return BackMsg{} }
-
-	case keyCtrlL, keyCtrlD, keyF12:
-		debugCmd := ts.showDebugOverlayCmd()
-		return ts, debugCmd
 
 	case keyTab, keyDown:
 		ts.moveCursor(1)
