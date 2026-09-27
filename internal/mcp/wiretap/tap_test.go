@@ -51,7 +51,7 @@ func describe(msg jsonrpc.Message) string {
 }
 
 func (r *recorder) Connected(officialMCP.Connection) { r.add("connected") }
-func (r *recorder) Sent(msg jsonrpc.Message)        { r.add("sent " + describe(msg)) }
+func (r *recorder) Sent(msg jsonrpc.Message)         { r.add("sent " + describe(msg)) }
 func (r *recorder) Received(msg jsonrpc.Message) bool {
 	r.add("received " + describe(msg))
 	req, ok := msg.(*jsonrpc.Request)

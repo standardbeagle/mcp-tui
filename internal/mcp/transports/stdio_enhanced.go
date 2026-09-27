@@ -50,6 +50,18 @@ type EnhancedSTDIOTransport struct {
 	stderr   *syncBuffer   // stderr of the most recently started process
 	stdout   *stdoutPrefix // start of stdout of the most recently started process
 	startErr error         // set when the process could not be started at all
+
+	// newOutputTee, when set, gives each started process a writer its
+	// stdout is copied to (wiretap reads it line by line).
+	newOutputTee func() io.Writer
+}
+
+// TeeServerOutput copies the stdout of every server process started from
+// now on to a writer newWriter returns for it.
+func (e *EnhancedSTDIOTransport) TeeServerOutput(newWriter func() io.Writer) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.newOutputTee = newWriter
 }
 
 // createEnhancedSTDIOTransport creates an enhanced STDIO transport.
@@ -281,11 +293,15 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 	stdout := &stdoutPrefix{}
+	var copyStdout io.Writer = stdout
 	e.mu.Lock()
 	e.cmd, e.stderr, e.stdout, e.startErr = cmd, stderr, stdout, nil
+	if e.newOutputTee != nil {
+		copyStdout = io.MultiWriter(stdout, e.newOutputTee())
+	}
 	e.mu.Unlock()
 
-	conn, err := startServer(ctx, cmd, stdout)
+	conn, err := startServer(ctx, cmd, copyStdout)
 	if err != nil {
 		debug.Debug("Enhanced STDIO: MCP connection failed", debug.F("error", err))
 
@@ -308,10 +324,10 @@ func (e *EnhancedSTDIOTransport) Connect(ctx context.Context) (officialMCP.Conne
 }
 
 // startServer starts cmd and returns the SDK connection over its stdin and
-// stdout, teeing stdout into prefix. It replaces the SDK's CommandTransport,
+// stdout, teeing stdout into copyStdout. It replaces the SDK's CommandTransport,
 // whose pipes cannot be observed, with the same framing (IOTransport) and the
 // same shutdown sequence (serverStdin).
-func startServer(ctx context.Context, cmd *exec.Cmd, prefix *stdoutPrefix) (officialMCP.Connection, error) {
+func startServer(ctx context.Context, cmd *exec.Cmd, copyStdout io.Writer) (officialMCP.Connection, error) {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -325,7 +341,7 @@ func startServer(ctx context.Context, cmd *exec.Cmd, prefix *stdoutPrefix) (offi
 	}
 	transport := &officialMCP.IOTransport{
 		// The connection closes by closing stdin, never stdout.
-		Reader: io.NopCloser(io.TeeReader(stdout, prefix)),
+		Reader: io.NopCloser(io.TeeReader(stdout, copyStdout)),
 		Writer: &serverStdin{cmd: cmd, stdin: stdin},
 	}
 	return transport.Connect(ctx)

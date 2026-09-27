@@ -19,6 +19,7 @@ package wiretap
 
 import (
 	"context"
+	"io"
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -40,9 +41,11 @@ type Observer interface {
 	// HTTP the SDK reads the body itself, the result is ignored, and the SDK
 	// drops a response to a request it did not send.
 	Received(msg jsonrpc.Message) bool
-	// Malformed sees a message the server sent in a 2xx HTTP body that does
-	// not decode as JSON-RPC 2.0. On a wrapped connection the SDK's decoder
-	// rejects such a message before the tap sees it and fails the read.
+	// Malformed sees a message the server sent that does not decode as
+	// JSON-RPC 2.0: in a 2xx HTTP body, or a line of a stdio server's
+	// output (ServerOutput), where the SDK's decoder then fails the
+	// connection. Other wrapped connections hand over only decoded
+	// messages, so there is nothing to see.
 	Malformed(raw []byte, err error)
 }
 
@@ -74,6 +77,9 @@ func (tap *Tap) Transport(t officialMCP.Transport) officialMCP.Transport {
 		ht.HTTPClient = tap.observingClient(ht.HTTPClient)
 		return &tappedTransport{inner: t, tap: tap, wrapConn: false}
 	default:
+		if out, ok := t.(ServerOutput); ok {
+			out.TeeServerOutput(func() io.Writer { return &lineTee{tap: tap} })
+		}
 		return &tappedTransport{inner: t, tap: tap, wrapConn: true}
 	}
 }
