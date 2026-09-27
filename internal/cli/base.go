@@ -410,7 +410,7 @@ func (c *BaseCommand) runCompleteCommand(
 		if c.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Completion request failed\n")
 		}
-		return c.HandleError(err, "completion/complete")
+		return err
 	}
 
 	out := map[string]interface{}{
@@ -869,8 +869,6 @@ type listSpec[T any] struct {
 	progressFetch string
 	progressFail  string
 	progressOK    string
-	// errOp is the HandleError operation ("list prompts").
-	errOp string
 	// errNoun is the marshal error noun ("prompts").
 	errNoun string
 }
@@ -899,7 +897,7 @@ func runListFetch[T any](c *BaseCommand, cmd *cobra.Command, spec listSpec[T]) (
 		if c.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprint(os.Stderr, spec.progressFail)
 		}
-		return nil, false, c.HandleError(err, spec.errOp)
+		return nil, false, err
 	}
 
 	if c.GetOutputFormat() == OutputFormatText && !porcelainMode {

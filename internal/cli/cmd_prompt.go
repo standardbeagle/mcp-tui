@@ -129,7 +129,6 @@ func (pc *PromptCommand) runListCommand(cmd *cobra.Command, args []string) error
 		progressFetch: "📋 Fetching available prompts...\n",
 		progressFail:  "❌ Failed to retrieve prompts\n",
 		progressOK:    "✅ Prompts retrieved successfully\n\n",
-		errOp:         "list prompts",
 		errNoun:       "prompts",
 	})
 	if err != nil || jsonDone {
@@ -226,7 +225,7 @@ func (pc *PromptCommand) runGetCommand(cmd *cobra.Command, args []string) error 
 		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve prompts\n")
 		}
-		return pc.HandleError(err, "list prompts")
+		return err
 	}
 
 	prompt := findPrompt(prompts, promptName)
@@ -361,7 +360,7 @@ func (pc *PromptCommand) runExecuteCommand(cmd *cobra.Command, args []string) er
 		if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to execute prompt\n")
 		}
-		return pc.HandleError(err, "execute prompt")
+		return err
 	}
 
 	if pc.GetOutputFormat() == OutputFormatText && !porcelainMode {

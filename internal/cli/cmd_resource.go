@@ -90,7 +90,6 @@ func (rc *ResourceCommand) runListCommand(cmd *cobra.Command, args []string) err
 		progressFetch: "📁 Fetching available resources...\n",
 		progressFail:  "❌ Failed to retrieve resources\n",
 		progressOK:    "✅ Resources retrieved successfully\n\n",
-		errOp:         "list resources",
 		errNoun:       "resources",
 	})
 	if err != nil || jsonDone {
@@ -188,7 +187,7 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 		if rc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to read resource\n")
 		}
-		return rc.HandleError(err, "read resource")
+		return err
 	}
 	contents := result.Contents
 
@@ -365,7 +364,6 @@ func (rc *ResourceCommand) runTemplatesCommand(cmd *cobra.Command, _ []string) e
 		progressFetch: "🧩 Fetching resource templates...\n",
 		progressFail:  "❌ Failed to retrieve resource templates\n",
 		progressOK:    "✅ Resource templates retrieved\n\n",
-		errOp:         "list resource templates",
 		errNoun:       "resource templates",
 	})
 	if err != nil || jsonDone {
@@ -557,7 +555,7 @@ func (rc *ResourceCommand) runWatchCommand(cmd *cobra.Command, args []string) er
 	err = service.SubscribeResource(subscribeCtx, uri)
 	cancelSubscribe()
 	if err != nil {
-		return rc.HandleError(err, "subscribe to resource")
+		return err
 	}
 	if !porcelainMode {
 		fmt.Fprintf(cmd.ErrOrStderr(), "👀 Watching %s (Ctrl-C to stop)\n", uri)
@@ -581,7 +579,7 @@ func (rc *ResourceCommand) runWatchCommand(cmd *cobra.Command, args []string) er
 	unsubscribeCtx, cancelUnsubscribe := rc.WithContext()
 	defer cancelUnsubscribe()
 	if err := service.UnsubscribeResource(unsubscribeCtx, uri); err != nil && watchErr == nil {
-		watchErr = rc.HandleError(err, "unsubscribe from resource")
+		watchErr = err
 	}
 	return watchErr
 }
