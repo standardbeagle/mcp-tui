@@ -138,12 +138,11 @@ type MainScreen struct {
 	connectionSuccessHook func(version string)
 
 	// Styles
-	tabStyle       lipgloss.Style
-	activeTabStyle lipgloss.Style
-	listStyle      lipgloss.Style
-	selectedStyle  lipgloss.Style
-	statusStyle    lipgloss.Style
-	titleStyle     lipgloss.Style
+	tabStyle      lipgloss.Style
+	listStyle     lipgloss.Style
+	selectedStyle lipgloss.Style
+	statusStyle   lipgloss.Style
+	titleStyle    lipgloss.Style
 }
 
 // ConnectionStartedMsg indicates connection is starting
@@ -368,20 +367,21 @@ func (ms *MainScreen) initializeComponents(connConfig *config.ConnectionConfig) 
 		debug.F("url", connConfig.URL))
 }
 
+// selectedTabStyle draws the selected tab of the main and debug screens.
+// Reverse video, not palette colours: a theme may make any foreground and
+// background slot pair near-identical (bright white on blue is in
+// Catppuccin), but never its own foreground and background.
+var selectedTabStyle = lipgloss.NewStyle().
+	Padding(0, 1).
+	Reverse(true).
+	Bold(true)
+
 // initStyles initializes the visual styles
 func (ms *MainScreen) initStyles() {
 	// Simple tab styles without borders to avoid rendering issues
 	ms.tabStyle = lipgloss.NewStyle().
 		Padding(0, 1).
 		Foreground(lipgloss.Color("8"))
-
-	// Reverse video, not palette colours: a theme may make any foreground
-	// and background slot pair near-identical (bright white on blue is in
-	// Catppuccin), but never its own foreground and background.
-	ms.activeTabStyle = lipgloss.NewStyle().
-		Padding(0, 1).
-		Reverse(true).
-		Bold(true)
 
 	ms.listStyle = lipgloss.NewStyle().
 		Padding(1).
@@ -1559,7 +1559,7 @@ func (ms *MainScreen) renderTabs() string {
 		}
 
 		if i == ms.activeTab {
-			renderedTabs = append(renderedTabs, ms.activeTabStyle.Render(tabText))
+			renderedTabs = append(renderedTabs, selectedTabStyle.Render(tabText))
 		} else {
 			renderedTabs = append(renderedTabs, ms.tabStyle.Render(tabText))
 		}

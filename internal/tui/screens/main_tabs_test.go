@@ -11,23 +11,30 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// selectedTabSGR is the SGR sequence that styles the text of the Tools tab.
-var selectedTabSGR = regexp.MustCompile(`\x1b\[([0-9;]*)m[^\x1b]*Tools \(`)
-
 // The selected tab was bright white on blue: palette slots a theme is free
 // to make near-identical (Catppuccin Mocha draws #a6adc8 on #89b4fa), so
 // "Tools (7)" could not be read. Reverse video swaps the terminal's own
 // foreground and background, which every theme keeps readable.
 func TestMainScreen_SelectedTabIsReverseVideo(t *testing.T) {
+	ms := connectedMainScreen(t)
+	ms.toolCount = 7
+	assertSelectedTabReverseVideo(t, ms.renderTabs, "Tools (")
+}
+
+// assertSelectedTabReverseVideo renders the tab bar in 256 colours and
+// checks that the SGR sequence styling the tab whose text starts with
+// label turns on reverse video and sets no palette colour.
+func assertSelectedTabReverseVideo(t *testing.T, renderTabs func() string, label string) {
+	t.Helper()
 	profile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
 
-	ms := connectedMainScreen(t)
-	ms.toolCount = 7
-	match := selectedTabSGR.FindStringSubmatch(ms.renderTabs())
+	tabs := renderTabs()
+	sgr := regexp.MustCompile(`\x1b\[([0-9;]*)m[^\x1b]*` + regexp.QuoteMeta(label))
+	match := sgr.FindStringSubmatch(tabs)
 	if match == nil {
-		t.Fatalf("selected tab is not styled: %q", ms.renderTabs())
+		t.Fatalf("selected tab %q is not styled: %q", label, tabs)
 	}
 	params := strings.Split(match[1], ";")
 	if !slices.Contains(params, "7") {

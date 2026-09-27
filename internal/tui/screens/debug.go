@@ -100,13 +100,12 @@ type DebugScreen struct {
 	notificationCursor int
 
 	// Styles
-	tabStyle       lipgloss.Style
-	activeTabStyle lipgloss.Style
-	logStyle       lipgloss.Style
-	selectedStyle  lipgloss.Style
-	titleStyle     lipgloss.Style
-	statStyle      lipgloss.Style
-	detailStyle    lipgloss.Style
+	tabStyle      lipgloss.Style
+	logStyle      lipgloss.Style
+	selectedStyle lipgloss.Style
+	titleStyle    lipgloss.Style
+	statStyle     lipgloss.Style
+	detailStyle   lipgloss.Style
 }
 
 // NewDebugScreen creates a new debug screen. The Capabilities tab will show
@@ -156,12 +155,6 @@ func (ds *DebugScreen) initStyles() {
 	ds.tabStyle = lipgloss.NewStyle().
 		Padding(0, 1).
 		Foreground(lipgloss.Color("8"))
-
-	ds.activeTabStyle = lipgloss.NewStyle().
-		Padding(0, 1).
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("4")).
-		Bold(true)
 
 	ds.logStyle = lipgloss.NewStyle().
 		Padding(1).
@@ -630,7 +623,7 @@ func (ds *DebugScreen) renderTabs() string {
 		tabText := fmt.Sprintf(" %s ", tab)
 
 		if i == ds.activeTab {
-			renderedTabs = append(renderedTabs, ds.activeTabStyle.Render(tabText))
+			renderedTabs = append(renderedTabs, selectedTabStyle.Render(tabText))
 		} else {
 			renderedTabs = append(renderedTabs, ds.tabStyle.Render(tabText))
 		}
