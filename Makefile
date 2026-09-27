@@ -1,7 +1,6 @@
 # Makefile for MCP-TUI
 
 BINARY_NAME=mcp-tui
-VERSION?=dev
 BUILD_DIR=bin
 DIST_DIR=dist
 
@@ -15,8 +14,8 @@ GOMOD=$(GOCMD) mod
 GOFMT=$(GOCMD) fmt
 GOLANGCI_LINT=$(GOCMD) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 
-# Build flags
-LDFLAGS=-ldflags "-X main.version=$(VERSION)"
+# Build flags: without VERSION the binary reports the version in main.go
+LDFLAGS=$(if $(VERSION),-ldflags "-X main.version=$(VERSION)")
 
 .PHONY: all build clean test race fmt-check ci coverage lint fmt vet deps install dev release help demo-bins demo demos docs-media
 
