@@ -305,10 +305,13 @@ func resultPanel(width, height int) lipgloss.Style {
 func (ts *ToolScreen) renderResultHeading(width, height int) string {
 	var heading strings.Builder
 	if ts.result.call.IsError {
+		// Reverse video over red: the block is red and the text is the
+		// terminal's own background colour. Palette white on palette red
+		// is near-identical in some themes (Catppuccin Mocha).
 		errBannerStyle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("15")). // white text
-			Background(lipgloss.Color("9")).  // red background
+			Foreground(lipgloss.Color("9")).
+			Reverse(true).
 			Padding(0, 1)
 		heading.WriteString(errBannerStyle.Render("⚠ Tool reported an error (isError:true)"))
 		heading.WriteString(" ")

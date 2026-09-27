@@ -1,10 +1,15 @@
 package screens
 
 import (
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	imcp "github.com/standardbeagle/mcp-tui/internal/mcp"
 )
@@ -155,5 +160,50 @@ func TestToolScreen_IsErrorVsOutputViolations_Distinguishable(t *testing.T) {
 	}
 	if !strings.Contains(view, "Output schema violations") {
 		t.Errorf("outputSchema banner must still render alongside isError; view=\n%s", view)
+	}
+}
+
+// The banner was palette bright white on palette red, which Catppuccin
+// Mocha draws as #a6adc8 on #f38ba8: a pink block with unreadable text.
+// Reverse video over the red foreground paints the block red and draws
+// the text in the terminal's own background colour, a pair that stays
+// readable wherever red text on the background is.
+func TestToolScreen_IsErrorBannerTextIsTerminalBackgroundOnRed(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+
+	tool := imcp.Tool{
+		Name: "validate_input",
+		InputSchema: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	}
+	ts := NewToolScreen(&tool, nil)
+	ts.Update(tea.WindowSizeMsg{Width: 156, Height: 43})
+	ts.Update(toolExecutionCompleteMsg{
+		Result: &imcp.CallToolResult{
+			IsError: true,
+			Content: []imcp.Content{{Type: "text", Text: "validation failed: 'count' must be a positive integer"}},
+		},
+	})
+
+	view := ts.View()
+	match := regexp.MustCompile(`\x1b\[([0-9;]*)m[^\x1b]*⚠ Tool reported an error`).FindStringSubmatch(view)
+	if match == nil {
+		t.Fatalf("isError banner is not styled:\n%s", view)
+	}
+	params := strings.Split(match[1], ";")
+	if !slices.Contains(params, "7") {
+		t.Errorf("banner is not reverse video: %q", match[0])
+	}
+	if !slices.Contains(params, "91") {
+		t.Errorf("banner is not drawn in red: %q", match[0])
+	}
+	for _, p := range params {
+		if n, err := strconv.Atoi(p); err == nil && (n >= 40 && n <= 48 || n >= 100) {
+			t.Errorf("banner sets a palette background (SGR %d): %q", n, match[0])
+		}
 	}
 }
