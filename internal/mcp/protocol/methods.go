@@ -118,7 +118,7 @@ const (
 // (request true) or a notification, on protocol version; an empty version
 // accepts a method any version defines. For an undefined method it also
 // returns the defined server method it most likely meant, or "".
-func CheckServerMethod(version, method string, request bool) (MethodProblem, string) {
+func CheckServerMethod(version, method string, request bool) (problem MethodProblem, meant string) {
 	l, ok := serverSends[method]
 	switch {
 	case !ok && isClientMethod(method):

@@ -171,11 +171,12 @@ type searchTicketsOutput struct {
 
 // searchTickets filters the desk and returns the structured result and its
 // text rendering. Limit has already been defaulted by the input schema.
-func searchTickets(in searchTicketsInput) (searchTicketsOutput, string) {
+func searchTickets(in searchTicketsInput) (out searchTicketsOutput, text string) {
 	query := strings.ToLower(in.Query)
-	out := searchTicketsOutput{Tickets: []ticketSummary{}}
+	out = searchTicketsOutput{Tickets: []ticketSummary{}}
 	var lines []string
-	for _, t := range tickets {
+	for i := range tickets {
+		t := &tickets[i]
 		switch {
 		case in.Status != "" && t.Status != in.Status,
 			query != "" && !strings.Contains(strings.ToLower(t.Subject+" "+t.Body), query),
@@ -320,7 +321,7 @@ func scheduleCallback(ctx context.Context, req *mcp.CallToolRequest, in schedule
 		resp, answered := req.Params.InputResponses[callbackTimeInputKey]
 		if !answered {
 			return &mcp.CallToolResult{InputRequests: mcp.InputRequestMap{
-				callbackTimeInputKey: callbackTimeElicitation(t, c),
+				callbackTimeInputKey: callbackTimeElicitation(t.ID, &c),
 			}}, nil, nil
 		}
 		elicited, ok := resp.(*mcp.ElicitResult)
@@ -350,9 +351,9 @@ func scheduleCallback(ctx context.Context, req *mcp.CallToolRequest, in schedule
 		t.ID, c.Name, c.Company, at.UTC().Format("Mon 2 Jan 2006"), at.UTC().Format("15:04"), phone)), nil, nil
 }
 
-func callbackTimeElicitation(t Ticket, c Customer) *mcp.ElicitParams {
+func callbackTimeElicitation(ticketID string, c *Customer) *mcp.ElicitParams {
 	return &mcp.ElicitParams{
-		Message: fmt.Sprintf("When should Acme call %s (%s) about %s?", c.Name, c.Company, t.ID),
+		Message: fmt.Sprintf("When should Acme call %s (%s) about %s?", c.Name, c.Company, ticketID),
 		RequestedSchema: objectSchema([]string{"time"},
 			"time", &jsonschema.Schema{Type: "string", Title: "Callback time (UTC)", Description: "e.g. 2026-09-29T15:00:00Z", Format: "date-time"},
 			"phone", &jsonschema.Schema{Type: "string", Title: "Phone number", Description: "Leave empty to use the number on file"}),

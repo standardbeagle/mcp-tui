@@ -21,7 +21,7 @@ type roundTripCase struct {
 	argsFlag string
 	method   string
 	input    officialMCP.InputRequest
-	target   func(tool string, args []string) Target
+	target   func(tool string, args []string) *Target
 }
 
 var roundTripCases = []roundTripCase{
@@ -35,8 +35,8 @@ var roundTripCases = []roundTripCase{
 			},
 			MaxTokens: 50,
 		},
-		target: func(tool string, args []string) Target {
-			return Target{SamplingStub: "Thanks for writing in.", SamplingTriggerTool: tool, SamplingTriggerArgs: args}
+		target: func(tool string, args []string) *Target {
+			return &Target{SamplingStub: "Thanks for writing in.", SamplingTriggerTool: tool, SamplingTriggerArgs: args}
 		},
 	},
 	{
@@ -50,8 +50,8 @@ var roundTripCases = []roundTripCase{
 				Properties: map[string]*jsonschema.Schema{"time": {Type: "string"}},
 			},
 		},
-		target: func(tool string, args []string) Target {
-			return Target{ElicitStub: `{"time":"2026-09-29T15:00:00Z"}`, ElicitTriggerTool: tool, ElicitTriggerArgs: args}
+		target: func(tool string, args []string) *Target {
+			return &Target{ElicitStub: `{"time":"2026-09-29T15:00:00Z"}`, ElicitTriggerTool: tool, ElicitTriggerArgs: args}
 		},
 	},
 }
@@ -99,13 +99,13 @@ func keyValueArguments(_ *mcp.Tool, pairs []string) (map[string]any, error) {
 	return args, nil
 }
 
-func runRoundTrip(t *testing.T, tc roundTripCase, target Target, register func(*officialMCP.Server)) ScenarioResult {
+func runRoundTrip(t *testing.T, tc roundTripCase, target *Target, register func(*officialMCP.Server)) ScenarioResult {
 	t.Helper()
 	srv := newSDKTestServer(t, register)
 	defer srv.Close()
 	target.URL = srv.URL
 	target.ToolArguments = keyValueArguments
-	r := NewRunner(&target)
+	r := NewRunner(target)
 	defer r.Close()
 	return r.Run(withTimeout(t, 30*time.Second), tc.scenario)
 }

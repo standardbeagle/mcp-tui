@@ -16,7 +16,7 @@ import (
 // wrapped by the SDK's auth step, then by the streamable transport and the
 // JSON-RPC call.
 func tokenEndpointRejection(step, code, description string, status int) error {
-	req, _ := http.NewRequest(http.MethodPost, "https://auth.example.com/token?client_secret=hunter2", nil)
+	req, _ := http.NewRequest(http.MethodPost, "https://auth.example.com/token?client_secret=hunter2", http.NoBody)
 	retrieve := &oauth2.RetrieveError{
 		Response:         &http.Response{StatusCode: status, Status: http.StatusText(status), Request: req},
 		ErrorCode:        code,

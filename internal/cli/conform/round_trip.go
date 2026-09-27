@@ -30,8 +30,8 @@ type roundTrip struct {
 	answered    *atomic.Int64 // requests of method the stub has answered
 }
 
-func (r *Runner) samplingRoundTrip() roundTrip {
-	return roundTrip{
+func (r *Runner) samplingRoundTrip() *roundTrip {
+	return &roundTrip{
 		method: "sampling/createMessage", stubFlag: "--sampling-stub",
 		toolFlag: "--sampling-trigger-tool", argsFlag: "--sampling-trigger-args",
 		stub: r.target.SamplingStub, tool: r.target.SamplingTriggerTool, defaultTool: "sampleLLM",
@@ -39,8 +39,8 @@ func (r *Runner) samplingRoundTrip() roundTrip {
 	}
 }
 
-func (r *Runner) elicitationRoundTrip() roundTrip {
-	return roundTrip{
+func (r *Runner) elicitationRoundTrip() *roundTrip {
+	return &roundTrip{
 		method: "elicitation/create", stubFlag: "--elicit-stub",
 		toolFlag: "--elicit-trigger-tool", argsFlag: "--elicit-trigger-args",
 		stub: r.target.ElicitStub, tool: r.target.ElicitTriggerTool, defaultTool: "startElicitation",
@@ -56,7 +56,7 @@ func (r *Runner) elicitationRoundTrip() roundTrip {
 // Skipped when no stub is configured (the run cannot wait for a human),
 // when the server has no trigger tool, or when the trigger tool needs
 // arguments that were not supplied.
-func (r *Runner) scenarioRoundTrip(ctx context.Context, rt roundTrip) ScenarioResult {
+func (r *Runner) scenarioRoundTrip(ctx context.Context, rt *roundTrip) ScenarioResult {
 	if rt.stub == "" {
 		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: " + rt.stubFlag + " not set"}
 	}

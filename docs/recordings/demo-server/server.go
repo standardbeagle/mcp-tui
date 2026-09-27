@@ -217,9 +217,9 @@ func triageTicketPrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetP
 func weeklySummaryPrompt(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	counts := map[string]int{}
 	lines := make([]string, len(tickets))
-	for i, t := range tickets {
-		counts[t.Status]++
-		lines[i] = ticketLine(t)
+	for i := range tickets {
+		counts[tickets[i].Status]++
+		lines[i] = ticketLine(&tickets[i])
 	}
 	tally := make([]string, len(ticketStatuses))
 	for i, s := range ticketStatuses {

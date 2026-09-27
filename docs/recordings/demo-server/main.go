@@ -49,8 +49,9 @@ func main() {
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := run(ctx, cfg); err != nil {
+	err := run(ctx, cfg)
+	stop()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "demo-server:", err)
 		os.Exit(1)
 	}

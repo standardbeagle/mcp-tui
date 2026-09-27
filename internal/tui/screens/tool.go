@@ -736,7 +736,8 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return ts, nil
 
 	case ConfirmDecisionMsg:
-		return ts, ts.handleConfirmDecision(msg)
+		cmd := ts.handleConfirmDecision(msg)
+		return ts, cmd
 	}
 
 	return ts, nil
@@ -953,7 +954,8 @@ func (ts *ToolScreen) handleScreenKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool)
 	case keyEsc:
 		return ts, func() tea.Msg { return BackMsg{} }, true
 	case keyCtrlL, keyCtrlD, keyF12:
-		return ts, ts.showDebugOverlayCmd(), true
+		cmd := ts.showDebugOverlayCmd()
+		return ts, cmd, true
 	}
 	if ts.result.shown() && ts.handleResultScrollKey(msg) {
 		return ts, nil, true
@@ -983,7 +985,8 @@ func (ts *ToolScreen) handleToolbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ts, nil
 
 	case "c":
-		return ts, ts.toggleCLICommandDisplay()
+		cmd := ts.toggleCLICommandDisplay()
+		return ts, cmd
 
 	case "v":
 		// Enter result viewing mode if we have results
@@ -1080,7 +1083,8 @@ func (ts *ToolScreen) handleFieldKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		ts.toggleSendNull(field)
 		return ts, nil, true
 	case "ctrl+v":
-		return ts, ts.pasteIntoFieldCmd(), true
+		cmd := ts.pasteIntoFieldCmd()
+		return ts, cmd, true
 	default:
 		model, cmd := ts.typeIntoField(msg)
 		return model, cmd, true
@@ -1230,7 +1234,8 @@ func (ts *ToolScreen) activateCursorButton() (tea.Model, tea.Cmd) {
 	case executePos:
 		return ts.submit()
 	case cliPos:
-		return ts, ts.showCLICommandBox()
+		cmd := ts.showCLICommandBox()
+		return ts, cmd
 	case backPos:
 		// Back button
 		return ts, func() tea.Msg { return BackMsg{} }
@@ -1246,7 +1251,8 @@ func (ts *ToolScreen) submit() (tea.Model, tea.Cmd) {
 		ts.pendingConfirm = true
 		return ts, openConfirmOverlay(&ts.tool)
 	}
-	return ts, ts.executeTool()
+	cmd := ts.executeTool()
+	return ts, cmd
 }
 
 // openConfirmOverlay returns a tea.Cmd that opens the destructive-tool
@@ -1648,6 +1654,8 @@ func (ts *ToolScreen) View() string {
 // fitWidth is style wrapping its text to the form's width, so what is
 // measured is what is drawn: a line the terminal wraps itself is one line
 // to lipgloss.Height and two on screen.
+//
+//nolint:gocritic // hugeParam: lipgloss.Style is a value type whose methods copy it anyway
 func (ts *ToolScreen) fitWidth(style lipgloss.Style) lipgloss.Style {
 	return style.Width(ts.formWidth())
 }
@@ -1942,6 +1950,8 @@ func (ts *ToolScreen) renderFieldInput(i int, field *toolField) string {
 }
 
 // inputBox is style spanning the form: the box around a text input.
+//
+//nolint:gocritic // hugeParam: lipgloss.Style is a value type whose methods copy it anyway
 func (ts *ToolScreen) inputBox(style lipgloss.Style) lipgloss.Style {
 	return style.Width(ts.formWidth() - 2) // the border
 }
@@ -2159,8 +2169,7 @@ func (ts *ToolScreen) resultHelpText() string {
 
 // focusHelpText is the help for the field or button the cursor is on.
 func (ts *ToolScreen) focusHelpText() string {
-	switch {
-	case ts.inputFocused():
+	if ts.inputFocused() {
 		helpText := "Tab: Navigate • Enter: Execute • Ctrl+V: Paste • Ctrl+T: Task mode • " +
 			"Ctrl+O: Send schema violations • Ctrl+L: Debug Log • Esc: Back"
 		if ts.rawJSONMode {
