@@ -95,8 +95,9 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 | `c` | Copy selected item (copies capabilities JSON on the Capabilities tab; clears logs on the Statistics tab) |
 | `y` | Copy selected item / capabilities JSON |
 | `Ctrl+E` | Export the session recording (`.json` trace + `.sh` replay script) |
-| `Ctrl+C` / `Esc` | Close the debug overlay |
-| `b` / `Alt+←` / `Ctrl+D` / `Ctrl+L` / `F12` | Close the debug overlay |
+| `Esc` | Back one level: from a message's detail to the list, from the list to the screen the debug screen was opened from. It never quits mcp-tui |
+| `b` / `Alt+←` | Same as `Esc`; `Enter` also closes a message's detail |
+| `Ctrl+C` / `Ctrl+D` / `Ctrl+L` / `F12` | Close the debug overlay, from the detail too |
 
 ### Notifications tab
 
