@@ -91,7 +91,8 @@ to shape a completion request:
 | `--sampling-trigger-args` | An argument for that tool, `key=value` or `key:=<json>` as in `tool call`; repeat for more |
 | `--elicit-trigger-tool` | Tool that triggers `elicitation/create` (default `startElicitation`) |
 | `--elicit-trigger-args` | An argument for that tool, as `--sampling-trigger-args` |
-| `--tool` | Tool that fails by design, for `verify.seterror-content` (as `verify --tool`) |
+| `--tool` | Tool that fails by design, for `tools.call.isError` and `verify.seterror-content` (as `verify --tool`) |
+| `--tool-args` | An argument for `--tool` in `tools.call.isError`, as `--sampling-trigger-args` |
 | `--completion-prompt` | Prompt name (or template URI with `--completion-resource`) for `completion/complete` |
 | `--completion-resource` | Treat `--completion-prompt` as a resource template URI |
 | `--completion-arg` | Argument name for `completion/complete` |
@@ -116,6 +117,19 @@ mcp-tui conform http://localhost:8000/mcp \
 arguments, in order, and passes on the first that answers without a tool
 error; it is skipped when none does. `completion.complete` is skipped when
 the server does not declare the `completions` capability.
+
+`tools.call.isError` checks that a failing tool call comes back as
+`isError: true` with non-empty content. Name the failing call with `--tool`
+and, when it needs them, `--tool-args`; the scenario then fails if the tool
+is missing, succeeds, or returns an error with no content. Without `--tool`
+it picks a tool whose name contains `error`, `fail` or `invalid` (else the
+first tool), calls it with no arguments, and is skipped when that call
+succeeds.
+
+```bash
+mcp-tui conform http://localhost:8000/mcp --scenario tools.call.isError \
+  --tool lookup_customer --tool-args customer_id=C-4040
+```
 
 ## CI with JUnit
 

@@ -62,11 +62,18 @@ Examples:
   mcp-tui conform --sampling-stub "ok" --cmd npx \
       --args "@modelcontextprotocol/server-everything,stdio" \
       --sampling-trigger-args prompt=hello
+  mcp-tui conform --tool lookup_customer --tool-args customer_id=C-4040 \
+      http://localhost:8000/mcp
 
 sampling.createMessage and elicitation.create pass only when the trigger
 tool makes the server send that request and the stub answers it. A trigger
 tool that needs arguments is skipped unless --sampling-trigger-args /
 --elicit-trigger-args supply them.
+
+tools.call.isError calls --tool with --tool-args when --tool is given, and
+then fails unless that call returns isError:true with non-empty content.
+Without --tool it picks a tool whose name suggests it fails, calls it with
+no arguments, and skips when the call succeeds.
 
 Exit codes:
   0  every scenario passed (skipped scenarios count as passing)
@@ -87,7 +94,10 @@ Exit codes:
 	cmd.Flags().StringArray("elicit-trigger-args", nil,
 		"Argument for the elicitation trigger tool as key=value or key:=<json>, as in `tool call` (repeatable)")
 	cmd.Flags().String("tool", "",
-		"(verify.seterror-content) Tool that fails by design, as verify's --tool (default: \"echo\", skipped when absent)")
+		"Tool that fails by design, called by tools.call.isError and verify.seterror-content "+
+			"(defaults: a tool named like error/fail/invalid, and \"echo\")")
+	cmd.Flags().StringArray("tool-args", nil,
+		"(tools.call.isError) Argument for --tool as key=value or key:=<json>, as in `tool call` (repeatable)")
 	cmd.Flags().String("completion-prompt", "",
 		"Prompt name (or resource template URI when --completion-resource is set) for completion/complete")
 	cmd.Flags().Bool("completion-resource", false,
@@ -206,6 +216,7 @@ func applyConformFlags(cmd *cobra.Command, target *conform.Target) {
 	target.ElicitTriggerArgs = flagStringArray(cmd, "elicit-trigger-args")
 	target.ToolArguments = triggerToolArguments
 	target.ToolName = flagString(cmd, "tool")
+	target.ToolArgs = flagStringArray(cmd, "tool-args")
 	if v := flagString(cmd, "completion-prompt"); v != "" {
 		target.CompletionPromptName = v
 	}
