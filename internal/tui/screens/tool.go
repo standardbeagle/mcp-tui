@@ -1256,39 +1256,6 @@ func (ts *ToolScreen) submit() (tea.Model, tea.Cmd) {
 	return ts, ts.executeTool()
 }
 
-// renderToolBadges produces a colored representation of the tool's
-// annotation badges for terminal display. Color coding (per task spec):
-//
-//	[D] red   — destructive
-//	[R] green — readOnly
-//	[I] blue  — idempotent
-//	[O] gray  — openWorld (informational)
-//
-// The plain (uncolored) badge string lives on Tool.BadgeString so non-TUI
-// callers (CLI list, JSON output, log lines) get a stable string while the
-// TUI applies styling.
-func renderToolBadges(tool *mcp.Tool) string {
-	var out strings.Builder
-	dStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))   // red
-	rStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))  // green
-	iStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))  // blue
-	oStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("243")) // gray
-
-	switch {
-	case tool.IsDestructive():
-		out.WriteString(dStyle.Render("[D]"))
-	case tool.IsReadOnly():
-		out.WriteString(rStyle.Render("[R]"))
-	}
-	if tool.IsIdempotent() {
-		out.WriteString(iStyle.Render("[I]"))
-	}
-	if tool.IsOpenWorld() {
-		out.WriteString(oStyle.Render("[O]"))
-	}
-	return out.String()
-}
-
 // openConfirmOverlay returns a tea.Cmd that opens the destructive-tool
 // confirm overlay. Extracted as a free function so tests can route the
 // returned message through the screen without depending on the screen

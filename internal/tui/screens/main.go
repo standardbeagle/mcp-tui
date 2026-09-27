@@ -3,6 +3,7 @@ package screens
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -2439,6 +2440,12 @@ func (ms *MainScreen) renderToolSplitView() string {
 	// Join panes horizontally
 	builder.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane))
 
+	// The markers in the list are explained once, under it.
+	if slices.ContainsFunc(ms.tools, func(tool mcp.Tool) bool { return tool.BadgeString() != "" }) {
+		builder.WriteString("\n")
+		builder.WriteString(renderBadgeLegend())
+	}
+
 	return builder.String()
 }
 
@@ -2624,6 +2631,10 @@ func buildToolDetailContent(tool *mcp.Tool) string {
 	}
 	contentBuilder.WriteString(header)
 	contentBuilder.WriteString("\n")
+	if annotations := toolAnnotationsLine(tool); annotations != "" {
+		contentBuilder.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Render(annotations))
+		contentBuilder.WriteString("\n")
+	}
 	// Echo the raw Name when it differs from DisplayName for unambiguous reference.
 	if tool.DisplayName() != tool.Name {
 		nameLineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
