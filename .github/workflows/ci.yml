@@ -85,6 +85,40 @@ jobs:
       - name: go test -race
         run: go test -race ./internal/... -timeout 20m
 
+  # Reports vulnerabilities reachable from mcp-tui's code in its modules and
+  # in the standard library of the Go it is released with. The action installs
+  # govulncheck with that Go, so the stdlib checked is the one that ships.
+  govulncheck:
+    name: Vulnerability check
+    runs-on: ubuntu-latest
+    steps:
+      # The action checks the repository out itself.
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: '1.25'
+          go-package: ./...
+
+  # The npm installer runs on every user platform, and extracts with whatever
+  # tar the platform has, so it is tested on all three.
+  npm-installer:
+    name: npm installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: node --test
+        run: node --test scripts/install.test.js
+
   build:
     name: Cross-platform build
     runs-on: ubuntu-latest
