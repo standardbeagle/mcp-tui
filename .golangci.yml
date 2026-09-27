@@ -60,6 +60,14 @@ linters:
       - linters:
           - staticcheck
         text: 'SA1019: .*github\.com/modelcontextprotocol/go-sdk/mcp\.'
+      # The recording demo server is a fixture: its repeated literals are the
+      # demo's seed data (customer IDs, ticket statuses) and the wire words
+      # it serves (JSON Schema types, MIME types, OAuth parameters), read in
+      # place like test fixtures. Constants would hide the data the
+      # recordings show. Every other linter still runs on it.
+      - path: docs/recordings/demo-server/
+        linters:
+          - goconst
       - path: _test\.go
         linters:
           - dupl
