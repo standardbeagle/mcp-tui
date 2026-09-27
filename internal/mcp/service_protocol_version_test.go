@@ -34,6 +34,14 @@ func connectInMemory(t *testing.T, server *officialMCP.Server, svc *service, con
 		t.Fatalf("svc.Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Disconnect() })
+	// Every in-memory server here is a go-sdk server, so whatever the test
+	// drives (progress, sampling, elicitation, tasks, subscriptions), the
+	// protocol watcher must find nothing wrong with it.
+	t.Cleanup(func() {
+		if vs := svc.ProtocolViolations(); len(vs) != 0 {
+			t.Errorf("protocol watcher reported a go-sdk server: %q", violationKinds(vs))
+		}
+	})
 	return ss
 }
 

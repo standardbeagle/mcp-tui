@@ -22,6 +22,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/outputvalidation"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/protocol"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/protocolwatch"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	sessionPkg "github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
@@ -148,6 +149,11 @@ type service struct {
 	taskLink  *tasks.Link
 	tasks     *tasks.Client
 	taskTools map[string]string
+
+	// protocolWatch checks every message the server sends against JSON-RPC
+	// 2.0 and the negotiated version (protocol_watch.go); it watches the
+	// wire next to the task link.
+	protocolWatch *protocolwatch.Watcher
 
 	// progressRoutes maps each progressToken of a call in flight to that
 	// call; progressSeq numbers the tokens (progress.go).
@@ -448,7 +454,9 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		return fmt.Errorf("failed to create transport: %w", err)
 	}
 	s.initTasks()
-	tappedTransport := wiretap.New(s.taskLink).Transport(transport)
+	s.initProtocolWatch()
+	tappedTransport := wiretap.New(s.protocolWatch, s.taskLink).Transport(transport)
+	protocolWatch := s.protocolWatch
 
 	// Snapshot the session manager before releasing the lock; Disconnect may
 	// swap service fields while the handshake is in flight. The epoch lets us
@@ -469,6 +477,9 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 
 	if clientSession := sessionManager.GetSession(); clientSession != nil {
 		handshake.logResult(requestedProtocolVersion(config.ProtocolVersion), clientSession.InitializeResult())
+		if res := clientSession.InitializeResult(); res != nil {
+			protocolWatch.SetProtocolVersion(res.ProtocolVersion)
+		}
 		logMethodHeadersSuperseded(config, clientSession.InitializeResult())
 		applyServerLogLevel(ctx, clientSession, config.ServerLogLevel)
 		awaitSubscriptionsAck(ctx, clientSession.InitializeResult(), subscriptionsAcked)

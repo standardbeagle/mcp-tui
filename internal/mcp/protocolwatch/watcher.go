@@ -179,6 +179,8 @@ func (w *Watcher) Malformed(raw []byte, err error) {
 		reason = `it lacks "jsonrpc": "2.0"`
 	case string(probe.ID) == "null" && probe.Method == nil && probe.Error != nil && probe.Result == nil:
 		return
+	case probe.ID == nil && probe.Method == nil:
+		reason = "it is a response without an id"
 	}
 	w.report(Violation{
 		Kind:    KindMalformed,

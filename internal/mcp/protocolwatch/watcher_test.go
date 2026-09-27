@@ -195,6 +195,8 @@ func TestWatcher_Malformed(t *testing.T) {
 		{"not JSON", `event stream closed`,
 			`server sent a message that is not JSON-RPC 2.0: it is not JSON`},
 		{"response without id", `{"jsonrpc":"2.0","result":{}}`,
+			`server sent a message that is not JSON-RPC 2.0: it is a response without an id`},
+		{"bad id type", `{"jsonrpc":"2.0","id":{"n":1},"result":{}}`,
 			`server sent a message that is not JSON-RPC 2.0: invalid request`},
 	}
 	for _, tt := range tests {

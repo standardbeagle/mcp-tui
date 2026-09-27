@@ -39,6 +39,9 @@ func (s *service) onReconnected(session *officialMCP.ClientSession) {
 	s.startTaskSession(session)
 
 	s.mu.Lock()
+	if res := session.InitializeResult(); res != nil {
+		s.protocolWatch.SetProtocolVersion(res.ProtocolVersion)
+	}
 	subscribed := make([]string, 0, len(s.subscribedResources))
 	for uri := range s.subscribedResources {
 		subscribed = append(subscribed, uri)
