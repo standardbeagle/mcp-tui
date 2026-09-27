@@ -1,181 +1,45 @@
 package mcp
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-// restoreHTTPDebugging returns the process-global transport to its original
-// state, whatever the test did to it.
-func restoreHTTPDebugging(t *testing.T) {
-	t.Helper()
-	original := http.DefaultTransport
-	t.Cleanup(func() {
-		httpDebugMu.Lock()
-		defer httpDebugMu.Unlock()
-		http.DefaultTransport = original
-		originalTransport = nil
-	})
-	EnableHTTPDebugging(false) // start from a known state
-}
-
-// Enabling debugging must be reversible. It used to early-return on false, so
-// once enabled it could never be turned off.
-func TestEnableHTTPDebuggingIsReversible(t *testing.T) {
-	restoreHTTPDebugging(t)
-
-	base := http.DefaultTransport
-
-	EnableHTTPDebugging(true)
-	assert.NotSame(t, base, http.DefaultTransport, "enabling must wrap the transport")
-	_, wrapped := http.DefaultTransport.(*debugRoundTripper)
-	assert.True(t, wrapped, "the wrapped transport must be the debug round-tripper")
-
-	EnableHTTPDebugging(false)
-	assert.Same(t, base, http.DefaultTransport, "disabling must restore the original transport")
-}
-
-// Enabling twice must not nest round-trippers: each layer buffers every
-// response body, so N services used to mean N nested readers.
-func TestEnableHTTPDebuggingDoesNotNest(t *testing.T) {
-	restoreHTTPDebugging(t)
-
-	base := http.DefaultTransport
-
-	EnableHTTPDebugging(true)
-	first := http.DefaultTransport
-
-	EnableHTTPDebugging(true)
-	EnableHTTPDebugging(true)
-	assert.Same(t, first, http.DefaultTransport, "re-enabling must be idempotent")
-
-	rt, ok := first.(*debugRoundTripper)
-	require.True(t, ok)
-	assert.Same(t, base, rt.base, "the debug round-tripper must wrap the original, not another wrapper")
-
-	EnableHTTPDebugging(false)
-	assert.Same(t, base, http.DefaultTransport)
-}
-
-// Disabling when never enabled must be a harmless no-op.
-func TestEnableHTTPDebuggingDisableWithoutEnable(t *testing.T) {
-	restoreHTTPDebugging(t)
-
-	base := http.DefaultTransport
-	EnableHTTPDebugging(false)
-	assert.Same(t, base, http.DefaultTransport)
-}
-
-// The debug round-tripper buffers response bodies so it can inspect them. It
-// must never do that for a stream: an SSE body has no EOF, so io.ReadAll would
-// block forever and grow without bound.
-func TestDebugRoundTripperDoesNotBufferEventStream(t *testing.T) {
-	requireLocalListener(t)
-
-	// A server that sends one SSE event and then holds the connection open,
-	// exactly like a real MCP SSE endpoint.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			_, _ = w.Write([]byte("event: endpoint\ndata: /session/1\n\n"))
-			f.Flush()
-		}
-		<-r.Context().Done() // never terminate the body on our own
-	}))
-	defer server.Close()
-
-	rt := &debugRoundTripper{base: http.DefaultTransport, debugMode: true}
-	client := &http.Client{Transport: rt}
-
-	req, err := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
-	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
-	defer cancel()
-	req = req.WithContext(ctx)
-
-	done := make(chan struct{})
-	var resp *http.Response
-	go func() {
-		defer close(done)
-		//nolint:bodyclose // the body must stay open past the select below; the outer test closes it via defer.
-		resp, err = client.Do(req)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("RoundTrip blocked on a streaming body: it must not buffer text/event-stream")
-	}
-
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// The first event must still be readable: passing the stream through must
-	// not consume or discard it.
-	buf := make([]byte, 15)
-	n, readErr := resp.Body.Read(buf)
-	require.NoError(t, readErr)
-	assert.Contains(t, string(buf[:n]), "event")
-}
-
-// A non-streaming body is still buffered and remains fully readable by the
-// caller after the round-tripper has inspected it.
-func TestDebugRoundTripperPreservesJSONBody(t *testing.T) {
-	requireLocalListener(t)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
-	}))
-	defer server.Close()
-
-	rt := &debugRoundTripper{base: http.DefaultTransport, debugMode: true}
-	client := &http.Client{Transport: rt}
-
-	resp, err := client.Get(server.URL)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	body := make([]byte, 64)
-	n, _ := resp.Body.Read(body)
-	assert.Contains(t, string(body[:n]), `"jsonrpc":"2.0"`,
-		"the buffered body must be replayed to the caller")
-}
-
-// TestFormatHTTPError_MasksCredentialsInURLAndBodies covers the Ctrl+D HTTP
-// pane when the last captured exchange was an OAuth token request: the code,
-// verifier and issued tokens must never be rendered.
-func TestFormatHTTPError_MasksCredentialsInURLAndBodies(t *testing.T) {
+// TestFormatHTTPErrorWithOverrides_MasksCredentialsInURL covers the HTTP
+// Debug detail when the exchange was an OAuth redirect: the authorization
+// code and state in the URL must never be rendered.
+func TestFormatHTTPErrorWithOverrides_MasksCredentialsInURL(t *testing.T) {
 	info := &HTTPErrorInfo{
-		Method:         "POST",
-		URL:            "https://as.example.com/token?state=st-8f1e2a",
-		StatusCode:     200,
-		RequestHeaders: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
-		RequestBody:    "grant_type=authorization_code&code=ac-7c3d9b&code_verifier=cv-51aa0e",
-		Headers:        map[string]string{"Content-Type": "application/json"},
-		ResponseBody:   `{"access_token":"at-2b9f44","refresh_token":"rt-0d1c73","token_type":"Bearer"}`,
+		Method:         "GET",
+		URL:            "http://127.0.0.1:53121/callback?code=ac-7c3d9b&state=st-8f1e2a&iss=https%3A%2F%2Fas.example.com",
+		StatusCode:     302,
+		RequestHeaders: map[string]string{"Accept": "text/html"},
 	}
 
-	out := FormatHTTPError(info)
+	out := FormatHTTPErrorWithOverrides(info, nil)
 
-	for _, secret := range []string{"st-8f1e2a", "ac-7c3d9b", "cv-51aa0e", "at-2b9f44", "rt-0d1c73"} {
+	for _, secret := range []string{"st-8f1e2a", "ac-7c3d9b"} {
 		if strings.Contains(out, secret) {
-			t.Errorf("HTTP pane leaked %q:\n%s", secret, out)
+			t.Errorf("HTTP detail leaked %q:\n%s", secret, out)
 		}
 	}
-	for _, keep := range []string{"authorization_code", "Bearer"} {
-		if !strings.Contains(out, keep) {
-			t.Errorf("HTTP pane dropped %q:\n%s", keep, out)
-		}
+	if !strings.Contains(out, "iss=") {
+		t.Errorf("HTTP detail dropped the non-secret query:\n%s", out)
+	}
+}
+
+// A body section appears only for the transport error of an exchange that
+// got no response; bodies are not captured.
+func TestFormatHTTPErrorWithOverrides_BodyOnlyForTransportErrors(t *testing.T) {
+	ok := FormatHTTPErrorWithOverrides(&HTTPErrorInfo{Method: "POST", URL: "http://127.0.0.1:8931/mcp", StatusCode: 200}, nil)
+	if strings.Contains(ok, "Response Body") {
+		t.Errorf("an exchange with a response shows an empty body section:\n%s", ok)
+	}
+	failed := FormatHTTPErrorWithOverrides(&HTTPErrorInfo{
+		Method: "POST", URL: "http://127.0.0.1:8931/mcp",
+		ResponseBody: "HTTP Request Failed: dial tcp 127.0.0.1:8931: connect: connection refused",
+	}, nil)
+	if !strings.Contains(failed, "connection refused") {
+		t.Errorf("the transport error is missing:\n%s", failed)
 	}
 }

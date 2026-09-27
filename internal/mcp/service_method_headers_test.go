@@ -12,6 +12,7 @@ import (
 
 	configPkg "github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
@@ -125,15 +126,22 @@ func TestService_HTTPDebugPane_ShowsSentStandardHeaders(t *testing.T) {
 		t.Fatalf("CallTool: %v", err)
 	}
 
-	info := GetLastHTTPError()
-	if info == nil {
-		t.Fatal("no HTTP exchange recorded")
+	// The HTTP Debug tab lists the exchanges the trace kept; the tools/call
+	// one carries the standard headers the SDK sent.
+	var sent http.Header
+	for _, ex := range debug.RecentHTTPExchanges(transports.HTTPTraceComponent) {
+		if ex.RequestHeader.Get("Mcp-Method") == methodToolsCall {
+			sent = ex.RequestHeader
+		}
+	}
+	if sent == nil {
+		t.Fatal("no tools/call exchange recorded")
 	}
 	for name, want := range map[string]string{
 		"Mcp-Method": methodToolsCall, "Mcp-Name": routeTool, "Mcp-Param-Region": "eu-west-1",
 	} {
-		if got := info.RequestHeaders[name]; got != want {
-			t.Errorf("pane %s = %q, want %q (all: %v)", name, got, want, info.RequestHeaders)
+		if got := sent.Get(name); got != want {
+			t.Errorf("recorded %s = %q, want %q (all: %v)", name, got, want, sent)
 		}
 	}
 }
