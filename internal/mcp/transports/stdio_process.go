@@ -64,17 +64,18 @@ func (s *serverStdin) shutdown() error {
 	}
 	// Signal fails where SIGTERM does not exist (Windows); go straight to kill.
 	if s.cmd.Process.Signal(syscall.SIGTERM) == nil {
-		if _, ok := wait(sigtermGrace); ok {
+		if exitErr, ok := wait(sigtermGrace); ok {
 			debug.Warn("Enhanced STDIO: server did not exit after its stdin closed; stopped with SIGTERM",
-				debug.F("grace", stdinCloseGrace))
+				debug.F("grace", stdinCloseGrace), debug.F("exit", exitErr))
 			return nil
 		}
 	}
 	if err := s.cmd.Process.Kill(); err != nil && !stderrors.Is(err, os.ErrProcessDone) {
 		return fmt.Errorf("killing server process %d: %w", s.cmd.Process.Pid, err)
 	}
-	if _, ok := wait(sigtermGrace); ok {
-		debug.Warn("Enhanced STDIO: server ignored stdin close and SIGTERM; killed", debug.F("grace", sigtermGrace))
+	if exitErr, ok := wait(sigtermGrace); ok {
+		debug.Warn("Enhanced STDIO: server ignored stdin close and SIGTERM; killed",
+			debug.F("grace", sigtermGrace), debug.F("exit", exitErr))
 		return nil
 	}
 	return fmt.Errorf("server process %d did not exit after SIGKILL", s.cmd.Process.Pid)

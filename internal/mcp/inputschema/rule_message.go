@@ -61,7 +61,10 @@ func explainRule(reason string, schema map[string]any, value any, atRoot bool) s
 func missingRequired(required []any, object map[string]any, atRoot bool) string {
 	var missing []string
 	for _, name := range required {
-		key, _ := name.(string)
+		key, ok := name.(string)
+		if !ok {
+			continue // jsonschema-go rejects a non-string required entry before validating
+		}
 		if _, present := object[key]; !present {
 			missing = append(missing, fmt.Sprintf("%q", key))
 		}
