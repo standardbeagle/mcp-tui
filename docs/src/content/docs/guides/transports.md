@@ -71,6 +71,22 @@ mcp-tui --transport sse --url http://localhost:5001/sse tool list
 
 The SSE client uses a no-timeout HTTP connection so the hanging GET stays open for the session.
 
+## Proxies
+
+The HTTP, streamable HTTP and SSE transports honor the standard proxy
+environment variables: `HTTPS_PROXY` for `https://` servers, `HTTP_PROXY` for
+`http://` servers, and `NO_PROXY` for hosts to reach directly. A loopback
+server (`localhost`, `127.0.0.1`, `::1`) is always reached directly.
+
+```bash
+HTTPS_PROXY=http://proxy.corp.example:3128 mcp-tui --url https://example.com/mcp tool list
+```
+
+`--debug` logs the route a connection takes (component `mcp-http`, line
+`MCP HTTP proxy route`: the target host and the proxy URL, password masked, or
+`direct`) each time it changes. OAuth requests use the same variables; see
+[OAuth](/mcp-tui/guides/oauth/) for what a proxy turns off there.
+
 ## When servers misbehave
 
 - **Wrong endpoint format** — SSE servers must emit the first event as `event: endpoint` carrying the session URL.

@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Untyped parameters**: a parameter with no `type` takes its type from `const` or a non-null `default` (with a note); otherwise the note says any JSON value is accepted.
 
 ### Fixed
+- **HTTP and SSE servers unreachable behind a proxy**: the MCP connection ignored `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (only OAuth requests used them), so a server reachable only through a corporate proxy could not be reached. Both HTTP transports now use the proxy environment; loopback servers stay direct, and `--debug` logs the proxy each connection goes through.
 - **Browser sign-in cut off by `--timeout`**: the connect timeout (10s by default) also bounded the time a person spent signing in, so an OAuth sign-in with a password and MFA failed as 'connection timed out'. The wait for the browser redirect no longer counts against `--timeout` and is capped at 5 minutes.
 - **Slow and noisy stdio exit**: a one-shot CLI call against a server that ignores its stdin closing (most Node servers) waited 5s before signalling it and then printed two `ERROR ... signal: terminated` lines. The server is now signalled after 500ms, and that stop is not reported as an error.
 - **Errors printed several times**: a failed command printed its error up to four times and then the full flag listing. It now prints the error once, without the usage block, and without the `session connection failed: Operation 'session_connect' failed:` prefixes before the diagnosis.

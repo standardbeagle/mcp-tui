@@ -71,6 +71,7 @@ docs/                    Astro docs site（dev.standardbeagle.com）
 **STDIO**（最穩，薦用）：`officialMCP.CommandTransport{Command: cmd}`。二 exec 處（`transports/factory.go`、`transports/stdio_enhanced.go`）皆先行 `config.ValidateCommand`。stderr 自捕以供診斷；不預跑 command。
 
 **Streamable HTTP / HTTP**：`officialMCP.StreamableClientTransport`。HTTP client 無整體 `Timeout`（其斷 `subscriptions/listen` 與 SSE 回應之長流）；唯限各段（`transports/http_config.go`）：dial 10s、TLS 握手 10s、候 response headers 30s。headers 既至，body 之滯由呼者 ctx 限之。Client 必 accept `application/json` 與 `text/event-stream`。
+- **Proxy**：二 HTTP transport（含 SSE）之 base transport 用 `http.ProxyFromEnvironment`（`HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`；loopback 恆直連），同 OAuth client。`HTTPClientConfig.Proxy` 為注入點；`logProxyChoice` 於路由變時記 debug 一行（`mcp-http`，`MCP HTTP proxy route`，proxy URL 去敏或 `direct`）。net/http 每 process 只讀一次 proxy env，故測試以子進程行之（`http_proxy_test.go`）。
 
 **SSE**（deprecated）：`officialMCP.SSEClientTransport`。最高協商 2025-11-25，連時記 Warn。SDK SSE client 無 OAuthHandler，故 OAuth 於 SSE（及 stdio）連線時即拒（`validateOAuthTransport`）。
 - **CRITICAL**：connection context 必為 `context.Background()`（`sseContextStrategy`），勿用 CLI timeout context，否則殺 hanging GET。Operation context 可用呼者之 ctx。
