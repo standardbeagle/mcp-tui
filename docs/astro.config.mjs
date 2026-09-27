@@ -8,7 +8,7 @@ export default defineConfig({
     starlight({
       title: 'MCP-TUI',
       description:
-        'Fast terminal UI and CLI for testing, debugging, and automating Model Context Protocol servers. STDIO, SSE, and HTTP transports with structured output for CI.',
+        'Test, debug and automate Model Context Protocol servers from the terminal: run MCP tools from schema-built forms, diagnose connection and handshake errors, check spec compliance, and script it for CI.',
       logo: { src: './src/assets/logo.svg', replacesTitle: false },
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/standardbeagle/mcp-tui' },
@@ -51,6 +51,31 @@ export default defineConfig({
         {
           tag: 'meta',
           attrs: { name: 'twitter:card', content: 'summary_large_image' },
+        },
+        {
+          tag: 'meta',
+          attrs: {
+            property: 'og:image:alt',
+            content: 'mcp-tui running a tool from a form built from its input schema, with the result beside it',
+          },
+        },
+        {
+          tag: 'script',
+          attrs: { type: 'application/ld+json' },
+          content: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'SoftwareApplication',
+            name: 'MCP-TUI',
+            applicationCategory: 'DeveloperApplication',
+            operatingSystem: 'Linux, macOS, Windows',
+            description:
+              'Terminal UI and CLI for testing, debugging and automating Model Context Protocol servers.',
+            url: 'https://dev.standardbeagle.com/mcp-tui/',
+            downloadUrl: 'https://github.com/standardbeagle/mcp-tui/releases',
+            license: 'https://opensource.org/licenses/MIT',
+            offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+            author: { '@type': 'Organization', name: 'Standard Beagle', url: 'https://standardbeagle.com' },
+          }),
         },
       ],
       sidebar: [
