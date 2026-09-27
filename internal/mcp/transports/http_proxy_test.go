@@ -99,8 +99,9 @@ func getBody(t *testing.T, client *http.Client, url string) string {
 // filteredProxyEnv is this process's environment without any proxy
 // variable, so the child sees only the proxy the test sets.
 func filteredProxyEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
+	environ := os.Environ()
+	env := make([]string, 0, len(environ))
+	for _, kv := range environ {
 		name, _, _ := strings.Cut(kv, "=")
 		switch strings.ToUpper(name) {
 		case "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "REQUEST_METHOD":

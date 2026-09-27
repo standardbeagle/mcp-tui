@@ -82,9 +82,9 @@ func TestToolResultPicksFieldsFromStructuredContent(t *testing.T) {
 		Content:           []mcp.Content{{Type: "text", Text: "It is mild in Lisbon."}},
 		StructuredContent: map[string]any{"temperature": 21.5, "unit": "celsius"},
 	})
-	var paths []string
-	for _, f := range r.fields {
-		paths = append(paths, f.path)
+	paths := make([]string, len(r.fields))
+	for i, f := range r.fields {
+		paths[i] = f.path
 	}
 	if strings.Join(paths, ",") != "temperature,unit" {
 		t.Errorf("fields = %v, want temperature,unit", paths)

@@ -221,9 +221,9 @@ func weeklySummaryPrompt(context.Context, *mcp.GetPromptRequest) (*mcp.GetPrompt
 		counts[t.Status]++
 		lines[i] = ticketLine(t)
 	}
-	var tally []string
-	for _, s := range ticketStatuses {
-		tally = append(tally, fmt.Sprintf("%s %d", s, counts[s]))
+	tally := make([]string, len(ticketStatuses))
+	for i, s := range ticketStatuses {
+		tally[i] = fmt.Sprintf("%s %d", s, counts[s])
 	}
 	return &mcp.GetPromptResult{
 		Description: "Weekly queue summary",
