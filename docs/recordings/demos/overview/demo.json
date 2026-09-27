@@ -1,0 +1,145 @@
+{
+  "name": "overview",
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "cardBrand": {
+    "name": "mcp-tui",
+    "sub": "standard beagle"
+  },
+  "brand": {
+    "image": "../../assets/sb-logo-on-dark.png",
+    "position": "top-right",
+    "width": 170,
+    "opacity": 0.9
+  },
+  "setup": {
+    "upstream": "../../stage.mjs",
+    "waitFor": "http://127.0.0.1:7690/"
+  },
+  "segments": [
+    {
+      "id": "card-intro",
+      "type": "card",
+      "dur": 4.5,
+      "kicker": "mcp-tui",
+      "title": "Test MCP servers from your terminal",
+      "sub": "Run any tool, see why a connection failed, and script it for CI."
+    },
+    {
+      "id": "tool",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "../verify-a-tool/scene.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    },
+    {
+      "id": "card-errors",
+      "type": "card",
+      "dur": 3,
+      "kicker": "diagnosis",
+      "title": "Why it will not connect",
+      "sub": "The cause and the fix, not a timeout."
+    },
+    {
+      "id": "errors",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "../handshake-errors/stdio.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    },
+    {
+      "id": "card-ci",
+      "type": "card",
+      "dur": 3,
+      "kicker": "CI",
+      "title": "The whole protocol matrix",
+      "sub": "conform checks every scenario and writes JUnit."
+    },
+    {
+      "id": "conform",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "../verify-conform/conform.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    },
+    {
+      "id": "card-outro",
+      "type": "card",
+      "dur": 5,
+      "kicker": "go install github.com/standardbeagle/mcp-tui@latest",
+      "title": "mcp-tui",
+      "sub": "dev.standardbeagle.com/mcp-tui"
+    }
+  ],
+  "narration": {
+    "voice": "en-US-AndrewNeural",
+    "rate": "+4%",
+    "segments": [
+      {
+        "id": "n1",
+        "at": "card-intro+0.4",
+        "text": "mcp-tui is a terminal client for testing Model Context Protocol servers."
+      },
+      {
+        "id": "n2",
+        "at": "tool+0.5",
+        "text": "Point it at a server and it lists the tools. Open one, and the form comes from its input schema."
+      },
+      {
+        "id": "n3",
+        "at": "tool+12",
+        "text": "Run it, and the result shows beside the form."
+      },
+      {
+        "id": "n4",
+        "at": "tool+19",
+        "text": "The CLI button gives you the same call as a shell command, ready for a script."
+      },
+      {
+        "id": "n5",
+        "at": "card-errors+0.3",
+        "text": "When a server won't connect, mcp-tui says why."
+      },
+      {
+        "id": "n6",
+        "at": "errors+1",
+        "text": "This server prints a banner to standard out, which breaks the stdio transport. mcp-tui quotes the line."
+      },
+      {
+        "id": "n7",
+        "at": "errors+13",
+        "text": "This one never answers server discover. The error names the causes and the flag for each."
+      },
+      {
+        "id": "n8",
+        "at": "card-ci+0.3",
+        "text": "For CI, conform runs every protocol scenario and writes a JUnit report."
+      },
+      {
+        "id": "n9",
+        "at": "card-outro+0.4",
+        "text": "Install it with go install or npm."
+      }
+    ]
+  }
+}

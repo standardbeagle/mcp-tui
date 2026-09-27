@@ -1,0 +1,44 @@
+{
+  "name": "debug-screen",
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "cardBrand": {
+    "name": "mcp-tui",
+    "sub": "standard beagle"
+  },
+  "brand": {
+    "image": "../../assets/sb-logo-on-dark.png",
+    "position": "top-right",
+    "width": 170,
+    "opacity": 0.9
+  },
+  "setup": {
+    "upstream": "../../stage.mjs",
+    "waitFor": "http://127.0.0.1:7690/"
+  },
+  "segments": [
+    {
+      "id": "card-intro",
+      "type": "card",
+      "dur": 3.5,
+      "kicker": "mcp-tui",
+      "title": "Every message and every HTTP exchange",
+      "sub": "The debug screen: JSON-RPC traffic both ways, HTTP timing, capabilities and notifications."
+    },
+    {
+      "id": "debug",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "./debug.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    }
+  ]
+}

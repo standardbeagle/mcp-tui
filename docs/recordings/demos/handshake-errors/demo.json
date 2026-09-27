@@ -1,0 +1,94 @@
+{
+  "name": "handshake-errors",
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "cardBrand": {
+    "name": "mcp-tui",
+    "sub": "standard beagle"
+  },
+  "brand": {
+    "image": "../../assets/sb-logo-on-dark.png",
+    "position": "top-right",
+    "width": 170,
+    "opacity": 0.9
+  },
+  "setup": {
+    "upstream": "../../stage.mjs",
+    "waitFor": "http://127.0.0.1:7690/"
+  },
+  "segments": [
+    {
+      "id": "card-intro",
+      "type": "card",
+      "dur": 3.5,
+      "kicker": "mcp-tui",
+      "title": "Transport, handshake and protocol mistakes, named",
+      "sub": "Not \"server may be overloaded\": the status, the line, the rule, and the fix."
+    },
+    {
+      "id": "card-http",
+      "type": "card",
+      "dur": 2.4,
+      "kicker": "streamable HTTP",
+      "title": "Wrong path, wrong transport",
+      "sub": "The HTTP status the server answered, and the flag to change."
+    },
+    {
+      "id": "http",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "./http.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    },
+    {
+      "id": "card-stdio",
+      "type": "card",
+      "dur": 2.4,
+      "kicker": "stdio",
+      "title": "A server that talks too much, or not at all",
+      "sub": "A log line on stdout, quoted. A server that ignores server/discover, named."
+    },
+    {
+      "id": "stdio",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "./stdio.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    },
+    {
+      "id": "card-protocol",
+      "type": "card",
+      "dur": 2.4,
+      "kicker": "JSON-RPC",
+      "title": "A server that breaks the protocol",
+      "sub": "A response nobody asked for, a misspelled notification: dropped by the SDK, named by mcp-tui."
+    },
+    {
+      "id": "protocol",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "./protocol.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    }
+  ]
+}

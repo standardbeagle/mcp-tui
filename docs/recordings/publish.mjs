@@ -2,7 +2,7 @@
 //
 //   node docs/recordings/publish.mjs <name>
 //
-// Reads the engine's output, demos/<name>/out/<name>.webm (plus the .webm.vtt
+// Reads the engine's output, demos/<name>/out/<name>.webm (plus <name>.vtt
 // captions when the demo is narrated), and writes:
 //
 //   docs/public/videos/<name>.webm   the video as recorded (VP9)
@@ -14,7 +14,7 @@
 //                                    entries with "readmeLoop" set
 //
 // The entry for <name> in docs/src/data/videos.json carries the editorial
-// fields (title, description, posterAt, readmeLoop). This script fills in
+// fields (title, description, posterAt, readmeLoop {from, to}). This script fills in
 // what it measures: duration (ISO 8601, for VideoObject) and uploadDate.
 // A demo with no entry is refused: every published video needs a title and
 // description for the page and for search engines.
@@ -66,15 +66,21 @@ ffmpeg(['-i', source, '-c:v', 'libx264', '-preset', 'slow', '-crf', '26', '-pix_
 const posterAt = Math.min(entry.posterAt ?? seconds * 0.6, seconds - 0.1);
 ffmpeg(['-ss', String(posterAt), '-i', source, '-frames:v', '1', '-vf', 'scale=1280:-1', '-quality', '85', out('webp')]);
 
-const captions = `${source}.vtt`;
+const captions = path.join(outDir, `${name}.vtt`);
 if (fs.existsSync(captions)) fs.copyFileSync(captions, out('vtt'));
 else fs.rmSync(out('vtt'), {force: true});
 
+// A README loop is a short excerpt: readmeLoop is {from, to} in seconds.
 if (entry.readmeLoop) {
+  const {from, to} = entry.readmeLoop;
+  if (!(from >= 0 && to > from && to <= seconds)) {
+    console.error(`${name}: readmeLoop needs 0 <= from < to <= ${seconds.toFixed(1)}, got ${JSON.stringify(entry.readmeLoop)}`);
+    process.exit(1);
+  }
   const loop = path.join(docs, 'src/assets/recordings', `${name}.webp`);
   fs.mkdirSync(path.dirname(loop), {recursive: true});
-  ffmpeg(['-i', source, '-vf', 'fps=8,scale=960:-1:flags=lanczos', '-loop', '0', '-quality', '70',
-    '-compression_level', '6', loop]);
+  ffmpeg(['-ss', String(from), '-t', String(to - from), '-i', source, '-vf', 'fps=8,scale=960:-1:flags=lanczos',
+    '-loop', '0', '-quality', '70', '-compression_level', '4', loop]);
 }
 
 const iso = (s) => {

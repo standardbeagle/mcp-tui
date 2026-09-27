@@ -1,0 +1,65 @@
+{
+  "name": "oauth",
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "cardBrand": {
+    "name": "mcp-tui",
+    "sub": "standard beagle"
+  },
+  "brand": {
+    "image": "../../assets/sb-logo-on-dark.png",
+    "position": "top-right",
+    "width": 170,
+    "opacity": 0.9
+  },
+  "setup": {
+    "upstream": "../../stage.mjs",
+    "waitFor": "http://127.0.0.1:7690/"
+  },
+  "segments": [
+    {
+      "id": "card-intro",
+      "type": "card",
+      "dur": 3.5,
+      "kicker": "mcp-tui",
+      "title": "OAuth from discovery to token",
+      "sub": "From the server's 401 to a cached token: client credentials, or registration and the browser."
+    },
+    {
+      "id": "credentials",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "./credentials.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    },
+    {
+      "id": "card-browser",
+      "type": "card",
+      "dur": 2.4,
+      "kicker": "authorization code + PKCE",
+      "title": "No client ID? Register one",
+      "sub": "Dynamic client registration, then the browser sign-in, then a cached token."
+    },
+    {
+      "id": "browser",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "./browser.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    }
+  ]
+}

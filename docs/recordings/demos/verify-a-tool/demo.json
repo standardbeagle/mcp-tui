@@ -1,0 +1,52 @@
+{
+  "name": "verify-a-tool",
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "cardBrand": {
+    "name": "mcp-tui",
+    "sub": "standard beagle"
+  },
+  "brand": {
+    "image": "../../assets/sb-logo-on-dark.png",
+    "position": "top-right",
+    "width": 170,
+    "opacity": 0.9
+  },
+  "setup": {
+    "upstream": "../../stage.mjs",
+    "waitFor": "http://127.0.0.1:7690/"
+  },
+  "segments": [
+    {
+      "id": "card-intro",
+      "type": "card",
+      "dur": 3.5,
+      "kicker": "mcp-tui",
+      "title": "Verify an MCP tool in seconds",
+      "sub": "Point it at a server, pick a tool, and fill the form it builds from the input schema."
+    },
+    {
+      "id": "tui",
+      "type": "browser",
+      "raw": true,
+      "url": "http://127.0.0.1:7690/",
+      "script": "./scene.mjs",
+      "keep": [
+        [
+          "mark:ready",
+          "end"
+        ]
+      ]
+    },
+    {
+      "id": "card-outro",
+      "type": "card",
+      "dur": 3.5,
+      "kicker": "go install github.com/standardbeagle/mcp-tui@latest",
+      "title": "Same call, now a script",
+      "sub": "Every TUI action has a CLI twin you can paste into a shell or a CI job."
+    }
+  ]
+}

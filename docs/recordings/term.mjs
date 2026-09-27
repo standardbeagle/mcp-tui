@@ -85,6 +85,20 @@ export async function terminal(d, {typingDelay = 38, setup = []} = {}) {
     prompt: (timeout = 30000) => waitForPrompt(page, timeout),
     /** Hold the frame so a viewer can read it. */
     hold: (ms) => page.waitForTimeout(ms),
+    /** Leave the TUI: Esc backs out one screen at a time and quits from the
+     *  main screen, so press it until the shell prompt is back. */
+    quitTUI: async () => {
+      for (let i = 0; i < 6; i++) {
+        await page.keyboard.press('Escape');
+        try {
+          await waitForPrompt(page, 1200);
+          return;
+        } catch {
+          // still inside the TUI
+        }
+      }
+      throw new Error('the TUI did not exit after 6 presses of Esc');
+    },
     /** Clear the screen without showing the command. */
     clear: async () => {
       await page.evaluate(() => window.term.clear());
