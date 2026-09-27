@@ -1,62 +1,114 @@
 {
+  "overview": {
+    "title": "mcp-tui in 90 seconds",
+    "description": "A narrated tour: run a tool from its schema, see a failed connection diagnosed, and run the conformance matrix for CI.",
+    "posterAt": 8,
+    "duration": "PT1M33S",
+    "uploadDate": "2026-09-27",
+    "captions": true
+  },
   "verify-a-tool": {
     "title": "Verify an MCP tool in seconds",
     "description": "Connect to a server, pick a tool, fill the form mcp-tui builds from its input schema, run it, and copy the same call as a CLI command.",
-    "readmeLoop": true
+    "readmeLoop": {
+      "from": 4,
+      "to": 25
+    },
+    "duration": "PT42S",
+    "uploadDate": "2026-09-27",
+    "captions": false,
+    "posterAt": 24
   },
   "cli-to-ci": {
     "title": "From a manual run to a CI script",
     "description": "Every TUI action has a CLI equivalent: copy one call with c, export the whole session as a replay script with Ctrl+E, and gate CI on exit codes and JSON output.",
-    "readmeLoop": true
+    "readmeLoop": {
+      "from": 10,
+      "to": 30
+    },
+    "duration": "PT58S",
+    "uploadDate": "2026-09-27",
+    "captions": false,
+    "posterAt": 26
   },
   "schema-validation": {
     "title": "Schema validation before the call goes out",
     "description": "mcp-tui checks arguments against the tool's full input schema and names the argument and rule that broke it, then lets you send the bad call anyway to see how the server rejects it.",
-    "readmeLoop": false
+    "duration": "PT52S",
+    "uploadDate": "2026-09-27",
+    "captions": false
   },
   "handshake-errors": {
-    "title": "Transport and handshake mistakes, named",
-    "description": "A wrong URL path, the wrong transport, a server logging to stdout, a server that ignores server/discover: each one is diagnosed with the fix, not a generic timeout.",
-    "readmeLoop": true
+    "title": "Transport, handshake and protocol mistakes, named",
+    "description": "A wrong URL path, the wrong transport, a server logging to stdout, one that ignores server/discover, one that sends stray JSON-RPC: each diagnosed with its fix.",
+    "readmeLoop": {
+      "from": 6,
+      "to": 26
+    },
+    "duration": "PT1M36S",
+    "uploadDate": "2026-09-27",
+    "captions": false,
+    "posterAt": 12
   },
   "debug-screen": {
     "title": "Every message and every HTTP exchange",
     "description": "The debug screen shows the JSON-RPC traffic in both directions, per-request HTTP timing, the OAuth flow step by step, capabilities and notifications.",
-    "readmeLoop": false
+    "duration": "PT41S",
+    "uploadDate": "2026-09-27",
+    "captions": false
   },
   "verify-conform": {
     "title": "Conformance and security probes for CI",
     "description": "verify probes a server for spec and security gaps; conform runs the whole scenario matrix and writes a JUnit report your CI can show.",
-    "readmeLoop": true
+    "readmeLoop": {
+      "from": 3.5,
+      "to": 18
+    },
+    "duration": "PT47S",
+    "uploadDate": "2026-09-27",
+    "captions": false,
+    "posterAt": 10
   },
   "async-progress-tasks": {
     "title": "Progress, server logs, tasks and subscriptions",
     "description": "Watch progress notifications and server logs while a long tool runs, run a call as an MCP task and wait for it, and follow a resource as it changes.",
-    "readmeLoop": false
+    "duration": "PT1M6S",
+    "uploadDate": "2026-09-27",
+    "captions": false
   },
   "oauth": {
     "title": "OAuth from discovery to token",
     "description": "mcp-tui discovers the authorization server from a 401, gets a token by client credentials or by dynamic registration and the browser flow, and caches it.",
-    "readmeLoop": false
+    "duration": "PT1M1S",
+    "uploadDate": "2026-09-27",
+    "captions": false
   },
   "tools-metadata": {
     "title": "Tool metadata at a glance",
     "description": "Names, titles, annotations and output schemas for every tool, and a confirmation before any tool that declares itself destructive.",
-    "readmeLoop": false
+    "duration": "PT57S",
+    "uploadDate": "2026-09-27",
+    "captions": false
   },
   "resources-prompts": {
     "title": "Resources, templates and prompts",
     "description": "List and read resources of any type, complete URI template variables, and render prompts with their arguments.",
-    "readmeLoop": false
+    "duration": "PT1M29S",
+    "uploadDate": "2026-09-27",
+    "captions": false
   },
   "elicitation-sampling": {
     "title": "Answer elicitation and sampling requests",
     "description": "When a tool needs input mid-call, mcp-tui shows the server's form or its sampling request, interactively in the TUI or from stub flags in the CLI.",
-    "readmeLoop": false
+    "duration": "PT1M0S",
+    "uploadDate": "2026-09-27",
+    "captions": false
   },
   "protocol-versions": {
     "title": "Pin and inspect MCP protocol versions",
     "description": "See which protocol version a server negotiated, pin an older one, and read the multi round-trip input rounds a 2026-07-28 call took.",
-    "readmeLoop": false
+    "duration": "PT52S",
+    "uploadDate": "2026-09-27",
+    "captions": false
   }
 }
