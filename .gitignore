@@ -47,3 +47,6 @@ binaries/
 /docs/recordings/.bin/
 /docs/recordings/demos/*/out/
 /docs/recordings/workspace/
+# Docs video files are docs-media release assets (make docs-media fetches them)
+/docs/public/videos/*.webm
+/docs/public/videos/*.mp4

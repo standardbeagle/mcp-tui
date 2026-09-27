@@ -38,6 +38,12 @@ jobs:
 
       - run: npm ci
 
+      # The videos are docs-media release assets, not files in git.
+      - name: Fetch the docs videos
+        run: gh release download docs-media --dir public/videos --pattern '*.webm' --pattern '*.mp4' --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - run: npm run build
 
       - uses: actions/upload-pages-artifact@v3
