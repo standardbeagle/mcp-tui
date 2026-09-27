@@ -15,6 +15,21 @@ import (
 var handshakeStatuses = []int{
 	http.StatusBadRequest, http.StatusNotFound, http.StatusMethodNotAllowed,
 	http.StatusNotAcceptable, http.StatusUnsupportedMediaType,
+	http.StatusUnauthorized, http.StatusForbidden,
+}
+
+// authActions are the fixes for a server that answered 401/403 on a
+// transport mcp-tui signs in on (streamable HTTP).
+var authActions = map[int][]string{
+	http.StatusUnauthorized: {
+		"The server requires OAuth: sign in with --oauth-dynamic-registration (browser flow), " +
+			"or --oauth-client-id / --oauth-client-secret for a pre-registered client",
+		"Run with --debug to see the server's WWW-Authenticate challenge",
+	},
+	http.StatusForbidden: {
+		"The server refused this client: check the scopes it needs (--oauth-scopes) and the client's permissions",
+		"Run with --debug to see the server's WWW-Authenticate challenge",
+	},
 }
 
 // The SDK reports a handshake's HTTP status only as its text: the streamable
@@ -65,6 +80,12 @@ func diagnoseHandshakeHTTPStatus(err error, transport, endpoint string) (message
 		}
 		code := statusCodeForText(m[1])
 		message = fmt.Sprintf("The server refused the SSE stream (GET answered HTTP %d %s)", code, m[1])
+		if code == http.StatusUnauthorized || code == http.StatusForbidden {
+			return message, []string{
+				"mcp-tui cannot sign in over SSE (the SDK's SSE client has no OAuth); " +
+					"if the server also serves streamable HTTP, connect with --transport http and the --oauth-* flags",
+			}, true
+		}
 		if code == http.StatusNotFound {
 			return message, []string{
 				"Check the URL path: SSE servers usually serve /sse",
@@ -89,6 +110,9 @@ func diagnoseHandshakeHTTPStatus(err error, transport, endpoint string) (message
 			"The URL path ends in /sse, where SSE servers listen: use --transport sse",
 			"Run with --debug to see each HTTP exchange",
 		}, true
+	}
+	if actions, ok := authActions[code]; ok {
+		return message, actions, true
 	}
 	switch code {
 	case http.StatusNotFound:

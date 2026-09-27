@@ -59,6 +59,27 @@ func TestClassifyHandshakeHTTPStatus(t *testing.T) {
 			wantAction:  "--transport http",
 		},
 		{
+			name:        "streamable server that requires OAuth, connected without it",
+			transport:   "http",
+			err:         errors.New(`calling "initialize": sending "initialize": Unauthorized`),
+			wantMessage: "HTTP 401 Unauthorized",
+			wantAction:  "--oauth-dynamic-registration",
+		},
+		{
+			name:        "streamable server that refuses the client",
+			transport:   "http",
+			err:         errors.New(`calling "server/discover": sending "server/discover": Forbidden`),
+			wantMessage: "HTTP 403 Forbidden",
+			wantAction:  "--oauth-scopes",
+		},
+		{
+			name:        "SSE server that requires authorization",
+			transport:   "sse",
+			err:         errors.New(`failed to connect: Unauthorized`),
+			wantMessage: "HTTP 401 Unauthorized",
+			wantAction:  "--transport http",
+		},
+		{
 			name:        "SSE GET to a path with no endpoint",
 			transport:   "sse",
 			err:         errors.New(`failed to connect: Not Found`),
