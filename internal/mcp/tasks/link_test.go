@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/standardbeagle/mcp-tui/internal/mcp/wiretap"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
 
@@ -58,7 +59,7 @@ func notification(t *testing.T, method, params string) *jsonrpc.Request {
 func connectInMemory(t *testing.T, link *Link) (peer rawPeer, sdkSaw <-chan jsonrpc.Message) {
 	t.Helper()
 	ct, st := officialMCP.NewInMemoryTransports()
-	conn, err := link.WrapTransport(ct).Connect(context.Background())
+	conn, err := wiretap.New(link).Transport(ct).Connect(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +260,7 @@ func TestLink_CallOverStreamableHTTP(t *testing.T) {
 			link := NewLink()
 			notified := make(chan string, 1)
 			link.OnNotification(func(method string, _ json.RawMessage) { notified <- method })
-			conn, err := link.WrapTransport(&officialMCP.StreamableClientTransport{Endpoint: url}).Connect(context.Background())
+			conn, err := wiretap.New(link).Transport(&officialMCP.StreamableClientTransport{Endpoint: url}).Connect(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}

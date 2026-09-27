@@ -1,7 +1,6 @@
 package tasks
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,14 +31,10 @@ const (
 	methodCancelled              = "notifications/cancelled"
 )
 
-// envelope is one JSON-RPC message, as the link reads and writes it.
-type envelope struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *RPCError       `json:"error,omitempty"`
+// answer is the server's reply to one of the link's calls.
+type answer struct {
+	result json.RawMessage
+	err    *RPCError
 }
 
 // sender writes one request or notification on the live connection. sdk.go
@@ -51,14 +46,14 @@ type sender interface {
 // Link is a JSON-RPC side channel on the SDK's connection: it sends
 // requests the SDK has no method for and picks their responses, and the
 // task notifications, out of the inbound stream. The SDK's reader still
-// receives every message the link does not consume and drops the rest as
-// unknown. See sdk.go for how it attaches to a transport.
+// receives every message the link does not withhold and drops the rest as
+// unknown. It is a wiretap.Observer; see sdk.go.
 type Link struct {
 	next atomic.Int64
 
 	mu             sync.Mutex
 	sender         sender
-	pending        map[string]chan envelope
+	pending        map[string]chan answer
 	onNotification func(method string, params json.RawMessage)
 
 	// handshakeOpen is true from Connect until EndHandshake; the
@@ -69,7 +64,7 @@ type Link struct {
 
 // NewLink returns a link that is not yet attached to a transport.
 func NewLink() *Link {
-	return &Link{pending: map[string]chan envelope{}}
+	return &Link{pending: map[string]chan answer{}}
 }
 
 // OnNotification installs the hook that receives each task status
@@ -99,11 +94,11 @@ func (l *Link) EndHandshake() {
 func (l *Link) attach(s sender) {
 	l.mu.Lock()
 	stale := l.pending
-	l.sender, l.pending, l.handshake = s, map[string]chan envelope{}, nil
+	l.sender, l.pending, l.handshake = s, map[string]chan answer{}, nil
 	l.mu.Unlock()
 	l.handshakeOpen.Store(true)
 	for _, ch := range stale {
-		ch <- envelope{Error: &RPCError{Code: -32603, Message: errConnectionReplaced.Error()}}
+		ch <- answer{err: &RPCError{Code: -32603, Message: errConnectionReplaced.Error()}}
 	}
 }
 
@@ -116,11 +111,11 @@ func (l *Link) Call(ctx context.Context, method string, params any) (json.RawMes
 		return nil, fmt.Errorf("encoding %s params: %w", method, err)
 	}
 	id := requestIDPrefix + strconv.FormatInt(l.next.Add(1), 10)
-	answer := make(chan envelope, 1)
+	answered := make(chan answer, 1)
 	l.mu.Lock()
 	s := l.sender
 	if s != nil {
-		l.pending[id] = answer
+		l.pending[id] = answered
 	}
 	l.mu.Unlock()
 	if s == nil {
@@ -132,11 +127,11 @@ func (l *Link) Call(ctx context.Context, method string, params any) (json.RawMes
 		return nil, fmt.Errorf("sending %s: %w", method, err)
 	}
 	select {
-	case e := <-answer:
-		if e.Error != nil {
-			return nil, e.Error
+	case a := <-answered:
+		if a.err != nil {
+			return nil, a.err
 		}
-		return e.Result, nil
+		return a.result, nil
 	case <-ctx.Done():
 		l.forget(id)
 		l.sendCancelled(s, id, method, ctx.Err())
@@ -159,74 +154,6 @@ func (l *Link) sendCancelled(s sender, id, method string, cause error) {
 	}
 	if err != nil {
 		debug.Warn("Could not cancel an abandoned tasks request", debug.F("method", method), debug.F("error", err))
-	}
-}
-
-// consumes reports whether data may be a message the link wants, cheaply,
-// so the inbound stream is decoded only when it might be.
-func (l *Link) consumes(data []byte) bool {
-	return l.handshakeOpen.Load() ||
-		bytes.Contains(data, []byte(requestIDPrefix)) ||
-		bytes.Contains(data, []byte(`"`+methodTaskNotification))
-}
-
-// observe handles one inbound message and reports whether the link
-// consumed it: a response to one of its calls, or a task notification.
-func (l *Link) observe(data []byte) bool {
-	if !l.consumes(data) {
-		return false
-	}
-	var e envelope
-	if err := json.Unmarshal(data, &e); err != nil {
-		return false
-	}
-	switch {
-	case e.Method == methodTaskNotification || e.Method == methodTaskStatusNotification:
-		l.mu.Lock()
-		hook := l.onNotification
-		l.mu.Unlock()
-		if hook != nil {
-			hook(e.Method, e.Params)
-		}
-		return true
-	case e.Method != "":
-		return false
-	}
-	var id string
-	if json.Unmarshal(e.ID, &id) == nil && len(id) > len(requestIDPrefix) && id[:len(requestIDPrefix)] == requestIDPrefix {
-		l.mu.Lock()
-		answer, ok := l.pending[id]
-		delete(l.pending, id)
-		l.mu.Unlock()
-		if ok {
-			answer <- e
-		}
-		return true
-	}
-	if l.handshakeOpen.Load() && isHandshakeResult(e.Result) {
-		l.mu.Lock()
-		l.handshake = e.Result
-		l.mu.Unlock()
-	}
-	return false
-}
-
-// observeBatch handles an HTTP body that may hold one message or a batch.
-func (l *Link) observeBatch(data []byte) {
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 || !l.consumes(data) {
-		return
-	}
-	if data[0] != '[' {
-		l.observe(data)
-		return
-	}
-	var batch []json.RawMessage
-	if json.Unmarshal(data, &batch) != nil {
-		return
-	}
-	for _, msg := range batch {
-		l.observe(msg)
 	}
 }
 

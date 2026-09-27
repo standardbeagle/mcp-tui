@@ -26,6 +26,7 @@ import (
 	sessionPkg "github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/wiretap"
 	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
@@ -447,7 +448,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 		return fmt.Errorf("failed to create transport: %w", err)
 	}
 	s.initTasks()
-	linkedTransport := s.taskLink.WrapTransport(transport)
+	tappedTransport := wiretap.New(s.taskLink).Transport(transport)
 
 	// Snapshot the session manager before releasing the lock; Disconnect may
 	// swap service fields while the handshake is in flight. The epoch lets us
@@ -461,7 +462,7 @@ func (s *service) Connect(ctx context.Context, config *configPkg.ConnectionConfi
 	// Blocking handshake, performed without the service lock. The session
 	// manager serializes concurrent connects internally.
 	sessionOptions := &officialMCP.ClientSessionOptions{ProtocolVersion: config.ProtocolVersion}
-	err = sessionManager.Connect(ctx, client, linkedTransport, contextStrategy, transportConfig.Type, sessionOptions)
+	err = sessionManager.Connect(ctx, client, tappedTransport, contextStrategy, transportConfig.Type, sessionOptions)
 	if err != nil {
 		return connectFailureError(ctx, transport, handshake, err)
 	}

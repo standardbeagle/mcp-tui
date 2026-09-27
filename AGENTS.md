@@ -42,6 +42,7 @@ internal/mcp/            service layer（service.go）包 go-sdk client
   protocol/              葉包：StatelessVersion（2026-07-28）判定
   inputschema/           tool inputSchema 經 $ref、T|null 解析（CLI 與 TUI 共用）
   tasks/                 MCP tasks 二 wire form；sdk.go 為唯一觸 SDK 內部之檔
+  wiretap/               唯一觀線處：stdio/in-memory 包 connection，HTTP 經 RoundTripper 讀 request/response body（含 SSE）；tasks link 為其 Observer
   transports/            factory.go 依 TransportType 造 SDK transport；context.go 定 context strategy
   oauth/ sampling/ elicitation/ roots/ notifications/ session/ ...
 internal/redact/         唯一去敏模組：headers、URLs、bodies、錯誤文、MCP payloads
