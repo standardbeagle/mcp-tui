@@ -57,8 +57,9 @@ type DebugScreen struct {
 	// UI state
 	activeTab     int // one of the tab* constants
 	selectedIndex int
-	scrollOffset  int
+	scrollOffset  int  // first entry shown, or first line on a text tab
 	showDetail    bool // Show detailed view of selected MCP log
+	detailScroll  int  // first line of the detail view shown
 
 	// clipboard copies off the event loop; tests swap in an in-memory
 	// system clipboard.
@@ -106,7 +107,6 @@ type DebugScreen struct {
 	selectedStyle lipgloss.Style
 	titleStyle    lipgloss.Style
 	statStyle     lipgloss.Style
-	detailStyle   lipgloss.Style
 }
 
 // NewDebugScreen creates a new debug screen. The Capabilities tab will show
@@ -160,9 +160,7 @@ func (ds *DebugScreen) initStyles() {
 	ds.logStyle = lipgloss.NewStyle().
 		Padding(1).
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("8")).
-		Width(120).
-		Height(20)
+		BorderForeground(lipgloss.Color("8"))
 
 	ds.selectedStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("0")).
@@ -179,13 +177,6 @@ func (ds *DebugScreen) initStyles() {
 		Margin(0, 1).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("8"))
-
-	ds.detailStyle = lipgloss.NewStyle().
-		Padding(1).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("12")).
-		Width(120).
-		Height(25)
 }
 
 // Init initializes the debug screen
@@ -303,12 +294,16 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (ds *DebugScreen) openSelectedDetail() {
 	if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
 		ds.showDetail = true
+		ds.detailScroll = 0
 	}
 }
 
-// handleListNavKey moves the selection cursor on the list tabs. Returns
-// false for keys it does not own.
+// handleListNavKey moves the selection cursor on the list tabs, and
+// scrolls a text tab. Returns false for keys it does not own.
 func (ds *DebugScreen) handleListNavKey(msg tea.KeyMsg) bool {
+	if text, ok := ds.tabText(); ok {
+		return ds.scrollText(msg, text, &ds.scrollOffset)
+	}
 	switch msg.String() {
 	case keyUp, "k":
 		ds.moveSelection(-1)
@@ -350,6 +345,7 @@ func (ds *DebugScreen) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c", "y":
 		return ds, ds.copyDetailJSONCmd()
 	}
+	ds.scrollText(msg, ds.detailText(), &ds.detailScroll)
 	return ds, nil
 }
 
@@ -369,12 +365,8 @@ func (ds *DebugScreen) switchTab(delta int) {
 	ds.scrollOffset = 0
 }
 
-// moveSelection moves the selection cursor by delta on the list tabs; the
-// statistics and capabilities tabs have no cursor.
+// moveSelection moves the selection cursor by delta on the list tabs.
 func (ds *DebugScreen) moveSelection(delta int) {
-	if ds.activeTab == tabStatistics || ds.activeTab == tabCapabilities {
-		return
-	}
 	currentList := ds.getCurrentList()
 	if len(currentList) == 0 {
 		return
@@ -524,7 +516,7 @@ func (ds *DebugScreen) getCurrentList() []string {
 // visibleRows is how many entries of the active tab's list are on screen.
 func (ds *DebugScreen) visibleRows() int {
 	if ds.activeTab == tabNotifications {
-		return notificationWindowRows
+		return ds.notificationRows()
 	}
 	_, rows := ds.logListSize()
 	return rows
@@ -549,34 +541,25 @@ func (ds *DebugScreen) adjustScrollOffset() {
 func (ds *DebugScreen) View() string {
 	var builder strings.Builder
 
-	// If showing detail view, render that instead
-	if ds.showDetail {
-		builder.WriteString(ds.titleStyle.Render("🔍 MCP Debug Console"))
-		builder.WriteString("\n")
-		builder.WriteString(ds.renderDetailView())
-		return builder.String()
-	}
-
 	header, footer := ds.viewChrome()
 	builder.WriteString(header)
 	builder.WriteString("\n")
 
 	// Content based on active tab
-	switch ds.activeTab {
-	case tabGeneralLogs:
+	switch {
+	case ds.showDetail:
+		builder.WriteString(ds.renderTextBox(ds.detailText(), ds.detailScroll))
+	case ds.activeTab == tabGeneralLogs:
 		builder.WriteString(ds.renderLogList("General Logs", ds.generalLogs))
-	case tabMCPProtocol:
+	case ds.activeTab == tabMCPProtocol:
 		builder.WriteString(ds.renderLogList("MCP Protocol", ds.mcpLogs))
-	case tabHTTPDebug:
-		builder.WriteString(ds.renderHTTPDebug())
-	case tabAuth:
+	case ds.activeTab == tabAuth:
 		builder.WriteString(ds.renderLogList("Auth", ds.authLogs))
-	case tabStatistics:
-		builder.WriteString(ds.renderStats())
-	case tabCapabilities:
-		builder.WriteString(ds.renderCapabilities())
-	case tabNotifications:
+	case ds.activeTab == tabNotifications:
 		builder.WriteString(ds.renderNotifications())
+	default:
+		text, _ := ds.tabText()
+		builder.WriteString(ds.renderTextBox(text, ds.scrollOffset))
 	}
 
 	builder.WriteString("\n")
@@ -585,17 +568,36 @@ func (ds *DebugScreen) View() string {
 	return builder.String()
 }
 
+// tabText is the content of a tab that shows text rather than a list:
+// Statistics, Capabilities and HTTP Debug. ok is false on the others.
+func (ds *DebugScreen) tabText() (text string, ok bool) {
+	switch ds.activeTab {
+	case tabHTTPDebug:
+		return ds.renderHTTPDebug(), true
+	case tabStatistics:
+		return ds.renderStats(), true
+	case tabCapabilities:
+		return ds.renderCapabilities(), true
+	}
+	return "", false
+}
+
 // viewChrome renders what surrounds a tab's content: the title and tab bar
-// above it, ending in a blank line, and the help and status below it,
-// starting with one. Both wrap to the terminal width, so their line counts
-// are the rows they take on screen.
+// above it (with the detail view's heading when open), ending in a blank
+// line, and the help and status below it, starting with one. Both wrap to
+// the terminal width, so their line counts are the rows they take on
+// screen.
 func (ds *DebugScreen) viewChrome() (header, footer string) {
 	header = ds.titleStyle.Render("🔍 MCP Debug Console") + "\n" + ds.renderTabs() + "\n"
 
 	var builder strings.Builder
 	builder.WriteString("\n")
-	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓: Navigate • Enter: Details (MCP) • c/y: Copy " +
+	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓/PgUp/PgDn/Home/End: Navigate • Enter: Details (MCP) • c/y: Copy " +
 		"(incl. Capabilities JSON) • Ctrl+E: Export session • r: Refresh • x: Clear • b/Alt+←: Back • Esc/Ctrl+C: Quit"
+	if ds.showDetail {
+		header += "\n" + ds.detailHeading()
+		helpText = "↑↓/PgUp/PgDn/Home/End: Scroll • c/y: Copy JSON • b/Alt+←/Enter: Back"
+	}
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Width(ds.Width())
 	builder.WriteString(helpStyle.Render(helpText))
 
@@ -719,6 +721,58 @@ func (ds *DebugScreen) renderLogList(title string, logs []string) string {
 	return style.Render(strings.Join(listItems, "\n"))
 }
 
+// textBoxLines wraps text to the width inside the content box, so each
+// returned line is one row on screen.
+func (ds *DebugScreen) textBoxLines(text string) []string {
+	boxWidth, _ := ds.logListSize()
+	return strings.Split(ansi.Wrap(strings.TrimRight(text, "\n"), boxWidth-ds.logStyle.GetHorizontalPadding(), ""), "\n")
+}
+
+// renderTextBox renders text in the content box, from line offset on, as
+// many lines as the box holds; the scroll indicators take the rows a list's
+// do.
+func (ds *DebugScreen) renderTextBox(text string, offset int) string {
+	boxWidth, rows := ds.logListSize()
+	lines := ds.textBoxLines(text)
+	start := min(offset, max(0, len(lines)-rows))
+	end := min(start+rows, len(lines))
+
+	shown := make([]string, 0, rows+2)
+	if start > 0 {
+		shown = append(shown, "  ↑ More above ↑")
+	}
+	shown = append(shown, lines[start:end]...)
+	if end < len(lines) {
+		shown = append(shown, "  ↓ More below ↓")
+	}
+	return ds.logStyle.Width(boxWidth).Height(rows + 4).Render(strings.Join(shown, "\n"))
+}
+
+// scrollText moves a text box's line offset for a navigation key, keeping
+// the last page full. Returns false for keys it does not own.
+func (ds *DebugScreen) scrollText(msg tea.KeyMsg, text string, offset *int) bool {
+	_, rows := ds.logListSize()
+	last := max(0, len(ds.textBoxLines(text))-rows)
+	switch msg.String() {
+	case keyUp, "k":
+		*offset--
+	case keyDown, "j":
+		*offset++
+	case keyPgUp:
+		*offset -= rows
+	case keyPgDown:
+		*offset += rows
+	case keyHome, "g":
+		*offset = 0
+	case keyEnd, "G":
+		*offset = last
+	default:
+		return false
+	}
+	*offset = min(max(0, *offset), last)
+	return true
+}
+
 // renderStats renders MCP protocol statistics
 func (ds *DebugScreen) renderStats() string {
 	var builder strings.Builder
@@ -743,14 +797,16 @@ func (ds *DebugScreen) renderStats() string {
 		{"Errors", "errors", "9"},
 	}
 
+	// Side by side: written one after another, each box's rows landed
+	// under the previous box's, and the grid took three times the rows.
+	statBoxes := make([]string, 0, len(stats))
 	for _, stat := range stats {
 		value := ds.mcpStats[stat.key]
-		statBox := ds.statStyle.
+		statBoxes = append(statBoxes, ds.statStyle.
 			Foreground(lipgloss.Color(stat.color)).
-			Render(fmt.Sprintf("%s\n%d", stat.label, value))
-		builder.WriteString(statBox)
-		builder.WriteString("  ")
+			Render(fmt.Sprintf("%s\n%d", stat.label, value)))
 	}
+	builder.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, statBoxes...))
 
 	builder.WriteString("\n\n")
 
@@ -790,7 +846,7 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 		builder.WriteString("• Debug mode is always enabled\n")
 		builder.WriteString("• Try connecting to an SSE or HTTP transport\n")
 		builder.WriteString("• HTTP state is captured automatically for all connections\n")
-		return ds.logStyle.Render(builder.String())
+		return builder.String()
 	}
 
 	// Format the detailed HTTP information. Pass the configured
@@ -802,7 +858,7 @@ func (ds *DebugScreen) renderHTTPDebug() string {
 
 	ds.renderHTTPAnalysis(&builder, httpInfo)
 
-	return ds.logStyle.Render(builder.String())
+	return builder.String()
 }
 
 // renderHTTPAnalysis adds the connection-issue analysis section for the
@@ -1021,66 +1077,33 @@ func statusCmd(message string, level StatusLevel) tea.Cmd {
 	}
 }
 
-// renderDetailView renders the detailed JSON view of a selected MCP log entry
-func (ds *DebugScreen) renderDetailView() string {
-	var builder strings.Builder
-
-	if ds.selectedIndex >= len(ds.mcpEntries) {
-		builder.WriteString("No entry selected")
-		return builder.String()
-	}
-
-	entry := ds.mcpEntries[ds.selectedIndex]
-
-	// Header
-	builder.WriteString("\n")
+// detailHeading renders the detail view's heading and the selected MCP
+// message's time, direction, type, method and ID, wrapped to the terminal
+// width, ending in a newline.
+func (ds *DebugScreen) detailHeading() string {
 	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
-	builder.WriteString(headerStyle.Render("MCP Message Detail"))
-	builder.WriteString("\n\n")
-
-	// Message info
-	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	builder.WriteString(infoStyle.Render(fmt.Sprintf("Time: %s | Direction: %s | Type: %s",
-		entry.Timestamp.Format("15:04:05.000"),
-		entry.Direction,
-		entry.MessageType)))
-
+	heading := headerStyle.Render("MCP Message Detail") + "\n"
+	if ds.selectedIndex >= len(ds.mcpEntries) {
+		return heading
+	}
+	entry := ds.mcpEntries[ds.selectedIndex]
+	info := fmt.Sprintf("Time: %s | Direction: %s | Type: %s",
+		entry.Timestamp.Format("15:04:05.000"), entry.Direction, entry.MessageType)
 	if entry.Method != "" {
-		builder.WriteString(infoStyle.Render(fmt.Sprintf(" | Method: %s", entry.Method)))
+		info += fmt.Sprintf(" | Method: %s", entry.Method)
 	}
 	if entry.ID != nil {
-		builder.WriteString(infoStyle.Render(fmt.Sprintf(" | ID: %v", entry.ID)))
+		info += fmt.Sprintf(" | ID: %v", entry.ID)
 	}
-	builder.WriteString("\n\n")
+	return heading + lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(ds.Width()).Render(info) + "\n"
+}
 
-	// JSON content
-	jsonContent := entry.GetFormattedJSON()
-	builder.WriteString(ds.detailStyle.Render(jsonContent))
-
-	// Help text
-	builder.WriteString("\n\n")
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	builder.WriteString(helpStyle.Render("c/y: Copy JSON • b/Alt+←/Enter: Back"))
-
-	// Status message
-	if statusMsg, level := ds.StatusMessage(); statusMsg != "" {
-		builder.WriteString("\n\n")
-		var statusColor string
-		switch level {
-		case StatusSuccess:
-			statusColor = "10" // green
-		case StatusWarning:
-			statusColor = "11" // yellow
-		case StatusError:
-			statusColor = "9" // red
-		default:
-			statusColor = "12" // blue
-		}
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Bold(true)
-		builder.WriteString(statusStyle.Render(statusMsg))
+// detailText is the selected MCP message's pretty-printed JSON.
+func (ds *DebugScreen) detailText() string {
+	if ds.selectedIndex >= len(ds.mcpEntries) {
+		return "No entry selected"
 	}
-
-	return builder.String()
+	return ds.mcpEntries[ds.selectedIndex].GetFormattedJSON()
 }
 
 // renderCapabilities renders the negotiated MCP capabilities. Layout:
@@ -1110,12 +1133,10 @@ func (ds *DebugScreen) renderCapabilities() string {
 	}
 
 	if snap == nil {
-		return ds.logStyle.Render(
-			"⚙️  No capabilities snapshot yet.\n\n" +
-				"Connect to an MCP server to see negotiated capabilities here.\n" +
-				"This tab shows server + client capabilities exchanged during the\n" +
-				"initialize handshake, including SDK v1.4+ extensions (SEP-2133).",
-		)
+		return "⚙️  No capabilities snapshot yet.\n\n" +
+			"Connect to an MCP server to see negotiated capabilities here.\n" +
+			"This tab shows server + client capabilities exchanged during the\n" +
+			"initialize handshake, including SDK v1.4+ extensions (SEP-2133)."
 	}
 
 	var b strings.Builder
@@ -1138,7 +1159,7 @@ func (ds *DebugScreen) renderCapabilities() string {
 
 	b.WriteString("\nPress y or c to copy the full JSON snapshot to clipboard.")
 
-	return ds.logStyle.Render(b.String())
+	return b.String()
 }
 
 // capDisplayString returns "<unknown>" for empty strings so the rendered tab
@@ -1454,23 +1475,17 @@ func (ds *DebugScreen) bumpNotificationLevel(delta int) {
 // same visual weight as the other tabs. We render the legend even when no
 // stream is wired so users can discover the keybindings before connecting.
 func (ds *DebugScreen) renderNotifications() string {
-	var b strings.Builder
-
-	b.WriteString("📡 Notification Stream\n")
-	b.WriteString(ds.renderNotificationFilterLine())
-	b.WriteString("\n")
-	b.WriteString(ds.renderNotificationLegend())
-	b.WriteString("\n\n")
+	header := ds.notificationHeader()
 
 	if ds.notificationsProvider == nil {
-		return ds.logStyle.Render(b.String() + "No notification provider installed.\n" +
-			"Connect to an MCP server to start capturing notifications.")
+		return ds.renderTextBox(header+"No notification provider installed.\n"+
+			"Connect to an MCP server to start capturing notifications.", 0)
 	}
 
 	stream := ds.notificationsProvider()
 	if stream == nil {
-		return ds.logStyle.Render(b.String() + "No notification stream available yet.\n" +
-			"Connect to an MCP server to start capturing notifications.")
+		return ds.renderTextBox(header+"No notification stream available yet.\n"+
+			"Connect to an MCP server to start capturing notifications.", 0)
 	}
 
 	entries := ds.filteredNotificationEntries()
@@ -1483,7 +1498,7 @@ func (ds *DebugScreen) renderNotifications() string {
 			hint = fmt.Sprintf("All %d captured notifications hidden by current filter "+
 				"(press 0 to clear types, - to lower level).", stream.Len())
 		}
-		return ds.logStyle.Render(b.String() + hint)
+		return ds.renderTextBox(header+hint, 0)
 	}
 
 	// Clamp cursor into range (filter changes can shrink the list under us).
@@ -1494,64 +1509,80 @@ func (ds *DebugScreen) renderNotifications() string {
 		ds.notificationCursor = 0
 	}
 
-	ds.renderNotificationWindow(&b, entries)
-	ds.renderNotificationDetail(&b, entries)
-
-	return ds.logStyle.Render(b.String())
+	headerLines, detailLines, rows := ds.notificationLayout(entries)
+	lines := append(headerLines, ds.notificationWindow(entries, rows)...)
+	lines = append(lines, detailLines...)
+	boxWidth, listRows := ds.logListSize()
+	return ds.logStyle.Width(boxWidth).Height(listRows + 4).Render(strings.Join(lines, "\n"))
 }
 
-// notificationWindowRows is how many notification entries show at once.
-const notificationWindowRows = 12
+// notificationHeader is the tab's title, filter line and key legend,
+// ending in a blank line.
+func (ds *DebugScreen) notificationHeader() string {
+	return "📡 Notification Stream\n" + ds.renderNotificationFilterLine() + "\n" +
+		ds.renderNotificationLegend() + "\n\n"
+}
 
-// renderNotificationWindow renders the visible window of the filtered
-// notification entries with scroll indicators.
-func (ds *DebugScreen) renderNotificationWindow(b *strings.Builder, entries []notifications.Entry) {
-	maxVisible := notificationWindowRows
-	startIdx := ds.scrollOffset
-	if startIdx > len(entries)-maxVisible {
-		startIdx = len(entries) - maxVisible
-	}
-	if startIdx < 0 {
-		startIdx = 0
-	}
-	endIdx := startIdx + maxVisible
-	if endIdx > len(entries) {
-		endIdx = len(entries)
-	}
+// notificationLayout splits the content box between the header, the
+// selected entry's detail (at most a third of the box) and the entry list,
+// returning the header and detail as screen lines and the entries shown.
+func (ds *DebugScreen) notificationLayout(entries []notifications.Entry) (header, detail []string, rows int) {
+	_, boxRows := ds.logListSize()
+	header = ds.textBoxLines(ds.notificationHeader())
+	detail = ds.textBoxLines(ds.notificationDetail(entries))
+	detail = detail[:min(len(detail), max(1, boxRows/3))]
+	return header, detail, max(1, boxRows-len(header)-len(detail))
+}
 
+// notificationRows is how many notification entries are on screen.
+func (ds *DebugScreen) notificationRows() int {
+	_, _, rows := ds.notificationLayout(ds.filteredNotificationEntries())
+	return rows
+}
+
+// notificationWindow renders rows of the filtered notification entries
+// around the selection, one truncated screen line each, with scroll
+// indicators.
+func (ds *DebugScreen) notificationWindow(entries []notifications.Entry, rows int) []string {
+	startIdx := max(ds.scrollOffset, ds.selectedIndex-rows+1)
+	startIdx = max(0, min(startIdx, len(entries)-rows))
+	endIdx := min(startIdx+rows, len(entries))
+
+	boxWidth, _ := ds.logListSize()
+	lineWidth := boxWidth - ds.logStyle.GetHorizontalPadding()
+	lines := make([]string, 0, rows+2)
 	if startIdx > 0 {
-		b.WriteString("  ↑ More entries above ↑\n")
+		lines = append(lines, "  ↑ More entries above ↑")
 	}
 	for i := startIdx; i < endIdx; i++ {
-		line := entries[i].FormatLine()
+		line := logListLineBreaks.Replace(entries[i].FormatLine())
 		if i == ds.selectedIndex {
-			b.WriteString(ds.selectedStyle.Render("▶ " + line))
+			lines = append(lines, ds.selectedStyle.Render(ansi.Truncate("▶ "+line, lineWidth, "…")))
 		} else {
-			b.WriteString("  ")
-			b.WriteString(line)
+			lines = append(lines, ansi.Truncate("  "+line, lineWidth, "…"))
 		}
-		b.WriteString("\n")
 	}
 	if endIdx < len(entries) {
-		b.WriteString("  ↓ More entries below ↓\n")
+		lines = append(lines, "  ↓ More entries below ↓")
 	}
+	return lines
 }
 
-// renderNotificationDetail renders the full JSON of the selected entry so
-// the user can see fields the preview truncated. Limited to ~300 characters
-// so a verbose log payload doesn't dominate the screen.
-func (ds *DebugScreen) renderNotificationDetail(b *strings.Builder, entries []notifications.Entry) {
+// notificationDetail is the full JSON of the selected entry so the user can
+// see fields the preview truncated. Limited to ~300 characters so a verbose
+// log payload doesn't dominate the screen.
+func (ds *DebugScreen) notificationDetail(entries []notifications.Entry) string {
 	if ds.selectedIndex >= len(entries) {
-		return
+		return ""
 	}
-	b.WriteString("\nSelected:\n")
-	sel := entries[ds.selectedIndex]
-	if js, err := sel.FormatJSON(); err == nil {
-		if len(js) > 300 {
-			js = js[:297] + "..."
-		}
-		b.WriteString(js)
+	js, err := entries[ds.selectedIndex].FormatJSON()
+	if err != nil {
+		return ""
 	}
+	if len(js) > 300 {
+		js = js[:297] + "..."
+	}
+	return "\nSelected:\n" + js
 }
 
 // renderNotificationFilterLine produces the "Filter:" status line shown above

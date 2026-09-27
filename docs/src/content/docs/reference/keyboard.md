@@ -86,7 +86,7 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 |-----|--------|
 | `Tab` / `→` | Next debug tab |
 | `Shift+Tab` / `←` | Previous debug tab |
-| `↑` / `↓` or `k` / `j` | Scroll the list (log tabs) |
+| `↑` / `↓` or `k` / `j` | Move in the list; on the HTTP Debug, Statistics and Capabilities tabs and in a message's detail, scroll the text |
 | `PgUp` / `PgDn` | Page up / down |
 | `Home` / `g` | Jump to top |
 | `End` / `G` | Jump to bottom |
