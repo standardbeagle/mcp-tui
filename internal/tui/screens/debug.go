@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	officialMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -16,6 +15,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
+	"github.com/standardbeagle/mcp-tui/internal/tui/clipboard"
 )
 
 const (
@@ -31,7 +31,7 @@ const (
 // debugTab names one tab of the DebugScreen.
 type debugTab struct {
 	title string // on the tab bar, before any count
-	item  string // one row of the tab, as "Copied <item> to clipboard" says
+	item  string // one row of the tab, as a copy's status names it
 }
 
 // debugTabs is the one list of tabs, indexed by the tab constants. Adding a
@@ -58,6 +58,10 @@ type DebugScreen struct {
 	selectedIndex int
 	scrollOffset  int
 	showDetail    bool // Show detailed view of selected MCP log
+
+	// clipboard copies off the event loop; tests swap in an in-memory
+	// system clipboard.
+	clipboard clipboard.Clipboard
 
 	// Data
 	generalLogs []string
@@ -113,6 +117,7 @@ type DebugScreen struct {
 func NewDebugScreen() *DebugScreen {
 	ds := &DebugScreen{
 		BaseScreen: NewOverlayScreen("Debug"),
+		clipboard:  clipboard.New(),
 	}
 
 	ds.initStyles()
@@ -216,6 +221,10 @@ func (ds *DebugScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StatusMsg:
 		ds.SetStatus(msg.Message, msg.Level)
+		return ds, nil
+
+	case clipboard.CopiedMsg:
+		ds.SetStatus(copiedStatus(msg))
 		return ds, nil
 	}
 
@@ -345,24 +354,18 @@ func (ds *DebugScreen) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Even in detail view, escape/ctrl+c should quit
 		return ds, tea.Quit
 	case "c", "y":
-		// Copy full JSON to clipboard
-		ds.copyDetailJSON()
-		return ds, nil
+		return ds, ds.copyDetailJSONCmd()
 	}
 	return ds, nil
 }
 
-// copyDetailJSON copies the selected MCP entry's full JSON to the clipboard.
-func (ds *DebugScreen) copyDetailJSON() {
-	if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
-		entry := ds.mcpEntries[ds.selectedIndex]
-		fullJSON := entry.GetFormattedJSON()
-		if err := clipboard.WriteAll(fullJSON); err != nil {
-			ds.SetStatus(fmt.Sprintf("Copy failed: %v", err), StatusError)
-		} else {
-			ds.SetStatus("Copied full JSON to clipboard", StatusSuccess)
-		}
+// copyDetailJSONCmd copies the selected MCP entry's full JSON to the
+// clipboard; nil when no entry is selected.
+func (ds *DebugScreen) copyDetailJSONCmd() tea.Cmd {
+	if ds.activeTab != tabMCPProtocol || ds.selectedIndex >= len(ds.mcpEntries) {
+		return nil
 	}
+	return ds.clipboard.Copy("full JSON", ds.mcpEntries[ds.selectedIndex].GetFormattedJSON())
 }
 
 // switchTab moves the active tab by delta, resetting cursor and scroll.
@@ -919,25 +922,19 @@ func (ds *DebugScreen) clearLogsCmd() tea.Cmd {
 //
 // The payload is resolved here, on the event loop, and captured by the closure.
 // The returned command therefore only performs clipboard IO: it neither reads
-// nor writes model state, and Update applies the resulting StatusMsg. Calling
-// SetStatus from inside the command would race with View.
+// nor writes model state, and Update applies the resulting CopiedMsg.
 func (ds *DebugScreen) copySelectedItemCmd() tea.Cmd {
-	payload, successMessage, ok := ds.copySelection()
+	payload, subject, ok := ds.copySelection()
 	if !ok {
-		return statusCmd(successMessage, StatusWarning)
+		return statusCmd(subject, StatusWarning)
 	}
-	return func() tea.Msg {
-		if err := clipboard.WriteAll(payload); err != nil {
-			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
-		}
-		return StatusMsg{Message: successMessage, Level: StatusSuccess}
-	}
+	return ds.clipboard.Copy(subject, payload)
 }
 
 // copySelection returns what copying the selected item puts on the
-// clipboard and the status that reports it; without a payload (ok false),
-// status says why there is nothing to copy.
-func (ds *DebugScreen) copySelection() (payload, status string, ok bool) {
+// clipboard and the subject a status names it by; without a payload (ok
+// false), subject says why there is nothing to copy.
+func (ds *DebugScreen) copySelection() (payload, subject string, ok bool) {
 	// On the notifications tab, prefer the full JSON of the selected entry over
 	// its one-line preview — the JSON is what users want to paste into bug
 	// reports or jq pipelines.
@@ -950,13 +947,13 @@ func (ds *DebugScreen) copySelection() (payload, status string, ok bool) {
 		if err != nil {
 			return "", fmt.Sprintf("Format failed: %v", err), false
 		}
-		return js, "Copied notification JSON to clipboard", true
+		return js, "notification JSON", true
 	}
 	currentList := ds.getCurrentList()
 	if len(currentList) == 0 || ds.selectedIndex >= len(currentList) {
 		return "", "Nothing to copy", false
 	}
-	return currentList[ds.selectedIndex], fmt.Sprintf("Copied %s to clipboard", debugTabs[ds.activeTab].item), true
+	return currentList[ds.selectedIndex], debugTabs[ds.activeTab].item, true
 }
 
 // exportSessionCmd writes the recorded session to disk on a command goroutine
@@ -1324,9 +1321,8 @@ func summarizeValue(v interface{}) string {
 // surface area as the per-log-entry copy commands so users have one
 // consistent muscle-memory shortcut ('y' or 'c') across every tab that has
 // copyable content.
-// The snapshot is resolved on the event loop; the command only marshals and
-// copies, returning a StatusMsg that Update applies. Calling SetStatus from
-// inside the command would race with View.
+// The snapshot is resolved and marshalled on the event loop; the command
+// only copies, returning a CopiedMsg that Update applies.
 func (ds *DebugScreen) copyCapabilitiesCmd() tea.Cmd {
 	var snap *capabilities.Snapshot
 	if ds.snapshotProvider != nil {
@@ -1336,16 +1332,11 @@ func (ds *DebugScreen) copyCapabilitiesCmd() tea.Cmd {
 		return statusCmd("No capabilities snapshot to copy", StatusWarning)
 	}
 
-	return func() tea.Msg {
-		out, err := json.MarshalIndent(snap, "", "  ")
-		if err != nil {
-			return StatusMsg{Message: fmt.Sprintf("Marshal failed: %v", err), Level: StatusError}
-		}
-		if err := clipboard.WriteAll(string(out)); err != nil {
-			return StatusMsg{Message: fmt.Sprintf("Copy failed: %v", err), Level: StatusError}
-		}
-		return StatusMsg{Message: "Copied capabilities JSON to clipboard", Level: StatusSuccess}
+	out, err := json.MarshalIndent(snap, "", "  ")
+	if err != nil {
+		return statusCmd(fmt.Sprintf("Marshal failed: %v", err), StatusError)
 	}
+	return ds.clipboard.Copy("capabilities JSON", string(out))
 }
 
 // filteredNotificationEntries returns the current notification snapshot run

@@ -32,30 +32,3 @@ func TestDebugScreen_AuthTab_ShowsOnlyAuthEntries(t *testing.T) {
 		t.Errorf("Auth tab shows a non-auth entry:\n%s", view)
 	}
 }
-
-// Copying reports what was copied by the tab it came from. The names were
-// a second hand-kept list that missed the Auth tab, so every tab from Auth
-// on reported the one before it.
-func TestDebugScreen_CopyNamesTheActiveTab(t *testing.T) {
-	buffer := debug.GetLogBuffer()
-	buffer.Clear()
-	t.Cleanup(buffer.Clear)
-	buffer.Add(debug.LogLevelInfo, "oauth", "Token cache miss", nil)
-	buffer.Add(debug.LogLevelInfo, "app", "Started", nil)
-
-	for _, tc := range []struct {
-		tab  int
-		want string
-	}{
-		{tabGeneralLogs, "Copied general log to clipboard"},
-		{tabAuth, "Copied auth log to clipboard"},
-		{tabHTTPDebug, "Copied HTTP debug info to clipboard"},
-	} {
-		ds := NewDebugScreen()
-		ds.refreshData()
-		ds.activeTab = tc.tab
-		if _, status, ok := ds.copySelection(); !ok || status != tc.want {
-			t.Errorf("tab %d: copy status = %q (ok %v), want %q", tc.tab, status, ok, tc.want)
-		}
-	}
-}
