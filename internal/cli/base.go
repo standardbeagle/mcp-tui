@@ -701,7 +701,6 @@ func (c *BaseCommand) connectToServer(
 	if err := c.service.Connect(ctx, connConfig); err != nil {
 		if !porcelainMode {
 			fmt.Fprint(os.Stderr, ConnectionFailed)
-			c.showConnectionErrorHelp(err)
 		}
 		return err
 	}
@@ -739,16 +738,6 @@ func (c *BaseCommand) showConnectionMessage(connConfig *config.ConnectionConfig)
 		fmt.Fprintf(os.Stderr, ConnectionStarting, connConfig.Command, strings.Join(connConfig.Args, " "))
 	case config.TransportHTTP, config.TransportSSE:
 		fmt.Fprintf(os.Stderr, ConnectionConnecting, connConfig.URL)
-	}
-}
-
-// showConnectionErrorHelp displays helpful error messages for connection failures
-func (c *BaseCommand) showConnectionErrorHelp(err error) {
-	if strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "timeout") {
-		fmt.Fprint(os.Stderr, "\n💡 Tip: The connection timed out. Try:\n")
-		fmt.Fprint(os.Stderr, "   - Checking if the server is running\n")
-		fmt.Fprint(os.Stderr, "   - Increasing timeout with --timeout flag\n")
-		fmt.Fprint(os.Stderr, "   - Verifying the command/URL is correct\n")
 	}
 }
 
