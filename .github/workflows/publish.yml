@@ -99,7 +99,7 @@ jobs:
           upload-release-assets: false
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -144,7 +144,7 @@ jobs:
 
       - name: Keep dry-run release files
         if: inputs.dry_run
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-dry-run
           path: release/
