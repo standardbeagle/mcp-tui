@@ -133,10 +133,11 @@ async function installBinary({ version, target, baseUrl, packageRoot }) {
 
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-tui-install-'));
   try {
-    const archivePath = path.join(work, assetName);
-    fs.writeFileSync(archivePath, archive);
+    fs.writeFileSync(path.join(work, assetName), archive);
     const member = archiveBinaryName(target);
-    execFileSync('tar', ['-xzf', archivePath, '-C', work, member], { stdio: 'inherit' });
+    // Relative names only: GNU tar (Git for Windows puts one on PATH) reads
+    // "C:\..." as a remote host:path.
+    execFileSync('tar', ['-xzf', assetName, member], { cwd: work, stdio: 'inherit' });
 
     const dest = installedBinaryPath(packageRoot, target);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
