@@ -44,6 +44,28 @@ func TestMainFunctionFlow(t *testing.T) {
 			description:       "TUI mode hands the connection to the root command",
 		},
 		{
+			name: "global flags before the connection string",
+			args: []string{"mcp-tui", "--timeout", "25s", "--debug", "-f", "json", "npx server stdio", "tool", "list"},
+			expectedConfig: &config.ConnectionConfig{
+				Type:    config.TransportStdio,
+				Command: "npx",
+				Args:    []string{"server", "stdio"},
+			},
+			expectedCobraArgs: []string{"--timeout", "25s", "--debug", "-f", "json", "tool", "list"},
+			description:       "A value flag's value is not the connection string; the flags stay for Cobra",
+		},
+		{
+			name: "--flag=value before the connection string",
+			args: []string{"mcp-tui", "--timeout=25s", "npx server stdio", "tool", "list"},
+			expectedConfig: &config.ConnectionConfig{
+				Type:    config.TransportStdio,
+				Command: "npx",
+				Args:    []string{"server", "stdio"},
+			},
+			expectedCobraArgs: []string{"--timeout=25s", "tool", "list"},
+			description:       "An inline value consumes nothing after it",
+		},
+		{
 			name:              "flag-based CLI",
 			args:              append([]string{"mcp-tui"}, flagBasedArgs...),
 			expectedConfig:    nil, // Flags are parsed later by Cobra

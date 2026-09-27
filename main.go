@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"os"
+	"slices"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/standardbeagle/mcp-tui/internal/cli"
 	"github.com/standardbeagle/mcp-tui/internal/config"
@@ -73,18 +76,54 @@ func exitProcess(code int) {
 // splitConnectionArg finds a positional connection string in args (the
 // command line without the program name) and returns it with the args left
 // for cobra. Only the connection string is removed, so cobra parses the
-// persistent flags wherever they appear. A subcommand after it (CLI mode)
-// gets the connection through cli.SetGlobalConnection; without one the
-// root command starts the TUI with it.
+// persistent flags wherever they appear, before it included. A subcommand
+// after it (CLI mode) gets the connection through cli.SetGlobalConnection;
+// without one the root command starts the TUI with it.
 func splitConnectionArg(root *cobra.Command, args []string) (conn *config.ConnectionConfig, cobraArgs []string) {
-	parsed := config.ParseArgs(args, cli.SubcommandNames(root), "", "", nil)
+	at := firstPositionalArg(root.PersistentFlags(), args)
+	if at < 0 {
+		return nil, args
+	}
+	parsed := config.ParseArgs(args[at:], cli.SubcommandNames(root), "", "", nil)
 	if parsed.Connection == nil {
 		return nil, args
 	}
 	if parsed.SubCommand != "" {
 		cli.SetGlobalConnection(parsed.Connection)
 	}
-	return parsed.Connection, args[1:]
+	return parsed.Connection, append(slices.Clone(args[:at]), args[at+1:]...)
+}
+
+// firstPositionalArg returns the index of the first argument that is not a
+// flag or a flag's value, or -1. A flag's value is the next argument unless
+// the flag is boolean-like (it has a NoOptDefVal) or carries its value
+// inline (--timeout=5s); "--" ends the flags.
+func firstPositionalArg(flags *pflag.FlagSet, args []string) int {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			if i+1 < len(args) {
+				return i + 1
+			}
+			return -1
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			return i
+		}
+		if strings.Contains(arg, "=") {
+			continue
+		}
+		var flag *pflag.Flag
+		if name, ok := strings.CutPrefix(arg, "--"); ok {
+			flag = flags.Lookup(name)
+		} else if len(arg) == 2 {
+			flag = flags.ShorthandLookup(arg[1:])
+		}
+		if flag != nil && flag.NoOptDefVal == "" {
+			i++ // the flag's value
+		}
+	}
+	return -1
 }
 
 func createRootCommand(ctx context.Context) *cobra.Command {
