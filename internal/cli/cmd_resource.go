@@ -198,7 +198,9 @@ func (rc *ResourceCommand) runGetCommand(cmd *cobra.Command, args []string) erro
 
 	// Handle JSON output format
 	if rc.GetOutputFormat() == OutputFormatJSON {
-		jsonBytes, err := json.MarshalIndent(resourceReadOutput(resourceURI, result), "", "  ")
+		doc := resourceReadOutput(resourceURI, result)
+		addProtocolViolations(doc, rc.GetService())
+		jsonBytes, err := json.MarshalIndent(doc, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal resource to JSON: %w", err)
 		}

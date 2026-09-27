@@ -211,6 +211,7 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		if len(dropped) > 0 {
 			outputData["droppedTools"] = dropped
 		}
+		addProtocolViolations(outputData, tc.GetService())
 
 		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
 		if err != nil {
@@ -588,6 +589,7 @@ func (tc *ToolCommand) toolResultOutput(
 		format: tc.GetOutputFormat(), porcelain: porcelainMode,
 		strictOutput: strictOutput, strictErrors: strictErrors,
 		document: map[string]interface{}{toolWord: toolName, "arguments": toolArgs},
+		service:  tc.GetService(),
 	}, nil
 }
 
@@ -821,6 +823,7 @@ type resultOutput struct {
 	strictOutput bool
 	strictErrors bool
 	document     map[string]interface{}
+	service      mcp.Service // for the protocol violations in the document
 }
 
 // printToolResult writes a tool's result as `tool call` does: one JSON
@@ -831,6 +834,7 @@ func printToolResult(out resultOutput, result *mcp.CallToolResult) error {
 	if out.format == OutputFormatJSON {
 		outputData := out.document
 		outputData["result"] = result
+		addProtocolViolations(outputData, out.service)
 
 		jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
 		if err != nil {

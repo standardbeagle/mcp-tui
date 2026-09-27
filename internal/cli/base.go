@@ -68,6 +68,7 @@ type BaseCommand struct {
 	service      mcp.Service
 	timeout      time.Duration
 	outputFormat OutputFormat
+	porcelain    bool
 }
 
 // getGlobalConnection returns the global connection config if available
@@ -182,6 +183,7 @@ func (c *BaseCommand) CreateClient(cmd *cobra.Command) error {
 	}
 
 	porcelainMode := flagBool(cmd, "porcelain")
+	c.porcelain = porcelainMode
 	if err := c.setupService(cmd, porcelainMode); err != nil {
 		return err
 	}
@@ -419,6 +421,7 @@ func (c *BaseCommand) runCompleteCommand(
 		"hasMore":    result.HasMore,
 		"total":      result.Total,
 	}
+	addProtocolViolations(out, c.service)
 	jsonBytes, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal completion result to JSON: %w", err)
@@ -741,14 +744,20 @@ func (c *BaseCommand) showConnectionMessage(connConfig *config.ConnectionConfig)
 	}
 }
 
-// CloseClient properly closes the MCP client
+// CloseClient properly closes the MCP client. In text mode it then names
+// the protocol violations the server committed, after the command's
+// output, whether the command succeeded or not.
 func (c *BaseCommand) CloseClient() error {
 	if c.service == nil {
 		return nil
 	}
 
-	// Disconnect service
-	if err := c.service.Disconnect(); err != nil {
+	svc := c.service
+	err := svc.Disconnect()
+	if c.outputFormat == OutputFormatText && !c.porcelain {
+		writeProtocolViolations(os.Stderr, protocolViolations(svc))
+	}
+	if err != nil {
 		return fmt.Errorf("failed to disconnect: %w", err)
 	}
 
@@ -898,6 +907,7 @@ func runListFetch[T any](c *BaseCommand, cmd *cobra.Command, spec listSpec[T]) (
 		spec.docKey: items,
 		docCount:    len(items),
 	}
+	addProtocolViolations(outputData, c.service)
 	jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to marshal %s to JSON: %w", spec.errNoun, err)

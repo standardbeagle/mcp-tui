@@ -51,6 +51,13 @@ func connectHTTPService(t *testing.T, server *officialMCP.Server, protocolVersio
 		t.Fatalf("Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Disconnect() })
+	// A go-sdk server over HTTP is the false-positive guard of the protocol
+	// watcher's HTTP path, whatever the test drives.
+	t.Cleanup(func() {
+		if vs := protocolViolations(svc); len(vs) != 0 {
+			t.Errorf("protocol watcher reported a go-sdk server: %+v", vs)
+		}
+	})
 	want := protocolVersion
 	if want == "" {
 		want = officialMCP.SupportedProtocolVersions()[0]
