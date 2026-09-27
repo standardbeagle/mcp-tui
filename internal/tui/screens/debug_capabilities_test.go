@@ -71,6 +71,8 @@ func TestDebugScreen_CapabilitiesTab_FullSnapshot(t *testing.T) {
 	)
 
 	ds := NewDebugScreen().WithSnapshotProvider(func() *capabilities.Snapshot { return snap })
+	// Tall enough that the whole snapshot is on screen without scrolling.
+	ds.Update(tea.WindowSizeMsg{Width: 120, Height: 60})
 	ds.activeTab = tabCapabilities
 	view := ds.View()
 
