@@ -702,6 +702,9 @@ func (c *BaseCommand) connectToServer(
 	}
 
 	if err := c.service.Connect(ctx, connConfig); err != nil {
+		// The log is written asynchronously; what the failed connect logged
+		// (an OAuth failure, say) belongs above the error, not after it.
+		debug.Flush()
 		if !porcelainMode {
 			fmt.Fprint(os.Stderr, ConnectionFailed)
 		}

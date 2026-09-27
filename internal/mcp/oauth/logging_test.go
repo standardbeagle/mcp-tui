@@ -118,6 +118,28 @@ func TestClientCredentialsFlow_LogsWithoutSecrets(t *testing.T) {
 	)
 }
 
+// The 2026-07-28 handshake tries server/discover and then initialize, and
+// the SDK authorizes before each: a wrong secret fails the same way twice.
+// The error is logged once; the repeat stays in the --debug log.
+func TestClientCredentialsFlow_RepeatedFailureLoggedAsErrorOnce(t *testing.T) {
+	logs := captureAuthLogs(t)
+	srv := newMockAuthServer(t)
+
+	h, err := NewHandler(&Config{
+		ServerURL:    srv.ResourceURL(),
+		ClientID:     srv.clientID,
+		ClientSecret: "wrong-secret",
+		CachePath:    "-",
+	}, http.DefaultClient, NoopCache{})
+	require.NoError(t, err)
+	require.Error(t, authorizeUnauthorized(t.Context(), h, srv))
+	require.Error(t, authorizeUnauthorized(t.Context(), h, srv))
+
+	out := logs()
+	assert.Equal(t, 1, strings.Count(out, "ERROR [oauth] Authorization failed"), out)
+	assertLogged(t, out, "DEBUG [oauth] Authorization failed again")
+}
+
 // TestAuthorizationCodeFlow_IssParameter covers RFC 9207: an AS that
 // advertises authorization_response_iss_parameter_supported sends iss on the
 // redirect, and the SDK refuses the response unless the callback hands it on.
