@@ -36,7 +36,7 @@ func TestShowsCallProgress(t *testing.T) {
 // place could show a stale 3/4 above a finished result.
 func TestProgressLine_RedrawsOneLine(t *testing.T) {
 	var stderr bytes.Buffer
-	ctx, finish := progressLine(context.Background(), &stderr)
+	ctx, finish := progressLine(context.Background(), &stderrLines{w: &stderr})
 	report := observerOf(t, ctx)
 	report(mcp.Progress{Token: "mcp-tui-1", Progress: 3, Total: 4, Message: "raising priority"})
 	report(mcp.Progress{Token: "mcp-tui-1", Progress: 4, Total: 4, Message: "posting to #support"})
@@ -52,7 +52,7 @@ func TestProgressLine_RedrawsOneLine(t *testing.T) {
 // be printing.
 func TestProgressLine_IgnoresProgressAfterFinish(t *testing.T) {
 	var stderr bytes.Buffer
-	ctx, finish := progressLine(context.Background(), &stderr)
+	ctx, finish := progressLine(context.Background(), &stderrLines{w: &stderr})
 	report := observerOf(t, ctx)
 	report(mcp.Progress{Token: "mcp-tui-1", Progress: 3, Total: 4, Message: "raising priority"})
 	finish()
@@ -67,7 +67,7 @@ func TestProgressLine_IgnoresProgressAfterFinish(t *testing.T) {
 // reported on leaves stderr untouched.
 func TestProgressLine_SilentWithoutProgress(t *testing.T) {
 	var stderr bytes.Buffer
-	_, finish := progressLine(context.Background(), &stderr)
+	_, finish := progressLine(context.Background(), &stderrLines{w: &stderr})
 	finish()
 	if stderr.Len() != 0 {
 		t.Errorf("stderr = %q, want nothing", stderr.String())
@@ -82,4 +82,33 @@ func observerOf(t *testing.T, ctx context.Context) func(mcp.Progress) {
 		t.Fatal("progressLine attached no progress observer")
 	}
 	return observe
+}
+
+// A server log line printed while the progress line is drawn gets a line of
+// its own, and the progress line comes back under it: printed straight after
+// the progress line, it ran on from it ("… · paging the on-callserver log").
+func TestStderrLines_PrintlnKeepsTheProgressLine(t *testing.T) {
+	var stderr bytes.Buffer
+	lines := &stderrLines{w: &stderr}
+	ctx, finish := progressLine(context.Background(), lines)
+	report := observerOf(t, ctx)
+	report(mcp.Progress{Token: "mcp-tui-1", Progress: 1, Total: 4, Message: "paging the on-call engineer"})
+	lines.println("server log [info] acme.desk: paging the on-call engineer")
+	finish()
+	want := "\r\x1b[K⏳ 1/4 (25%) · paging the on-call engineer" +
+		"\r\x1b[Kserver log [info] acme.desk: paging the on-call engineer\n" +
+		"⏳ 1/4 (25%) · paging the on-call engineer" +
+		"\r\x1b[K"
+	if got := stderr.String(); got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+// Without a progress line, println is a plain line.
+func TestStderrLines_PrintlnWithoutProgress(t *testing.T) {
+	var stderr bytes.Buffer
+	(&stderrLines{w: &stderr}).println("server log [info] acme.desk: ready")
+	if got, want := stderr.String(), "server log [info] acme.desk: ready\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
 }

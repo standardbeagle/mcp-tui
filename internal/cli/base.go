@@ -543,7 +543,7 @@ func (c *BaseCommand) configureServerLogOutput(cmd *cobra.Command, porcelainMode
 	}
 	c.service.AddNotificationObserver(func(e notifications.Entry) {
 		if line, ok := notifications.ServerLogLine(&e); ok {
-			fmt.Fprintln(os.Stderr, line)
+			sharedStderr.println(line)
 		}
 	})
 }
@@ -562,7 +562,7 @@ func (c *BaseCommand) configureWatchNotifications(cmd *cobra.Command) {
 		// Single-line write to stderr. We deliberately bypass the debug
 		// logger so the output is not affected by --log-level — users
 		// asked for notifications, they get notifications.
-		fmt.Fprintln(os.Stderr, e.FormatLine())
+		sharedStderr.println(e.FormatLine())
 	})
 }
 
