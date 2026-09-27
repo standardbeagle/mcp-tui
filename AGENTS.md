@@ -107,7 +107,7 @@ docs/                    Astro docs site（dev.standardbeagle.com）
 - `--debug`：log level 升 debug 並出 stderr。每 MCP HTTP 交換一行（`internal/debug/httptrace.go`，component `mcp-http`）：method、去敏 URL、status、時長、`WWW-Authenticate`、DNS/connect/TLS/first-byte、reuse、所送 `Mcp-*` headers；不讀 body，SSE 無礙。
 - SDK 之 slog 經 `debug.NewSlogHandler` 入 debug logger（component `sdk`）。
 - OAuth 每步記於 `oauth`，其 HTTP 記於 `oauth-http`；codes、state、tokens 唯記有無。
-- TUI：`ctrl+d` / `ctrl+l` / `F12` 開 debug screen，七 tab：General、MCP Protocol（Messages：雙向 requests、server requests 與 notifications）、HTTP Debug（讀 httptrace 之 exchange observer）、Auth（唯 `oauth`/`oauth-http`）、Statistics、Capabilities、Notifications（`1`–`8` 濾，8 為 task status）。
+- TUI：`ctrl+d` / `ctrl+l` / `F12` 開 debug screen，七 tab：General、MCP Protocol（Messages：雙向 requests、server requests 與 notifications）、HTTP Debug（httptrace 所存近 200 交換，`debug.RecentHTTPExchanges`；每行時、method、status、時長、DNS/connect/TLS/first-byte、URL；Enter 見 headers）、Auth（唯 `oauth`/`oauth-http`）、Statistics、Capabilities、Notifications（`1`–`8` 濾，8 為 task status）。
 - 去敏：凡記錄經 `internal/redact`。logger 依欄名遮（故連線狀態欄名為 `session_state`/`transport_state`，勿用 `state`）；MCP payload 不依鍵名遮，唯遮字串中 URL 之秘與 `_meta` 之憑證鍵。
 - 協議違規（`protocol_watch.go`）：每違規記 Warn（component `protocol`）並入 Messages log（`VIOLATION`；亂序回應為 `ORDERING`，唯資訊）；CLI text 模式於輸出後印 `⚠ protocol: …`，JSON 物件加 `protocolViolations`。測試：`connectInMemory` 與 CLI `connectHTTPService` 遇 go-sdk server 有違規即敗，為誤報之防。
 - 失敗呼叫之錯誤具名（`debug.ProtocolErrorCode`：-32002/-32602 resource-not-found、-32020、-32021、-32022、-32042），`errors.As` 可及原 JSON-RPC error。

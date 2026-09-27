@@ -143,9 +143,12 @@ func sendTracedRequest(t *testing.T, url string) {
 // hundreds of lines.
 func debugScreenWithEveryTab(t *testing.T, width, height int) *DebugScreen {
 	t.Helper()
+	debug.ClearHTTPExchanges(transports.HTTPTraceComponent)
 	sendTracedRequest(t, serveManyHeaders(t))
 
 	ds := debugScreenAfterToolCall(width, height)
+	data := collectDebugData()
+	ds.httpLogs, ds.httpEntries = data.HTTPLogs, data.HTTPEntries
 	snap := capabilities.FromInitializeResult(
 		&officialMCP.InitializeResult{
 			ProtocolVersion: "2026-07-28",
@@ -217,16 +220,18 @@ func TestDebugScreen_EveryTabAndTheDetailFitTheTerminal(t *testing.T) {
 				assertFitsTheTerminal(t, ds.View(), size.width, size.height)
 			})
 		}
-		t.Run(fmt.Sprintf("%dx%d/MCP message detail", size.width, size.height), func(t *testing.T) {
-			ds := debugScreenWithEveryTab(t, size.width, size.height)
-			ds.activeTab = tabMCPProtocol
-			ds.Update(tea.KeyMsg{Type: tea.KeyEnter})
-			view := ds.View()
-			if !strings.Contains(view, "MCP Message Detail") {
-				t.Fatalf("Enter did not open the detail:\n%s", view)
-			}
-			assertFitsTheTerminal(t, view, size.width, size.height)
-		})
+		for tab, heading := range map[int]string{tabMCPProtocol: "MCP Message Detail", tabHTTPDebug: "HTTP Exchange Detail"} {
+			t.Run(fmt.Sprintf("%dx%d/%s", size.width, size.height, heading), func(t *testing.T) {
+				ds := debugScreenWithEveryTab(t, size.width, size.height)
+				ds.activeTab = tab
+				ds.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				view := ds.View()
+				if !strings.Contains(view, heading) {
+					t.Fatalf("Enter did not open the detail:\n%s", view)
+				}
+				assertFitsTheTerminal(t, view, size.width, size.height)
+			})
+		}
 	}
 }
 
@@ -240,7 +245,7 @@ func TestDebugScreen_TallContentScrolls(t *testing.T) {
 		first, last string
 	}{
 		{"Capabilities", tabCapabilities, false, "Negotiated MCP Capabilities", "copy the full JSON snapshot"},
-		{"HTTP Debug", tabHTTPDebug, false, "HTTP Request Analysis", "X-Trace-Hop-39"},
+		{"HTTP exchange detail", tabHTTPDebug, true, "HTTP Request Analysis", "X-Trace-Hop-39"},
 		{"MCP message detail", tabMCPProtocol, true, `"jsonrpc"`, "end-of-result"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

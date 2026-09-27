@@ -66,6 +66,7 @@ func TestDebugScreen_CopyNamesTheActiveTab(t *testing.T) {
 	t.Cleanup(buffer.Clear)
 	buffer.Add(debug.LogLevelInfo, "oauth", "Token cache miss", nil)
 	buffer.Add(debug.LogLevelInfo, "app", "Started", nil)
+	sendTracedRequest(t, serveManyHeaders(t))
 
 	for _, tc := range []struct {
 		tab  int
@@ -73,7 +74,7 @@ func TestDebugScreen_CopyNamesTheActiveTab(t *testing.T) {
 	}{
 		{tabGeneralLogs, "Copied general log to clipboard"},
 		{tabAuth, "Copied auth log to clipboard"},
-		{tabHTTPDebug, "Copied HTTP debug info to clipboard"},
+		{tabHTTPDebug, "Copied HTTP exchange to clipboard"},
 	} {
 		ds := NewDebugScreen()
 		ds.clipboard = testClipboard(&memoryClipboard{})

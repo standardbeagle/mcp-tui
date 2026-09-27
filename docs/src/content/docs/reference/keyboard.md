@@ -86,17 +86,17 @@ When a resource or prompt viewer is open, `q` / `Esc` closes the viewer first.
 |-----|--------|
 | `Tab` / `→` | Next debug tab |
 | `Shift+Tab` / `←` | Previous debug tab |
-| `↑` / `↓` or `k` / `j` | Move in the list; on the HTTP Debug, Statistics and Capabilities tabs and in a message's detail, scroll the text |
+| `↑` / `↓` or `k` / `j` | Move in the list; on the Statistics and Capabilities tabs and in a detail view, scroll the text |
 | `PgUp` / `PgDn` | Page up / down |
 | `Home` / `g` | Jump to top |
 | `End` / `G` | Jump to bottom |
 | `r` | Refresh |
-| `Enter` | Open frame detail (MCP Protocol tab) |
+| `Enter` | Open the selected message's JSON (MCP Protocol tab) or exchange's headers (HTTP Debug tab) |
 | `c` | Copy selected item (copies capabilities JSON on the Capabilities tab; clears logs on the Statistics tab) |
 | `y` | Copy selected item / capabilities JSON |
 | `Ctrl+E` | Export the session recording (`.json` trace + `.sh` replay script) |
-| `Esc` | Back one level: from a message's detail to the list, from the list to the screen the debug screen was opened from. It never quits mcp-tui |
-| `b` / `Alt+←` | Same as `Esc`; `Enter` also closes a message's detail |
+| `Esc` | Back one level: from a detail view to the list, from the list to the screen the debug screen was opened from. It never quits mcp-tui |
+| `b` / `Alt+←` | Same as `Esc`; `Enter` also closes a detail view |
 | `Ctrl+C` / `Ctrl+D` / `Ctrl+L` / `F12` | Close the debug overlay, from the detail too |
 
 ### Notifications tab
