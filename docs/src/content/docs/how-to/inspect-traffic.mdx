@@ -16,7 +16,7 @@ import DemoVideo from '../../../components/DemoVideo.astro';
 |---|---|
 | General | the mcp-tui log at every level |
 | MCP Protocol | each JSON-RPC message in both directions, server requests and notifications, and the protocol watcher's findings (a response arriving before an earlier one is noted as `ORDER`); `Enter` opens a message |
-| HTTP Debug | the latest HTTP exchange: method, URL, status, and the request and response headers, `Mcp-*` included |
+| HTTP Debug | the last 200 HTTP exchanges of the MCP transport, oldest first, one row each: time, method, status, duration, DNS/connect/TLS (or `reused`) and first-byte timings, and the URL; `Enter` opens one exchange's request and response headers, `Mcp-*` included |
 | Auth | the OAuth flow step by step |
 | Statistics | message, request, response, notification and error counts |
 | Capabilities | what the server and client declared at the handshake |

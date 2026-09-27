@@ -3,6 +3,8 @@ package screens
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/capabilities"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/notifications"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/oauth"
+	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
 	"github.com/standardbeagle/mcp-tui/internal/tui/clipboard"
 )
 
@@ -40,7 +43,7 @@ type debugTab struct {
 var debugTabs = [...]debugTab{
 	tabGeneralLogs:   {title: "General", item: "general log"},
 	tabMCPProtocol:   {title: "MCP Protocol", item: "MCP message"},
-	tabHTTPDebug:     {title: "HTTP Debug", item: "HTTP debug info"},
+	tabHTTPDebug:     {title: "HTTP Debug", item: "HTTP exchange"},
 	tabAuth:          {title: "Auth", item: "auth log"},
 	tabStatistics:    {title: "Statistics", item: "statistics"},
 	tabCapabilities:  {title: "Capabilities", item: "capabilities"},
@@ -70,6 +73,8 @@ type DebugScreen struct {
 	authLogs    []string // OAuth flow events and their HTTP trace
 	mcpLogs     []string
 	mcpEntries  []debug.MCPLogEntry // Full MCP log entries for detail view
+	httpLogs    []string            // one row per HTTP exchange
+	httpEntries []debug.HTTPExchange
 	mcpStats    map[string]int
 
 	// snapshotProvider returns the current capabilities snapshot, or nil if
@@ -223,6 +228,8 @@ type debugDataRefreshMsg struct {
 	MCPLogs     []string
 	MCPEntries  []debug.MCPLogEntry
 	MCPStats    map[string]int
+	HTTPLogs    []string
+	HTTPEntries []debug.HTTPExchange
 }
 
 // debugLogsClearedMsg reports that the log buffers were cleared, carrying the
@@ -287,9 +294,11 @@ func (ds *DebugScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return ds, nil
 }
 
-// openSelectedDetail opens the detail view for the selected MCP log entry.
+// openSelectedDetail opens the detail view for the selected MCP message or
+// HTTP exchange.
 func (ds *DebugScreen) openSelectedDetail() {
-	if ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries) {
+	if (ds.activeTab == tabMCPProtocol && ds.selectedIndex < len(ds.mcpEntries)) ||
+		(ds.activeTab == tabHTTPDebug && ds.selectedIndex < len(ds.httpEntries)) {
 		ds.showDetail = true
 		ds.detailScroll = 0
 	}
@@ -340,19 +349,20 @@ func (ds *DebugScreen) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ds.showDetail = false
 		return ds, func() tea.Msg { return BackMsg{} }
 	case "c", "y":
-		return ds, ds.copyDetailJSONCmd()
+		return ds, ds.copyDetailCmd()
 	}
 	ds.scrollText(msg, ds.detailText(), &ds.detailScroll)
 	return ds, nil
 }
 
-// copyDetailJSONCmd copies the selected MCP entry's full JSON to the
-// clipboard; nil when no entry is selected.
-func (ds *DebugScreen) copyDetailJSONCmd() tea.Cmd {
-	if ds.activeTab != tabMCPProtocol || ds.selectedIndex >= len(ds.mcpEntries) {
-		return nil
+// copyDetailCmd copies what the detail view shows: the selected MCP
+// message's full JSON, or the selected HTTP exchange's detail.
+func (ds *DebugScreen) copyDetailCmd() tea.Cmd {
+	subject := "full JSON"
+	if ds.activeTab == tabHTTPDebug {
+		subject = "HTTP exchange detail"
 	}
-	return ds.clipboard.Copy("full JSON", ds.mcpEntries[ds.selectedIndex].GetFormattedJSON())
+	return ds.clipboard.Copy(subject, ds.detailText())
 }
 
 // switchTab moves the active tab by delta, resetting cursor and scroll.
@@ -492,11 +502,7 @@ func (ds *DebugScreen) getCurrentList() []string {
 	case tabMCPProtocol:
 		return ds.mcpLogs
 	case tabHTTPDebug:
-		// HTTP debug tab - return HTTP error summary if available
-		if httpInfo := mcp.GetLastHTTPError(); httpInfo != nil {
-			return []string{mcp.FormatHTTPError(httpInfo)}
-		}
-		return []string{"No HTTP debugging information available"}
+		return ds.httpLogs
 	case tabNotifications:
 		// Notifications tab — render the current filtered list.
 		entries := ds.filteredNotificationEntries()
@@ -550,6 +556,8 @@ func (ds *DebugScreen) View() string {
 		builder.WriteString(ds.renderLogList("General Logs", ds.generalLogs))
 	case ds.activeTab == tabMCPProtocol:
 		builder.WriteString(ds.renderLogList("MCP Protocol", ds.mcpLogs))
+	case ds.activeTab == tabHTTPDebug:
+		builder.WriteString(ds.renderLogList("HTTP exchanges", ds.httpLogs))
 	case ds.activeTab == tabAuth:
 		builder.WriteString(ds.renderLogList("Auth", ds.authLogs))
 	case ds.activeTab == tabNotifications:
@@ -566,11 +574,9 @@ func (ds *DebugScreen) View() string {
 }
 
 // tabText is the content of a tab that shows text rather than a list:
-// Statistics, Capabilities and HTTP Debug. ok is false on the others.
+// Statistics and Capabilities. ok is false on the others.
 func (ds *DebugScreen) tabText() (text string, ok bool) {
 	switch ds.activeTab {
-	case tabHTTPDebug:
-		return ds.renderHTTPDebug(), true
 	case tabStatistics:
 		return ds.renderStats(), true
 	case tabCapabilities:
@@ -589,11 +595,11 @@ func (ds *DebugScreen) viewChrome() (header, footer string) {
 
 	var builder strings.Builder
 	builder.WriteString("\n")
-	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓/PgUp/PgDn/Home/End: Navigate • Enter: Details (MCP) • c/y: Copy " +
+	helpText := "Tab/Shift+Tab: Switch tabs • ↑↓/PgUp/PgDn/Home/End: Navigate • Enter: Details (MCP, HTTP) • c/y: Copy " +
 		"(incl. Capabilities JSON) • Ctrl+E: Export session • r: Refresh • x: Clear • Esc/Ctrl+C/b/Alt+←: Back"
 	if ds.showDetail {
 		header += "\n" + ds.detailHeading()
-		helpText = "↑↓/PgUp/PgDn/Home/End: Scroll • c/y: Copy JSON • Esc/b/Alt+←/Enter: Back • Ctrl+C: Close"
+		helpText = "↑↓/PgUp/PgDn/Home/End: Scroll • c/y: Copy • Esc/b/Alt+←/Enter: Back • Ctrl+C: Close"
 	}
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Width(ds.Width())
 	builder.WriteString(helpStyle.Render(helpText))
@@ -640,6 +646,7 @@ func (ds *DebugScreen) renderTabs() string {
 	}
 	tabs[tabGeneralLogs] += fmt.Sprintf(" (%d)", len(ds.generalLogs))
 	tabs[tabMCPProtocol] += fmt.Sprintf(" (%d)", len(ds.mcpLogs))
+	tabs[tabHTTPDebug] += fmt.Sprintf(" (%d)", len(ds.httpLogs))
 	tabs[tabAuth] += fmt.Sprintf(" (%d)", len(ds.authLogs))
 	if ds.notificationsProvider != nil {
 		if stream := ds.notificationsProvider(); stream != nil {
@@ -830,32 +837,69 @@ func (ds *DebugScreen) renderStats() string {
 	return builder.String()
 }
 
-// renderHTTPDebug renders HTTP debugging information
-func (ds *DebugScreen) renderHTTPDebug() string {
-	var builder strings.Builder
+// httpExchangeRow is an exchange's row on the HTTP Debug tab: time,
+// method, status, duration, connection timings, then the redacted URL and
+// any transport error, which the row's truncation may cut.
+func httpExchangeRow(ex *debug.HTTPExchange) string {
+	status := "ERR"
+	if ex.Error == "" {
+		status = strconv.Itoa(ex.Status)
+	}
+	conn := "reused"
+	if !ex.Reused {
+		conn = fmt.Sprintf("dns %v connect %v tls %v",
+			ex.DNS.Round(time.Microsecond), ex.Connect.Round(time.Microsecond), ex.TLS.Round(time.Microsecond))
+	}
+	row := fmt.Sprintf("%s  %s  %s  %v  %s  first byte %v  %s",
+		ex.Time.Format("15:04:05.000"), ex.Method, status, ex.Duration.Round(time.Microsecond),
+		conn, ex.FirstByte.Round(time.Microsecond), ex.URL)
+	if ex.Error != "" {
+		row += "  " + ex.Error
+	}
+	return row
+}
 
-	builder.WriteString("🌐 HTTP Transport Debug Information\n\n")
-
-	httpInfo := mcp.GetLastHTTPError()
-	if httpInfo == nil {
-		builder.WriteString("No HTTP requests captured yet.\n\n")
-		builder.WriteString("💡 Tips for HTTP debugging:\n")
-		builder.WriteString("• Debug mode is always enabled\n")
-		builder.WriteString("• Try connecting to an SSE or HTTP transport\n")
-		builder.WriteString("• HTTP state is captured automatically for all connections\n")
-		return builder.String()
+// httpExchangeDetail renders one exchange's detail: request and response
+// headers, timings, and the connection analysis. Headers go through the
+// configured --show-headers overrides, so users who opted into seeing
+// specific sensitive headers see real values; everyone else gets
+// [REDACTED] for Authorization/Cookie/Set-Cookie.
+func (ds *DebugScreen) httpExchangeDetail(ex *debug.HTTPExchange) string {
+	info := &mcp.HTTPErrorInfo{
+		Timestamp:      ex.Time,
+		Method:         ex.Method,
+		URL:            ex.URL,
+		StatusCode:     ex.Status,
+		RequestHeaders: joinedHeaders(ex.RequestHeader),
+		Headers:        joinedHeaders(ex.ResponseHeader),
+		ConnectionDetails: &mcp.ConnectionInfo{
+			LocalAddr:        ex.LocalAddr,
+			RemoteAddr:       ex.RemoteAddr,
+			DNSLookupTime:    ex.DNS,
+			ConnectTime:      ex.Connect,
+			TLSTime:          ex.TLS,
+			FirstByteTime:    ex.FirstByte,
+			ConnectionReused: ex.Reused,
+		},
+	}
+	if ex.Error != "" {
+		info.ResponseBody = "HTTP Request Failed: " + ex.Error
 	}
 
-	// Format the detailed HTTP information. Pass the configured
-	// --show-headers overrides so users who opted into seeing specific
-	// sensitive headers see real values; everyone else gets [REDACTED] for
-	// Authorization/Cookie/Set-Cookie.
-	detailedInfo := mcp.FormatHTTPErrorWithOverrides(httpInfo, mcp.GetShowHeaderOverrides())
-	builder.WriteString(detailedInfo)
-
-	ds.renderHTTPAnalysis(&builder, httpInfo)
-
+	var builder strings.Builder
+	builder.WriteString(mcp.FormatHTTPErrorWithOverrides(info, mcp.GetShowHeaderOverrides()))
+	ds.renderHTTPAnalysis(&builder, info)
 	return builder.String()
+}
+
+// joinedHeaders flattens a header to one comma-joined value per name, the
+// shape mcp.FormatHTTPErrorWithOverrides renders.
+func joinedHeaders(h http.Header) map[string]string {
+	out := make(map[string]string, len(h))
+	for name, values := range h {
+		out[name] = strings.Join(values, ", ")
+	}
+	return out
 }
 
 // renderHTTPAnalysis adds the connection-issue analysis section for the
@@ -962,6 +1006,8 @@ func (ds *DebugScreen) applyDebugData(msg *debugDataRefreshMsg) {
 	ds.mcpLogs = msg.MCPLogs
 	ds.mcpEntries = msg.MCPEntries
 	ds.mcpStats = msg.MCPStats
+	ds.httpLogs = msg.HTTPLogs
+	ds.httpEntries = msg.HTTPEntries
 }
 
 // collectDebugData reads the log buffers without touching model state, so it is
@@ -989,6 +1035,12 @@ func collectDebugData() debugDataRefreshMsg {
 		msg.MCPStats = mcpLogger.GetStats()
 	}
 
+	msg.HTTPEntries = debug.RecentHTTPExchanges(transports.HTTPTraceComponent)
+	msg.HTTPLogs = make([]string, len(msg.HTTPEntries))
+	for i := range msg.HTTPEntries {
+		msg.HTTPLogs[i] = httpExchangeRow(&msg.HTTPEntries[i])
+	}
+
 	return msg
 }
 
@@ -1012,6 +1064,7 @@ func (ds *DebugScreen) clearLogsCmd() tea.Cmd {
 		if mcpLogger := debug.GetMCPLogger(); mcpLogger != nil {
 			mcpLogger.Clear()
 		}
+		debug.ClearHTTPExchanges(transports.HTTPTraceComponent)
 
 		return debugLogsClearedMsg{data: collectDebugData()}
 	}
@@ -1074,11 +1127,14 @@ func statusCmd(message string, level StatusLevel) tea.Cmd {
 	}
 }
 
-// detailHeading renders the detail view's heading and the selected MCP
-// message's time, direction, type, method and ID, wrapped to the terminal
-// width, ending in a newline.
+// detailHeading renders the detail view's heading and, for an MCP message,
+// its time, direction, type, method and ID, wrapped to the terminal width,
+// ending in a newline. An HTTP exchange's detail names those itself.
 func (ds *DebugScreen) detailHeading() string {
 	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	if ds.activeTab == tabHTTPDebug {
+		return headerStyle.Render("HTTP Exchange Detail") + "\n"
+	}
 	heading := headerStyle.Render("MCP Message Detail") + "\n"
 	if ds.selectedIndex >= len(ds.mcpEntries) {
 		return heading
@@ -1095,8 +1151,15 @@ func (ds *DebugScreen) detailHeading() string {
 	return heading + lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(ds.Width()).Render(info) + "\n"
 }
 
-// detailText is the selected MCP message's pretty-printed JSON.
+// detailText is the selected MCP message's pretty-printed JSON, or the
+// selected HTTP exchange's detail.
 func (ds *DebugScreen) detailText() string {
+	if ds.activeTab == tabHTTPDebug {
+		if ds.selectedIndex >= len(ds.httpEntries) {
+			return "No entry selected"
+		}
+		return ds.httpExchangeDetail(&ds.httpEntries[ds.selectedIndex])
+	}
 	if ds.selectedIndex >= len(ds.mcpEntries) {
 		return "No entry selected"
 	}
