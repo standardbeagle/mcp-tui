@@ -3,8 +3,7 @@ title: Quick Start
 description: Connect to your first MCP server, list its tools, and call one — in under a minute.
 ---
 
-import cliList from '../../assets/recordings/cli-tool-list.webp';
-import cliCall from '../../assets/recordings/cli-tool-call.webp';
+import DemoVideo from '../../components/DemoVideo.astro';
 
 ## Connect to a sample server
 
@@ -18,9 +17,7 @@ This launches the TUI, auto-discovers tools, resources, and prompts, and lets yo
 
 ## List tools from the CLI
 
-<div class="demo-frame">
-  <img src={cliList.src} alt="CLI listing tools" loading="lazy" />
-</div>
+<DemoVideo name="tools-metadata" />
 
 ```bash
 mcp-tui --cmd npx \
@@ -30,9 +27,7 @@ mcp-tui --cmd npx \
 
 ## Call a tool
 
-<div class="demo-frame">
-  <img src={cliCall.src} alt="CLI calling a tool with arguments" loading="lazy" />
-</div>
+<DemoVideo name="verify-a-tool" />
 
 ```bash
 mcp-tui --cmd npx \

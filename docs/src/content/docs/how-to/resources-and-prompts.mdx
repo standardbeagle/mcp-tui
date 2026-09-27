@@ -1,0 +1,68 @@
+---
+title: Browse MCP resources and prompts
+description: List and read an MCP server's text and binary resources, complete URI template variables, and inspect, complete and render prompts from the mcp-tui CLI.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+<DemoVideo name="resources-prompts" />
+
+## Resources
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp resource list
+mcp-tui --url http://127.0.0.1:8931/mcp resource get acme://kb/getting-started.md
+```
+
+A binary resource is described, not dumped:
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp resource get acme://brand/logo.png
+```
+
+```
+Content:
+  Type: image/png
+  Binary content: 223 bytes (base64 with --format json)
+
+Served by: acme-support-desk 1.4.0
+
+Cache: fetched · ttl 0s · public
+```
+
+With `--format json` the blob comes out base64-encoded, as on the wire. The
+`Cache` line shows how the SDK served the read on 2026-07-28 (SEP-2549): a
+repeated read inside the server's `ttlMs` is answered from the client cache.
+
+## URI templates and completion
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp resource templates
+mcp-tui --url http://127.0.0.1:8931/mcp resource complete 'acme://tickets/{id}' id=T-104
+```
+
+`resource complete` asks the server's `completion/complete` for values of a
+template variable and prints them as JSON (`"values": ["T-1040", "T-1041", …]`).
+
+## Prompts
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp prompt get triage_ticket
+```
+
+```
+Arguments:
+  • ticket_id (required): e.g. T-1041
+  • tone: friendly (default), formal or apologetic
+```
+
+Arguments are listed in the order the server declared them. Complete a value,
+then render the prompt with arguments given as `key=value`, the same form
+`tool call` takes:
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp prompt complete triage_ticket tone=f
+mcp-tui --url http://127.0.0.1:8931/mcp prompt execute triage_ticket ticket_id=T-1041 tone=apologetic
+```
+
+Text content prints as text; embedded resources and images print as JSON.

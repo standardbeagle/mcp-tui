@@ -1,0 +1,44 @@
+---
+title: How-to guides
+description: Task-by-task guides for testing MCP servers with mcp-tui, each with a recorded run you can reproduce.
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Each guide starts from a task, shows the commands, and ends with a recording
+of the same commands against a real server.
+
+## Follow along with the demo server
+
+The recordings run against the Acme support desk, a small MCP server that
+ships in the mcp-tui repository for exactly this. It serves seven tools,
+four resources, a URI template and two prompts, over stdio, streamable HTTP
+or SSE, optionally behind OAuth, and every run prints the same output.
+
+```bash
+git clone https://github.com/standardbeagle/mcp-tui && cd mcp-tui
+go build -o demo-server ./docs/recordings/demo-server
+./demo-server -http 127.0.0.1:8931            # streamable HTTP at /mcp
+./demo-server -http 127.0.0.1:8933 -oauth     # the same, behind OAuth
+```
+
+or connect over stdio with `mcp-tui --cmd ./demo-server --args -stdio`.
+Its [README](https://github.com/standardbeagle/mcp-tui/tree/main/docs/recordings/demo-server)
+lists what it serves and the faults it can simulate.
+
+## Guides
+
+<CardGrid>
+  <LinkCard title="Test an MCP tool in seconds" href="/mcp-tui/how-to/test-an-mcp-tool/" description="Connect, fill the schema-built form, run, copy the CLI command." />
+  <LinkCard title="Turn manual checks into CI scripts" href="/mcp-tui/how-to/ci-scripts/" description="Replay scripts, JSON output, exit codes." />
+  <LinkCard title="Fix MCP connection and handshake errors" href="/mcp-tui/how-to/fix-connection-errors/" description="Wrong path, wrong transport, logs on stdout, an unanswered server/discover." />
+  <LinkCard title="Validate tool arguments against the schema" href="/mcp-tui/how-to/validate-tool-arguments/" description="Refused calls, readable rules, sending bad input on purpose." />
+  <LinkCard title="Inspect MCP traffic" href="/mcp-tui/how-to/inspect-traffic/" description="The debug screen: messages, HTTP timing, OAuth steps." />
+  <LinkCard title="Check a server for spec compliance" href="/mcp-tui/how-to/check-spec-compliance/" description="verify probes and the conform matrix, with JUnit for CI." />
+  <LinkCard title="Watch progress, logs, tasks and subscriptions" href="/mcp-tui/how-to/async-features/" description="What a server sends while it works." />
+  <LinkCard title="Test a server's OAuth" href="/mcp-tui/how-to/test-oauth/" description="From the 401 challenge to a cached token." />
+  <LinkCard title="Read tool metadata and annotations" href="/mcp-tui/how-to/tool-metadata/" description="Names, titles, hints, output schemas, destructive-tool confirmation." />
+  <LinkCard title="Browse resources and prompts" href="/mcp-tui/how-to/resources-and-prompts/" description="Text and binary resources, templates, completion, prompts." />
+  <LinkCard title="Answer elicitation and sampling" href="/mcp-tui/how-to/elicitation-and-sampling/" description="Server requests for input, in the TUI or from stubs." />
+  <LinkCard title="Pin and inspect protocol versions" href="/mcp-tui/how-to/protocol-versions/" description="Negotiated versions, pins, multi round-trip input rounds." />
+</CardGrid>

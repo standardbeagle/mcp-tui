@@ -63,6 +63,25 @@ export default defineConfig({
           ],
         },
         {
+          label: 'How-to',
+          items: [
+            { label: 'All how-to guides', slug: 'how-to' },
+            { label: 'Test a tool in seconds', slug: 'how-to/test-an-mcp-tool' },
+            { label: 'Manual checks to CI scripts', slug: 'how-to/ci-scripts' },
+            { label: 'Fix connection errors', slug: 'how-to/fix-connection-errors' },
+            { label: 'Validate tool arguments', slug: 'how-to/validate-tool-arguments' },
+            { label: 'Inspect MCP traffic', slug: 'how-to/inspect-traffic' },
+            { label: 'Check spec compliance', slug: 'how-to/check-spec-compliance' },
+            { label: 'Progress, logs, tasks', slug: 'how-to/async-features' },
+            { label: 'Test OAuth', slug: 'how-to/test-oauth' },
+            { label: 'Tool metadata', slug: 'how-to/tool-metadata' },
+            { label: 'Resources and prompts', slug: 'how-to/resources-and-prompts' },
+            { label: 'Elicitation and sampling', slug: 'how-to/elicitation-and-sampling' },
+            { label: 'Protocol versions', slug: 'how-to/protocol-versions' },
+            { label: 'Videos', slug: 'videos' },
+          ],
+        },
+        {
           label: 'Guides',
           items: [
             { label: 'TUI Mode', slug: 'guides/tui' },
@@ -82,6 +101,7 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'CLI Reference', slug: 'reference/cli' },
+            { label: 'Error Messages', slug: 'reference/errors' },
             { label: 'Keyboard Shortcuts', slug: 'reference/keyboard' },
             { label: 'Architecture', slug: 'reference/architecture' },
           ],

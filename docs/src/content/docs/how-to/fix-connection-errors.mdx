@@ -1,0 +1,113 @@
+---
+title: Fix MCP connection and handshake errors
+description: Diagnose an MCP server that will not connect or breaks the protocol - a wrong URL path, the wrong transport, a stdio server logging to stdout, one that ignores server/discover, stray JSON-RPC messages - from what mcp-tui prints.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+When a connection fails, mcp-tui says what the server did and which flag or
+server change fixes it. The four mistakes below cover most failed first
+connections. The full list of messages is in
+[Error messages](/mcp-tui/reference/errors/).
+
+<DemoVideo name="handshake-errors" />
+
+## The URL path is wrong
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/api tool list
+```
+
+```
+❌ Connection failed
+Error: failed to connect to MCP server: The server refused the MCP handshake (POST answered HTTP 404 Not Found): calling "initialize": sending "initialize": Not Found
+
+Suggested actions:
+  • Check the URL path: streamable HTTP servers usually serve /mcp
+  • If the server speaks the older SSE transport, its URL usually ends in /sse
+```
+
+## The transport does not match the endpoint
+
+A streamable HTTP endpoint reached with `--transport sse` answers the SSE
+`GET` with 400:
+
+```bash
+mcp-tui --transport sse --url http://127.0.0.1:8931/mcp tool list
+```
+
+```
+Error: failed to connect to MCP server: The server refused the SSE stream (GET answered HTTP 400 Bad Request): failed to connect: Bad Request
+
+Suggested actions:
+  • This URL is likely a streamable HTTP endpoint: use --transport http
+  • Run with --debug to see each HTTP exchange
+```
+
+The reverse, `--transport http` against a URL ending in `/sse`, points you
+to `--transport sse`. mcp-tui picks SSE on its own for a URL ending in
+`/sse` when you do not pass `--transport`.
+
+## A stdio server prints to stdout
+
+On stdio, stdout carries JSON-RPC messages only. A server that prints a
+banner there breaks the handshake, and mcp-tui quotes the line:
+
+```bash
+mcp-tui --cmd demo-server --args -stdio,-stdout-banner tool list
+```
+
+```
+Error: server demo-server wrote a line to stdout that is not a JSON-RPC message: "Acme support desk listening on stdio"
+
+Suggestion: on the stdio transport stdout carries only JSON-RPC messages; write logs and banners to stderr (console.error in Node, print(..., file=sys.stderr) in Python)
+```
+
+## The server does not answer `server/discover`
+
+Protocol 2026-07-28 starts with `server/discover`. An older server must
+answer it with `-32601`, after which the client falls back to `initialize`.
+A server that ignores unknown methods leaves it unanswered:
+
+```bash
+mcp-tui --timeout 3s --cmd demo-server --args -stdio,-ignore-discover tool list
+```
+
+```
+Error: the server did not answer server/discover, the first request of the MCP 2026-07-28 handshake, before the connection deadline. Either it ignores methods it does not know (it must answer them with error -32601 so the client can fall back to initialize), or it had not finished starting.
+
+Suggestion: pin --protocol-version 2025-11-25 to start with initialize; if the server is only slow to start (a cold npx download, for one), raise --timeout
+```
+
+With the pin, the same server connects:
+
+```bash
+mcp-tui --protocol-version 2025-11-25 --cmd demo-server --args -stdio,-ignore-discover server
+```
+
+## The server breaks JSON-RPC
+
+The Go SDK drops a response whose id matches no request, a second response
+to the same request, and messages with methods the negotiated MCP version
+does not define. mcp-tui watches every connection for them and names each
+after the command's output:
+
+```bash
+mcp-tui --cmd demo-server --args -stdio,-stray-messages tool list
+```
+
+```
+⚠ protocol: server sent a response with id 9001 that matches no request
+⚠ protocol: server sent notification "initialized", which MCP does not define (did you mean notifications/initialized?)
+```
+
+Responses arriving out of order are allowed in JSON-RPC and are recorded in
+the debug screen's Messages tab without a warning. `verify --probe
+protocol-violations` fails a server that commits any of these, and `conform`
+runs the same probe.
+
+## See every exchange
+
+`--debug` logs each HTTP request with its method, URL, status, timings and
+the `Mcp-*` headers sent, and each handshake attempt with the version it
+asked for. The TUI shows the same in its [debug screen](/mcp-tui/how-to/inspect-traffic/).

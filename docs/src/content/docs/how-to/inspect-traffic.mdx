@@ -1,0 +1,46 @@
+---
+title: Inspect MCP traffic
+description: Use mcp-tui's debug screen and --debug flag to see every JSON-RPC message in both directions, per-request HTTP timing, OAuth steps, negotiated capabilities and server notifications.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+<DemoVideo name="debug-screen" />
+
+## The debug screen
+
+`Ctrl+D`, `Ctrl+L` or `F12` opens it from the main screen or a tool form.
+`Tab` moves between its tabs:
+
+| Tab | Shows |
+|---|---|
+| General | the mcp-tui log at every level |
+| MCP Protocol | each JSON-RPC message in both directions, server requests and notifications, and the protocol watcher's findings (a response arriving before an earlier one is noted as `ORDER`); `Enter` opens a message |
+| HTTP Debug | the latest HTTP exchange: method, URL, status, and the request and response headers, `Mcp-*` included |
+| Auth | the OAuth flow step by step |
+| Statistics | message, request, response, notification and error counts |
+| Capabilities | what the server and client declared at the handshake |
+| Notifications | the notification stream; `1`–`8` filter by type (`8` is task status), `Space` pauses |
+
+`Ctrl+E` exports the session as a JSON event log and a
+[replay script](/mcp-tui/how-to/ci-scripts/).
+
+Credentials are masked everywhere: `Authorization`, cookies, tokens and
+secrets in URLs. `--show-headers` lists header names to show verbatim in the
+HTTP tab.
+
+## The same from the CLI
+
+```bash
+mcp-tui --debug --url http://127.0.0.1:8931/mcp tool list
+```
+
+`--debug` raises the log to debug level on stderr: one line per HTTP
+exchange (component `mcp-http`) with its method, URL, status, duration and
+DNS/connect/TLS/first-byte timings, the SDK's own log (`sdk`), each OAuth step
+(`oauth`, `oauth-http`), and every handshake attempt with the version it
+asked for. `--log-level info` gives the connection summary and the
+negotiated version without the per-message detail.
+
+See the [Debugging guide](/mcp-tui/guides/debugging/) for common failure
+patterns.

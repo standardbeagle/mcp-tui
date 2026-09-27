@@ -1,0 +1,77 @@
+---
+title: Watch progress, logs, tasks and subscriptions
+description: See an MCP server's progress notifications and log messages during a long tool call, run a call as an MCP task, and follow a resource subscription from the mcp-tui CLI.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+A server keeps talking while it works: progress notifications, log
+messages, task status, resource updates. mcp-tui shows each as it arrives.
+
+<DemoVideo name="async-progress-tasks" />
+
+## Progress and server logs during a call
+
+`tool call` sends a `progressToken` with every request and redraws the
+latest `notifications/progress` on one stderr line. `--server-log-level`
+asks the server for log messages at that level and prints each one:
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp --server-log-level info \
+  tool call escalate_ticket ticket_id=T-1041
+```
+
+```
+🚀 Executing tool...
+server log [info] acme.desk: escalate_ticket T-1041: Paging the on-call engineer
+server log [info] acme.desk: escalate_ticket T-1041: Notifying the account manager
+server log [info] acme.desk: escalate_ticket T-1041: Raising priority to urgent
+✅ Tool executed successfully
+```
+
+Notifications travel separately from the response, so the last log line can
+arrive after the result has printed. On 2026-07-28 the log level rides in
+every request's `_meta`; on older versions mcp-tui sends `logging/setLevel`
+once after connecting.
+
+## Run a call as a task
+
+With `--task`, `tools/call` returns a task handle and the result comes
+later. `--wait` follows the task to its end and prints the result as a
+direct call would; `--watch-notifications` shows each `tasks/status` on the
+way:
+
+```bash
+mcp-tui --cmd mcp-server-everything --args stdio --watch-notifications \
+  tool call simulate-research-query topic="MCP transports" --task --wait
+```
+
+```
+🚀 Calling tool as a task...
+20:40:18.993  tasks/status  working 3ae8a0350031be62f90bda0bd825ec3b: Gathering sources...
+⏳ Task 3ae8a0350031be62f90bda0bd825ec3b created; waiting for it to finish...
+20:40:19.995  tasks/status  working 3ae8a0350031be62f90bda0bd825ec3b: Analyzing content...
+20:40:20.996  tasks/status  working 3ae8a0350031be62f90bda0bd825ec3b: Synthesizing findings...
+20:40:21.998  tasks/status  working 3ae8a0350031be62f90bda0bd825ec3b: Generating report...
+20:40:23.001  tasks/status  completed 3ae8a0350031be62f90bda0bd825ec3b: Generating report...
+✅ Tool executed successfully
+```
+
+Without `--wait` the command prints the handle and the `task get` /
+`task result` commands to follow up with. See [Tasks](/mcp-tui/guides/tasks/)
+for both wire forms (the 2025-11-25 experimental feature and the 2026-07-28
+extension).
+
+## Follow a resource
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp resource watch acme://status/queue --count 3
+```
+
+`resource watch` subscribes and prints one line per
+`notifications/resources/updated` until `--count` updates, Ctrl-C, or an
+explicit `--timeout`. On 2026-07-28 it listens on a per-URI
+`subscriptions/listen` stream; before, it uses `resources/subscribe`.
+
+In the TUI, `s` on the Resources tab watches the selected resource and the
+Events tab lists every notification as it arrives.

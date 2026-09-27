@@ -1,0 +1,72 @@
+---
+title: Read MCP tool metadata and annotations
+description: List an MCP server's tools with their callable names, titles and annotation hints, print a tool's full input and output schema, and get a confirmation before a destructive tool runs.
+---
+
+import DemoVideo from '../../../components/DemoVideo.astro';
+
+<DemoVideo name="tools-metadata" />
+
+## List tools
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp tool list
+```
+
+```
+search_tickets — Search tickets [R][I]
+  Search the Acme support queue. Filters combine: free-text query, status, tags (a ticket must carry every tag) and an optional priority/customer filter.
+  Icon: data:image/png;base64,… (300 bytes) (image/png, sizes 32x32)
+
+Total: 7 tools
+[R] read-only  [D] destructive  [I] idempotent  [O] open world
+```
+
+Each tool leads with the name you pass to `tool call`, then its title. The
+markers are the annotation hints the server declared (`readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`). A name that breaks
+SEP-986 (1-128 characters of `A-Z a-z 0-9 _ - .`) is flagged, and tools the
+SDK dropped from the list for invalid `x-mcp-header` annotations are
+reported on stderr.
+
+## Describe one tool
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp tool describe search_tickets
+```
+
+```
+Tool: search_tickets [R][I]
+Title: Search tickets
+Annotations: readOnlyHint=true, idempotentHint=true, openWorldHint=false
+
+Description:
+  Search the Acme support queue. …
+
+Input Schema:
+  { … }
+```
+
+followed by the output schema when the tool declares one. The SDK hands the
+client each schema as a map, so properties print sorted by name rather than
+in the server's order.
+
+## Destructive tools ask first
+
+A tool that declares `destructiveHint: true` needs a yes before it runs:
+
+```bash
+mcp-tui --url http://127.0.0.1:8931/mcp tool call delete_ticket ticket_id=T-1047
+```
+
+```
+⚠ Tool "Delete ticket" is flagged destructive (destructiveHint=true).
+  Permanently delete a ticket and its history.
+Proceed? [y/N]:
+```
+
+Anything but `y` cancels. Without a terminal on stdin (a script, CI) the
+call is refused unless you pass `--no-confirm`.
+
+In the TUI the Tools tab shows the same markers with a legend, and the
+detail pane spells the annotations out.
