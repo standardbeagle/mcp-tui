@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"net/http"
 	"sort"
 	"strings"
 	"testing"
@@ -140,59 +139,6 @@ func TestParseShowHeadersCSV(t *testing.T) {
 	}
 }
 
-// TestCaptureRoundTrip_PopulatesRequestAndResponseHeaders verifies the
-// observer wired into the transports package: when the SDK transport
-// completes a round-trip, both request and response headers must land in
-// HTTPErrorInfo so the Ctrl+D HTTP tab has a per-request snapshot.
-func TestCaptureRoundTrip_PopulatesRequestAndResponseHeaders(t *testing.T) {
-	// Build a fake request + response and feed them to the package-level
-	// observer the init() function registered. We restore lastHTTPError to
-	// avoid leaking state into other tests in the same process.
-	prev := GetLastHTTPError()
-	defer setLastHTTPError(prev)
-
-	req, err := http.NewRequest(http.MethodPost, "https://example.com/mcp", http.NoBody)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Authorization", "Bearer test")
-	req.Header.Set("MCP-Method", "tools/call")
-	req.Header.Set("MCP-Name", "echo")
-
-	resp := &http.Response{
-		StatusCode: 200,
-		Header:     http.Header{},
-	}
-	resp.Header.Set("Set-Cookie", "sid=abc")
-	resp.Header.Set("Content-Type", "application/json")
-
-	captureRoundTrip(req, resp, nil)
-
-	got := GetLastHTTPError()
-	if got == nil {
-		t.Fatal("captureRoundTrip did not populate lastHTTPError")
-	}
-	if got.RequestHeaders["Authorization"] != "Bearer test" {
-		t.Errorf("RequestHeaders[Authorization] = %q, want %q", got.RequestHeaders["Authorization"], "Bearer test")
-	}
-	// Go's http.Header canonicalizes "MCP-Method" → "Mcp-Method" (only the
-	// first letter of each dash-separated word is upper-cased). The
-	// snapshot preserves whatever canonical form the http library used, so
-	// the lookup uses the canonical key.
-	if got.RequestHeaders["Mcp-Method"] != "tools/call" {
-		t.Errorf("RequestHeaders[Mcp-Method] = %q, want %q (acceptance criterion 5)", got.RequestHeaders["Mcp-Method"], "tools/call")
-	}
-	if got.RequestHeaders["Mcp-Name"] != "echo" {
-		t.Errorf("RequestHeaders[Mcp-Name] = %q, want %q (acceptance criterion 5)", got.RequestHeaders["Mcp-Name"], "echo")
-	}
-	if got.Headers["Set-Cookie"] != "sid=abc" {
-		t.Errorf("Headers[Set-Cookie] = %q, want %q (raw — formatter applies redaction later)", got.Headers["Set-Cookie"], "sid=abc")
-	}
-	if got.StatusCode != 200 {
-		t.Errorf("StatusCode = %d, want 200", got.StatusCode)
-	}
-}
-
 // TestFormatHTTPError_ShowsMCPMethodHeaders verifies acceptance criterion 5:
 // MCP-Method and MCP-Name (set by --mcp-method-headers / iter 13) appear in
 // the rendered debug output without being treated as sensitive.
@@ -208,7 +154,7 @@ func TestFormatHTTPError_ShowsMCPMethodHeaders(t *testing.T) {
 			"Mcp-Name":   "echo",
 		},
 	}
-	out := FormatHTTPError(info)
+	out := FormatHTTPErrorWithOverrides(info, nil)
 	if !strings.Contains(out, "Mcp-Method: tools/call") {
 		t.Errorf("expected Mcp-Method header in output; got:\n%s", out)
 	}
@@ -239,7 +185,7 @@ func TestFormatHTTPError_AppliesRedaction(t *testing.T) {
 	}
 
 	// Default formatter: secrets must be redacted.
-	out := FormatHTTPError(info)
+	out := FormatHTTPErrorWithOverrides(info, nil)
 	if !strings.Contains(out, "Authorization: "+redactedSentinel) {
 		t.Errorf("expected Authorization redaction; got:\n%s", out)
 	}

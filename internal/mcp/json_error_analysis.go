@@ -6,17 +6,6 @@ import (
 	"strings"
 )
 
-// tryPrettyPrintJSON attempts to pretty-print JSON for better readability
-func tryPrettyPrintJSON(data string) string {
-	var obj interface{}
-	if err := json.Unmarshal([]byte(data), &obj); err == nil {
-		if pretty, err := json.MarshalIndent(obj, "", "  "); err == nil {
-			return string(pretty)
-		}
-	}
-	return data
-}
-
 // AnalyzeJSONError attempts to provide more specific error information
 func AnalyzeJSONError(err error, rawData string) map[string]interface{} {
 	details := make(map[string]interface{})

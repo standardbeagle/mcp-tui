@@ -2087,11 +2087,6 @@ func (s *service) UpdateConfiguration(configMap map[string]interface{}) error {
 		s.sessionManager.SetDebugEnabled(s.debugMode)
 	}
 
-	// Update HTTP debugging if mode changed
-	if oldDebugMode != s.debugMode {
-		EnableHTTPDebugging(s.debugMode)
-	}
-
 	return nil
 }
 

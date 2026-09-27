@@ -923,14 +923,6 @@ func (ds *DebugScreen) renderHTTPAnalysis(builder *strings.Builder, httpInfo *mc
 		renderConnectionTiming(builder, conn)
 	}
 
-	if sse := httpInfo.SSEInfo; sse != nil {
-		fmt.Fprintf(builder, "• Stream duration: %v\n", sse.StreamDuration)
-
-		if sse.StreamDuration < 100*time.Millisecond {
-			builder.WriteString("⚠️  Very short stream duration - connection dropped quickly\n")
-		}
-	}
-
 	// Error-specific analysis
 	if httpInfo.StatusCode == 0 {
 		builder.WriteString("\n🚨 Connection Failed Before Response:\n")
@@ -956,7 +948,7 @@ func renderConnectionTiming(builder *strings.Builder, conn *mcp.ConnectionInfo) 
 	if !conn.ConnectionReused {
 		builder.WriteString("• Fresh connection established (not reused)\n")
 	} else {
-		fmt.Fprintf(builder, "• Connection reused (idle: %v)\n", conn.IdleTime)
+		builder.WriteString("• Connection reused\n")
 	}
 
 	totalTime := conn.DNSLookupTime + conn.ConnectTime + conn.TLSTime + conn.FirstByteTime
