@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-27
+
 ### Breaking
 - **`--oauth-token-url` removed.** The flag was accepted but never applied: the MCP SDK takes the token endpoint from authorization server metadata (or its `/token` fallback) and has no override. Passing it is now an unknown-flag error. Migration: drop the flag. If discovery finds the wrong endpoint, fix the server's Protected Resource Metadata or authorization server metadata; `--oauth-issuer` pins which authorization server a pre-registered client may talk to.
 - **Client-credentials grant rejects `--oauth-scopes`.** The SDK's client-credentials handler has no scope hook, so the scopes were silently dropped. The combination (`--oauth-client-id` + `--oauth-client-secret` + `--oauth-scopes`) now fails at flag validation. Migration: remove `--oauth-scopes` from client-credentials invocations; the grant requests the scopes the resource server advertises.

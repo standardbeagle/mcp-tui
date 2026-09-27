@@ -47,7 +47,7 @@ sha256sum --ignore-missing -c checksums.txt
 # (macOS: compare `shasum -a 256 <archive>` with its line in checksums.txt)
 
 # Provenance: the archive was built by this repository's release workflow
-gh attestation verify mcp-tui_0.9.1_linux-amd64.tar.gz --repo standardbeagle/mcp-tui
+gh attestation verify mcp-tui_0.10.0_linux-amd64.tar.gz --repo standardbeagle/mcp-tui
 ```
 
 Each release also carries an SPDX SBOM per platform,
