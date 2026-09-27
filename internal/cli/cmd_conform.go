@@ -72,6 +72,7 @@ tool that needs arguments is skipped unless --sampling-trigger-args /
 
 tools.call.isError calls --tool with --tool-args when --tool is given, and
 then fails unless that call returns isError:true with non-empty content.
+verify.seterror-content calls the same tool with the same arguments.
 Without --tool it picks a tool whose name suggests it fails, calls it with
 no arguments, and skips when the call succeeds.
 
@@ -97,7 +98,7 @@ Exit codes:
 		"Tool that fails by design, called by tools.call.isError and verify.seterror-content "+
 			"(defaults: a tool named like error/fail/invalid, and \"echo\")")
 	cmd.Flags().StringArray("tool-args", nil,
-		"(tools.call.isError) Argument for --tool as key=value or key:=<json>, as in `tool call` (repeatable)")
+		"(tools.call.isError, verify.seterror-content) Argument for --tool as key=value or key:=<json>, as in `tool call` (repeatable)")
 	cmd.Flags().String("completion-prompt", "",
 		"Prompt name (or resource template URI when --completion-resource is set) for completion/complete")
 	cmd.Flags().Bool("completion-resource", false,

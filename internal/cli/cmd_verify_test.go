@@ -352,3 +352,33 @@ func newSDKTestServer(t *testing.T) *httptest.Server {
 // package-level helper. Verify the helper exists by referencing it from
 // the test setup rather than redefining.
 var _ = os.Stdout
+
+// TestVerifyCommand_ToolArgsReachTheProbeTarget confirms --tool and
+// --tool-args reach the seterror-content probe, with `tool call`'s
+// conversion to type them by the tool's input schema.
+func TestVerifyCommand_ToolArgsReachTheProbeTarget(t *testing.T) {
+	c := NewVerifyCommand()
+	cmd := withVerifyParentFlags(c.CreateCommand())
+	for flag, value := range map[string]string{
+		"cmd":       "billing-server",
+		"tool":      "void_invoice",
+		"tool-args": "invoice_id=INV-2201",
+	} {
+		if err := cmd.Flags().Set(flag, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target, err := c.buildTarget(cmd, nil)
+	if err != nil {
+		t.Fatalf("buildTarget: %v", err)
+	}
+	if target.ToolName != "void_invoice" {
+		t.Errorf("ToolName = %q", target.ToolName)
+	}
+	if len(target.ToolArgPairs) != 1 || target.ToolArgPairs[0] != "invoice_id=INV-2201" {
+		t.Errorf("ToolArgPairs = %q", target.ToolArgPairs)
+	}
+	if target.ToolArguments == nil {
+		t.Error("ToolArguments conversion not set")
+	}
+}
