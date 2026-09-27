@@ -235,7 +235,9 @@ func (a *authServer) authorize(w http.ResponseWriter, r *http.Request) {
 			query[k] = v
 		}
 		target.RawQuery = query.Encode()
-		http.Redirect(w, r, target.String(), http.StatusFound)
+		// redirectURI passed allowsRedirect above: an exact registered URI, or
+		// loopback http for a client that registered none (RFC 8252 section 7.3).
+		http.Redirect(w, r, target.String(), http.StatusFound) //nolint:gosec // G710: checked by allowsRedirect
 	}
 	fail := func(code, description string) {
 		redirectWith(url.Values{"error": {code}, "error_description": {description}})

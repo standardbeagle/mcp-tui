@@ -93,7 +93,9 @@ func (systemClipboard) Read(ctx context.Context) (string, error) {
 // Stdout and stderr are left unattached on a copy: the forked child inherits
 // them, and Wait would wait for it to close them.
 func runHelper(ctx context.Context, args []string, stdin string, readStdout bool) (string, error) {
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	// args is always one of the fixed helper tables above; the environment
+	// (WAYLAND_DISPLAY) only chooses which table, never the program's text.
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // G204: args from fixed helper tables
 	cmd.Stdin = strings.NewReader(stdin)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
