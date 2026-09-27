@@ -104,18 +104,22 @@ jobs:
         run: go test -race ./internal/... -timeout 20m
 
   # Reports vulnerabilities reachable from mcp-tui's code in its modules and
-  # in the standard library of the Go it is released with. The action installs
-  # govulncheck with that Go, so the stdlib checked is the one that ships.
+  # in the standard library of the Go it is released with. govulncheck checks
+  # the stdlib of the go it runs with, so it runs on 1.25 here. It is pinned
+  # to x/vuln v1.7.0, the last release that builds on Go 1.25; @latest (as
+  # golang/govulncheck-action installs it) needs Go 1.26 and fails to install.
+  # The vulnerability database is fetched fresh on every run either way.
   govulncheck:
     name: Vulnerability check
     runs-on: ubuntu-latest
     steps:
-      # The action checks the repository out itself.
-      - name: govulncheck
-        uses: golang/govulncheck-action@v1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version-input: '1.25'
-          go-package: ./...
+          go-version: '1.25'
+          cache: false
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
   # The npm installer runs on every user platform, and extracts with whatever
   # tar the platform has, so it is tested on all three.
