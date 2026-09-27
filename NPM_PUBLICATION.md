@@ -1,104 +1,51 @@
-# MCP-TUI v0.6.0 - NPM Publication Guide
+# npm Package: @standardbeagle/mcp-tui
 
-## 📦 Package Status: Ready for Publication
+The npm package is a launcher for the Go binary published on GitHub Releases.
+It contains no binary and has no dependencies.
 
-The MCP-TUI project has been successfully prepared for npm publication with v0.6.0.
+## Contents
 
-## ✅ What's Included
+`npm pack --dry-run` lists exactly these files (`package.json` `files`):
 
-### Core Features
-- **Full CLI Commands**: `tool`, `prompt`, `resource`, `server` with complete subcommands
-- **TUI Mode**: Interactive terminal interface for MCP server interaction
-- **Cross-Platform**: Linux, macOS, Windows (amd64, arm64)
-- **Multiple Output Formats**: JSON and text formatting
-- **Comprehensive Examples**: Configuration examples for various use cases
+| File | Role |
+|---|---|
+| `bin/mcp-tui.js` | The `mcp-tui` command. Runs `binaries/mcp-tui[.exe]`, passing arguments, stdio, exit code and SIGTERM/SIGHUP through. If the binary is missing it says how to run the installer. |
+| `scripts/install.js` | `postinstall`. Downloads and verifies the binary (below). |
+| `README.md`, `LICENSE`, `CHANGELOG.md`, `package.json` | Metadata. |
 
-### Package Contents
-- Pre-built binary for current platform (13.6MB)
-- JavaScript wrapper for npm integration
-- Installation script with fallback mechanisms
-- Comprehensive documentation and examples
-- Configuration reference guides
+## What postinstall does
 
-## 🚀 Publication Steps
+1. Maps the host to a release target: `linux`/`darwin`/`win32` on `x64`/`arm64`
+   become `linux`/`darwin`/`windows` on `amd64`/`arm64`. Anything else fails
+   with the supported list.
+2. Downloads `mcp-tui_<version>_<os>-<arch>.tar.gz` and `checksums.txt` from
+   `https://github.com/standardbeagle/mcp-tui/releases/download/v<version>/`,
+   where `<version>` is the package's own version.
+3. Refuses the archive unless its SHA-256 equals its line in `checksums.txt`.
+   A missing line is a failure.
+4. Extracts `mcp-tui-<os>-<arch>[.exe]` with the system `tar` (macOS, Linux,
+   Windows 10+) and renames it into `binaries/`, so a failed install leaves no
+   partial binary.
 
-### 1. Prerequisites
-- Ensure you're logged into npm: `npm whoami`
-- Verify you have publish permissions to `@standardbeagle` scope
+The checksum check catches a corrupted or substituted download. It does not
+defend against a compromised release, since `checksums.txt` comes from the
+same release; the build provenance attestation does (see
+`RELEASE_CHECKLIST.md`).
 
-### 2. Final Testing
+## Tests
+
 ```bash
-# Test the current package
-npm pack
-./test-npm-install.sh
-
-# Verify all commands work
-npx mcp-tui --version  # Should show 0.6.0
-npx mcp-tui --help
-npx mcp-tui tool --help
-npx mcp-tui prompt --help
-npx mcp-tui resource --help
+node --test scripts/install.test.js    # also: npm test
 ```
 
-### 3. Publish to NPM
-```bash
-# Publish the package
-npm publish
+The tests cover target mapping, asset names, checksum parsing and
+verification, and a full install from a loopback release server (success,
+checksum mismatch, missing asset). CI runs them on Linux, macOS and Windows.
 
-# Verify publication
-npm view @standardbeagle/mcp-tui
-```
+## Publishing
 
-### 4. Create GitHub Release (Optional but Recommended)
-```bash
-# Tag the release
-git tag v0.6.0
-git push origin v0.6.0
-
-# Upload release binaries
-# Use the files in dist/ directory:
-# - mcp-tui_0.6.0_linux_amd64.tar.gz
-# - mcp-tui_0.6.0_linux_arm64.tar.gz
-# - mcp-tui_0.6.0_darwin_amd64.tar.gz
-# - mcp-tui_0.6.0_darwin_arm64.tar.gz
-# - mcp-tui_0.6.0_windows_amd64.tar.gz
-```
-
-## 📋 Package Information
-
-- **Name**: `@standardbeagle/mcp-tui`
-- **Version**: `0.6.0`
-- **Size**: ~7.2MB compressed, ~13.7MB unpacked
-- **Binary Included**: Yes (built for current platform)
-- **Install Script**: Copies pre-built binary or downloads from GitHub releases
-
-## 🧪 Installation Testing
-
-Users can install and test with:
-```bash
-npm install -g @standardbeagle/mcp-tui
-mcp-tui --version
-mcp-tui --help
-```
-
-Or local installation:
-```bash
-npm install @standardbeagle/mcp-tui
-npx mcp-tui --version
-```
-
-## 🔧 Post-Publication
-
-After publication, users can:
-
-1. **Install globally**: `npm install -g @standardbeagle/mcp-tui`
-2. **Use CLI commands**: `mcp-tui tool list`, `mcp-tui prompt execute`, etc.
-3. **Interactive TUI**: `mcp-tui` for full terminal interface
-4. **Connect to MCP servers**: Full stdio, HTTP, and SSE transport support
-
-## 📝 Notes
-
-- The package includes the binary for the build platform
-- Install script handles cross-platform binary detection
-- Fallback to GitHub releases if local binary isn't compatible
-- All source files excluded via .npmignore for clean package
+Publishing is done by `.github/workflows/publish.yml` on a `v*` tag, after the
+GitHub release it installs from has been created. See `RELEASE_CHECKLIST.md`.
+The package version must equal the tag without its `v`; the workflow fails
+otherwise, because the installer downloads the release matching the package
+version.
