@@ -436,7 +436,7 @@ func enumLabel(values []any) string {
 		case string:
 			labels[i] = v
 		case nil:
-			labels[i] = "null"
+			labels[i] = jsonNullLiteral
 		case float64:
 			labels[i] = strconv.FormatFloat(v, 'f', -1, 64)
 		default:
@@ -1459,7 +1459,8 @@ func (ts *ToolScreen) checkRequiredFields() error {
 	return nil
 }
 
-// jsonNullLiteral is what a user types to send null.
+// jsonNullLiteral is JSON null as text: what a user types to send null,
+// and how a null value is shown.
 const jsonNullLiteral = "null"
 
 // isNullLiteral reports that value sends null: the field is nullable and
