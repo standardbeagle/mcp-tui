@@ -3,6 +3,7 @@ package transports
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -97,4 +98,8 @@ type HTTPClientConfig struct {
 	EnableCompression     bool
 	MaxIdleConns          int
 	IdleConnTimeout       time.Duration
+	// Proxy picks the proxy for each request; nil means none. Both
+	// defaults use http.ProxyFromEnvironment (HTTPS_PROXY, HTTP_PROXY,
+	// NO_PROXY; loopback targets always go direct).
+	Proxy func(*http.Request) (*url.URL, error)
 }

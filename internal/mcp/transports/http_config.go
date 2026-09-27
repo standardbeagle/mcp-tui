@@ -3,7 +3,12 @@ package transports
 import (
 	"net"
 	"net/http"
+	"net/url"
+	"sync/atomic"
 	"time"
+
+	"github.com/standardbeagle/mcp-tui/internal/debug"
+	"github.com/standardbeagle/mcp-tui/internal/redact"
 )
 
 // Phase bounds shared by both HTTP transports. A server that accepts a
@@ -24,6 +29,7 @@ func DefaultHTTPClientConfig() *HTTPClientConfig {
 		EnableCompression:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
+		Proxy:                 http.ProxyFromEnvironment,
 	}
 }
 
@@ -36,6 +42,7 @@ func SSEHTTPClientConfig() *HTTPClientConfig {
 		EnableCompression:     false, // Avoid compression for real-time streams
 		MaxIdleConns:          10,
 		IdleConnTimeout:       300 * time.Second, // Longer for persistent connections
+		Proxy:                 http.ProxyFromEnvironment,
 	}
 }
 
@@ -55,8 +62,33 @@ func CreateHTTPClient(config *HTTPClientConfig) *http.Client {
 		IdleConnTimeout:       config.IdleConnTimeout,
 		DisableCompression:    !config.EnableCompression,
 	}
+	if config.Proxy != nil {
+		transport.Proxy = logProxyChoice(config.Proxy)
+	}
 
 	return &http.Client{Transport: transport}
+}
+
+// logProxyChoice wraps proxy so each change in the route it picks (a proxy
+// URL, or direct) is logged once at debug, not once per request.
+func logProxyChoice(proxy func(*http.Request) (*url.URL, error)) func(*http.Request) (*url.URL, error) {
+	var lastRoute atomic.Pointer[string]
+	return func(req *http.Request) (*url.URL, error) {
+		proxyURL, err := proxy(req)
+		if err != nil {
+			return nil, err
+		}
+		route := "direct"
+		if proxyURL != nil {
+			route = redact.RedactedURL(proxyURL)
+		}
+		if previous := lastRoute.Swap(&route); previous == nil || *previous != route {
+			debug.Component(HTTPTraceComponent).Debug("MCP HTTP proxy route",
+				debug.F("target_host", req.URL.Host),
+				debug.F("proxy", route))
+		}
+		return proxyURL, nil
+	}
 }
 
 // GetHTTPClientForTransport returns an appropriately configured HTTP client for the transport type
