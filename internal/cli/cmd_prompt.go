@@ -162,7 +162,8 @@ func printPromptListText(prompts []mcp.Prompt) {
 
 	countStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")). // Gray
-		Italic(true)
+		Italic(true).
+		MarginLeft(2)
 
 	// Header
 	fmt.Println(headerStyle.Render(fmt.Sprintf("Available Prompts (%d)", len(prompts))))

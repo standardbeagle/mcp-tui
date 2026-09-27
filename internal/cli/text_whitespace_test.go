@@ -60,3 +60,15 @@ func TestTextOutputHasNoWhitespaceOnlyLines(t *testing.T) {
 		}
 	}
 }
+
+// The argument count belongs to the prompt above it, so it is indented like
+// the description rather than starting a line at column 0.
+func TestPromptListText_ArgumentCountIndentedUnderPrompt(t *testing.T) {
+	text := captureStdout(t, func() {
+		printPromptListText([]mcp.Prompt{{Name: "triage_ticket", Description: "Decide priority.",
+			Arguments: []officialMCP.PromptArgument{{Name: "ticket_id"}, {Name: "note"}}}})
+	})
+	if !strings.Contains(text, "\n  (2 arguments)") {
+		t.Errorf("argument count not indented under the prompt:\n%s", text)
+	}
+}
