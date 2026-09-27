@@ -53,3 +53,28 @@ func TestGetMCPLogger_ConcurrentFirstUse(t *testing.T) {
 		}
 	}
 }
+
+// A protocol note (a violation or an ordering remark) shows in the Messages
+// tab as its own line with the note, and the detail view shows the message
+// it is about.
+func TestMCPLogger_ProtocolNotes(t *testing.T) {
+	ml := NewMCPLogger(10)
+	ml.LogProtocolNote(MCPMessageViolation, "server sent a response with id 1003 that matches no request", "",
+		`{"jsonrpc":"2.0","id":1003,"result":{"tools":[]}}`)
+	ml.LogProtocolNote(MCPMessageOrdering, "response to #3 (tools/call) arrived before #2 (resources/list), which was sent first",
+		"tools/call", `{"jsonrpc":"2.0","id":3,"result":{"content":[]}}`)
+
+	lines := ml.GetEntriesAsStrings()
+	if len(lines) != 2 ||
+		!strings.Contains(lines[0], "VIOLATION server sent a response with id 1003 that matches no request") ||
+		!strings.Contains(lines[1], "ORDER response to #3 (tools/call) arrived before #2") {
+		t.Fatalf("lines = %q", lines)
+	}
+	entry := ml.GetEntries()[0]
+	if !strings.Contains(entry.GetFormattedJSON(), `"id": 1003`) || !strings.Contains(entry.DetailedString(), "VIOLATION") {
+		t.Errorf("entry = %+v", entry)
+	}
+	if stats := ml.GetStats(); stats["violations"] != 1 {
+		t.Errorf("stats = %v, want one violation", stats)
+	}
+}

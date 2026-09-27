@@ -18,6 +18,12 @@ const (
 	MCPMessageResponse     MCPMessageType = "RESPONSE"
 	MCPMessageNotification MCPMessageType = "NOTIFICATION"
 	MCPMessageError        MCPMessageType = "ERROR"
+	// MCPMessageViolation notes a message the server sent in breach of
+	// JSON-RPC 2.0 or of the negotiated MCP version.
+	MCPMessageViolation MCPMessageType = "VIOLATION"
+	// MCPMessageOrdering notes a response that overtook an earlier
+	// request's; legal JSON-RPC, recorded for information.
+	MCPMessageOrdering MCPMessageType = "ORDERING"
 )
 
 // MCPLogEntry represents a single MCP protocol message
@@ -31,6 +37,9 @@ type MCPLogEntry struct {
 	Result      interface{}    `json:"result,omitempty"`
 	Error       interface{}    `json:"error,omitempty"`
 	RawMessage  string         `json:"rawMessage"`
+	// Note is the finding of a VIOLATION or ORDERING entry; RawMessage is
+	// then the message it is about.
+	Note string `json:"note,omitempty"`
 }
 
 // String formats the MCP log entry for display
@@ -58,6 +67,10 @@ func (e MCPLogEntry) String() string {
 		mainInfo = fmt.Sprintf("📢 NOT %s", e.Method)
 	case MCPMessageError:
 		mainInfo = fmt.Sprintf("⚠️ ERR %s", e.Method)
+	case MCPMessageViolation:
+		mainInfo = "⚠️ VIOLATION " + e.Note
+	case MCPMessageOrdering:
+		mainInfo = "ℹ️ ORDER " + e.Note
 	}
 
 	// Add truncated raw message for debugging
@@ -93,6 +106,12 @@ func (e *MCPLogEntry) DetailedString() string {
 	case MCPMessageError:
 		typeIcon = "⚠️"
 		typeText = string(MCPMessageError)
+	case MCPMessageViolation:
+		typeIcon = "⚠️"
+		typeText = string(MCPMessageViolation) + " " + e.Note
+	case MCPMessageOrdering:
+		typeIcon = "ℹ️"
+		typeText = string(MCPMessageOrdering) + " " + e.Note
 	}
 
 	// Build enhanced display with method and context
@@ -195,6 +214,26 @@ func (ml *MCPLogger) logMessage(direction, rawMessage string, parsedMessage inte
 	}
 }
 
+// LogProtocolNote records a finding about a message the server sent: a
+// violation or an ordering remark, the method it concerns (may be empty),
+// and the message itself, which the caller has redacted.
+func (ml *MCPLogger) LogProtocolNote(messageType MCPMessageType, note, method, rawMessage string) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.entries = append(ml.entries, MCPLogEntry{
+		Timestamp:   time.Now(),
+		Direction:   "←",
+		MessageType: messageType,
+		Method:      method,
+		RawMessage:  redact.Text(rawMessage),
+		Note:        note,
+	})
+	if len(ml.entries) > ml.maxSize {
+		copy(ml.entries, ml.entries[len(ml.entries)-ml.maxSize:])
+		ml.entries = ml.entries[:ml.maxSize]
+	}
+}
+
 // parseMessage extracts structured information from a parsed message
 func (ml *MCPLogger) parseMessage(entry *MCPLogEntry, msg interface{}) {
 	msgMap, ok := msg.(map[string]interface{})
@@ -276,6 +315,7 @@ func (ml *MCPLogger) GetStats() map[string]int {
 		"responses":     0,
 		"notifications": 0,
 		"errors":        0,
+		"violations":    0,
 	}
 
 	for i := range ml.entries {
@@ -288,6 +328,8 @@ func (ml *MCPLogger) GetStats() map[string]int {
 			stats["notifications"]++
 		case MCPMessageError:
 			stats["errors"]++
+		case MCPMessageViolation:
+			stats["violations"]++
 		}
 	}
 
@@ -317,6 +359,11 @@ func GetMCPLogger() *MCPLogger {
 // LogMCPOutgoing logs an outgoing MCP message
 func LogMCPOutgoing(rawMessage string, parsedMessage interface{}) {
 	GetMCPLogger().LogOutgoing(rawMessage, parsedMessage)
+}
+
+// LogMCPProtocolNote records a protocol finding in the global MCP logger.
+func LogMCPProtocolNote(messageType MCPMessageType, note, method, rawMessage string) {
+	GetMCPLogger().LogProtocolNote(messageType, note, method, rawMessage)
 }
 
 // LogMCPIncoming logs an incoming MCP message
