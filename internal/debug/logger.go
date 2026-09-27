@@ -80,6 +80,8 @@ type logEntry struct {
 	msg       string
 	fields    []Field
 	timestamp time.Time
+	// caller is the "file.go:line" that logged an error-level entry.
+	caller string
 
 	// flushed, when non-nil, marks a Flush barrier: the writer closes it
 	// instead of writing, proving every entry queued before it is written.
@@ -298,7 +300,7 @@ func (l *logger) buildLogLine(entry *logEntry) string {
 	l.writeComponent(&builder, entry.component)
 	l.writeMessage(&builder, entry.msg)
 	l.writeFields(&builder, entry.fields)
-	l.writeCallerInfo(&builder, entry.level)
+	l.writeCallerInfo(&builder, entry.caller)
 
 	builder.WriteString("\n")
 	return builder.String()
@@ -333,25 +335,52 @@ func (l *logger) writeFields(builder *strings.Builder, fields []Field) {
 	}
 }
 
-// writeCallerInfo writes caller information for error level and above
-func (l *logger) writeCallerInfo(builder *strings.Builder, level LogLevel) {
-	if level < LogLevelError {
-		return
+// writeCallerInfo writes the call site log recorded, if any.
+func (l *logger) writeCallerInfo(builder *strings.Builder, caller string) {
+	if caller != "" {
+		fmt.Fprintf(builder, " caller=%s", caller)
 	}
+}
 
-	// We need to skip through our call stack to find the actual caller
-	// Skip: writeLog -> goroutine -> channel send -> log -> Error/Fatal -> user code
-	for i := 3; i < 10; i++ {
-		if _, file, line, ok := runtime.Caller(i); ok {
-			// Skip internal logger files
-			if !strings.Contains(file, "debug/logger.go") {
-				// Get just the filename, not the full path
-				filename := extractFilename(file)
-				fmt.Fprintf(builder, " caller=%s:%d", filename, line)
-				break
-			}
+// loggerSourceFile is this file's path, so callSite steps over the logger's
+// own frames whichever entry point (method, package function, derived
+// logger) was used.
+var loggerSourceFile = func() string {
+	_, file, _, _ := runtime.Caller(0)
+	return file
+}()
+
+// callSite returns "file.go:line" of the first frame outside this file, or ""
+// when there is none. It must run on the goroutine that logs: the writer
+// goroutine's stack holds no caller.
+func callSite() string {
+	var pcs [16]uintptr
+	frames := runtime.CallersFrames(pcs[:runtime.Callers(2, pcs[:])])
+	for {
+		frame, more := frames.Next()
+		if frame.File != "" && frame.File != loggerSourceFile {
+			return formatCallSite(frame)
+		}
+		if !more {
+			return ""
 		}
 	}
+}
+
+// pcCallSite returns "file.go:line" of pc, or "" when pc is 0 or unknown.
+func pcCallSite(pc uintptr) string {
+	if pc == 0 {
+		return ""
+	}
+	frame, _ := runtime.CallersFrames([]uintptr{pc}).Next()
+	if frame.File == "" {
+		return ""
+	}
+	return formatCallSite(frame)
+}
+
+func formatCallSite(frame runtime.Frame) string {
+	return fmt.Sprintf("%s:%d", extractFilename(frame.File), frame.Line)
 }
 
 // extractFilename extracts the filename from a full path
@@ -369,6 +398,12 @@ func (l *logger) addToLogBuffer(entry *logEntry) {
 
 // log performs the actual logging
 func (l *logger) log(level LogLevel, msg string, fields ...Field) {
+	l.logFrom(callSite, level, msg, fields...)
+}
+
+// logFrom logs with the call site site reports; site runs only for
+// error-level entries that pass the level filter.
+func (l *logger) logFrom(site func() string, level LogLevel, msg string, fields ...Field) {
 	owner := l.levelOwner()
 	owner.mu.RLock()
 	minLevel := owner.level
@@ -400,6 +435,9 @@ func (l *logger) log(level LogLevel, msg string, fields ...Field) {
 		msg:       msg,
 		fields:    allFields,
 		timestamp: time.Now(),
+	}
+	if level >= LogLevelError {
+		entry.caller = site()
 	}
 
 	// Non-blocking send to avoid deadlock if channel is full

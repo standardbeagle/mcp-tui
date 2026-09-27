@@ -48,7 +48,8 @@ func (h *slogHandler) Handle(_ context.Context, r slog.Record) error {
 	if !ok {
 		return fmt.Errorf("debug: component logger is %T, not the built-in logger", Component(h.component))
 	}
-	l.log(logLevelFromSlog(r.Level), r.Message, fields...)
+	// The record's PC is the SDK's call site; this bridge is not.
+	l.logFrom(func() string { return pcCallSite(r.PC) }, logLevelFromSlog(r.Level), r.Message, fields...)
 	return nil
 }
 

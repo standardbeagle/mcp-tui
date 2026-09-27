@@ -2,8 +2,10 @@ package debug
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -20,6 +22,22 @@ func TestSlogHandler_ForwardsLevelComponentAttrsAndGroups(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// An SDK error line names the SDK code that logged it (the record's PC), not
+// the bridge that forwarded it.
+func TestSlogHandler_ErrorCallerIsTheSlogCallSite(t *testing.T) {
+	read, stop := Capture(LogLevelDebug)
+	defer stop()
+
+	logger := slog.New(NewSlogHandler("sdk"))
+	_, _, line, _ := runtime.Caller(0)
+	logger.Error("jsonrpc2 write failed")
+
+	out := read()
+	if want := fmt.Sprintf("jsonrpc2 write failed caller=slog_test.go:%d", line+1); !strings.Contains(out, want) {
+		t.Errorf("output missing %q:\n%s", want, out)
 	}
 }
 
