@@ -96,6 +96,11 @@ type Handler struct {
 	fetcher AuthorizationCodeFetcher
 	state   State
 	lastErr error
+	// loggedFailure is the redacted error of the last failure logged at
+	// error level. The SDK authorizes before each handshake attempt
+	// (server/discover, then initialize), so one bad credential fails
+	// twice; the repeat is logged at debug.
+	loggedFailure string
 }
 
 // AuthorizationCodeFetcher is the abstraction over the SDK's
@@ -235,7 +240,7 @@ func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.R
 	}
 
 	if err := delegate.Authorize(ctx, req, resp); err != nil {
-		authLog().Error("Authorization failed", debug.F("mode", h.cfg.Mode()), debug.F("error", redact.Error(err)))
+		h.logFailure(err)
 		h.recordError(err)
 		return err
 	}
@@ -244,6 +249,7 @@ func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.R
 	h.delegate = delegate
 	h.state = StateAuthorized
 	h.lastErr = nil
+	h.loggedFailure = ""
 	h.mu.Unlock()
 
 	tok := currentToken(ctx, delegate)
@@ -259,6 +265,22 @@ func (h *Handler) Authorize(ctx context.Context, req *http.Request, resp *http.R
 		h.saveSession(nil, tok)
 	}
 	return nil
+}
+
+// logFailure logs a failed authorization at error level, or at debug when
+// it repeats the failure logged last.
+func (h *Handler) logFailure(err error) {
+	text := redact.Error(err)
+	h.mu.Lock()
+	repeat := text == h.loggedFailure
+	h.loggedFailure = text
+	h.mu.Unlock()
+	fields := []debug.Field{debug.F("mode", h.cfg.Mode()), debug.F("error", text)}
+	if repeat {
+		authLog().Debug("Authorization failed again", fields...)
+		return
+	}
+	authLog().Error("Authorization failed", fields...)
 }
 
 func (h *Handler) recordError(err error) {
