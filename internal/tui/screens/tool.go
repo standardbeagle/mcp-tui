@@ -1722,19 +1722,15 @@ func (ts *ToolScreen) renderHeaderBottom() string {
 	return builder.String()
 }
 
-// renderTitleLine renders the title with execution count, badges and the
-// mode markers.
+// renderTitleLine renders the title with badges and the mode markers. The
+// execution number is the result heading's alone: a second count here
+// ("Run #2" over "Execution #1") read as two different numbers.
 func (ts *ToolScreen) renderTitleLine() string {
 	var builder strings.Builder
 
-	// Title with execution count. Use DisplayName so a server-supplied human
-	// title (e.g. "Run Migration") shows in place of a snake_case Name.
-	displayName := ts.tool.DisplayName()
-	title := fmt.Sprintf("Execute Tool: %s", displayName)
-	if ts.executionCount > 0 {
-		title = fmt.Sprintf("Execute Tool: %s (Run #%d)", displayName, ts.executionCount+1)
-	}
-	builder.WriteString(ts.titleStyle.Render(title))
+	// Use DisplayName so a server-supplied human title (e.g. "Run
+	// Migration") shows in place of a snake_case Name.
+	builder.WriteString(ts.titleStyle.Render("Execute Tool: " + ts.tool.DisplayName()))
 	if badges := ts.tool.BadgeString(); badges != "" {
 		builder.WriteString("  ")
 		builder.WriteString(renderToolBadges(&ts.tool))

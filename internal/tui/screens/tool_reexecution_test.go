@@ -216,3 +216,18 @@ func TestToolExecutionCounterPersistence(t *testing.T) {
 			"Each execution should have a later timestamp")
 	}
 }
+
+// After the first call the title said "(Run #2)" while the result said
+// "Execution #1": two counts of one thing. The screen numbers each
+// execution once, as the result heading does.
+func TestToolScreen_OneRunNumberPerExecution(t *testing.T) {
+	ts := NewToolScreen(&mcp.Tool{Name: "search_tickets"}, nil)
+	for n := 1; n <= 2; n++ {
+		ts.Update(toolExecutionCompleteMsg{Result: &mcp.CallToolResult{
+			Content: []mcp.Content{{Type: "text", Text: "3 tickets found"}},
+		}})
+		view := ts.View()
+		assert.Contains(t, view, fmt.Sprintf("Execution #%d", n))
+		assert.NotContains(t, view, fmt.Sprintf("#%d", n+1), "a number ahead of the executions")
+	}
+}
