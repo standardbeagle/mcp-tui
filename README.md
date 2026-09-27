@@ -5,106 +5,86 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-online-2563eb)](https://dev.standardbeagle.com/mcp-tui/)
 
-**Fast terminal UI and CLI for testing, debugging, and automating Model Context Protocol servers.**
+**Test, debug and automate Model Context Protocol servers from your terminal.**
 
-STDIO, SSE, HTTP, and Streamable HTTP transports — built on the official MCP Go SDK.
+Point mcp-tui at an MCP server, run any tool from a form built from its input
+schema, and get the same call as a CLI command for your CI. When a connection
+fails, it tells you why: the HTTP status, the stray line on stdout, the
+handshake step the server skipped, and the flag that fixes it.
 
 <p align="center">
-  <img src="docs/src/assets/recordings/tui-connect.webp" alt="MCP-TUI connect screen with discovered configurations" width="900" />
+  <img src="docs/src/assets/recordings/verify-a-tool.webp" alt="mcp-tui connecting to an MCP server, running search_tickets from a schema-built form, and showing the equivalent CLI command" width="900" />
 </p>
 
 ## Install
 
 ```bash
-# Go (recommended)
 go install github.com/standardbeagle/mcp-tui@latest
-
-# npm
+# or
 npm install -g @standardbeagle/mcp-tui
 ```
 
-## Quick start
-
-Launch the TUI against the official sample server:
+## Use
 
 ```bash
-mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio"
+mcp-tui --url http://localhost:8080/mcp                          # TUI
+mcp-tui --cmd node --args server.js                              # a stdio server
+mcp-tui --url http://localhost:8080/mcp tool list                # CLI
+mcp-tui --url http://localhost:8080/mcp tool call search_tickets status=open limit=3
+mcp-tui verify http://localhost:8080/mcp                         # spec and security probes
+mcp-tui conform --report-junit conform.xml http://localhost:8080/mcp
 ```
 
-Or use CLI mode for scripting:
+## Why connections fail, named
 
-```bash
-mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" tool list
-```
+A wrong path, the wrong transport, a stdio server logging to stdout, a
+server that ignores `server/discover`, a missing OAuth sign-in: each is
+reported with its cause and fix, not as a timeout.
 
 <p align="center">
-  <img src="docs/src/assets/recordings/cli-tool-list.webp" alt="Listing tools from a stdio MCP server" width="900" />
+  <img src="docs/src/assets/recordings/handshake-errors.webp" alt="mcp-tui naming an HTTP 404 path error and an SSE transport mismatch" width="900" />
 </p>
 
-```bash
-mcp-tui --cmd npx --args "@modelcontextprotocol/server-everything,stdio" \
-  tool call echo message='hello mcp'
-```
+## From a manual check to CI
+
+`c` in the TUI copies the CLI command for a call; `Ctrl+E` exports the whole
+session as a replay script. The CLI prints JSON for `jq`, refuses arguments
+that break the tool's schema, and exits non-zero on tool errors with
+`--strict-errors`.
 
 <p align="center">
-  <img src="docs/src/assets/recordings/cli-tool-call.webp" alt="Calling a tool with arguments" width="900" />
+  <img src="docs/src/assets/recordings/cli-to-ci.webp" alt="Exporting an mcp-tui session as a shell script and replaying it" width="900" />
 </p>
 
-More against an HTTP server:
+## Conformance for CI
 
-```bash
-# Pin an older protocol for a server whose tools still call the client directly
-mcp-tui --url http://localhost:8080/mcp --protocol-version 2025-11-25 tool list
-
-# Run a long tool call as an MCP task and wait for its result
-mcp-tui --url http://localhost:8080/mcp tool call render_report quarter=Q3 --task --wait
-
-# Print the next resource update, then exit
-mcp-tui --url http://localhost:8080/mcp resource watch file:///config.json --count 1
-
-# Sign in with OAuth (browser, PKCE) and ask the server for its logs
-mcp-tui --url https://api.example.com/mcp --oauth-dynamic-registration \
-  --server-log-level info tool list
-
-# Check a server for spec and security problems
-mcp-tui verify http://localhost:8080/mcp
-```
-
-## What it does
-
-- **Visual exploration** — browse tools, resources, prompts; execute with forms generated from the input schema (`$ref` and nullable types included).
-- **CI-friendly CLI** — every TUI action has a CLI equivalent. `c` in the TUI copies it.
-- **All MCP transports** — STDIO, SSE (deprecated), HTTP, Streamable HTTP.
-- **MCP 2026-07-28 and earlier** — defaults to 2026-07-28 (stateless, multi round-trip requests, list caching); `--protocol-version` pins `2025-11-25` or older. Shows the input rounds a call took and how each list was cached.
-- **Client features** — answers sampling, elicitation (form and URL mode) and roots, interactively in the TUI or from stub flags in the CLI.
-- **Tasks and subscriptions** — run tool calls as MCP tasks and follow them; watch resources for updates.
-- **OAuth** — authorization code + PKCE, client credentials, dynamic registration, Client ID Metadata Documents, enterprise managed authorization (SEP-990), refresh tokens with an on-disk cache.
-- **Conformance checks** — `verify` probes and the `conform` scenario suite, with JUnit output for CI.
-- **Config discovery** — finds Claude Desktop, VS Code MCP, and native configs automatically.
-- **Real debugging** — `Ctrl+D` opens logs, the MCP message trace, HTTP timing, the OAuth flow step by step, capabilities, and notifications. Credentials are masked in every log.
+`verify` probes origin and DNS-rebinding protection, content types, tool
+names and list order. `conform` runs every protocol scenario plus the probes
+and writes a JUnit report.
 
 <p align="center">
-  <img src="docs/src/assets/recordings/tui-browse.webp" alt="Browsing tools, resources, and prompts" width="900" />
+  <img src="docs/src/assets/recordings/verify-conform.webp" alt="mcp-tui verify reporting a failing tool name and an unstable tools/list order" width="900" />
 </p>
+
+## What it covers
+
+| | |
+|---|---|
+| Transports | stdio, streamable HTTP, SSE (deprecated) |
+| Protocol | MCP 2026-07-28 (stateless, multi round-trip requests, list caching) and earlier; `--protocol-version` pins one |
+| Server features | tools with annotations and output schemas, resources and templates, prompts, completion, progress, server logs, tasks, subscriptions |
+| Client features | elicitation, sampling and roots, answered in the TUI or from stub flags in the CLI |
+| OAuth | client credentials, authorization code with PKCE, dynamic registration, Client ID Metadata Documents, enterprise managed authorization (SEP-990), a token cache |
+| Debugging | every JSON-RPC message both ways, HTTP timings, the OAuth flow step by step, credentials masked |
+| Config discovery | servers configured for Claude Desktop and VS Code |
 
 ## Documentation
 
-Full docs at **<https://dev.standardbeagle.com/mcp-tui/>**.
-
-- [Install](https://dev.standardbeagle.com/mcp-tui/install/)
-- [Quick start](https://dev.standardbeagle.com/mcp-tui/quick-start/)
-- [TUI guide](https://dev.standardbeagle.com/mcp-tui/guides/tui/)
-- [CLI reference](https://dev.standardbeagle.com/mcp-tui/reference/cli/)
-- [Transports](https://dev.standardbeagle.com/mcp-tui/guides/transports/)
-- [Protocol 2026-07-28](https://dev.standardbeagle.com/mcp-tui/guides/protocol-2026-07-28/)
-- [OAuth](https://dev.standardbeagle.com/mcp-tui/guides/oauth/)
-- [Tasks](https://dev.standardbeagle.com/mcp-tui/guides/tasks/)
-- [Automation & CI](https://dev.standardbeagle.com/mcp-tui/guides/automation/)
-- [Debugging](https://dev.standardbeagle.com/mcp-tui/guides/debugging/)
+**<https://dev.standardbeagle.com/mcp-tui/>**: [how-to guides](https://dev.standardbeagle.com/mcp-tui/how-to/) with recorded runs, [error messages](https://dev.standardbeagle.com/mcp-tui/reference/errors/), the [CLI reference](https://dev.standardbeagle.com/mcp-tui/reference/cli/) and [videos](https://dev.standardbeagle.com/mcp-tui/videos/).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [ARCHITECTURE.md](ARCHITECTURE.md). Issues and PRs welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [ARCHITECTURE.md](ARCHITECTURE.md). The demo videos are recorded from scripts in [docs/recordings](docs/recordings/README.md). Issues and PRs welcome.
 
 ## License
 
