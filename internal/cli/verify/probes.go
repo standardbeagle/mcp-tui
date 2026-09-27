@@ -65,9 +65,14 @@ type Target struct {
 	// users can point at their own server's known-isError-true tool.
 	ToolName string
 
-	// ToolArgs is the JSON-shaped argument map for the seterror probe's
-	// tool call. Default empty object {} works for trivial tools.
-	ToolArgs map[string]any
+	// ToolArgPairs are the seterror probe's tool arguments as `tool call`
+	// key=value (or key:=<json>) pairs; none calls the tool with {}.
+	ToolArgPairs []string
+
+	// ToolArguments converts ToolArgPairs against the tool's input schema.
+	// The CLI supplies `tool call`'s conversion; the verify package cannot
+	// import it.
+	ToolArguments func(tool *mcp.Tool, pairs []string) (map[string]any, error)
 
 	// HTTPClient lets tests inject a custom client (e.g. one that allows
 	// connections to httptest server addresses). Nil → http.DefaultClient
@@ -521,10 +526,6 @@ func ProbeSetErrorContent(ctx context.Context, t *Target) ProbeResult {
 	if toolName == "" {
 		toolName = "echo"
 	}
-	args := t.ToolArgs
-	if args == nil {
-		args = map[string]any{}
-	}
 
 	cc := &config.ConnectionConfig{
 		Type:    config.TransportStdio,
@@ -545,17 +546,34 @@ func ProbeSetErrorContent(ctx context.Context, t *Target) ProbeResult {
 	}
 	defer func() { disconnectProbeService(name, svc) }()
 
+	args := map[string]any{}
 	// "echo" is only a guess at a tool that fails by design; a server
-	// without one leaves the probe nothing to check.
-	if t.ToolName == "" {
+	// without one leaves the probe nothing to check. Arguments are
+	// converted against the tool's own input schema, so it is looked up.
+	if t.ToolName == "" || len(t.ToolArgPairs) > 0 {
 		tools, err := svc.ListTools(ctx)
 		if err != nil {
 			return ProbeResult{Name: name, Pass: false, Error: fmt.Sprintf("tools/list failed: %v", err),
 				Fix: "confirm the server answers tools/list"}
 		}
-		if !slices.ContainsFunc(tools, func(tool mcp.Tool) bool { return tool.Name == toolName }) {
+		i := slices.IndexFunc(tools, func(tool mcp.Tool) bool { return tool.Name == toolName })
+		switch {
+		case i < 0 && t.ToolName == "":
 			return ProbeResult{Name: name, Pass: true, Skipped: true,
 				Error: fmt.Sprintf("server has no %q tool; name a tool that fails by design with --tool", toolName)}
+		case i < 0:
+			return ProbeResult{Name: name, Pass: false, Error: fmt.Sprintf("server has no tool %q (--tool)", toolName),
+				Fix: "name a tool the server lists"}
+		case len(t.ToolArgPairs) > 0:
+			if t.ToolArguments == nil {
+				return ProbeResult{Name: name, Pass: false, Error: "--tool-args given but no argument conversion"}
+			}
+			converted, err := t.ToolArguments(&tools[i], t.ToolArgPairs)
+			if err != nil {
+				return ProbeResult{Name: name, Pass: false, Error: fmt.Sprintf("--tool-args: %v", err),
+					Fix: "give --tool-args as key=value pairs the tool's input schema accepts"}
+			}
+			args = converted
 		}
 	}
 

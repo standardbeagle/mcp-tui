@@ -56,6 +56,10 @@ const (
 	// StdioToolSubscriptions answers with the resource URIs this server
 	// process has subscriptions for, comma-separated.
 	StdioToolSubscriptions = "subscriptions"
+	// StdioToolVoidInvoice fails by design only when given an invoice_id
+	// (every invoice it knows is paid); without one it succeeds, so a check
+	// that it failed proves the argument arrived.
+	StdioToolVoidInvoice = "void_invoice"
 )
 
 // StdioResourceURI is a subscribable resource of the stdio test server.
@@ -205,6 +209,22 @@ func serveStdio() error {
 			}
 			slices.Sort(uris)
 			return textResult(strings.Join(uris, ",")), nil
+		})
+	server.AddTool(&officialMCP.Tool{Name: StdioToolVoidInvoice,
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"invoice_id":{"type":"string"}}}`)},
+		func(_ context.Context, req *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
+			var args struct {
+				InvoiceID string `json:"invoice_id"`
+			}
+			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+				return nil, err
+			}
+			if args.InvoiceID == "" {
+				return textResult("nothing to void"), nil
+			}
+			res := textResult("invoice " + args.InvoiceID + " is already paid; paid invoices cannot be voided")
+			res.IsError = true
+			return res, nil
 		})
 	server.AddTool(&officialMCP.Tool{Name: StdioToolPID, InputSchema: json.RawMessage(`{"type":"object"}`)},
 		func(context.Context, *officialMCP.CallToolRequest) (*officialMCP.CallToolResult, error) {
