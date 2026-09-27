@@ -56,7 +56,7 @@ func main() {
 	// Execute with the signal-canceled context: the handler above swallows
 	// Ctrl-C, so long-running commands (resource watch) must see it here.
 	err := rootCmd.ExecuteContext(ctx)
-	cli.CloseClients()
+	cli.CloseClients(err)
 	if err != nil {
 		// Cobra has printed the error; the log keeps it for --debug only.
 		debug.Debug("Application failed", debug.F("error", err))

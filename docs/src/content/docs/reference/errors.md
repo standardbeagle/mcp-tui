@@ -119,7 +119,8 @@ exit 1. Error results are not checked against the schema.
 ## Protocol violations
 
 Printed after a command's output (text mode only), whether it succeeded or
-not, and logged under the `protocol` component:
+not, and logged under the `protocol` component. A stdout line that a
+`wrote a line to stdout` error already quotes is only logged:
 
 | Message | Meaning |
 |---|---|
