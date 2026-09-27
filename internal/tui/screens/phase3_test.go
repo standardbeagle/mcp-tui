@@ -12,26 +12,12 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
-// memoryClipboard stands in for the OS clipboard. The real one shells out to
-// xclip/xsel/wl-paste, which blocks indefinitely under WSLg and is absent in
-// CI, so tests must never reach it.
-type memoryClipboard struct {
-	text string
-}
-
-func (c *memoryClipboard) ReadAll() (string, error) { return c.text, nil }
-
-func (c *memoryClipboard) WriteAll(text string) error {
-	c.text = text
-	return nil
-}
-
 func TestPhase3ClipboardFeatures(t *testing.T) {
 	t.Run("copy_tool_result", func(t *testing.T) {
 		tool := mcp.Tool{Name: "test"}
 		ts := NewToolScreen(&tool, nil)
 		clip := &memoryClipboard{}
-		ts.clipboard = clip
+		ts.clipboard = testClipboard(clip)
 
 		// Simulate a result
 		ts.result.set(&mcp.CallToolResult{
@@ -44,12 +30,11 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 		})
 
 		// Press Ctrl+C
-		model, _ := ts.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-		updatedTS := model.(*ToolScreen)
+		deliver(t, ts, updateWithin(t, ts, tea.KeyMsg{Type: tea.KeyCtrlC}))
 
 		// Check status message
-		msg, level := updatedTS.StatusMessage()
-		assert.Equal(t, "Result copied to clipboard!", msg)
+		msg, level := ts.StatusMessage()
+		assert.Equal(t, "Copied result to clipboard", msg)
 		assert.Equal(t, StatusSuccess, level)
 
 		// Verify clipboard content
@@ -67,12 +52,12 @@ func TestPhase3ClipboardFeatures(t *testing.T) {
 			},
 		}
 		ts := NewToolScreen(&tool, nil)
-		ts.clipboard = &memoryClipboard{text: "pasted text"}
+		ts.clipboard = testClipboard(&memoryClipboard{text: "pasted text"})
 		ts.cursor = 0 // Focus on first field
 
 		// Paste with Ctrl+V
-		model, _ := ts.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
-		updatedTS := model.(*ToolScreen)
+		deliver(t, ts, updateWithin(t, ts, tea.KeyMsg{Type: tea.KeyCtrlV}))
+		updatedTS := ts
 
 		// Check field value
 		assert.Equal(t, "pasted text", updatedTS.fields[0].input.Value())

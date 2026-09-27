@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -14,8 +13,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/atotto/clipboard"
-	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -25,6 +22,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/inputschema"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/tasks"
 	"github.com/standardbeagle/mcp-tui/internal/shell"
+	"github.com/standardbeagle/mcp-tui/internal/tui/clipboard"
 	"github.com/standardbeagle/mcp-tui/internal/tui/components"
 )
 
@@ -33,8 +31,9 @@ type ToolScreen struct {
 	*BaseScreen
 	logger debug.Logger
 
-	// clipboard is the OS clipboard boundary; tests swap in an in-memory one.
-	clipboard clipboardReadWriter
+	// clipboard copies and pastes off the event loop; tests swap in an
+	// in-memory system clipboard.
+	clipboard clipboard.Clipboard
 
 	// Tool info
 	tool       mcp.Tool
@@ -62,9 +61,9 @@ type ToolScreen struct {
 	callProgress callProgress
 
 	// CLI command state
-	cliCommand     string // Generated CLI command
-	showCLICommand bool   // Whether to show the CLI command
-	cliCopied      bool   // Whether the shown CLI command reached the clipboard
+	cliCommand     string               // Generated CLI command
+	showCLICommand bool                 // Whether to show the CLI command
+	cliCopy        *clipboard.CopiedMsg // Where the shown CLI command was copied; nil while copying
 
 	// pendingConfirm tracks an outstanding destructive-tool confirm overlay so
 	// the user's Y/N decision (delivered via ConfirmDecisionMsg) can resume
@@ -168,7 +167,7 @@ func NewToolScreen(tool *mcp.Tool, service mcp.Service) *ToolScreen {
 	ts := &ToolScreen{
 		BaseScreen: NewBaseScreen("Tool", true),
 		logger:     debug.Component("tool-screen"),
-		clipboard:  systemClipboard{},
+		clipboard:  clipboard.New(),
 		tool:       *tool,
 		mcpService: service,
 	}
@@ -183,44 +182,16 @@ func NewToolScreen(tool *mcp.Tool, service mcp.Service) *ToolScreen {
 	return ts
 }
 
-// clipboardReadWriter is the clipboard boundary ToolScreen reads and writes
-// through, so tests never shell out to xclip/xsel (which block under WSLg).
-type clipboardReadWriter interface {
-	ReadAll() (string, error)
-	WriteAll(text string) error
-}
+// subjectCLICommand names the CLI command in copy statuses; a copy of it
+// also updates the command box's heading.
+const subjectCLICommand = "CLI command"
 
-// systemClipboard is the production clipboardReadWriter backed by the OS.
-type systemClipboard struct{}
-
-func (systemClipboard) ReadAll() (string, error)   { return clipboard.ReadAll() }
-func (systemClipboard) WriteAll(text string) error { return clipboard.WriteAll(text) }
-
-// copyToClipboard copies text to the system clipboard, falling back to an
-// OSC52 terminal escape. Both failures are reported: silently returning nil
-// makes callers announce a successful copy that never happened.
-func (ts *ToolScreen) copyToClipboard(text string) error {
-	clipErr := ts.clipboard.WriteAll(text)
-	if clipErr == nil {
-		return nil
-	}
-
-	// Fall back to OSC52 for terminal clipboard
-	if _, err := fmt.Fprint(os.Stderr, osc52.New(text)); err != nil {
-		return fmt.Errorf("clipboard unavailable (%v) and OSC52 write failed: %w", clipErr, err)
-	}
-	return nil
-}
-
-// readFromClipboard reads text from clipboard using multiple methods
-func (ts *ToolScreen) readFromClipboard() (string, error) {
-	// Try standard clipboard first
-	if text, err := ts.clipboard.ReadAll(); err == nil && text != "" {
-		return text, nil
-	}
-
-	// OSC52 doesn't support reading, so we return an error
-	return "", fmt.Errorf("clipboard read not available - try using Ctrl+Shift+V or right-click paste")
+// clipboardPastedMsg carries the clipboard text Ctrl+V asked for into the
+// form field at index field.
+type clipboardPastedMsg struct {
+	field int
+	text  string
+	err   error
 }
 
 // sanitizeInput removes control characters and ANSI escape sequences that could corrupt the display
@@ -743,6 +714,17 @@ func (ts *ToolScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ts.SetStatus(msg.Message, msg.Level)
 		return ts, nil
 
+	case clipboard.CopiedMsg:
+		if msg.Subject == subjectCLICommand {
+			ts.cliCopy = &msg
+		}
+		ts.SetStatus(copiedStatus(msg))
+		return ts, nil
+
+	case clipboardPastedMsg:
+		ts.pasteIntoField(msg)
+		return ts, nil
+
 	case toolSpinnerTickMsg:
 		// Keep redrawing while the call, or the task it started, runs: the
 		// progress line changes between ticks.
@@ -987,9 +969,7 @@ func (ts *ToolScreen) handleToolbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return ts, nil
 
 	case "c":
-		// Toggle CLI command display
-		ts.toggleCLICommandDisplay()
-		return ts, nil
+		return ts, ts.toggleCLICommandDisplay()
 
 	case "v":
 		// Enter result viewing mode if we have results
@@ -1086,8 +1066,7 @@ func (ts *ToolScreen) handleFieldKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		ts.toggleSendNull(field)
 		return ts, nil, true
 	case "ctrl+v":
-		ts.pasteIntoField(field)
-		return ts, nil, true
+		return ts, ts.pasteIntoFieldCmd(), true
 	default:
 		model, cmd := ts.typeIntoField(msg)
 		return model, cmd, true
@@ -1112,41 +1091,53 @@ func (ts *ToolScreen) toggleSendNull(field *toolField) {
 	}
 }
 
-// pasteIntoField pastes clipboard contents into the focused field. The help
-// text advertises this binding; textinput itself ignores ctrl+v.
-func (ts *ToolScreen) pasteIntoField(field *toolField) {
-	text, err := ts.readFromClipboard()
-	if err != nil {
-		ts.SetStatus(err.Error(), StatusError)
+// pasteIntoFieldCmd reads the clipboard for the focused field. The read
+// runs in the command, never in Update: a clipboard helper can block for
+// good, and Update blocking freezes the whole TUI. The help text advertises
+// this binding; textinput itself ignores ctrl+v.
+func (ts *ToolScreen) pasteIntoFieldCmd() tea.Cmd {
+	field, clip := ts.cursor, ts.clipboard
+	return func() tea.Msg {
+		text, err := clip.Paste()
+		return clipboardPastedMsg{field: field, text: text, err: err}
+	}
+}
+
+// pasteIntoField puts pasted clipboard text into the field it was read for.
+func (ts *ToolScreen) pasteIntoField(msg clipboardPastedMsg) {
+	switch {
+	case msg.err != nil:
+		ts.SetStatus(fmt.Sprintf("Clipboard read failed (%v) - try Ctrl+Shift+V or right-click paste", msg.err), StatusError)
+		return
+	case msg.text == "":
+		ts.SetStatus("Clipboard is empty", StatusWarning)
+		return
+	case msg.field >= len(ts.fields):
 		return
 	}
-	field.input.SetValue(ts.sanitizeInput(text))
-	ts.validateField(ts.cursor)
+	ts.fields[msg.field].input.SetValue(ts.sanitizeInput(msg.text))
+	ts.validateField(msg.field)
 	ts.SetStatus("Pasted from clipboard", StatusSuccess)
 }
 
-// toggleCLICommandDisplay shows or hides the equivalent CLI command.
-func (ts *ToolScreen) toggleCLICommandDisplay() {
+// toggleCLICommandDisplay shows or hides the equivalent CLI command,
+// returning the copy of a shown one.
+func (ts *ToolScreen) toggleCLICommandDisplay() tea.Cmd {
 	if ts.showCLICommand {
 		ts.showCLICommand = false
 		ts.SetStatus("CLI command hidden", StatusInfo)
-		return
+		return nil
 	}
-	ts.showCLICommandBox()
+	return ts.showCLICommandBox()
 }
 
-// showCLICommandBox shows the equivalent CLI command and copies it to the
-// clipboard.
-func (ts *ToolScreen) showCLICommandBox() {
+// showCLICommandBox shows the equivalent CLI command and returns its copy;
+// the box's heading says where the copy went once it has.
+func (ts *ToolScreen) showCLICommandBox() tea.Cmd {
 	ts.cliCommand = ts.generateCLICommand()
 	ts.showCLICommand = true
-	err := ts.copyToClipboard(ts.cliCommand)
-	ts.cliCopied = err == nil
-	if ts.cliCopied {
-		ts.SetStatus("CLI command copied to clipboard", StatusSuccess)
-	} else {
-		ts.SetStatus(fmt.Sprintf("CLI command shown; clipboard copy failed: %v", err), StatusWarning)
-	}
+	ts.cliCopy = nil
+	return ts.clipboard.Copy(subjectCLICommand, ts.cliCommand)
 }
 
 // copyResultOrBack copies the result (or the CLI command shown) to the
@@ -1154,23 +1145,13 @@ func (ts *ToolScreen) showCLICommandBox() {
 func (ts *ToolScreen) copyResultOrBack() (tea.Model, tea.Cmd) {
 	switch {
 	case ts.result.shown() && ts.result.text != "":
-		if err := ts.copyToClipboard(ts.result.text); err == nil {
-			ts.SetStatus("Result copied to clipboard!", StatusSuccess)
-		} else {
-			ts.SetStatus("Failed to copy to clipboard", StatusError)
-		}
+		return ts, ts.clipboard.Copy("result", ts.result.text)
 	case ts.showCLICommand && ts.cliCommand != "":
-		// Copy CLI command to clipboard
-		if err := ts.copyToClipboard(ts.cliCommand); err == nil {
-			ts.SetStatus("CLI command copied to clipboard!", StatusSuccess)
-		} else {
-			ts.SetStatus("Failed to copy CLI command to clipboard", StatusError)
-		}
+		return ts, ts.clipboard.Copy(subjectCLICommand, ts.cliCommand)
 	default:
 		// No result, go back
 		return ts, func() tea.Msg { return BackMsg{} }
 	}
-	return ts, nil
 }
 
 // showDebugOverlayCmd builds the command that toggles the debug overlay.
@@ -1235,8 +1216,7 @@ func (ts *ToolScreen) activateCursorButton() (tea.Model, tea.Cmd) {
 	case executePos:
 		return ts.submit()
 	case cliPos:
-		ts.showCLICommandBox()
-		return ts, nil
+		return ts, ts.showCLICommandBox()
 	case backPos:
 		// Back button
 		return ts, func() tea.Msg { return BackMsg{} }
@@ -2067,17 +2047,14 @@ func (ts *ToolScreen) renderFooter() string {
 }
 
 // renderCLICommandBox renders the equivalent CLI command box width columns
-// wide, headed by whether it reached the clipboard; "" when it is hidden.
+// wide, headed by where its copy went; "" when it is hidden.
 func (ts *ToolScreen) renderCLICommandBox(width int) string {
 	if !ts.showCLICommand || ts.cliCommand == "" {
 		return ""
 	}
 	var builder strings.Builder
 
-	heading := "Equivalent CLI command (POSIX shell) · copied to clipboard"
-	if !ts.cliCopied {
-		heading = "Equivalent CLI command (POSIX shell) · clipboard copy failed"
-	}
+	heading := "Equivalent CLI command (POSIX shell) · " + cliCopyOutcome(ts.cliCopy)
 	cliHeaderStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("14")). // Cyan
 		Bold(true).

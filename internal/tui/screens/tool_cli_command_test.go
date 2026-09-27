@@ -171,7 +171,7 @@ func TestToolScreen_CLICommandIsVisibleWithARealForm(t *testing.T) {
 	for _, size := range []struct{ width, height int }{{140, 40}, {100, 30}} {
 		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
 			ts := NewToolScreen(searchTicketsTool(t), connectionConfigService{conn: conn})
-			ts.clipboard = &memoryClipboard{}
+			ts.clipboard = testClipboard(&memoryClipboard{})
 			ts.Init()
 			ts.UpdateSize(size.width, size.height)
 			ts.setField(t, "query", "printer on fire")
@@ -181,7 +181,7 @@ func TestToolScreen_CLICommandIsVisibleWithARealForm(t *testing.T) {
 			for ts.cursor != cliPos {
 				ts.Update(tea.KeyMsg{Type: tea.KeyTab})
 			}
-			ts.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			deliver(t, ts, updateWithin(t, ts, tea.KeyMsg{Type: tea.KeyEnter}))
 
 			view := ts.View()
 			if h := lipgloss.Height(view); h > size.height {

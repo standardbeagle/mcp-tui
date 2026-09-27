@@ -23,7 +23,7 @@ func echoToolScreen(t *testing.T, lines int) (*ToolScreen, *memoryClipboard) {
 	}
 	ts := NewToolScreen(&tool, nil)
 	clip := &memoryClipboard{}
-	ts.clipboard = clip
+	ts.clipboard = testClipboard(clip)
 	ts.Init()
 	ts.UpdateSize(100, 30)
 	body := make([]string, lines)
@@ -55,7 +55,7 @@ func requireBack(t *testing.T, cmd tea.Cmd) {
 func TestToolScreenKeysWorkWithAFieldFocused(t *testing.T) {
 	t.Run("ctrl+c copies the result", func(t *testing.T) {
 		ts, clip := echoToolScreen(t, 3)
-		ts.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+		deliver(t, ts, updateWithin(t, ts, tea.KeyMsg{Type: tea.KeyCtrlC}))
 		if clip.text != ts.result.text {
 			t.Errorf("clipboard = %q, want the result %q", clip.text, ts.result.text)
 		}

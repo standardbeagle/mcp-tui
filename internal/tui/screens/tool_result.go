@@ -229,22 +229,12 @@ func (ts *ToolScreen) handleResultViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Copy selected field value
 		if ts.result.fieldCursor < len(ts.result.fields) {
 			field := ts.result.fields[ts.result.fieldCursor]
-			if err := ts.copyToClipboard(field.value); err == nil {
-				ts.SetStatus(fmt.Sprintf("Copied '%s' to clipboard!", field.path), StatusSuccess)
-			} else {
-				ts.SetStatus("Failed to copy to clipboard", StatusError)
-			}
+			return ts, ts.clipboard.Copy(fmt.Sprintf("'%s'", field.path), field.value)
 		}
 		return ts, nil
 
 	case keyCtrlC:
-		// Copy entire result
-		if err := ts.copyToClipboard(ts.result.text); err == nil {
-			ts.SetStatus("Copied entire result to clipboard!", StatusSuccess)
-		} else {
-			ts.SetStatus("Failed to copy to clipboard", StatusError)
-		}
-		return ts, nil
+		return ts, ts.clipboard.Copy("entire result", ts.result.text)
 
 	case "v", keyEsc, "q":
 		ts.result.picking = false
