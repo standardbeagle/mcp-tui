@@ -59,7 +59,7 @@ that binary.
 ```bash
 git clone https://github.com/standardbeagle/mcp-tui
 cd mcp-tui
-./build.sh        # installs to ~/.local/bin
+make install      # builds and copies to ~/.local/bin
 ```
 
 ## Verify
