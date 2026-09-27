@@ -362,7 +362,7 @@ func TestService_CallTool_ErrorResult_NotValidatedAgainstOutputSchema(t *testing
 
 	svc := NewService().(*service)
 	svc.transportFactory = &fakeTransportFactory{transport: clientT}
-	if err := svc.Connect(ctx, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}); err != nil {
+	if err = svc.Connect(ctx, &configPkg.ConnectionConfig{Type: configPkg.TransportStdio, Command: "noop"}); err != nil {
 		t.Fatalf("svc.Connect: %v", err)
 	}
 	defer func() { _ = svc.Disconnect() }()
