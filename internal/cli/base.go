@@ -748,6 +748,11 @@ func (c *BaseCommand) showConnectionMessage(connConfig *config.ConnectionConfig)
 // the protocol violations the server committed, after the command's
 // output, whether the command succeeded or not.
 func (c *BaseCommand) CloseClient() error {
+	return c.closeClient(nil)
+}
+
+// closeClient is CloseClient after a command that failed with commandErr.
+func (c *BaseCommand) closeClient(commandErr error) error {
 	if c.service == nil {
 		return nil
 	}
@@ -755,7 +760,7 @@ func (c *BaseCommand) CloseClient() error {
 	svc := c.service
 	err := svc.Disconnect()
 	if c.outputFormat == OutputFormatText && !c.porcelain {
-		writeProtocolViolations(os.Stderr, protocolViolations(svc))
+		writeProtocolViolations(os.Stderr, reportableProtocolViolations(protocolViolations(svc), commandErr))
 	}
 	if err != nil {
 		return fmt.Errorf("failed to disconnect: %w", err)
@@ -787,15 +792,17 @@ const backgroundCloseLimit = 10 * time.Second
 // command succeeded or failed, then waits (up to backgroundCloseLimit) for
 // sessions still closing in the background: handshakes abandoned at their
 // deadline and sessions dropped by a reconnection. Call it before the
-// process exits, so no server process it started outlives it.
-func CloseClients() {
+// process exits, so no server process it started outlives it. commandErr is
+// the error the command failed with (nil on success), so the protocol
+// findings printed after it do not repeat it.
+func CloseClients(commandErr error) {
 	openClients.Lock()
 	commands := openClients.commands
 	openClients.commands = nil
 	openClients.Unlock()
 
 	for _, c := range commands {
-		if err := c.CloseClient(); err != nil {
+		if err := c.closeClient(commandErr); err != nil {
 			debug.Error("Closing MCP client before exit", debug.F("error", err))
 		}
 	}

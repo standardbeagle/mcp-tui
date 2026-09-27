@@ -75,6 +75,10 @@ the command succeeded or not:
 ⚠ protocol: server sent a response with id 1002 that matches no request
 ```
 
+A stdout line that the connection error already quotes (`wrote a line to
+stdout that is not a JSON-RPC message`) is not printed again; the log and the
+Messages tab still have it.
+
 `--porcelain` and `--format json` print nothing on stderr; commands whose JSON
 is an object (`tool list`, `tool call`, `task result`, `prompt list`,
 `resource list`, `resource templates`, `resource get`, the `complete`

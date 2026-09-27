@@ -125,6 +125,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI disconnect piled up dead screens**: each `d` (disconnect) or `b`/`e` (back to the connection screen from a failed connection) pushed the old main screen onto the navigation stack, so screens accumulated across reconnects, Back could return to a dead session, and a failed connection's screen kept its event tick and feeds running and kept receiving session work. Leaving now ends that screen's session and starts a fresh navigation history at the connection screen.
 - **TUI "copy CLI command" and raw JSON**: arguments typed in the raw JSON editor were left out of the copied command; it now writes one `key:=<json>` per key, or a `#` line naming what the CLI cannot take.
 - **TUI "copy CLI command" and server arguments**: a server argument containing a comma was split in two; each server argument is now its own `--arg`.
+- **stdout banner reported twice**: a stdio server whose banner failed the handshake got the precise `wrote a line to stdout that is not a JSON-RPC message: "…"` error and then `⚠ protocol: server sent a message that is not JSON-RPC 2.0: it is not JSON` for the same line. The second line is no longer printed; the log and the Messages tab keep it.
+- **Error messages said it twice**: a failed request read `failed to read resource: failed to read resource 'acme://nope': RESOURCE_NOT_FOUND …`, and likewise for `tool call`, `prompt execute`, the list commands, completions and `resource watch`. The operation is now named once, with its target.
+- **Log `caller=` pointed into the Go runtime**: every error-level log line ended with `caller=asm_amd64.s:1693`. It now names the file and line that logged the error (for SDK log lines, the SDK's own call site).
+- **`prompt list` argument count**: the `(2 arguments)` line started at column 0, so it read as belonging to no prompt; it is now indented under its prompt like the description.
 
 ## [0.9.1] - 2026-07-09
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/standardbeagle/mcp-tui/internal/config"
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
+	mcperrors "github.com/standardbeagle/mcp-tui/internal/mcp/errors"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/protocolwatch"
 	"github.com/standardbeagle/mcp-tui/internal/testutil"
 )
@@ -58,6 +60,45 @@ func TestCloseClient_ReportsProtocolViolations(t *testing.T) {
 	want := `⚠ protocol: server sent notification "initialized", which MCP does not define (did you mean notifications/initialized?)`
 	if !strings.Contains(stderr, want+"\n") {
 		t.Errorf("stderr = %q, want the line %q", stderr, want)
+	}
+}
+
+// A stdio banner fails the handshake with an error that quotes the line; the
+// watcher's finding for that same line would only repeat it. Findings about
+// other messages, and the finding when the error is about something else,
+// are still reported.
+func TestReportableProtocolViolations_DropsTheLineTheErrorQuotes(t *testing.T) {
+	const banner = "Acme support desk listening on stdio"
+	bannerFinding := protocolwatch.Violation{Kind: protocolwatch.KindMalformed,
+		Message: "server sent a message that is not JSON-RPC 2.0: it is not JSON", Raw: banner}
+	otherLine := protocolwatch.Violation{Kind: protocolwatch.KindMalformed,
+		Message: "server sent a message that is not JSON-RPC 2.0: it is not JSON", Raw: "Loaded 42 tickets"}
+	undefined := protocolwatch.Violation{Kind: protocolwatch.KindUndefinedMethod, Method: "initialized",
+		Message: `server sent notification "initialized", which MCP does not define`}
+	all := []protocolwatch.Violation{bannerFinding, otherLine, undefined}
+	bannerErr := fmt.Errorf("failed to connect to MCP server: %w",
+		&mcperrors.StdoutNotJSONRPCError{Command: "acme-desk", Line: banner})
+
+	got := reportableProtocolViolations(all, bannerErr)
+	if want := []protocolwatch.Violation{otherLine, undefined}; !slices.Equal(got, want) {
+		t.Errorf("with the banner error: got %+v, want %+v", got, want)
+	}
+	if got := reportableProtocolViolations(all, fmt.Errorf("tool %q not found on the server", "close_ticket")); !slices.Equal(got, all) {
+		t.Errorf("with an unrelated error: got %+v, want all %+v", got, all)
+	}
+	if got := reportableProtocolViolations(all, nil); !slices.Equal(got, all) {
+		t.Errorf("without an error: got %+v, want all %+v", got, all)
+	}
+}
+
+// The error quotes at most a shortened line, the finding a differently
+// shortened one; a long banner is still recognized as the same line.
+func TestReportableProtocolViolations_MatchesShortenedLines(t *testing.T) {
+	long := strings.Repeat("Acme support desk: loading plugin ", 20)
+	finding := protocolwatch.Violation{Kind: protocolwatch.KindMalformed, Raw: long[:300] + "…"}
+	err := &mcperrors.StdoutNotJSONRPCError{Command: "acme-desk", Line: long[:200] + "…"}
+	if got := reportableProtocolViolations([]protocolwatch.Violation{finding}, err); len(got) != 0 {
+		t.Errorf("got %+v, want the finding dropped", got)
 	}
 }
 
