@@ -194,7 +194,7 @@ func (tc *ToolCommand) handleList(cmd *cobra.Command, args []string) error {
 		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
 		}
-		return tc.HandleError(err, "list tools")
+		return err
 	}
 
 	if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
@@ -352,7 +352,7 @@ func (tc *ToolCommand) handleDescribe(cmd *cobra.Command, args []string) error {
 		if tc.GetOutputFormat() == OutputFormatText && !porcelainMode {
 			fmt.Fprintf(os.Stderr, "❌ Failed to retrieve tools\n")
 		}
-		return tc.HandleError(err, "list tools")
+		return err
 	}
 
 	foundTool := findTool(tools, toolName)
@@ -566,7 +566,7 @@ func (tc *ToolCommand) callAndPrint(
 		if showNotes {
 			fmt.Fprintf(os.Stderr, "❌ Tool execution failed\n")
 		}
-		return tc.HandleError(err, "call tool")
+		return err
 	}
 
 	return printToolResult(out, result)
@@ -644,7 +644,7 @@ func (tc *ToolCommand) lookupCallTool(ctx context.Context, toolName string, show
 		if showNotes {
 			fmt.Fprintf(os.Stderr, "❌ Failed to fetch tool metadata before call\n")
 		}
-		return nil, tc.HandleError(listErr, "list tools before call")
+		return nil, listErr
 	}
 	matchedTool := findTool(tools, toolName)
 	if matchedTool == nil {
@@ -778,7 +778,7 @@ func (tc *ToolCommand) callAsTask(ctx context.Context, req mcp.CallToolRequest, 
 	outcome, err := svc.CallToolAsTask(progressCtx, req, f.ttlMs)
 	endProgress()
 	if err != nil {
-		return tc.HandleError(err, "call tool as a task")
+		return err
 	}
 	if outcome.Result != nil {
 		if text {
