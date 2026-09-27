@@ -11,7 +11,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp"
 )
 
-// Colours of the result body: headings between content blocks, and JSON
+// Colors of the result body: headings between content blocks, and JSON
 // tokens.
 var (
 	resultHeadingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Bold(true)
@@ -22,7 +22,7 @@ var (
 )
 
 // resultBodyWriter collects the body twice, line by line: plain, which is
-// what is copied, and shown, the same lines with JSON coloured.
+// what is copied, and shown, the same lines with JSON colored.
 type resultBodyWriter struct {
 	plain, shown []string
 }
@@ -58,7 +58,7 @@ func (w *resultBodyWriter) json(value any) {
 // formatResultBody lays a call's result out for reading: text is what is
 // copied, shown the lines drawn. A lone text block is shown as is (JSON
 // pretty-printed); several blocks, or one that is not text, each get a
-// heading; binary data is summarised by type and size, not dumped; and
+// heading; binary data is summarized by type and size, not dumped; and
 // structuredContent follows when it says more than the text blocks.
 func formatResultBody(call *mcp.CallToolResult) (text string, shown []string) {
 	var w resultBodyWriter
@@ -176,9 +176,9 @@ func formatByteSize(n int) string {
 	}
 }
 
-// highlightJSONLine colours the tokens of one line of indented JSON. A
+// highlightJSONLine colors the tokens of one line of indented JSON. A
 // token never spans lines there (strings escape their newlines), so each
-// line is coloured on its own.
+// line is colored on its own.
 func highlightJSONLine(line string) string {
 	var b strings.Builder
 	for i := 0; i < len(line); {

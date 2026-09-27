@@ -31,6 +31,6 @@ func TestStdioCloseStopsServerThatIgnoresStdinClose(t *testing.T) {
 	// SIGTERM is itself graceful, so the wait before it is short: a one-shot
 	// CLI call pays it every time.
 	if elapsed := time.Since(start); elapsed >= 1500*time.Millisecond {
-		t.Errorf("Close took %v, want the server signalled within about 500ms of its stdin closing", elapsed)
+		t.Errorf("Close took %v, want the server signaled within about 500ms of its stdin closing", elapsed)
 	}
 }

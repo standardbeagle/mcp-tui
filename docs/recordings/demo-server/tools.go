@@ -18,7 +18,7 @@ import (
 const escalationStepDelay = time.Second
 
 // Input request keys of the multi-round-trip tools (SEP-2322). On 2026-07-28
-// the client fulfils them and retries the call; on earlier protocols the
+// the client fulfills them and retries the call; on earlier protocols the
 // SDK asks the client directly and re-invokes the handler with the answers.
 const (
 	callbackTimeInputKey = "callback_time"

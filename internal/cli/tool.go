@@ -457,7 +457,7 @@ func declaredToolHints(a *mcp.ToolAnnotations) string {
 	return strings.Join(hints, ", ")
 }
 
-// printSchemaSection prints a labelled, indented JSON schema; nothing when
+// printSchemaSection prints a labeled, indented JSON schema; nothing when
 // the tool has none. The SDK hands schemas over as maps, so keys come out
 // sorted rather than in the server's order.
 func printSchemaSection(label string, schema map[string]interface{}) {

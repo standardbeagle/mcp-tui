@@ -9,7 +9,7 @@ import (
 )
 
 // toolBadge is one annotation marker: what it shows, what it stands for
-// and its colour.
+// and its color.
 type toolBadge struct {
 	mark    string
 	meaning string
@@ -23,7 +23,7 @@ var (
 	badgeOpenWorld   = toolBadge{"[O]", "open-world", "243"} // gray, informational
 )
 
-// render draws the marker in its colour.
+// render draws the marker in its color.
 func (b toolBadge) render() string {
 	return lipgloss.NewStyle().Bold(true).Foreground(b.color).Render(b.mark)
 }
@@ -48,7 +48,7 @@ func toolBadges(tool *mcp.Tool) []toolBadge {
 	return badges
 }
 
-// renderToolBadges draws the tool's markers in colour, e.g. "[R][I]". The
+// renderToolBadges draws the tool's markers in color, e.g. "[R][I]". The
 // plain string lives on Tool.BadgeString so non-TUI callers (CLI list,
 // JSON output, log lines) get a stable one.
 func renderToolBadges(tool *mcp.Tool) string {
