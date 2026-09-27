@@ -9,7 +9,7 @@ on:
       dry_run:
         description: 'Dry run (skip actual publish)'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 env:
@@ -37,7 +37,8 @@ jobs:
             goarch: arm64
           - goos: windows
             goarch: amd64
-            ext: .exe
+          - goos: windows
+            goarch: arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -47,21 +48,63 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Build binary
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The npm package installs the release matching its own version, so a
+      # tag must carry the package.json version. Off a tag (a dry run), the
+      # package.json version is used.
+      - name: Resolve version
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            if [ "${VERSION}" != "${PACKAGE_VERSION}" ]; then
+              echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${PACKAGE_VERSION}"
+              exit 1
+            fi
+          else
+            VERSION="${PACKAGE_VERSION}"
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      # Archive names come from scripts/install.js, the npm installer that
+      # downloads them, so the two cannot drift apart.
+      - name: Build binary and archive
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          BINARY_NAME="mcp-tui-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          go build -ldflags "-X main.version=${GITHUB_REF_NAME}" -o "dist/${BINARY_NAME}" .
-          echo "Built ${BINARY_NAME}"
+          TARGET="{goos: '${GOOS}', goarch: '${GOARCH}'}"
+          BINARY="$(node -p "require('./scripts/install.js').archiveBinaryName(${TARGET})")"
+          ASSET="$(node -p "require('./scripts/install.js').releaseAssetName('${VERSION}', ${TARGET})")"
+          go build -ldflags "-X main.version=${VERSION}" -o "dist/${BINARY}" .
+          tar -czf "dist/${ASSET}" -C dist "${BINARY}"
+          echo "BINARY=${BINARY}" >> "$GITHUB_ENV"
+          echo "SBOM=${ASSET%.tar.gz}.spdx.json" >> "$GITHUB_ENV"
+          echo "Built ${ASSET}"
+
+      # Syft reads the module list Go embeds in the binary, so each platform's
+      # SBOM lists exactly the modules linked into that binary.
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          file: dist/${{ env.BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.SBOM }}
+          upload-artifact: false
+          upload-release-assets: false
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.spdx.json
 
   publish:
     needs: build
@@ -69,6 +112,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@v4
@@ -79,69 +123,52 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: release
+          merge-multiple: true
 
-      - name: Prepare binaries for npm package
+      # scripts/install.js refuses any archive whose SHA-256 is not listed here.
+      - name: Write checksums
+        working-directory: release
         run: |
-          mkdir -p bin
-          # Copy linux-amd64 as the default binary for npm
-          cp artifacts/binary-linux-amd64/mcp-tui-linux-amd64 bin/mcp-tui
-          chmod +x bin/mcp-tui
+          sha256sum *.tar.gz > checksums.txt
+          cat checksums.txt
 
-          # Also build a local binary for the current platform
-          go build -o bin/mcp-tui-local .
+      - name: Attest build provenance
+        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: release/checksums.txt
 
-          ls -la bin/
-
-      - name: Prepare release assets
-        run: |
-          mkdir -p release
-          for dir in artifacts/binary-*; do
-            for file in "$dir"/*; do
-              if [ -f "$file" ]; then
-                filename=$(basename "$file")
-                cp "$file" "release/${filename}"
-                chmod +x "release/${filename}" 2>/dev/null || true
-              fi
-            done
-          done
-
-          # Create tarballs for each platform
-          cd release
-          for binary in mcp-tui-*; do
-            if [ -f "$binary" ]; then
-              platform="${binary#mcp-tui-}"
-              platform="${platform%.exe}"
-              tar -czvf "mcp-tui_${GITHUB_REF_NAME#v}_${platform}.tar.gz" "$binary"
-            fi
-          done
-          ls -la
+      - name: Keep dry-run release files
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: release/
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        uses: softprops/action-gh-release@v2
         with:
-          files: release/*.tar.gz
+          files: |
+            release/*.tar.gz
+            release/*.spdx.json
+            release/checksums.txt
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The package is the launcher and installer only; its postinstall
+      # downloads the binary from the release created above.
       - name: Publish to npm (dry run)
-        if: inputs.dry_run == 'true'
+        if: inputs.dry_run
         run: npm publish --access public --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to npm
-        if: inputs.dry_run != 'true' && startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
