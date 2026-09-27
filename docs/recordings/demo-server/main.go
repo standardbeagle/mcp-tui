@@ -57,15 +57,8 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config) error {
-	switch {
-	case cfg.stdio && (cfg.httpAddr != "" || cfg.sseAddr != ""):
-		return errors.New("-stdio cannot be combined with -http or -sse")
-	case !cfg.stdio && cfg.httpAddr == "" && cfg.sseAddr == "":
-		return errors.New("choose a transport: -stdio, -http <addr> and/or -sse <addr>")
-	case cfg.oauth && cfg.httpAddr == "":
-		return errors.New("-oauth protects the streamable HTTP endpoint; add -http <addr>")
-	case (cfg.stdoutBanner || cfg.ignoreDiscover || cfg.strayMessages) && !cfg.stdio:
-		return errors.New("-stdout-banner, -ignore-discover and -stray-messages are stdio faults; add -stdio")
+	if err := cfg.validate(); err != nil {
+		return err
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -80,17 +73,9 @@ func run(ctx context.Context, cfg config) error {
 		return nil
 	})
 	if cfg.stdio {
-		if cfg.stdoutBanner {
-			if err := printStdoutBanner(); err != nil {
-				return err
-			}
-		}
-		var transport mcp.Transport = &mcp.StdioTransport{}
-		if cfg.ignoreDiscover {
-			transport = &discoverIgnoringTransport{inner: transport}
-		}
-		if cfg.strayMessages {
-			transport = &strayMessagesTransport{inner: transport}
+		transport, err := stdioTransport(cfg)
+		if err != nil {
+			return err
 		}
 		g.Go(func() error {
 			// Stdin closing ends the session and, with it, the server.
@@ -99,6 +84,49 @@ func run(ctx context.Context, cfg config) error {
 		})
 		return g.Wait()
 	}
+	if err := serveHTTP(ctx, g, cfg, server, logger); err != nil {
+		return err
+	}
+	return g.Wait()
+}
+
+// validate rejects flag combinations that name no transport or pair a
+// transport with options that only apply to another.
+func (cfg config) validate() error {
+	switch {
+	case cfg.stdio && (cfg.httpAddr != "" || cfg.sseAddr != ""):
+		return errors.New("-stdio cannot be combined with -http or -sse")
+	case !cfg.stdio && cfg.httpAddr == "" && cfg.sseAddr == "":
+		return errors.New("choose a transport: -stdio, -http <addr> and/or -sse <addr>")
+	case cfg.oauth && cfg.httpAddr == "":
+		return errors.New("-oauth protects the streamable HTTP endpoint; add -http <addr>")
+	case (cfg.stdoutBanner || cfg.ignoreDiscover || cfg.strayMessages) && !cfg.stdio:
+		return errors.New("-stdout-banner, -ignore-discover and -stray-messages are stdio faults; add -stdio")
+	}
+	return nil
+}
+
+// stdioTransport is the stdio transport with the requested faults layered
+// on; -stdout-banner is written before it is returned.
+func stdioTransport(cfg config) (mcp.Transport, error) {
+	if cfg.stdoutBanner {
+		if err := printStdoutBanner(); err != nil {
+			return nil, err
+		}
+	}
+	var transport mcp.Transport = &mcp.StdioTransport{}
+	if cfg.ignoreDiscover {
+		transport = &discoverIgnoringTransport{inner: transport}
+	}
+	if cfg.strayMessages {
+		transport = &strayMessagesTransport{inner: transport}
+	}
+	return transport, nil
+}
+
+// serveHTTP starts the -http and -sse listeners on g; each serves until
+// ctx ends.
+func serveHTTP(ctx context.Context, g *errgroup.Group, cfg config, server *mcp.Server, logger *slog.Logger) error {
 	if cfg.httpAddr != "" {
 		ln, err := listenLoopback(cfg.httpAddr)
 		if err != nil {
@@ -121,7 +149,7 @@ func run(ctx context.Context, cfg config) error {
 		fmt.Fprintf(os.Stderr, "%s %s: legacy SSE at http://%s/sse\n", serverName, serverVersion, ln.Addr())
 		g.Go(func() error { return serveUntilDone(ctx, newHTTPServer(mux), ln) })
 	}
-	return g.Wait()
+	return nil
 }
 
 // streamableMux routes /mcp and, with -oauth, the authorization server.

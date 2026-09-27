@@ -6,6 +6,19 @@ import (
 	"strings"
 )
 
+// valueAgainstLimitRules are the keywords whose rule reads as the value,
+// then the keyword's limit, both as JSON.
+var valueAgainstLimitRules = map[string]string{
+	"maximum":          "%s is greater than the maximum %s",
+	"minimum":          "%s is less than the minimum %s",
+	"exclusiveMaximum": "%s is not less than the exclusive maximum %s",
+	"exclusiveMinimum": "%s is not greater than the exclusive minimum %s",
+	"multipleOf":       "%s is not a multiple of %s",
+	"maxLength":        "%s is longer than the maximum length %s",
+	"minLength":        "%s is shorter than the minimum length %s",
+	"const":            "%s is not the required value %s",
+}
+
 // explainRule rewrites jsonschema-go's message for a failed keyword
 // (reason, "maximum: 500/1 is greater than 50.000000") as the rule the value
 // broke, reading the value and the limit from the arguments and the failed
@@ -18,29 +31,16 @@ func explainRule(reason string, schema map[string]any, value any, atRoot bool) s
 	if !ok {
 		return reason
 	}
+	if format, ok := valueAgainstLimitRules[keyword]; ok {
+		return fmt.Sprintf(format, jsonText(value), jsonText(limit))
+	}
 	switch keyword {
-	case "maximum":
-		return fmt.Sprintf("%s is greater than the maximum %s", jsonText(value), jsonText(limit))
-	case "minimum":
-		return fmt.Sprintf("%s is less than the minimum %s", jsonText(value), jsonText(limit))
-	case "exclusiveMaximum":
-		return fmt.Sprintf("%s is not less than the exclusive maximum %s", jsonText(value), jsonText(limit))
-	case "exclusiveMinimum":
-		return fmt.Sprintf("%s is not greater than the exclusive minimum %s", jsonText(value), jsonText(limit))
-	case "multipleOf":
-		return fmt.Sprintf("%s is not a multiple of %s", jsonText(value), jsonText(limit))
-	case "maxLength":
-		return fmt.Sprintf("%s is longer than the maximum length %s", jsonText(value), jsonText(limit))
-	case "minLength":
-		return fmt.Sprintf("%s is shorter than the minimum length %s", jsonText(value), jsonText(limit))
 	case "pattern":
 		return fmt.Sprintf("%s does not match the pattern %v", jsonText(value), limit)
 	case "maxItems":
 		return fmt.Sprintf("%d items is more than the maximum %s", len(asArray(value)), jsonText(limit))
 	case "minItems":
 		return fmt.Sprintf("%d items is fewer than the minimum %s", len(asArray(value)), jsonText(limit))
-	case "const":
-		return fmt.Sprintf("%s is not the required value %s", jsonText(value), jsonText(limit))
 	case "enum":
 		options := asArray(limit)
 		texts := make([]string, len(options))
