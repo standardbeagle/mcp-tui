@@ -80,6 +80,10 @@ type Watcher struct {
 	answered      map[string]string // id → method
 	answeredOrder []string
 	violations    []Violation
+	// clientCapabilities are the capabilities the client's initialize
+	// request declared: a server request one of them invites is accepted
+	// on any version.
+	clientCapabilities map[string]bool
 }
 
 // New returns a watcher calling onViolation and onOrdering (either may be
@@ -112,6 +116,7 @@ func (w *Watcher) Reset() {
 	defer w.mu.Unlock()
 	w.version = ""
 	w.violations = nil
+	w.clientCapabilities = nil
 	w.forgetIDs()
 }
 
@@ -128,14 +133,22 @@ func (w *Watcher) Connected(officialMCP.Connection) {
 	w.forgetIDs()
 }
 
-// Sent records each request the client sends as outstanding.
+// Sent records each request the client sends as outstanding, and the
+// capabilities its initialize request declares.
 func (w *Watcher) Sent(msg jsonrpc.Message) {
 	req, ok := msg.(*jsonrpc.Request)
 	if !ok || !req.IsCall() {
 		return
 	}
+	var declared map[string]bool
+	if req.Method == "initialize" {
+		declared = declaredCapabilities(req.Params)
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if req.Method == "initialize" {
+		w.clientCapabilities = declared
+	}
 	w.seq++
 	w.outstanding[idText(req.ID)] = outstandingRequest{method: req.Method, seq: w.seq}
 }
@@ -198,9 +211,26 @@ func (w *Watcher) report(v Violation) {
 	}
 }
 
+// declaredCapabilities returns the capability names an initialize
+// request's params declare; nil when they do not decode.
+func declaredCapabilities(params json.RawMessage) map[string]bool {
+	var p struct {
+		Capabilities map[string]json.RawMessage `json:"capabilities"`
+	}
+	if json.Unmarshal(params, &p) != nil {
+		return nil
+	}
+	declared := make(map[string]bool, len(p.Capabilities))
+	for name := range p.Capabilities {
+		declared[name] = true
+	}
+	return declared
+}
+
 func (w *Watcher) checkMethod(req *jsonrpc.Request) *Violation {
 	w.mu.Lock()
 	version := w.version
+	invited := w.clientCapabilities[protocol.ClientCapabilityFor(req.Method)]
 	w.mu.Unlock()
 	kind := "notification"
 	if req.IsCall() {
@@ -225,6 +255,11 @@ func (w *Watcher) checkMethod(req *jsonrpc.Request) *Violation {
 		}
 		text = fmt.Sprintf("server sent %q as a %s; MCP defines it as a %s", req.Method, kind, defined)
 	case protocol.MethodNotInVersion:
+		if invited {
+			// The client declared the capability, so it asked for this
+			// request whatever the version says.
+			return nil
+		}
 		text = fmt.Sprintf("server sent %s %q, which MCP %s does not let servers send", kind, req.Method, version)
 	}
 	v := &Violation{Kind: KindUndefinedMethod, Method: req.Method, Message: text}
