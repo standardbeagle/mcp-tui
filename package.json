@@ -2,15 +2,12 @@
   "name": "@standardbeagle/mcp-tui",
   "version": "0.9.1",
   "description": "A comprehensive Terminal User Interface (TUI) and Command Line Interface (CLI) for Model Context Protocol (MCP) servers with full tool, prompt, and resource management",
-  "main": "index.js",
   "bin": {
     "mcp-tui": "bin/mcp-tui.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
-    "test": "go test ./...",
-    "build": "go build -o bin/mcp-tui .",
-    "prepare": "npm run build"
+    "test": "node --test scripts/install.test.js"
   },
   "repository": {
     "type": "git",
@@ -37,20 +34,14 @@
     "url": "https://github.com/standardbeagle/mcp-tui/issues"
   },
   "homepage": "https://github.com/standardbeagle/mcp-tui#readme",
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.13.2",
-    "node-fetch": "^3.3.2"
-  },
   "files": [
-    "bin/",
-    "scripts/",
-    "examples/",
+    "bin/mcp-tui.js",
+    "scripts/install.js",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md",
-    "QUICK_START.md"
+    "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18"
   }
 }
