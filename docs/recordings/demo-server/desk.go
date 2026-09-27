@@ -110,9 +110,9 @@ func findCustomerByEmail(email string) (Customer, bool) {
 // ticketIDsWithPrefix answers completion for ticket IDs.
 func ticketIDsWithPrefix(prefix string) []string {
 	var ids []string
-	for _, t := range tickets {
-		if strings.HasPrefix(t.ID, strings.ToUpper(prefix)) {
-			ids = append(ids, t.ID)
+	for i := range tickets {
+		if id := tickets[i].ID; strings.HasPrefix(id, strings.ToUpper(prefix)) {
+			ids = append(ids, id)
 		}
 	}
 	return ids
@@ -129,7 +129,7 @@ func valuesWithPrefix(values []string, prefix string) []string {
 }
 
 // ticketLine is the one-line text form of a ticket used in tool results.
-func ticketLine(t Ticket) string {
+func ticketLine(t *Ticket) string {
 	return fmt.Sprintf("%s  %-7s  %-7s  %s", t.ID, t.Priority, t.Status, t.Subject)
 }
 

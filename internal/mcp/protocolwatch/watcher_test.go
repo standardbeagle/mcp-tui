@@ -47,7 +47,7 @@ func received(m jsonrpc.Message) step { return step{msg: m} }
 // run plays steps through a watcher on version and returns what it found.
 func run(version string, steps ...step) (*Watcher, []Violation, []Ordering) {
 	var orderings []Ordering
-	w := New(nil, func(o Ordering) { orderings = append(orderings, o) })
+	w := New(nil, func(o *Ordering) { orderings = append(orderings, *o) })
 	w.SetProtocolVersion(version)
 	for _, s := range steps {
 		if s.sent {
@@ -56,7 +56,8 @@ func run(version string, steps ...step) (*Watcher, []Violation, []Ordering) {
 			w.Received(s.msg)
 		}
 	}
-	return w, w.Violations(), orderings
+	violations := w.Violations()
+	return w, violations, orderings
 }
 
 func messages(vs []Violation) []string {
@@ -291,7 +292,7 @@ func TestWatcher_NewConnectionForgetsIDs(t *testing.T) {
 
 func TestWatcher_ReportsEachViolationToHook(t *testing.T) {
 	var got []Violation
-	w := New(func(v Violation) { got = append(got, v) }, nil)
+	w := New(func(v *Violation) { got = append(got, *v) }, nil)
 	w.Received(result(t, 7, `{}`))
 	if len(got) != 1 || got[0].Kind != KindUnknownID {
 		t.Errorf("hook got %+v", got)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -349,7 +350,8 @@ func (ds *DebugScreen) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ds.showDetail = false
 		return ds, func() tea.Msg { return BackMsg{} }
 	case "c", "y":
-		return ds, ds.copyDetailCmd()
+		cmd := ds.copyDetailCmd()
+		return ds, cmd
 	}
 	ds.scrollText(msg, ds.detailText(), &ds.detailScroll)
 	return ds, nil
@@ -1562,8 +1564,7 @@ func (ds *DebugScreen) renderNotifications() string {
 	}
 
 	headerLines, detailLines, rows := ds.notificationLayout(entries)
-	lines := append(headerLines, ds.notificationWindow(entries, rows)...)
-	lines = append(lines, detailLines...)
+	lines := slices.Concat(headerLines, ds.notificationWindow(entries, rows), detailLines)
 	boxWidth, listRows := ds.logListSize()
 	return ds.logStyle.Width(boxWidth).Height(listRows + 4).Render(strings.Join(lines, "\n"))
 }

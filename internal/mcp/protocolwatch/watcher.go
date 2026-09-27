@@ -70,8 +70,8 @@ type outstandingRequest struct {
 // Watcher checks one service's traffic. Its hooks run on the goroutine that
 // read or wrote the message, outside the watcher's lock.
 type Watcher struct {
-	onViolation func(Violation)
-	onOrdering  func(Ordering)
+	onViolation func(*Violation)
+	onOrdering  func(*Ordering)
 
 	mu            sync.Mutex
 	version       string
@@ -88,7 +88,7 @@ type Watcher struct {
 
 // New returns a watcher calling onViolation and onOrdering (either may be
 // nil) for each finding.
-func New(onViolation func(Violation), onOrdering func(Ordering)) *Watcher {
+func New(onViolation func(*Violation), onOrdering func(*Ordering)) *Watcher {
 	w := &Watcher{onViolation: onViolation, onOrdering: onOrdering}
 	w.forgetIDs()
 	return w
@@ -165,10 +165,10 @@ func (w *Watcher) Received(msg jsonrpc.Message) bool {
 	}
 	if v != nil {
 		v.Raw = snippet(msg)
-		w.report(*v)
+		w.report(v)
 	}
 	if o != nil && w.onOrdering != nil {
-		w.onOrdering(*o)
+		w.onOrdering(o)
 	}
 	return false
 }
@@ -195,16 +195,16 @@ func (w *Watcher) Malformed(raw []byte, err error) {
 	case probe.ID == nil && probe.Method == nil:
 		reason = "it is a response without an id"
 	}
-	w.report(Violation{
+	w.report(&Violation{
 		Kind:    KindMalformed,
 		Message: "server sent a message that is not JSON-RPC 2.0: " + reason,
 		Raw:     shorten(redactRaw(raw)),
 	})
 }
 
-func (w *Watcher) report(v Violation) {
+func (w *Watcher) report(v *Violation) {
 	w.mu.Lock()
-	w.violations = append(w.violations, v)
+	w.violations = append(w.violations, *v)
 	w.mu.Unlock()
 	if w.onViolation != nil {
 		w.onViolation(v)

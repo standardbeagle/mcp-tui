@@ -10,6 +10,8 @@ import (
 // multi-line string at once pads every line with spaces to the widest one,
 // which leaves a blank line in the text as a line of spaces; here a blank
 // line stays empty and no line gets trailing spaces.
+//
+//nolint:gocritic // hugeParam: lipgloss.Style is a value type whose methods copy it anyway
 func renderLines(style lipgloss.Style, text string) string {
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {

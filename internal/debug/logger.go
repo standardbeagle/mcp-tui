@@ -359,7 +359,7 @@ func callSite() string {
 	for {
 		frame, more := frames.Next()
 		if frame.File != "" && frame.File != loggerSourceFile {
-			return formatCallSite(frame)
+			return formatCallSite(&frame)
 		}
 		if !more {
 			return ""
@@ -376,10 +376,10 @@ func pcCallSite(pc uintptr) string {
 	if frame.File == "" {
 		return ""
 	}
-	return formatCallSite(frame)
+	return formatCallSite(&frame)
 }
 
-func formatCallSite(frame runtime.Frame) string {
+func formatCallSite(frame *runtime.Frame) string {
 	return fmt.Sprintf("%s:%d", extractFilename(frame.File), frame.Line)
 }
 
