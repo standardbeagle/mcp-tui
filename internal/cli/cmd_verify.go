@@ -87,6 +87,8 @@ Exit codes:
 		fmt.Sprintf("Run a single probe by name (one of: %s)", strings.Join(verify.AllProbes, ", ")))
 	cmd.Flags().Bool("json", false, "Print machine-readable JSON instead of human-formatted output")
 	cmd.Flags().String("tool", "", "(seterror-content) Tool that fails by design (default: \"echo\", skipped when the server has none)")
+	cmd.Flags().StringArray("tool-args", nil,
+		"(seterror-content) Argument for --tool as key=value or key:=<json>, converted like `tool call` (repeatable)")
 	return cmd
 }
 
@@ -105,8 +107,6 @@ func (c *VerifyCommand) RunE(cmd *cobra.Command, args []string) error {
 
 	probeName := flagString(cmd, "probe")
 	jsonOut := flagBool(cmd, "json")
-	tool := flagString(cmd, "tool")
-	target.ToolName = tool
 
 	if probeName != "" && !validProbeName(probeName) {
 		return fmt.Errorf("unknown --probe %q (valid: %s)", probeName, strings.Join(verify.AllProbes, ", "))
@@ -170,7 +170,9 @@ func (c *VerifyCommand) buildTarget(cmd *cobra.Command, args []string) (verify.T
 		return verify.Target{}, err
 	}
 
-	target := verify.Target{URL: url, Command: command, Args: cmdArgs}
+	target := verify.Target{URL: url, Command: command, Args: cmdArgs,
+		ToolName: flagString(cmd, "tool"), ToolArgPairs: flagStringArray(cmd, "tool-args"),
+		ToolArguments: triggerToolArguments}
 	if target.URL == "" && target.Command == "" {
 		return target, fmt.Errorf("no verify target specified — supply <url>, --url, or --cmd")
 	}

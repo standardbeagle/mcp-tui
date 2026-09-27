@@ -64,8 +64,9 @@ type Target struct {
 	// each check's default: isError picks a tool by name, the probe "echo".
 	ToolName string
 
-	// ToolArgs are ToolName's arguments for tools.call.isError, as
-	// `tool call` key=value (or key:=<json>) pairs.
+	// ToolArgs are ToolName's arguments for tools.call.isError and
+	// verify.seterror-content, as `tool call` key=value (or key:=<json>)
+	// pairs.
 	ToolArgs []string
 
 	// ToolArguments converts trigger argument pairs into a tool's
@@ -326,16 +327,25 @@ func (r *Runner) dispatch(ctx context.Context, name string) ScenarioResult {
 // HTTP-only target shouldn't see the seterror-content probe FAIL just
 // because they didn't supply --cmd.
 func (r *Runner) runVerifyProbe(ctx context.Context, probe string) ScenarioResult {
-	tt := verify.Target{
-		URL:      r.target.URL,
-		Command:  r.target.Command,
-		Args:     r.target.Args,
-		ToolName: r.target.ToolName,
-	}
+	tt := r.verifyTarget()
 	if problem := verify.TargetProblem(probe, &tt); problem != "" {
 		return ScenarioResult{Pass: true, Skipped: true, Error: "skipped: " + problem}
 	}
 	return scenarioFromProbe(verify.Run(ctx, probe, &tt))
+}
+
+// verifyTarget is the target the verify probes run against: the same
+// server, and for seterror-content the same --tool and --tool-args as
+// tools.call.isError.
+func (r *Runner) verifyTarget() verify.Target {
+	return verify.Target{
+		URL:           r.target.URL,
+		Command:       r.target.Command,
+		Args:          r.target.Args,
+		ToolName:      r.target.ToolName,
+		ToolArgPairs:  r.target.ToolArgs,
+		ToolArguments: r.target.ToolArguments,
+	}
 }
 
 // scenarioFromProbe maps a probe's outcome onto a scenario result, keeping

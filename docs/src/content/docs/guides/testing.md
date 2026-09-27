@@ -52,12 +52,14 @@ command reports the same violations on stderr after its output (see
 [Protocol violations](/mcp-tui/reference/cli/#protocol-violations)). `list-order` makes sure both lists reach the server:
 when the SDK answered the second from its TTL cache, it asks again on a new
 session. `seterror-content` runs against a stdio server and takes an
-optional `--tool`, a tool that fails by design. Without `--tool` it calls
-`echo`, and is skipped when the server has no `echo` tool:
+optional `--tool`, a tool that fails by design, with its arguments in
+`--tool-args` (`key=value` or `key:=<json>`, as `tool call` takes them).
+Without `--tool` it calls `echo`, and is skipped when the server has no
+`echo` tool:
 
 ```bash
-mcp-tui verify --probe seterror-content --cmd npx \
-  --args "@modelcontextprotocol/server-everything,stdio" --tool failing_tool
+mcp-tui verify --probe seterror-content --cmd ./demo-server --args -stdio \
+  --tool lookup_customer --tool-args customer_id=C-4040
 ```
 
 ## `conform` — the full matrix
@@ -92,7 +94,7 @@ to shape a completion request:
 | `--elicit-trigger-tool` | Tool that triggers `elicitation/create` (default `startElicitation`) |
 | `--elicit-trigger-args` | An argument for that tool, as `--sampling-trigger-args` |
 | `--tool` | Tool that fails by design, for `tools.call.isError` and `verify.seterror-content` (as `verify --tool`) |
-| `--tool-args` | An argument for `--tool` in `tools.call.isError`, as `--sampling-trigger-args` |
+| `--tool-args` | An argument for `--tool` in `tools.call.isError` and `verify.seterror-content`, as `--sampling-trigger-args` |
 | `--completion-prompt` | Prompt name (or template URI with `--completion-resource`) for `completion/complete` |
 | `--completion-resource` | Treat `--completion-prompt` as a resource template URI |
 | `--completion-arg` | Argument name for `completion/complete` |

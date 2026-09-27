@@ -272,6 +272,7 @@ mcp-tui verify [url|--cmd <cmd>]
 | `--probe <name>` | Run a single probe (see list below) |
 | `--json` | Machine-readable JSON output |
 | `--tool <name>` | (`seterror-content`) Tool that fails by design; default `echo`, and the probe is skipped when the server has no `echo` tool |
+| `--tool-args <key=value>` | (`seterror-content`) Argument for `--tool`, `key=value` or `key:=<json>` as in `tool call`; repeatable |
 
 Probes: `cross-origin`, `dns-rebind`, `content-type`, `origin-header`,
 `mcp-method-headers`, `seterror-content`, `tool-names`, `list-order`,
@@ -321,7 +322,7 @@ mcp-tui conform [url|--cmd <cmd>]
 | `--elicit-trigger-tool <name>` | Tool that triggers `elicitation/create` (default `startElicitation`) |
 | `--elicit-trigger-args <key=value>` | Argument for the elicitation trigger tool; repeatable |
 | `--tool <name>` | Tool that fails by design, for `tools.call.isError` and `verify.seterror-content` (as `verify --tool`) |
-| `--tool-args <key=value>` | Argument for `--tool` in `tools.call.isError`, `key=value` or `key:=<json>` as in `tool call`; repeatable |
+| `--tool-args <key=value>` | Argument for `--tool` in `tools.call.isError` and `verify.seterror-content`, `key=value` or `key:=<json>` as in `tool call`; repeatable |
 | `--completion-prompt <name>` | Prompt name (or template URI with `--completion-resource`) for `completion/complete` |
 | `--completion-resource` | Treat `--completion-prompt` as a resource template URI |
 | `--completion-arg <name>` | Argument name for `completion/complete` |
