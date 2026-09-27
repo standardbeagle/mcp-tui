@@ -51,6 +51,41 @@ drawn. The line is drawn only in text mode, without `--porcelain`, and only when
 carries no progress; use `--watch-notifications` to stream every progress
 notification.
 
+### Protocol violations
+
+The go-sdk silently drops server messages that break JSON-RPC 2.0 or the
+negotiated MCP version. mcp-tui watches every connection and reports them:
+
+- a response whose id matches no request the client sent, or a second
+  response to one request;
+- a notification or request with a method the negotiated version does not
+  let servers send (a bare `initialized` instead of
+  `notifications/initialized`, a client-only method, `sampling/createMessage`
+  on `2026-07-28`, `elicitation/create` before `2025-06-18`);
+- a message that is not JSON-RPC 2.0: no `"jsonrpc": "2.0"`, not JSON (a log
+  line on a stdio server's stdout), a response without an id, or one with
+  both or neither of `result` and `error`. An error response with `id: null`
+  is valid JSON-RPC and not reported.
+
+In text mode each one is printed on stderr after the command's output, whether
+the command succeeded or not:
+
+```
+⚠ protocol: server sent notification "initialized", which MCP does not define (did you mean notifications/initialized?)
+⚠ protocol: server sent a response with id 1002 that matches no request
+```
+
+`--porcelain` and `--format json` print nothing on stderr; commands whose JSON
+is an object (`tool list`, `tool call`, `task result`, `prompt list`,
+`resource list`, `resource templates`, `resource get`, the `complete`
+subcommands) add a `protocolViolations` array of `{kind, method, id, message,
+raw}` when there is anything to report. Responses arriving in a different
+order than their requests are legal JSON-RPC: they are noted in the TUI debug
+Messages tab (`ORDER response to #3 (tools/call) arrived before #2 …`) and
+never reported as violations. Violations also appear there (`VIOLATION …`,
+the message itself in the detail view) and in the log at `warn`, component
+`protocol`.
+
 ### Client features
 
 These flags let the CLI answer server-initiated requests non-interactively.
@@ -231,9 +266,16 @@ mcp-tui verify [url|--cmd <cmd>]
 | `--tool <name>` | (`seterror-content`) Tool that fails by design; default `echo`, and the probe is skipped when the server has no `echo` tool |
 
 Probes: `cross-origin`, `dns-rebind`, `content-type`, `origin-header`,
-`mcp-method-headers`, `seterror-content`, `tool-names`, `list-order`. The first five need a URL target;
+`mcp-method-headers`, `seterror-content`, `tool-names`, `list-order`,
+`protocol-violations`. The first five need a URL target;
 `seterror-content` needs a stdio `--cmd`; `tool-names` (every tool name is 1-128
-characters of `A-Z a-z 0-9 _ - .`, SEP-986) and `list-order` take either.
+characters of `A-Z a-z 0-9 _ - .`, SEP-986), `list-order` and
+`protocol-violations` take either.
+
+`protocol-violations` lists the tools, resources and prompts the server
+declares and fails on any [protocol violation](#protocol-violations) the
+server committed on that connection. A list that fails is left to the other
+probes; only what the server sent is judged.
 
 `list-order` lists tools twice and compares the order. The `2026-07-28` spec
 says servers SHOULD return tools in a deterministic order, so a changed order
@@ -282,7 +324,8 @@ Scenarios: `initialize`, `tools.list`, `tools.call`, `tools.call.isError`,
 `elicitation.create`, `notifications`, `completion.complete`, plus the
 probes as `verify.<probe-name>`: `verify.cross-origin`, `verify.dns-rebind`,
 `verify.content-type`, `verify.origin-header`, `verify.mcp-method-headers`,
-`verify.seterror-content`, `verify.tool-names` and `verify.list-order`. A probe the target cannot
+`verify.seterror-content`, `verify.tool-names`, `verify.list-order` and
+`verify.protocol-violations`. A probe the target cannot
 run is reported as `skipped: probe requires a … target` and counts as passing.
 `sampling.createMessage` and `elicitation.create` pass only on an observed
 round trip: the trigger tool made the server send the request and the stub

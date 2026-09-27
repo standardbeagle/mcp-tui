@@ -44,9 +44,12 @@ mcp-tui verify --json http://localhost:8000/mcp | jq '.results[]|select(.pass==f
 | `seterror-content` | Tool-result errors preserve the `Content` payload (SDK v1.6.0+) |
 | `tool-names` | Every tool name is 1-128 characters of `A-Z a-z 0-9 _ - .` (SEP-986) |
 | `list-order` | `tools/list` returns the same order twice (2026-07-28 SHOULD; WARN when it does not) |
+| `protocol-violations` | Listing tools, resources and prompts draws no message that breaks JSON-RPC 2.0 or the negotiated MCP version (stray or second responses, undefined methods, non-JSON-RPC lines) |
 
-The first five probes require a URL target. `tool-names` and `list-order` take
-a URL or a stdio `--cmd`. `list-order` makes sure both lists reach the server:
+The first five probes require a URL target. `tool-names`, `list-order` and
+`protocol-violations` take a URL or a stdio `--cmd`. Outside `verify`, every
+command reports the same violations on stderr after its output (see
+[Protocol violations](/mcp-tui/reference/cli/#protocol-violations)). `list-order` makes sure both lists reach the server:
 when the SDK answered the second from its TTL cache, it asks again on a new
 session. `seterror-content` runs against a stdio server and takes an
 optional `--tool`, a tool that fails by design. Without `--tool` it calls

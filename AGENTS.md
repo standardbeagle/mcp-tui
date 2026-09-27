@@ -42,7 +42,8 @@ internal/mcp/            service layer（service.go）包 go-sdk client
   protocol/              葉包：StatelessVersion（2026-07-28）判定
   inputschema/           tool inputSchema 經 $ref、T|null 解析（CLI 與 TUI 共用）
   tasks/                 MCP tasks 二 wire form；sdk.go 為唯一觸 SDK 內部之檔
-  wiretap/               唯一觀線處：stdio/in-memory 包 connection，HTTP 經 RoundTripper 讀 request/response body（含 SSE）；tasks link 為其 Observer
+  wiretap/               唯一觀線處：stdio/in-memory 包 connection，HTTP 經 RoundTripper 讀 request/response body（含 SSE），stdio 另逐行讀 stdout 以見 SDK decoder 所拒之行；tasks link 與 protocol watcher 為其 Observer
+  protocolwatch/         判 server 違 JSON-RPC 2.0／所協商版本之訊息（無主 id、重複回應、未定義 method、非 JSON-RPC）；method 表在 protocol/methods.go
   transports/            factory.go 依 TransportType 造 SDK transport；context.go 定 context strategy
   oauth/ sampling/ elicitation/ roots/ notifications/ session/ ...
 internal/redact/         唯一去敏模組：headers、URLs、bodies、錯誤文、MCP payloads
@@ -107,6 +108,7 @@ docs/                    Astro docs site（dev.standardbeagle.com）
 - OAuth 每步記於 `oauth`，其 HTTP 記於 `oauth-http`；codes、state、tokens 唯記有無。
 - TUI：`ctrl+d` / `ctrl+l` / `F12` 開 debug screen，七 tab：General、MCP Protocol（Messages：雙向 requests、server requests 與 notifications）、HTTP Debug（讀 httptrace 之 exchange observer）、Auth（唯 `oauth`/`oauth-http`）、Statistics、Capabilities、Notifications（`1`–`8` 濾，8 為 task status）。
 - 去敏：凡記錄經 `internal/redact`。logger 依欄名遮（故連線狀態欄名為 `session_state`/`transport_state`，勿用 `state`）；MCP payload 不依鍵名遮，唯遮字串中 URL 之秘與 `_meta` 之憑證鍵。
+- 協議違規（`protocol_watch.go`）：每違規記 Warn（component `protocol`）並入 Messages log（`VIOLATION`；亂序回應為 `ORDERING`，唯資訊）；CLI text 模式於輸出後印 `⚠ protocol: …`，JSON 物件加 `protocolViolations`。測試：`connectInMemory` 與 CLI `connectHTTPService` 遇 go-sdk server 有違規即敗，為誤報之防。
 - 失敗呼叫之錯誤具名（`debug.ProtocolErrorCode`：-32002/-32602 resource-not-found、-32020、-32021、-32022、-32042），`errors.As` 可及原 JSON-RPC error。
 - 以 curl 驗 HTTP/SSE server；查 CLI timeout 是否干涉；確 stdio command 過 validation。
 
