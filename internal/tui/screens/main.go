@@ -374,10 +374,12 @@ func (ms *MainScreen) initStyles() {
 		Padding(0, 1).
 		Foreground(lipgloss.Color("8"))
 
+	// Reverse video, not palette colours: a theme may make any foreground
+	// and background slot pair near-identical (bright white on blue is in
+	// Catppuccin), but never its own foreground and background.
 	ms.activeTabStyle = lipgloss.NewStyle().
 		Padding(0, 1).
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("4")).
+		Reverse(true).
 		Bold(true)
 
 	ms.listStyle = lipgloss.NewStyle().
