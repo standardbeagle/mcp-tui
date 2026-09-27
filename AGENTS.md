@@ -21,13 +21,13 @@ MCP-TUI，Go 製 Model Context Protocol (MCP) servers 測試客戶端；兼 inte
 ./test           # go test ./... -timeout 15m   (CI "test")
 tman race        # go test -race ./internal/... -timeout 20m   (CI "race")
 tman vet         # go vet ./...
-tman lint        # golangci-lint v2.13.2，經 go run 釘版，毋全域裝
-make ci          # vet + fmt-check + test + race
+tman lint        # golangci-lint v2.13.2，經 go run 釘版，毋全域裝   (CI "lint")
+make ci          # vet + fmt-check + lint + test + race
 ```
 
 - 敗則讀 `.tman/<alias>.fail.log`，毋重跑全套。
 - 整合測試需 `npx`（server-everything）與 `pwsh`；CI 設 `MCP_TUI_REQUIRE_PWSH=1`，缺 pwsh 則敗而非略。
-- `gofmt` 為 CI 閘；lint 尚非 CI 閘（既有 1223 issues 待清）。
+- `gofmt` 與 lint 皆為 CI 閘；lint 須 0 issues。`nolint` 唯用於誤報或改之反損可讀，必附具體理由；勿為藏 issue 而升 `.golangci.yml` 之閾。
 
 ## Architecture
 

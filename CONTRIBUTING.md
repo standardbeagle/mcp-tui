@@ -42,7 +42,7 @@ Thank you for your interest in contributing to MCP-TUI! This document provides g
 
 4. **Install development tools**
    ```bash
-   make lint  # This will install golangci-lint if not present
+   make lint  # Runs the pinned golangci-lint (v2.13.2) via go run; nothing to install
    ```
 
 ## Development Environment
