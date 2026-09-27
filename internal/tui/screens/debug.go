@@ -1440,7 +1440,7 @@ func summarizeValue(v interface{}) string {
 // surface area as the per-log-entry copy commands so users have one
 // consistent muscle-memory shortcut ('y' or 'c') across every tab that has
 // copyable content.
-// The snapshot is resolved and marshalled on the event loop; the command
+// The snapshot is resolved and marshaled on the event loop; the command
 // only copies, returning a CopiedMsg that Update applies.
 func (ds *DebugScreen) copyCapabilitiesCmd() tea.Cmd {
 	var snap *capabilities.Snapshot

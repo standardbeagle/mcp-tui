@@ -21,9 +21,9 @@ func TestMainScreen_SelectedTabIsReverseVideo(t *testing.T) {
 	assertSelectedTabReverseVideo(t, ms.renderTabs, "Tools (")
 }
 
-// assertSelectedTabReverseVideo renders the tab bar in 256 colours and
+// assertSelectedTabReverseVideo renders the tab bar in 256 colors and
 // checks that the SGR sequence styling the tab whose text starts with
-// label turns on reverse video and sets no palette colour.
+// label turns on reverse video and sets no palette color.
 func assertSelectedTabReverseVideo(t *testing.T, renderTabs func() string, label string) {
 	t.Helper()
 	profile := lipgloss.ColorProfile()
@@ -42,7 +42,7 @@ func assertSelectedTabReverseVideo(t *testing.T, renderTabs func() string, label
 	}
 	for _, p := range params {
 		if n, err := strconv.Atoi(p); err == nil && (n >= 30 && n <= 48 || n >= 90) && n != 39 {
-			t.Errorf("selected tab sets a palette colour (SGR %d): %q", n, match[0])
+			t.Errorf("selected tab sets a palette color (SGR %d): %q", n, match[0])
 		}
 	}
 }

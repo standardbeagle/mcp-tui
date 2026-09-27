@@ -166,7 +166,7 @@ func TestToolScreen_IsErrorVsOutputViolations_Distinguishable(t *testing.T) {
 // The banner was palette bright white on palette red, which Catppuccin
 // Mocha draws as #a6adc8 on #f38ba8: a pink block with unreadable text.
 // Reverse video over the red foreground paints the block red and draws
-// the text in the terminal's own background colour, a pair that stays
+// the text in the terminal's own background color, a pair that stays
 // readable wherever red text on the background is.
 func TestToolScreen_IsErrorBannerTextIsTerminalBackgroundOnRed(t *testing.T) {
 	profile := lipgloss.ColorProfile()

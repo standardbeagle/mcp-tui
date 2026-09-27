@@ -26,7 +26,7 @@ func TestToolResultSummarisesBinaryContent(t *testing.T) {
 		{Type: "image", MimeType: "image/png", Data: pngHeader + strings.Repeat("\x00", 2048)},
 	}})
 	if !strings.Contains(r.text, "image · image/png · 2.0 KB") {
-		t.Errorf("image not summarised by type and size:\n%s", r.text)
+		t.Errorf("image not summarized by type and size:\n%s", r.text)
 	}
 	if strings.Contains(r.text, "PNG") || strings.Contains(r.text, `\u0000`) {
 		t.Errorf("image bytes shown:\n%s", r.text)
@@ -91,7 +91,7 @@ func TestToolResultPicksFieldsFromStructuredContent(t *testing.T) {
 	}
 }
 
-// JSON is coloured on screen, and copied without the colours.
+// JSON is colored on screen, and copied without the colors.
 func TestToolResultColoursJSONOnScreenOnly(t *testing.T) {
 	profile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI256)
@@ -99,11 +99,11 @@ func TestToolResultColoursJSONOnScreenOnly(t *testing.T) {
 
 	r := resultOf(&mcp.CallToolResult{Content: []mcp.Content{{Type: "text", Text: `{"city": "Lisbon", "rain": false}`}}})
 	if strings.Contains(r.text, "\x1b[") {
-		t.Errorf("copied text carries colour escapes: %q", r.text)
+		t.Errorf("copied text carries color escapes: %q", r.text)
 	}
 	shown := strings.Join(r.wrappedLines(80), "\n")
 	if !strings.Contains(shown, "\x1b[") {
-		t.Errorf("JSON shown without colour: %q", shown)
+		t.Errorf("JSON shown without color: %q", shown)
 	}
 	if plain := stripANSI(shown); plain != r.text {
 		t.Errorf("shown text %q differs from copied %q", plain, r.text)

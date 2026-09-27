@@ -39,7 +39,7 @@ const (
 type toolResult struct {
 	call *mcp.CallToolResult // nil until a call completes
 	text string              // pretty-printed content, what Ctrl+C copies
-	// lines are text's lines as drawn (JSON coloured); wrapped are those
+	// lines are text's lines as drawn (JSON colored); wrapped are those
 	// lines wrapped to wrapWidth, the panel's inner width, and are what
 	// scrolls. scroll is the first wrapped line shown.
 	lines     []string
@@ -306,7 +306,7 @@ func (ts *ToolScreen) renderResultHeading(width, height int) string {
 	var heading strings.Builder
 	if ts.result.call.IsError {
 		// Reverse video over red: the block is red and the text is the
-		// terminal's own background colour. Palette white on palette red
+		// terminal's own background color. Palette white on palette red
 		// is near-identical in some themes (Catppuccin Mocha).
 		errBannerStyle := lipgloss.NewStyle().
 			Bold(true).

@@ -368,7 +368,7 @@ func (ms *MainScreen) initializeComponents(connConfig *config.ConnectionConfig) 
 }
 
 // selectedTabStyle draws the selected tab of the main and debug screens.
-// Reverse video, not palette colours: a theme may make any foreground and
+// Reverse video, not palette colors: a theme may make any foreground and
 // background slot pair near-identical (bright white on blue is in
 // Catppuccin), but never its own foreground and background.
 var selectedTabStyle = lipgloss.NewStyle().
