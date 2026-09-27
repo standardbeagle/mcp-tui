@@ -65,6 +65,10 @@ Probes:
                        (SEP-986); URL or --cmd target
   list-order           tools/list returns the same order twice (2026-07-28
                        SHOULD, so WARN not FAIL); URL or --cmd target
+  protocol-violations  listing tools, resources and prompts draws no
+                       message that breaks JSON-RPC 2.0 or the negotiated
+                       MCP version (stray or second responses, undefined
+                       methods); URL or --cmd target
 
 Examples:
   mcp-tui verify http://localhost:8000/mcp
