@@ -249,7 +249,9 @@ func TestServerArgReachesTheServerAsIs(t *testing.T) {
 	want := []string{"--columns=id,name,owner", "two words", `it's "quoted"`, `["a","b"]`}
 
 	args := make([]string, 0, 4+2*(len(serverArgs)+len(want)))
-	args = append(args, "tool", "list", "--cmd", serverCmd)
+	// pwsh can take longer than the 10s default connect timeout to start on
+	// a loaded machine; what is under test is the arguments, not the timing.
+	args = append(args, "--timeout", "25s", "tool", "list", "--cmd", serverCmd)
 	for _, arg := range append(serverArgs, want...) {
 		args = append(args, "--arg", arg)
 	}
@@ -342,7 +344,8 @@ func TestNaturalCLIConnectionString(t *testing.T) {
 	for _, field := range append([]string{serverCmd}, serverArgs...) {
 		fields = append(fields, "'"+field+"'")
 	}
-	output, err := exec.CommandContext(ctx, bin, strings.Join(fields, " "), "tool", "list").CombinedOutput()
+	// --timeout: a slow pwsh start on a loaded machine is not what is tested.
+	output, err := exec.CommandContext(ctx, bin, "--timeout", "25s", strings.Join(fields, " "), "tool", "list").CombinedOutput()
 	outputStr := string(output)
 
 	assert.Error(t, err, "a server that never speaks MCP must fail the handshake")
