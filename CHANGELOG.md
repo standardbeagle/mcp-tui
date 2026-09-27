@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Untyped parameters**: a parameter with no `type` takes its type from `const` or a non-null `default` (with a note); otherwise the note says any JSON value is accepted.
 
 ### Fixed
+- **TUI froze on copy**: pressing `c` or the CLI button, `Ctrl+C` on a result, a field copy, `Ctrl+V`, or a debug screen copy stopped every key for good when the system clipboard program never returned (`wl-copy` and `xclip` under WSLg, `xclip` over SSH). Copies now also go to the terminal as OSC 52, the system clipboard gets 2 seconds, and the status line says which copy took. The CLI command box no longer says "copied to clipboard" before the copy has happened.
 - **`prompt execute` printed Go structs**: message content showed as `Content: [{text Triage ticket … <nil>}]`. Text blocks now print as text, other blocks (image, audio, resource) as indented JSON.
 - **Lines of spaces in CLI text output**: `tool`, `prompt` and `resource` list/get/describe output had lines holding only spaces under headers and around sections, and multi-line descriptions were padded with trailing spaces. Those lines are now empty and no line ends in spaces, so output diffs and copies cleanly.
 - **`resource watch` timestamps** carried nanoseconds (`14:02:11.123456789`); they now stop at milliseconds, in text and JSON.
