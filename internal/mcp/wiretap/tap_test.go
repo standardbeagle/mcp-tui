@@ -85,10 +85,10 @@ func TestTap_WrappedConnection(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	if err := conn.Write(ctx, &jsonrpc.Request{ID: mustID(t, float64(1)), Method: "tools/list"}); err != nil {
+	if err = conn.Write(ctx, &jsonrpc.Request{ID: mustID(t, float64(1)), Method: "tools/list"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.Read(ctx); err != nil {
+	if _, err = server.Read(ctx); err != nil {
 		t.Fatal(err)
 	}
 	// The in-memory pipe is synchronous: write while the client reads.
@@ -97,8 +97,8 @@ func TestTap_WrappedConnection(t *testing.T) {
 			&jsonrpc.Request{Method: "notifications/tasks", Params: json.RawMessage(`{}`)},
 			&jsonrpc.Response{ID: mustID(t, float64(1)), Result: json.RawMessage(`{"tools":[]}`)},
 		} {
-			if err := server.Write(ctx, msg); err != nil {
-				t.Error(err)
+			if writeErr := server.Write(ctx, msg); writeErr != nil {
+				t.Error(writeErr)
 				return
 			}
 		}
