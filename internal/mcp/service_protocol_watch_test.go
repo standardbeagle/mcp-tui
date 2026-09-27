@@ -98,7 +98,9 @@ func TestService_ProtocolViolations_StdoutLogLine(t *testing.T) {
 	testutil.RequirePwsh(t)
 	command, args := testutil.ServerPrintsThenSleeps(t, "Inventory server listening on stdio", 5)
 	svc := NewService().(*service)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Connect fails on the decoded log line, not on this deadline; it only
+	// has to outlast a slow pwsh start on a loaded machine.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err := svc.Connect(ctx, &configPkg.ConnectionConfig{
 		Type: configPkg.TransportStdio, Command: command, Args: args, ProtocolVersion: legacyProtocolVersion,
