@@ -314,13 +314,13 @@ func (ds *DebugScreen) handleListNavKey(msg tea.KeyMsg) bool {
 		ds.moveSelection(-1)
 	case keyDown, "j":
 		ds.moveSelection(1)
-	case "page_up":
-		ds.selectedIndex = max(0, ds.selectedIndex-10)
+	case keyPgUp:
+		ds.selectedIndex = max(0, ds.selectedIndex-ds.visibleRows())
 		ds.adjustScrollOffset()
-	case "page_down":
+	case keyPgDown:
 		currentList := ds.getCurrentList()
 		if len(currentList) > 0 {
-			ds.selectedIndex = min(len(currentList)-1, ds.selectedIndex+10)
+			ds.selectedIndex = min(len(currentList)-1, ds.selectedIndex+ds.visibleRows())
 			ds.adjustScrollOffset()
 		}
 	case keyHome, "g":
@@ -521,12 +521,18 @@ func (ds *DebugScreen) getCurrentList() []string {
 	}
 }
 
+// visibleRows is how many entries of the active tab's list are on screen.
+func (ds *DebugScreen) visibleRows() int {
+	if ds.activeTab == tabNotifications {
+		return notificationWindowRows
+	}
+	_, rows := ds.logListSize()
+	return rows
+}
+
 // adjustScrollOffset adjusts the scroll offset to keep selected item visible
 func (ds *DebugScreen) adjustScrollOffset() {
-	maxVisible := notificationWindowRows
-	if ds.activeTab != tabNotifications {
-		_, maxVisible = ds.logListSize()
-	}
+	maxVisible := ds.visibleRows()
 
 	if ds.selectedIndex < ds.scrollOffset {
 		ds.scrollOffset = ds.selectedIndex

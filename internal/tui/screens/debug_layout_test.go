@@ -60,6 +60,23 @@ func TestDebugScreen_ListTabsFitTheTerminal(t *testing.T) {
 	}
 }
 
+// PgDn and PgUp page the list by the rows on screen. They matched the key
+// names "page_down" and "page_up", which bubbletea never sends.
+func TestDebugScreen_PageKeysMoveByTheVisibleRows(t *testing.T) {
+	ds := debugScreenAfterToolCall(100, 30)
+	ds.activeTab = tabMCPProtocol
+	_, rows := ds.logListSize()
+
+	ds.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	if ds.selectedIndex != rows {
+		t.Errorf("PgDn selected entry %d, want %d (one page of %d rows)", ds.selectedIndex, rows, rows)
+	}
+	ds.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	if ds.selectedIndex != 0 {
+		t.Errorf("PgUp selected entry %d, want 0", ds.selectedIndex)
+	}
+}
+
 // The list takes the height left over, so the last entry is on screen
 // after End and the view still fits.
 func TestDebugScreen_ListScrollsWithinTheTerminal(t *testing.T) {
