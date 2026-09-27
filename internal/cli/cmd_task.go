@@ -205,7 +205,8 @@ func (tc *TaskCommand) handleResult(cmd *cobra.Command, args []string) error {
 	if last != nil {
 		doc[docTask] = last
 	}
-	return printToolResult(resultOutput{format: tc.GetOutputFormat(), porcelain: porcelain, document: doc, service: tc.GetService()}, result)
+	out := resultOutput{format: tc.GetOutputFormat(), porcelain: porcelain, document: doc, service: tc.GetService()}
+	return printToolResult(out, result)
 }
 
 func (tc *TaskCommand) handleCancel(_ *cobra.Command, args []string) error {

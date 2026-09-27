@@ -492,7 +492,8 @@ func (r *Runner) scenarioToolsCallIsError(ctx context.Context) ScenarioResult {
 				fmt.Sprintf("--tool names a call that fails by design; result: %s", firstText(res)))
 		}
 		return ScenarioResult{Pass: true, Skipped: true,
-			Error: fmt.Sprintf("skipped: tool %q did not return IsError=true (no failing tool found; name one with --tool)", pick.Name)}
+			Error: fmt.Sprintf("skipped: tool %q did not return IsError=true "+
+				"(no failing tool found; name one with --tool)", pick.Name)}
 	}
 	if len(res.Content) == 0 {
 		return failResult(
@@ -526,7 +527,9 @@ func (r *Runner) listToolsForCall(ctx context.Context) (svc mcp.Service, tools [
 // failed at the protocol level, with fail describing it: never acceptable,
 // since tool failures, input validation included, must come back as
 // CallToolResult{IsError:true}.
-func callToolForScenario(ctx context.Context, svc mcp.Service, toolName string, args map[string]any) (res *mcp.CallToolResult, fail ScenarioResult) {
+func callToolForScenario(
+	ctx context.Context, svc mcp.Service, toolName string, args map[string]any,
+) (res *mcp.CallToolResult, fail ScenarioResult) {
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	res, err := svc.CallTool(callCtx, mcp.CallToolRequest{Name: toolName, Arguments: args})

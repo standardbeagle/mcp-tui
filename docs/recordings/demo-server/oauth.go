@@ -93,10 +93,12 @@ func newAuthServer(issuer string, logger *slog.Logger) *authServer {
 // register adds the metadata, authorization, token and registration
 // endpoints to mux.
 func (a *authServer) register(mux *http.ServeMux) {
-	mux.Handle("GET /.well-known/oauth-protected-resource/mcp", auth.ProtectedResourceMetadataHandler(a.resourceMetadata(a.resource)))
+	mux.Handle("GET /.well-known/oauth-protected-resource/mcp",
+		auth.ProtectedResourceMetadataHandler(a.resourceMetadata(a.resource)))
 	// At the root the resource is the origin (RFC 9728 §3.1), which is what
 	// clients falling back to this URL expect.
-	mux.Handle("GET /.well-known/oauth-protected-resource", auth.ProtectedResourceMetadataHandler(a.resourceMetadata(a.issuer)))
+	mux.Handle("GET /.well-known/oauth-protected-resource",
+		auth.ProtectedResourceMetadataHandler(a.resourceMetadata(a.issuer)))
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", a.serveServerMetadata)
 	mux.HandleFunc("POST /register", a.registerClient)
 	mux.HandleFunc("GET /authorize", a.authorize)
@@ -165,7 +167,8 @@ func (a *authServer) registerClient(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, uri := range meta.RedirectURIs {
 		if u, err := url.Parse(uri); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			writeRegistrationError(w, "invalid_redirect_uri", fmt.Sprintf("redirect URI %q is not an http(s) URL", uri), a.logger)
+			writeRegistrationError(w, "invalid_redirect_uri",
+				fmt.Sprintf("redirect URI %q is not an http(s) URL", uri), a.logger)
 			return
 		}
 	}
@@ -308,7 +311,8 @@ func (a *authServer) issueToken(w http.ResponseWriter, r *http.Request) {
 	switch r.PostForm.Get("grant_type") {
 	case "client_credentials":
 		if client.secret == "" {
-			writeTokenError(w, http.StatusBadRequest, "unauthorized_client", "public clients cannot use client_credentials", a.logger)
+			writeTokenError(w, http.StatusBadRequest, "unauthorized_client",
+				"public clients cannot use client_credentials", a.logger)
 			return
 		}
 		if scope, err = grantScope(r.PostForm.Get("scope")); err != nil {
@@ -331,7 +335,8 @@ func (a *authServer) issueToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := newOpaqueSecret()
-	if err := a.store(func() { a.tokens[token] = accessToken{clientID, scope, time.Now().Add(accessTokenLifetime)} }); err != nil {
+	issued := accessToken{clientID, scope, time.Now().Add(accessTokenLifetime)}
+	if err := a.store(func() { a.tokens[token] = issued }); err != nil {
 		writeTokenError(w, http.StatusServiceUnavailable, "temporarily_unavailable", err.Error(), a.logger)
 		return
 	}
@@ -437,7 +442,8 @@ func writeTokenError(w http.ResponseWriter, status int, code, description string
 }
 
 func writeRegistrationError(w http.ResponseWriter, code, description string, logger *slog.Logger) {
-	writeJSON(w, http.StatusBadRequest, &oauthex.ClientRegistrationError{ErrorCode: code, ErrorDescription: description}, logger)
+	writeJSON(w, http.StatusBadRequest,
+		&oauthex.ClientRegistrationError{ErrorCode: code, ErrorDescription: description}, logger)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any, logger *slog.Logger) {

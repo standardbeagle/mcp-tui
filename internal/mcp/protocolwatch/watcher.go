@@ -285,10 +285,12 @@ func (w *Watcher) checkResponse(resp *jsonrpc.Response) (*Violation, *Ordering) 
 	switch {
 	case isOutstanding && resp.Result != nil && resp.Error != nil:
 		return &Violation{Kind: KindMalformed, Method: req.method, ID: key,
-			Message: fmt.Sprintf("server sent a response to request %s (%s) with both result and error", key, req.method)}, overtaken
+			Message: fmt.Sprintf("server sent a response to request %s (%s) with both result and error",
+				key, req.method)}, overtaken
 	case isOutstanding && resp.Result == nil && resp.Error == nil:
 		return &Violation{Kind: KindMalformed, Method: req.method, ID: key,
-			Message: fmt.Sprintf("server sent a response to request %s (%s) with neither result nor error", key, req.method)}, overtaken
+			Message: fmt.Sprintf("server sent a response to request %s (%s) with neither result nor error",
+				key, req.method)}, overtaken
 	case isOutstanding:
 		return nil, overtaken
 	case wasAnswered:

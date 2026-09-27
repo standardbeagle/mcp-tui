@@ -61,7 +61,8 @@ func tokenRejectionActions(code string) []string {
 	switch code {
 	case "invalid_client":
 		return []string{
-			"Check --oauth-client-id and --oauth-client-secret: the authorization server does not accept this client or its secret",
+			"Check --oauth-client-id and --oauth-client-secret: " +
+				"the authorization server does not accept this client or its secret",
 			debugAction,
 		}
 	case "invalid_grant":

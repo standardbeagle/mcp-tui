@@ -57,7 +57,8 @@ func listDeclared(ctx context.Context, svc mcp.Service) {
 			continue
 		}
 		if err := l.list(listCtx); err != nil {
-			debug.Debug(protocolViolationsProbe+" probe: list failed", debug.F("capability", l.capability), debug.F("error", err))
+			debug.Debug(protocolViolationsProbe+" probe: list failed",
+				debug.F("capability", l.capability), debug.F("error", err))
 		}
 	}
 }

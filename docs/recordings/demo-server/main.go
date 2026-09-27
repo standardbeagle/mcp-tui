@@ -35,9 +35,12 @@ type config struct {
 func main() {
 	var cfg config
 	flag.BoolVar(&cfg.stdio, "stdio", false, "serve MCP over stdin/stdout")
-	flag.StringVar(&cfg.httpAddr, "http", "", "serve streamable HTTP at /mcp on this loopback address, e.g. 127.0.0.1:8931")
-	flag.StringVar(&cfg.sseAddr, "sse", "", "serve the legacy SSE transport at /sse on this loopback address, e.g. 127.0.0.1:8932")
-	flag.BoolVar(&cfg.oauth, "oauth", false, "protect -http's /mcp with bearer tokens from the embedded authorization server")
+	flag.StringVar(&cfg.httpAddr, "http", "",
+		"serve streamable HTTP at /mcp on this loopback address, e.g. 127.0.0.1:8931")
+	flag.StringVar(&cfg.sseAddr, "sse", "",
+		"serve the legacy SSE transport at /sse on this loopback address, e.g. 127.0.0.1:8932")
+	flag.BoolVar(&cfg.oauth, "oauth", false,
+		"protect -http's /mcp with bearer tokens from the embedded authorization server")
 	flag.BoolVar(&cfg.misbehave, "misbehave", false, "break the rules `mcp-tui verify` probes: an invalid tool name, "+
 		"an unstable tools/list order, an error result without content")
 	flag.BoolVar(&cfg.stdoutBanner, "stdout-banner", false, "with -stdio: print a banner to stdout before serving, "+
