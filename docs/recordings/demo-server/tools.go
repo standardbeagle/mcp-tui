@@ -330,8 +330,13 @@ func scheduleCallback(ctx context.Context, req *mcp.CallToolRequest, in schedule
 		if elicited.Action != "accept" {
 			return textResult(fmt.Sprintf("No callback booked for %s: you chose %q.", t.ID, elicited.Action)), nil, nil
 		}
-		when, _ = elicited.Content["time"].(string)
-		phone, _ = elicited.Content["phone"].(string)
+		var hasTime bool
+		if when, hasTime = elicited.Content["time"].(string); !hasTime {
+			return nil, nil, fmt.Errorf("the accepted callback form has no time: %v", elicited.Content)
+		}
+		if p, ok := elicited.Content["phone"].(string); ok {
+			phone = p
+		}
 	}
 	at, err := time.Parse(time.RFC3339, when)
 	if err != nil {
@@ -387,13 +392,19 @@ func draftReply(ctx context.Context, req *mcp.CallToolRequest, in draftReplyInpu
 	if !ok {
 		return nil, nil, fmt.Errorf("input response %q is %T, want a sampling result", replyDraftInputKey, resp)
 	}
-	i := slices.IndexFunc(sampled.Content, func(c mcp.Content) bool { _, ok := c.(*mcp.TextContent); return ok })
-	if i < 0 {
+	var draft *mcp.TextContent
+	for _, content := range sampled.Content {
+		if text, ok := content.(*mcp.TextContent); ok {
+			draft = text
+			break
+		}
+	}
+	if draft == nil {
 		return nil, nil, fmt.Errorf("the client's model answered without any text")
 	}
 	logToolInfo(ctx, req, logger, fmt.Sprintf("draft_reply drafted a %s reply for %s", in.Tone, t.ID))
 	return textResult(fmt.Sprintf("Draft reply to %s on %s (%s tone):\n\n%s",
-		c.Name, t.ID, in.Tone, sampled.Content[i].(*mcp.TextContent).Text)), nil, nil
+		c.Name, t.ID, in.Tone, draft.Text)), nil, nil
 }
 
 // logToolInfo sends an info-level log notification for a tool run; the SDK
@@ -474,9 +485,17 @@ func withDefault(s *jsonschema.Schema, defaultJSON string) *jsonschema.Schema {
 // properties in the order given so tool descriptions read top to bottom.
 func objectSchema(required []string, namesAndSchemas ...any) *jsonschema.Schema {
 	s := &jsonschema.Schema{Type: "object", Required: required, Properties: map[string]*jsonschema.Schema{}}
-	for i := 0; i < len(namesAndSchemas); i += 2 {
-		name := namesAndSchemas[i].(string)
-		s.Properties[name] = namesAndSchemas[i+1].(*jsonschema.Schema)
+	if len(namesAndSchemas)%2 != 0 {
+		panic(fmt.Sprintf("objectSchema: %d arguments, want name/schema pairs", len(namesAndSchemas)))
+	}
+	for i := 0; i+1 < len(namesAndSchemas); i += 2 {
+		name, isName := namesAndSchemas[i].(string)
+		schema, isSchema := namesAndSchemas[i+1].(*jsonschema.Schema)
+		if !isName || !isSchema {
+			panic(fmt.Sprintf("objectSchema: arguments %d and %d are %T and %T, want a name and a *jsonschema.Schema",
+				i, i+1, namesAndSchemas[i], namesAndSchemas[i+1]))
+		}
+		s.Properties[name] = schema
 		s.PropertyOrder = append(s.PropertyOrder, name)
 	}
 	return s

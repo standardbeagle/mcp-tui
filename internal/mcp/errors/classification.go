@@ -196,7 +196,10 @@ func (ec *ErrorClassifier) Classify(err error, errContext map[string]interface{}
 
 	if operation == OperationSessionConnect {
 		transport := fmt.Sprint(errContext["transport_type"])
-		endpoint, _ := errContext[ErrorContextEndpoint].(string)
+		var endpoint string
+		if e, ok := errContext[ErrorContextEndpoint].(string); ok {
+			endpoint = e
+		}
 		if message, actions, ok := diagnoseHandshakeHTTPStatus(err, transport, endpoint); ok {
 			return &ClassifiedError{
 				Category: CategoryClientConfig,
