@@ -1,0 +1,38 @@
+WEBVTT
+
+00:00:00.450 --> 00:00:05.351
+mcp-tui is a terminal client for testing Model Context Protocol servers.
+
+00:00:05.070 --> 00:00:07.447
+Point it at a server and it lists the tools.
+
+00:00:07.447 --> 00:00:10.669
+Open one, and the form comes from its input schema.
+
+00:00:16.570 --> 00:00:19.452
+Run it, and the result shows beside the form.
+
+00:00:23.570 --> 00:00:27.678
+The CLI button gives you the same call as a shell command, ready for a script.
+
+00:00:32.550 --> 00:00:35.793
+When a server won't connect, mcp-tui says why.
+
+00:00:36.250 --> 00:00:40.611
+This server prints a banner to standard out, which breaks the stdio transport.
+
+00:00:40.611 --> 00:00:42.582
+mcp-tui quotes the line.
+
+00:00:48.250 --> 00:00:50.543
+This one never answers server discover.
+
+00:00:50.543 --> 00:00:53.584
+The error names the causes and the flag for each.
+
+00:01:04.670 --> 00:01:09.716
+For CI, conform runs every protocol scenario and writes a JUnit report.
+
+00:01:28.930 --> 00:01:31.404
+Install it with go install or npm.
+
