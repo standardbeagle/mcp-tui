@@ -18,7 +18,7 @@ GOLANGCI_LINT=$(GOCMD) run github.com/golangci/golangci-lint/v2/cmd/golangci-lin
 # Build flags
 LDFLAGS=-ldflags "-X main.version=$(VERSION)"
 
-.PHONY: all build clean test race fmt-check ci coverage lint fmt vet deps install dev release help demo-bins demo demos
+.PHONY: all build clean test race fmt-check ci coverage lint fmt vet deps install dev release help demo-bins demo demos docs-media
 
 # Default target
 all: clean deps lint test build
@@ -161,3 +161,8 @@ demos: demo-bins
 	@for name in $(DEMO_NAMES); do \
 		node $(DEMO_ENGINE) $(abspath $(RECORDINGS)/demos)/$$name && node $(RECORDINGS)/publish.mjs $$name || exit 1; \
 	done
+
+# The docs' video files are assets of the docs-media release, not files in
+# git; fetch them before building the docs site locally.
+docs-media:
+	gh release download docs-media --repo standardbeagle/mcp-tui --dir docs/public/videos --pattern '*.webm' --pattern '*.mp4' --clobber

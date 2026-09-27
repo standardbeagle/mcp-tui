@@ -2,6 +2,7 @@
 // A recorded demo from docs/public/videos, described by its entry in
 // src/data/videos.json (published by docs/recordings/publish.mjs). Emits a
 // schema.org VideoObject so search engines can index the clip.
+import { existsSync } from 'node:fs';
 import videos from '../data/videos.json';
 
 interface Props {
@@ -15,8 +16,16 @@ const video = videos[name];
 if (!video) throw new Error(`DemoVideo: no entry "${String(name)}" in src/data/videos.json`);
 if (!video.duration) throw new Error(`DemoVideo: "${String(name)}" is not published yet (run make demo NAME=${String(name)})`);
 
+// The mp4/webm files are docs-media release assets that the build fetches
+// into public/videos (make docs-media); posters and captions are in git.
+for (const file of Object.values(video.files)) {
+  if (!existsSync(new URL(`../../public/videos/${file}`, import.meta.url))) {
+    throw new Error(`DemoVideo: public/videos/${file} is missing; fetch the videos with make docs-media`);
+  }
+}
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const src = (ext: string) => `${base}/videos/${String(name)}.${ext}`;
+const asset = (file: string) => `${base}/videos/${file}`;
+const src = (ext: string) => asset(ext === 'webm' || ext === 'mp4' ? video.files[ext] : `${String(name)}.${ext}`);
 const absolute = (ext: string) => new URL(src(ext), Astro.site).href;
 
 const jsonLd = {

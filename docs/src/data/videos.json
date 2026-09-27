@@ -5,7 +5,11 @@
     "posterAt": 8,
     "duration": "PT1M34S",
     "uploadDate": "2026-09-27",
-    "captions": true
+    "captions": true,
+    "files": {
+      "webm": "overview-dea992a4ce.webm",
+      "mp4": "overview-cab41ce0df.mp4"
+    }
   },
   "verify-a-tool": {
     "title": "Verify an MCP tool in seconds",
@@ -17,7 +21,11 @@
     "duration": "PT42S",
     "uploadDate": "2026-09-27",
     "captions": false,
-    "posterAt": 24
+    "posterAt": 24,
+    "files": {
+      "webm": "verify-a-tool-1e49b972d0.webm",
+      "mp4": "verify-a-tool-fdefb245cb.mp4"
+    }
   },
   "cli-to-ci": {
     "title": "From a manual run to a CI script",
@@ -29,14 +37,22 @@
     "duration": "PT58S",
     "uploadDate": "2026-09-27",
     "captions": false,
-    "posterAt": 26
+    "posterAt": 26,
+    "files": {
+      "webm": "cli-to-ci-a8a0329774.webm",
+      "mp4": "cli-to-ci-b3ea2054e6.mp4"
+    }
   },
   "schema-validation": {
     "title": "Schema validation before the call goes out",
     "description": "mcp-tui checks arguments against the tool's full input schema and names the argument and rule that broke it, then lets you send the bad call anyway to see how the server rejects it.",
     "duration": "PT1M0S",
     "uploadDate": "2026-09-27",
-    "captions": false
+    "captions": false,
+    "files": {
+      "webm": "schema-validation-90fbbdbdea.webm",
+      "mp4": "schema-validation-ee1ce8249c.mp4"
+    }
   },
   "handshake-errors": {
     "title": "Transport, handshake and protocol mistakes, named",
@@ -48,14 +64,22 @@
     "duration": "PT1M25S",
     "uploadDate": "2026-09-27",
     "captions": false,
-    "posterAt": 12
+    "posterAt": 12,
+    "files": {
+      "webm": "handshake-errors-0937e1f33e.webm",
+      "mp4": "handshake-errors-963cd35f02.mp4"
+    }
   },
   "debug-screen": {
     "title": "Every message and every HTTP exchange",
     "description": "The debug screen shows the JSON-RPC traffic in both directions, per-request HTTP timing, the OAuth flow step by step, capabilities and notifications.",
     "duration": "PT44S",
     "uploadDate": "2026-09-27",
-    "captions": false
+    "captions": false,
+    "files": {
+      "webm": "debug-screen-8ef3937885.webm",
+      "mp4": "debug-screen-4a56225974.mp4"
+    }
   },
   "verify-conform": {
     "title": "Conformance and security probes for CI",
@@ -67,48 +91,76 @@
     "duration": "PT47S",
     "uploadDate": "2026-09-27",
     "captions": false,
-    "posterAt": 10
+    "posterAt": 10,
+    "files": {
+      "webm": "verify-conform-396d514734.webm",
+      "mp4": "verify-conform-24d25df557.mp4"
+    }
   },
   "async-progress-tasks": {
     "title": "Progress, server logs, tasks and subscriptions",
     "description": "Watch progress notifications and server logs while a long tool runs, run a call as an MCP task and wait for it, and follow a resource as it changes.",
     "duration": "PT1M6S",
     "uploadDate": "2026-09-27",
-    "captions": false
+    "captions": false,
+    "files": {
+      "webm": "async-progress-tasks-63dbecc522.webm",
+      "mp4": "async-progress-tasks-e56007a466.mp4"
+    }
   },
   "oauth": {
     "title": "OAuth from discovery to token",
     "description": "mcp-tui discovers the authorization server from a 401, gets a token by client credentials or by dynamic registration and the browser flow, and caches it.",
     "duration": "PT1M1S",
     "uploadDate": "2026-09-27",
-    "captions": false
+    "captions": false,
+    "files": {
+      "webm": "oauth-e5fb78231d.webm",
+      "mp4": "oauth-9ff112348e.mp4"
+    }
   },
   "tools-metadata": {
     "title": "Tool metadata at a glance",
     "description": "Names, titles, annotations and output schemas for every tool, and a confirmation before any tool that declares itself destructive.",
     "duration": "PT57S",
     "uploadDate": "2026-09-27",
-    "captions": false
+    "captions": false,
+    "files": {
+      "webm": "tools-metadata-bda86c72ae.webm",
+      "mp4": "tools-metadata-06556facb4.mp4"
+    }
   },
   "resources-prompts": {
     "title": "Resources, templates and prompts",
     "description": "List and read resources of any type, complete URI template variables, and render prompts with their arguments.",
     "duration": "PT1M29S",
     "uploadDate": "2026-09-27",
-    "captions": false
+    "captions": false,
+    "files": {
+      "webm": "resources-prompts-5c473cf838.webm",
+      "mp4": "resources-prompts-767b09224f.mp4"
+    }
   },
   "elicitation-sampling": {
     "title": "Answer elicitation and sampling requests",
     "description": "When a tool needs input mid-call, mcp-tui shows the server's form or its sampling request, interactively in the TUI or from stub flags in the CLI.",
     "duration": "PT1M0S",
     "uploadDate": "2026-09-27",
-    "captions": false
+    "captions": false,
+    "files": {
+      "webm": "elicitation-sampling-186a1e73a1.webm",
+      "mp4": "elicitation-sampling-0e88cd7675.mp4"
+    }
   },
   "protocol-versions": {
     "title": "Pin and inspect MCP protocol versions",
     "description": "See which protocol version a server negotiated, pin an older one, and read the multi round-trip input rounds a 2026-07-28 call took.",
     "duration": "PT52S",
     "uploadDate": "2026-09-27",
-    "captions": false
+    "captions": false,
+    "files": {
+      "webm": "protocol-versions-585e90fd5e.webm",
+      "mp4": "protocol-versions-a8dde14ef9.mp4"
+    }
   }
 }
