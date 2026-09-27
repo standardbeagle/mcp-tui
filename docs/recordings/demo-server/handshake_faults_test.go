@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -42,5 +45,54 @@ func TestIgnoreDiscoverDropsOnlyServerDiscover(t *testing.T) {
 			}
 			_ = session.Close()
 		})
+	}
+}
+
+// fakeConn feeds the server one message and records what it writes.
+type fakeConn struct {
+	in      []jsonrpc.Message
+	written []jsonrpc.Message
+}
+
+func (c *fakeConn) Read(context.Context) (jsonrpc.Message, error) {
+	if len(c.in) == 0 {
+		return nil, io.EOF
+	}
+	msg := c.in[0]
+	c.in = c.in[1:]
+	return msg, nil
+}
+func (c *fakeConn) Write(_ context.Context, msg jsonrpc.Message) error {
+	c.written = append(c.written, msg)
+	return nil
+}
+func (c *fakeConn) Close() error      { return nil }
+func (c *fakeConn) SessionID() string { return "" }
+
+// -stray-messages follows the tools/list response with a response to an id
+// no request used and a notification with a method MCP does not define.
+func TestStrayMessagesFollowToolsList(t *testing.T) {
+	id, err := jsonrpc.MakeID(float64(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner := &fakeConn{in: []jsonrpc.Message{&jsonrpc.Request{ID: id, Method: "tools/list"}}}
+	conn := &strayMessagesConn{Connection: inner}
+	if _, err := conn.Read(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(context.Background(), &jsonrpc.Response{ID: id, Result: json.RawMessage(`{"tools":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(inner.written) != 3 {
+		t.Fatalf("wrote %d messages, want the response and two stray ones", len(inner.written))
+	}
+	stray, ok := inner.written[1].(*jsonrpc.Response)
+	if !ok || stray.ID == id {
+		t.Errorf("second message = %#v, want a response to another id", inner.written[1])
+	}
+	note, ok := inner.written[2].(*jsonrpc.Request)
+	if !ok || note.Method != "initialized" || note.ID.IsValid() {
+		t.Errorf("third message = %#v, want the notification \"initialized\"", inner.written[2])
 	}
 }

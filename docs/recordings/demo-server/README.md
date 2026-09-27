@@ -20,6 +20,7 @@ go build -o bin/demo-server ./docs/recordings/demo-server
 | `-oauth` | with `-http`: `/mcp` needs a bearer token from the embedded authorization server |
 | `-misbehave` | breaks three rules `mcp-tui verify` checks (below) |
 | `-stdout-banner` | with `-stdio`: prints `Acme support desk listening on stdio` to stdout before serving, the log line that corrupts the stdio transport |
+| `-stray-messages` | with `-stdio`: after each `tools/list` answer, also sends a response to id 9001, which no request used, and a notification named `initialized` (MCP's is `notifications/initialized`) |
 | `-ignore-discover` | with `-stdio`: never answers `server/discover`, like a pre-2026-07-28 server that ignores methods it does not know instead of answering `-32601` |
 
 `-http` and `-sse` can run together; `-stdio` runs alone. Both HTTP flags

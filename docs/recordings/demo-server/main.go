@@ -29,6 +29,7 @@ type config struct {
 	// Handshake faults, stdio only.
 	stdoutBanner   bool
 	ignoreDiscover bool
+	strayMessages  bool
 }
 
 func main() {
@@ -43,6 +44,8 @@ func main() {
 		"the log line that corrupts the stdio transport")
 	flag.BoolVar(&cfg.ignoreDiscover, "ignore-discover", false, "with -stdio: never answer server/discover, "+
 		"like a server that ignores methods it does not know")
+	flag.BoolVar(&cfg.strayMessages, "stray-messages", false, "with -stdio: after each tools/list answer, also send a "+
+		"response to an id no request used and a notification MCP does not define")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -61,8 +64,8 @@ func run(ctx context.Context, cfg config) error {
 		return errors.New("choose a transport: -stdio, -http <addr> and/or -sse <addr>")
 	case cfg.oauth && cfg.httpAddr == "":
 		return errors.New("-oauth protects the streamable HTTP endpoint; add -http <addr>")
-	case (cfg.stdoutBanner || cfg.ignoreDiscover) && !cfg.stdio:
-		return errors.New("-stdout-banner and -ignore-discover are stdio faults; add -stdio")
+	case (cfg.stdoutBanner || cfg.ignoreDiscover || cfg.strayMessages) && !cfg.stdio:
+		return errors.New("-stdout-banner, -ignore-discover and -stray-messages are stdio faults; add -stdio")
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -85,6 +88,9 @@ func run(ctx context.Context, cfg config) error {
 		var transport mcp.Transport = &mcp.StdioTransport{}
 		if cfg.ignoreDiscover {
 			transport = &discoverIgnoringTransport{inner: transport}
+		}
+		if cfg.strayMessages {
+			transport = &strayMessagesTransport{inner: transport}
 		}
 		g.Go(func() error {
 			// Stdin closing ends the session and, with it, the server.
