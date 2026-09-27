@@ -103,10 +103,11 @@ func setupGlobalLoggerTest(t *testing.T) *safeBuffer {
 	return buf
 }
 
-// syncWait waits for the logger to process messages and returns the output
+// syncWait waits for the logger to write every message logged so far and
+// returns the output. A fixed sleep lost messages under -race on a loaded
+// machine; Flush is a barrier through the logger's own queue.
 func syncWait(buf *safeBuffer) string {
-	// Give enough time for messages to be processed
-	time.Sleep(30 * time.Millisecond)
+	Flush()
 	return buf.String()
 }
 
