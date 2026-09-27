@@ -206,7 +206,7 @@ func triageTicketPrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetP
 		Messages: []*mcp.PromptMessage{
 			{Role: "user", Content: &mcp.TextContent{Text: fmt.Sprintf(
 				"Triage ticket %s for %s (%s, %s plan).\n\nSubject: %s\nStatus: %s  Priority: %s  Tags: %s\n\n%s\n\n"+
-					"Decide the priority, which team owns it and the next step, then draft a %s first reply. "+
+					"Decide the priority, which team owns it and the next step, then draft the first reply in a %s tone. "+
 					"Keep within the service levels below.",
 				t.ID, c.Name, c.Company, c.Plan, t.Subject, t.Status, t.Priority, strings.Join(t.Tags, ", "), t.Body, tone)}},
 			{Role: "user", Content: &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{URI: slaURI, MIMEType: "application/json", Text: slaJSON}}},
