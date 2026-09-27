@@ -1,0 +1,5 @@
+#!/bin/sh
+# The stage's "browser": follows the authorization URL mcp-tui opens, so the
+# demo server's /authorize approves at once and redirects to mcp-tui's
+# loopback callback, completing the real auth-code flow with no GUI.
+curl -s -L -o /dev/null --max-time 20 "$1" &

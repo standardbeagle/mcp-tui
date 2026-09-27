@@ -37,7 +37,8 @@ const theme = {
 
 const env = {
   ...process.env,
-  PATH: [bin, path.join(here, 'node_modules/.bin'), process.env.PATH].join(path.delimiter),
+  // shims/ first: its xdg-open completes OAuth sign-in without a GUI browser.
+  PATH: [path.join(here, 'shims'), bin, path.join(here, 'node_modules/.bin'), process.env.PATH].join(path.delimiter),
   PS1: '\\[\\e[1;35m\\]❯\\[\\e[0m\\] ',
   TERM: 'xterm-256color',
   // Scenes show mcp-tui's own output, not a stale cached OAuth token.
