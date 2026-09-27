@@ -29,13 +29,27 @@ const screenText = () => {
   return lines.join('\n');
 };
 
-export async function terminal(d, {typingDelay = 38} = {}) {
+/**
+ * setup: shell commands run before the 'ready' mark (cut by the demo's keep
+ * range), e.g. removing files an earlier take left in the workspace.
+ */
+export async function terminal(d, {typingDelay = 38, setup = []} = {}) {
   const page = d.page;
   await page.waitForFunction(() => window.term && window.term.buffer, undefined, {timeout: 20000});
   await page.addStyleTag({content: frameCSS});
   await page.evaluate(() => window.dispatchEvent(new Event('resize')));
   await page.locator('.xterm-helper-textarea').focus();
   await waitForPrompt(page, 10000);
+  for (const cmd of setup) {
+    await page.keyboard.type(cmd);
+    await page.keyboard.press('Enter');
+    await waitForPrompt(page, 30000);
+  }
+  if (setup.length > 0) {
+    await page.keyboard.press('Control+l');
+    await page.evaluate(() => window.term.clear());
+    await waitForPrompt(page, 5000);
+  }
   d.mark('ready');
 
   const t = {

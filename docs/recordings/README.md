@@ -27,7 +27,7 @@ also need `edge-tts`.
 | `term.mjs` | the scene driver: `run`, `type`, `press`, `waitFor(/regex/)`, `prompt`, `hold` |
 | `publish.mjs` | engine output → site files; fills duration and date in `docs/src/data/videos.json` |
 | `demo-server/` | the Acme support desk MCP server every demo talks to |
-| `assets/sb-logo.png` | the logo the engine overlays top right |
+| `assets/sb-logo-on-dark.png` | the Standard Beagle logo, wordmark lightened for dark frames, which the engine overlays top right |
 
 Every video needs an entry in `docs/src/data/videos.json` (title,
 description) before it is published; the docs embed it with
