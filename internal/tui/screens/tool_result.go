@@ -459,7 +459,7 @@ func (r *toolResult) extractFields(prefix string, data interface{}) {
 			default:
 				// Leaf value
 				strVal := fmt.Sprintf("%v", value)
-				if strVal != "" && strVal != "null" {
+				if strVal != "" && strVal != jsonNullLiteral {
 					r.fields = append(r.fields, resultField{
 						path:  path,
 						value: strVal,
@@ -478,7 +478,7 @@ func (r *toolResult) extractFields(prefix string, data interface{}) {
 	default:
 		// Leaf value
 		strVal := fmt.Sprintf("%v", v)
-		if strVal != "" && strVal != "null" && prefix != "" {
+		if strVal != "" && strVal != jsonNullLiteral && prefix != "" {
 			r.fields = append(r.fields, resultField{
 				path:  prefix,
 				value: strVal,

@@ -24,12 +24,16 @@ const (
 // validatingPrefix starts each layer jsonschema-go wraps around a failure.
 const validatingPrefix = "validating "
 
+// rootSchemaPath is how jsonschema-go names the root schema in a
+// validation error's path.
+const rootSchemaPath = "root"
+
 // argumentError turns err, from validating instance against schema (both
 // as decoded JSON), into an *ArgumentError naming the offending argument
 // and explaining the rule it broke.
 func argumentError(err error, schema, instance any) *ArgumentError {
 	paths, reason := schemaPaths(err)
-	out := &ArgumentError{Reason: reason, SchemaPath: "root"}
+	out := &ArgumentError{Reason: reason, SchemaPath: rootSchemaPath}
 	if len(paths) == 0 {
 		return out
 	}
@@ -37,7 +41,7 @@ func argumentError(err error, schema, instance any) *ArgumentError {
 	argument, value, known := locate(schema, paths, instance)
 	out.Argument = argument
 	failed := schema
-	if out.SchemaPath != "root" {
+	if out.SchemaPath != rootSchemaPath {
 		failed = schemaAt(schema, out.SchemaPath)
 	}
 	if known {
@@ -71,7 +75,7 @@ func locate(schema any, paths []string, instance any) (argument string, value an
 	prev := ""
 	for _, path := range paths {
 		pointer := path
-		if path == "root" {
+		if path == rootSchemaPath {
 			pointer = ""
 		}
 		switch {

@@ -67,6 +67,10 @@ func endpointIsSSEPath(endpoint string) bool {
 	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(u.Path, "/")), "/sse")
 }
 
+// debugHTTPExchangesAction closes the diagnoses of a wrong transport or
+// path: the --debug trace shows each status the server actually sent.
+const debugHTTPExchangesAction = "Run with --debug to see each HTTP exchange"
+
 // diagnoseHandshakeHTTPStatus explains a session handshake that the server
 // answered with an HTTP error status, naming the status and the flag or path
 // to change. endpoint is the URL connected to ("" if unknown). ok is false
@@ -89,12 +93,12 @@ func diagnoseHandshakeHTTPStatus(err error, transport, endpoint string) (message
 		if code == http.StatusNotFound {
 			return message, []string{
 				"Check the URL path: SSE servers usually serve /sse",
-				"Run with --debug to see each HTTP exchange",
+				debugHTTPExchangesAction,
 			}, true
 		}
 		return message, []string{
 			"This URL is likely a streamable HTTP endpoint: use --transport http",
-			"Run with --debug to see each HTTP exchange",
+			debugHTTPExchangesAction,
 		}, true
 	}
 
@@ -108,7 +112,7 @@ func diagnoseHandshakeHTTPStatus(err error, transport, endpoint string) (message
 	if code != http.StatusNotFound && endpointIsSSEPath(endpoint) {
 		return message, []string{
 			"The URL path ends in /sse, where SSE servers listen: use --transport sse",
-			"Run with --debug to see each HTTP exchange",
+			debugHTTPExchangesAction,
 		}, true
 	}
 	if actions, ok := authActions[code]; ok {
@@ -129,6 +133,6 @@ func diagnoseHandshakeHTTPStatus(err error, transport, endpoint string) (message
 	return message, []string{
 		"Check that the server speaks streamable HTTP at this path",
 		"If this is an SSE endpoint, use --transport sse",
-		"Run with --debug to see each HTTP exchange",
+		debugHTTPExchangesAction,
 	}, true
 }
