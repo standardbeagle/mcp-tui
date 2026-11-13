@@ -111,9 +111,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # check-latest: the runner image's cached 1.26 can trail the newest
+      # patch, and the stdlib vulnerabilities it would report are already
+      # fixed in the release the publish workflow builds with.
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+          check-latest: true
           cache: false
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...

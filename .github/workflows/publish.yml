@@ -43,10 +43,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Release binaries link the newest 1.26 patch, not whatever the runner
+      # image has cached, so shipped stdlib fixes are never a release behind.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+          check-latest: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
