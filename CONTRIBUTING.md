@@ -16,7 +16,7 @@ Thank you for your interest in contributing to MCP-TUI! This document provides g
 
 ### Prerequisites
 
-- Go 1.21 or later
+- Go 1.26 or later
 - Node.js (for test servers)
 - Make (for build automation)
 - Git

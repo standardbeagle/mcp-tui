@@ -71,6 +71,6 @@ mcp-tui --help
 
 ## Requirements
 
-- Go 1.25+ if installing via `go install` or building from source.
+- Go 1.26+ if installing via `go install` or building from source.
 - Node.js 18+ if installing via npm.
 - A terminal with 256-color and Unicode support.

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Building from source needs Go 1.26.** Go 1.25 left support when Go 1.27 shipped, and `golang.org/x/oauth2` v0.37 requires 1.26. Release binaries and the npm package are unaffected.
+
 ## [0.10.0] - 2026-09-27
 
 ### Breaking

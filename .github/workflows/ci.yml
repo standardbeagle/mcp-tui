@@ -20,7 +20,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
 
       - name: go vet
         run: go vet ./...
@@ -40,8 +40,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # golangci-lint v2.13.2 needs Go >= 1.26 to build; the module itself
-      # still targets 1.25.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -70,7 +68,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
 
       # Several integration tests shell out to an MCP server via npx.
       - name: Set up Node.js
@@ -92,7 +90,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -105,10 +103,9 @@ jobs:
 
   # Reports vulnerabilities reachable from mcp-tui's code in its modules and
   # in the standard library of the Go it is released with. govulncheck checks
-  # the stdlib of the go it runs with, so it runs on 1.25 here. It is pinned
-  # to x/vuln v1.7.0, the last release that builds on Go 1.25; @latest (as
-  # golang/govulncheck-action installs it) needs Go 1.26 and fails to install.
-  # The vulnerability database is fetched fresh on every run either way.
+  # the stdlib of the go it runs with, so it runs on the release Go here. It is
+  # pinned so a new x/vuln that needs a newer Go cannot break the job between
+  # toolchain moves; the vulnerability database is fetched fresh every run.
   govulncheck:
     name: Vulnerability check
     runs-on: ubuntu-latest
@@ -116,10 +113,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: false
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   # The npm installer runs on every user platform, and extracts with whatever
   # tar the platform has, so it is tested on all three.
@@ -159,7 +156,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
 
       - name: Build
         env:

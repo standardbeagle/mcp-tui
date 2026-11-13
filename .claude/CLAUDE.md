@@ -10,7 +10,7 @@ CLI / simple / desktop distribution
 
 ## Key Technologies
 
-Go 1.25, bubbletea + bubbles + lipgloss, cobra, modelcontextprotocol/go-sdk, golang.org/x/oauth2, testify, pwsh (test child processes), Node/npm (distribution wrapper, test servers)
+Go 1.26, bubbletea + bubbles + lipgloss, cobra, modelcontextprotocol/go-sdk, golang.org/x/oauth2, testify, pwsh (test child processes), Node/npm (distribution wrapper, test servers)
 
 ## Domain Concepts
 
