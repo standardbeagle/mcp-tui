@@ -13,6 +13,8 @@ with its status and timings, every OAuth step, and the handshake attempts.
 
 ## stdio servers
 
+<a id="wrote-a-line-to-stdout-that-is-not-a-json-rpc-message"></a>
+
 ### `wrote a line to stdout that is not a JSON-RPC message: "…"`
 
 ```

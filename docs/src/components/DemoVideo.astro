@@ -3,6 +3,7 @@
 // src/data/videos.json (published by docs/recordings/publish.mjs). Emits a
 // schema.org VideoObject so search engines can index the clip.
 import { existsSync } from 'node:fs';
+import { publicDir } from 'astro:config/server';
 import videos from '../data/videos.json';
 
 interface Props {
@@ -18,8 +19,11 @@ if (!video.duration) throw new Error(`DemoVideo: "${String(name)}" is not publis
 
 // The mp4/webm files are docs-media release assets that the build fetches
 // into public/videos (make docs-media); posters and captions are in git.
+// Resolved from the configured publicDir, not import.meta.url: at build time
+// this code runs from a bundled chunk whose depth under dist/ changes between
+// Astro versions.
 for (const file of Object.values(video.files)) {
-  if (!existsSync(new URL(`../../public/videos/${file}`, import.meta.url))) {
+  if (!existsSync(new URL(`videos/${file}`, publicDir))) {
     throw new Error(`DemoVideo: public/videos/${file} is missing; fetch the videos with make docs-media`);
   }
 }
