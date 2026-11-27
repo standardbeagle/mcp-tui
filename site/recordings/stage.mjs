@@ -2,8 +2,8 @@
 // servers its scenes connect to. The demo engine spawns this as a demo's
 // setup.upstream, waits for the terminal URL, and SIGTERMs it afterwards.
 //
-// Each page load gets a fresh bash in docs/recordings/workspace with
-// docs/recordings/.bin (mcp-tui, demo-server; `make demo-bins`) and the
+// Each page load gets a fresh bash in site/recordings/workspace with
+// site/recordings/.bin (mcp-tui, demo-server; `make demo-bins`) and the
 // pinned node servers first on PATH. Every listener is loopback only.
 //
 //   http://127.0.0.1:7690/         terminal

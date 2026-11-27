@@ -17,13 +17,13 @@ or SSE, optionally behind OAuth, and every run prints the same output.
 
 ```bash
 git clone https://github.com/standardbeagle/mcp-tui && cd mcp-tui
-go build -o demo-server ./docs/recordings/demo-server
+go build -o demo-server ./site/recordings/demo-server
 ./demo-server -http 127.0.0.1:8931            # streamable HTTP at /mcp
 ./demo-server -http 127.0.0.1:8933 -oauth     # the same, behind OAuth
 ```
 
 or connect over stdio with `mcp-tui --cmd ./demo-server --args -stdio`.
-Its [README](https://github.com/standardbeagle/mcp-tui/tree/main/docs/recordings/demo-server)
+Its [README](https://github.com/standardbeagle/mcp-tui/tree/main/site/recordings/demo-server)
 lists what it serves and the faults it can simulate.
 
 ## Guides

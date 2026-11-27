@@ -65,7 +65,7 @@ linters:
       # it serves (JSON Schema types, MIME types, OAuth parameters), read in
       # place like test fixtures. Constants would hide the data the
       # recordings show. Every other linter still runs on it.
-      - path: docs/recordings/demo-server/
+      - path: site/recordings/demo-server/
         linters:
           - goconst
       - path: _test\.go

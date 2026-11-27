@@ -4,22 +4,22 @@ The videos on the docs site and the loops in the README are recorded from
 real mcp-tui runs against real servers, scripted so every take is the same.
 
 ```bash
-make demo NAME=verify-a-tool   # record one demo and publish it into docs/
+make demo NAME=verify-a-tool   # record one demo and publish it into site/
 make demos                     # record and publish every demo
 ```
 
 `make demo` builds `mcp-tui` and the demo server into `.bin/`, installs the
 pinned node servers (`package.json`), records the demo with the agnt demo
 engine, and runs `publish.mjs`, which writes the poster and captions to
-`docs/public/videos/<name>.{webp,vtt}` and, for demos marked `readmeLoop`,
-the animated loop in `docs/src/assets/recordings/`.
+`site/public/videos/<name>.{webp,vtt}` and, for demos marked `readmeLoop`,
+the animated loop in `site/src/assets/recordings/`.
 
 The webm and mp4 files stay out of git. `publish.mjs` names them by content
 hash (`<name>-<sha256 prefix>.webm`), uploads them to the `docs-media`
 GitHub release (it needs `gh` signed in with write access), deletes the
 assets they replace, and records the names under `files` in
-`docs/src/data/videos.json`. The docs workflow downloads the release assets
-into `docs/public/videos` before it builds; run `make docs-media` to do the
+`site/src/data/videos.json`. The docs workflow downloads the release assets
+into `site/public/videos` before it builds; run `make docs-media` to do the
 same before a local build. A missing file fails the build and names the
 file. The engine lives in the agnt repo
 (`~/work/core/agnt/docs-site/screenshots/engine/demo.mjs`; override with
@@ -34,11 +34,11 @@ also need `edge-tts`.
 | `demos/<name>/scene.mjs` | a scene: what is typed and what is waited for on screen |
 | `stage.mjs` | started by each demo: a browser terminal (ttyd, port 7690) and the demo servers on 8931-8934 |
 | `term.mjs` | the scene driver: `run`, `type`, `press`, `waitFor(/regex/)`, `prompt`, `hold` |
-| `publish.mjs` | engine output → poster, captions and `docs-media` release assets; fills duration, date and file names in `docs/src/data/videos.json` |
+| `publish.mjs` | engine output → poster, captions and `docs-media` release assets; fills duration, date and file names in `site/src/data/videos.json` |
 | `demo-server/` | the Acme support desk MCP server every demo talks to |
 | `assets/sb-logo-on-dark.png` | the Standard Beagle logo, wordmark lightened for dark frames, which the engine overlays top right |
 
-Every video needs an entry in `docs/src/data/videos.json` (title,
+Every video needs an entry in `site/src/data/videos.json` (title,
 description) before it is published; the docs embed it with
 `<DemoVideo name="…" />`, which also emits the schema.org `VideoObject`.
 

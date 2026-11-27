@@ -1,6 +1,6 @@
 // Publish a recorded demo into the docs site.
 //
-//   node docs/recordings/publish.mjs <name>
+//   node site/recordings/publish.mjs <name>
 //
 // Reads the engine's output, demos/<name>/out/<name>.webm (plus <name>.vtt
 // captions when the demo is narrated), and writes:
@@ -8,14 +8,14 @@
 //   <name>-<hash>.webm, <name>-<hash>.mp4
 //                                    the video (VP9, and H.264 for Safari),
 //                                    uploaded to the docs-media release and
-//                                    copied to docs/public/videos (git-ignored)
-//   docs/public/videos/<name>.webp   poster frame
-//   docs/public/videos/<name>.vtt    captions, when there are any
-//   docs/src/assets/recordings/<name>.webp
+//                                    copied to site/public/videos (git-ignored)
+//   site/public/videos/<name>.webp   poster frame
+//   site/public/videos/<name>.vtt    captions, when there are any
+//   site/src/assets/recordings/<name>.webp
 //                                    animated loop for the README, only for
 //                                    entries with "readmeLoop" set
 //
-// The entry for <name> in docs/src/data/videos.json carries the editorial
+// The entry for <name> in site/src/data/videos.json carries the editorial
 // fields (title, description, posterAt, readmeLoop {from, to}). This script fills in
 // what it measures: duration (ISO 8601, for VideoObject) and uploadDate.
 // A demo with no entry is refused: every published video needs a title and
@@ -32,7 +32,7 @@ const MEDIA_RELEASE = 'docs-media';
 const docs = path.resolve(here, '..');
 const name = process.argv[2];
 if (!name) {
-  console.error('usage: node docs/recordings/publish.mjs <demo-name>');
+  console.error('usage: node site/recordings/publish.mjs <demo-name>');
   process.exit(2);
 }
 
