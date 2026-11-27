@@ -19,7 +19,7 @@ MCP-TUI searches for configuration files in this order:
 
 1. **Command-line specified**: `--config path/to/config.json`
 2. **Project-local**: `.mcp.json`, `.claude.json` in current directory
-3. **User config**: `~/.config/mcp-tui/connections.json` (saved connections format)
+3. **User config**: `~/.config/mcp-tui/servers.json` (your servers, native format) and `~/.config/mcp-tui/connections.json` (servers MCP-TUI saved); see the [configuration guide](https://dev.standardbeagle.com/mcp-tui/guides/configuration/)
 4. **Claude Desktop**: 
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`

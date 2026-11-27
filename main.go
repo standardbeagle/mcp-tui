@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -143,7 +144,11 @@ Examples:
   # Connect to HTTP/SSE server
   mcp-tui --url http://localhost:8000/mcp
   
-  # Interactive mode (connection screen)
+  # Connect to a server configured in ~/.config/mcp-tui/servers.json
+  mcp-tui --server my-server
+
+  # Interactive mode (connection screen, or auto-connect to the only
+  # configured server)
   mcp-tui`,
 		Version: version,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -190,6 +195,17 @@ Examples:
 				connectionConfig = parsedArgs.Connection
 			}
 
+			// --server NAME picks a configured server, skipping the
+			// connection screen and auto-connect.
+			saved, err := cli.SavedServerConnection(cmd, connectionConfig != nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error:", err)
+				exitProcess(1)
+			}
+			if saved != nil {
+				connectionConfig = saved
+			}
+
 			// Attach OAuth config when --oauth-* flags were supplied. The
 			// CLI commands do this in parseConnectionConfig; we replicate
 			// it here so TUI mode honors the same flags. Errors here are
@@ -213,6 +229,8 @@ Examples:
 		"One argument for MCP server command, passed as is (commas included); repeat for each, in order. "+
 			"Not combinable with --args")
 	rootCmd.PersistentFlags().StringVar(&url, "url", "", "URL for HTTP/SSE server")
+	rootCmd.PersistentFlags().String("server", "",
+		"Connect to a configured server by ID or name (~/.config/mcp-tui/servers.json or connections.json)")
 	rootCmd.PersistentFlags().String("transport", "stdio",
 		"Transport type (stdio, sse, http, streamable-http); sse is deprecated and negotiates at most 2025-11-25")
 	rootCmd.PersistentFlags().String("protocol-version", "",

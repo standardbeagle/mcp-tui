@@ -23,6 +23,7 @@ import (
 	"github.com/standardbeagle/mcp-tui/internal/mcp/sampling"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/session"
 	"github.com/standardbeagle/mcp-tui/internal/mcp/transports"
+	"github.com/standardbeagle/mcp-tui/internal/tui/models"
 )
 
 // OutputFormat represents supported output formats
@@ -224,6 +225,15 @@ func (c *BaseCommand) parseConnectionConfig(cmd *cobra.Command) (*config.Connect
 		connConfig = parsedArgs.Connection
 	}
 
+	saved, err := SavedServerConnection(cmd, connConfig != nil)
+	if err != nil {
+		return nil, err
+	}
+	if saved != nil {
+		connConfig = saved
+		urlFlag = ""
+	}
+
 	// Apply explicit transport type if specified (and not the default)
 	if transportFlag != "" && transportFlag != "stdio" && connConfig != nil {
 		connConfig.Type = config.TransportType(transportFlag)
@@ -333,6 +343,21 @@ func mergeHeaderFlags(cmd *cobra.Command, connConfig *config.ConnectionConfig) e
 	return nil
 }
 
+// SavedServerConnection resolves --server NAME to that configured server's
+// connection (models.LoadServer), or returns nil when the flag is absent.
+// haveConnection reports whether --cmd, --url or a connection string already
+// named a server; naming two is an error.
+func SavedServerConnection(cmd *cobra.Command, haveConnection bool) (*config.ConnectionConfig, error) {
+	name := flagString(cmd, "server")
+	if name == "" {
+		return nil, nil
+	}
+	if haveConnection {
+		return nil, fmt.Errorf("--server %s cannot be combined with --cmd, --url or a connection string", name)
+	}
+	return models.LoadServer(name)
+}
+
 // resolveCLITarget resolves the CLI connection flags (--url/--cmd/--args)
 // plus positional args into a URL or stdio command triple. Shared by
 // verify.buildTarget and conform.buildConformTarget; each caller decides
@@ -343,6 +368,11 @@ func resolveCLITarget(cmd *cobra.Command, args []string) (url, command string, c
 	argsFlag, err := ServerArgs(cmd)
 	if err != nil {
 		return "", "", nil, err
+	}
+	// verify and conform build their own transports from a bare URL or
+	// command, so a saved server's headers would not reach them.
+	if flagString(cmd, "server") != "" {
+		return "", "", nil, fmt.Errorf("%s does not take --server; give the server with --url or --cmd", cmd.Name())
 	}
 
 	url, command, cmdArgs = urlFlag, cmdFlag, argsFlag
@@ -486,6 +516,7 @@ func BuildOAuthConfig(cmd *cobra.Command, connConfig *config.ConnectionConfig) (
 // connectionConfigError returns an error for missing connection configuration
 func (c *BaseCommand) connectionConfigError() error {
 	return fmt.Errorf("no MCP server connection specified\n\nConnection options:\n" +
+		"- Use --server for a server in ~/.config/mcp-tui/servers.json: --server my-server\n" +
 		"- Use --cmd for stdio servers: --cmd 'npx @modelcontextprotocol/server-everything stdio'\n" +
 		"- Use --url for HTTP servers: --url 'http://localhost:8080'\n" +
 		"- Use --url for SSE servers: --url 'http://localhost:8080/events'\n\nExamples:\n" +

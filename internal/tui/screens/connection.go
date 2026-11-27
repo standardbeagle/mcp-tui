@@ -2,6 +2,7 @@ package screens
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -156,6 +157,7 @@ func NewConnectionScreenWithConfig(cfg *config.Config, prevConfig *config.Connec
 	// Load saved connections
 	if err := cs.connectionsManager.LoadConnections(); err != nil {
 		cs.logger.Error("Failed to load connections", debug.F("error", err))
+		cs.SetError(err)
 	}
 	cs.savedConnections = cs.connectionsManager.GetConnections()
 	cs.buildConnectionsList()
@@ -268,6 +270,7 @@ func (cs *ConnectionScreen) buildConnectionsList() {
 	for _, entry := range cs.savedConnections {
 		cs.connectionsList = append(cs.connectionsList, entry.ID)
 	}
+	sort.Strings(cs.connectionsList)
 }
 
 // getCurrentConnection returns the currently selected saved connection
@@ -754,8 +757,12 @@ func (cs *ConnectionScreen) handleSavedConnectionConnect() (tea.Model, tea.Cmd) 
 		debug.F("name", currentConnection.Name),
 		debug.F("transport", currentConnection.Transport))
 
-	// Convert to connection config
-	connConfig := currentConnection.ToConnectionConfig()
+	// Convert to connection config, expanding ${VAR} references
+	connConfig, err := currentConnection.ResolveConnectionConfig()
+	if err != nil {
+		cs.SetError(err)
+		return cs, nil
+	}
 
 	// Update last used
 	cs.connectionsManager.UpdateLastUsed(currentConnection.ID, false) // Will be updated to true on success

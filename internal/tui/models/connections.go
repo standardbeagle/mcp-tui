@@ -1,10 +1,13 @@
 package models
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -55,6 +58,11 @@ type ConnectionEntry struct {
 	// having to re-connect. Omitted from JSON when empty so newly-imported
 	// entries (e.g. from Claude Desktop config) do not carry an empty key.
 	LastSeenVersion string `json:"lastSeenVersion,omitempty"`
+
+	// Source is "servers.json" for a server defined there. connections.json
+	// keeps a copy of it for its usage history, which is dropped once the
+	// server leaves servers.json.
+	Source string `json:"source,omitempty"`
 }
 
 // ConnectionsConfig represents the saved connections configuration file
@@ -72,11 +80,31 @@ type RecentConnection struct {
 	Success  bool      `json:"success"`
 }
 
+// The native config files, both in ~/.config/mcp-tui. servers.json is the
+// server list a user writes by hand; connections.json is where mcp-tui saves
+// the servers it has connected to, with when and how that went. Both use the
+// native format, and a server in servers.json replaces the saved entry of
+// the same ID.
+const (
+	ServersFileName     = "servers.json"
+	ConnectionsFileName = "connections.json"
+
+	// nativeFormatVersion is the "version" mcp-tui writes.
+	nativeFormatVersion = "1.0"
+)
+
 // ConnectionsManager manages saved connections
 type ConnectionsManager struct {
-	logger   debug.Logger
-	config   *ConnectionsConfig
+	logger debug.Logger
+	config *ConnectionsConfig
+	// filePath is connections.json, the file SaveConnections writes.
 	filePath string
+	// serversPath is servers.json, read but never written.
+	serversPath string
+	// savedDefault is connections.json's own defaultServer. A defaultServer
+	// from servers.json overrides it in memory but is never saved, so taking
+	// it out of servers.json takes it out of effect.
+	savedDefault string
 }
 
 // NewConnectionsManager creates a new connections manager
@@ -84,30 +112,38 @@ func NewConnectionsManager() *ConnectionsManager {
 	cm := &ConnectionsManager{
 		logger: debug.Component("connections"),
 		config: &ConnectionsConfig{
-			Version: "1.0",
+			Version: nativeFormatVersion,
 			Servers: make(map[string]*ConnectionEntry),
 		},
 	}
 
 	// Determine config file path
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
+	configDir := "."
+	if homeDir, err := os.UserHomeDir(); err != nil {
 		cm.logger.Error("Failed to get user home directory", debug.F("error", err))
-		cm.filePath = "connections.json"
 	} else {
-		configDir := filepath.Join(homeDir, ".config", "mcp-tui")
-		cm.filePath = filepath.Join(configDir, "connections.json")
+		configDir = filepath.Join(homeDir, ".config", "mcp-tui")
 	}
+	cm.filePath = filepath.Join(configDir, ConnectionsFileName)
+	cm.serversPath = filepath.Join(configDir, ServersFileName)
 
-	cm.logger.Debug("Connections manager initialized", debug.F("configPath", cm.filePath))
+	cm.logger.Debug("Connections manager initialized",
+		debug.F("configPath", cm.filePath), debug.F("serversPath", cm.serversPath))
 	return cm
 }
 
-// LoadConnections loads connections from various configuration formats
+// LoadConnections loads the configured servers. The native files
+// (servers.json and connections.json) come first; only when neither holds a
+// server is the first other client config that loads used instead. A native
+// file that exists but cannot be read as a server list is reported in the
+// returned error, after everything else that could be loaded has been.
 func (cm *ConnectionsManager) LoadConnections() error {
-	// Try to load from multiple sources in priority order
+	loaded, nativeErr := cm.loadNativeFiles()
+	if loaded {
+		return nativeErr
+	}
+
 	sources := []string{
-		cm.filePath,                          // MCP-TUI native config
 		cm.getClaudeDesktopConfigPath(),      // Claude Desktop config
 		".mcp.json",                          // Project-local config
 		".claude.json",                       // Claude Code config
@@ -117,12 +153,256 @@ func (cm *ConnectionsManager) LoadConnections() error {
 	for _, source := range sources {
 		if cm.loadFromSource(source) {
 			cm.logger.Info("Loaded connections from source", debug.F("source", source))
-			return nil
+			return nativeErr
 		}
 	}
 
 	cm.logger.Info("No existing connections found, starting with empty configuration")
+	return nativeErr
+}
+
+// loadNativeFiles reads connections.json and then servers.json over it.
+// loaded reports whether either file contributed a server.
+func (cm *ConnectionsManager) loadNativeFiles() (loaded bool, err error) {
+	var errs []error
+
+	saved, readErr := readNativeFile(cm.filePath)
+	if readErr != nil {
+		errs = append(errs, readErr)
+	}
+	if saved != nil {
+		cm.config = saved
+		cm.savedDefault = saved.DefaultServer
+		cm.logger.Info("Loaded saved connections", debug.F("path", cm.filePath), debug.F("count", len(saved.Servers)))
+	}
+
+	servers, readErr := readNativeFile(cm.serversPath)
+	if readErr != nil {
+		errs = append(errs, readErr)
+	}
+	if servers == nil && readErr == nil {
+		servers = &ConnectionsConfig{Servers: map[string]*ConnectionEntry{}}
+	}
+	if servers != nil {
+		// A saved copy of a server that servers.json no longer defines is
+		// gone. When servers.json could not be read, its servers are kept.
+		if readErr == nil {
+			for id, entry := range cm.config.Servers {
+				if entry.Source == ServersFileName && servers.Servers[id] == nil {
+					delete(cm.config.Servers, id)
+				}
+			}
+			if cm.config.Servers[cm.savedDefault] == nil {
+				cm.savedDefault = ""
+				cm.config.DefaultServer = ""
+			}
+		}
+		for id, entry := range servers.Servers {
+			entry.Source = ServersFileName
+			if prev := cm.config.Servers[id]; prev != nil {
+				// Keep what mcp-tui recorded about the server; the
+				// definition is the user's.
+				entry.LastUsed = prev.LastUsed
+				entry.Success = prev.Success
+				entry.LastSeenVersion = prev.LastSeenVersion
+			}
+			cm.config.Servers[id] = entry
+		}
+		if servers.DefaultServer != "" {
+			cm.config.DefaultServer = servers.DefaultServer
+		}
+		cm.logger.Info("Loaded servers", debug.F("path", cm.serversPath), debug.F("count", len(servers.Servers)))
+	}
+
+	return len(cm.config.Servers) > 0, errors.Join(errs...)
+}
+
+// readNativeFile parses a native config file. A missing file is (nil, nil).
+func readNativeFile(path string) (*ConnectionsConfig, error) {
+	//nolint:gosec // G304: path is servers.json or connections.json in the user's mcp-tui config directory.
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	cfg, err := ParseNativeConfig(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// isNativePath reports whether path is servers.json or connections.json.
+func (cm *ConnectionsManager) isNativePath(path string) bool {
+	clean := filepath.Clean(path)
+	return clean == filepath.Clean(cm.filePath) || clean == filepath.Clean(cm.serversPath)
+}
+
+// hasVersionField reports whether data is a JSON object with a non-empty
+// "version", the mark of the native format.
+func hasVersionField(data []byte) bool {
+	var probe struct {
+		Version string `json:"version"`
+	}
+	return json.Unmarshal(data, &probe) == nil && probe.Version != ""
+}
+
+// nativeEntry is a server as written in a native file: a ConnectionEntry
+// that may also spell its transport "type", as VS Code and Claude Code do.
+type nativeEntry struct {
+	entryFields
+	Type string `json:"type,omitempty"`
+}
+
+// entryFields has ConnectionEntry's fields without its methods, so decoding
+// into nativeEntry does not recurse.
+type entryFields ConnectionEntry
+
+// ParseNativeConfig parses the native format. "servers" is either an object
+// keyed by server ID or an array of servers that each carry an "id" or a
+// "name"; "version" is optional. A server without a transport is http when
+// it has a url and stdio otherwise.
+func ParseNativeConfig(data []byte) (*ConnectionsConfig, error) {
+	var file struct {
+		Version           string              `json:"version"`
+		DefaultServer     string              `json:"defaultServer,omitempty"`
+		Servers           json.RawMessage     `json:"servers"`
+		RecentConnections []*RecentConnection `json:"recentConnections,omitempty"`
+	}
+	if err := json.Unmarshal(data, &file); err != nil {
+		return nil, fmt.Errorf("not valid JSON: %w", err)
+	}
+	cfg := &ConnectionsConfig{
+		Version:           file.Version,
+		DefaultServer:     file.DefaultServer,
+		Servers:           make(map[string]*ConnectionEntry),
+		RecentConnections: file.RecentConnections,
+	}
+	if cfg.Version == "" {
+		cfg.Version = nativeFormatVersion
+	}
+
+	raw := bytes.TrimSpace(file.Servers)
+	var err error
+	switch {
+	case len(raw) == 0 || bytes.Equal(raw, []byte("null")):
+		// No servers.
+	case raw[0] == '[':
+		err = parseServerList(raw, cfg.Servers)
+	case raw[0] == '{':
+		err = parseServerMap(raw, cfg.Servers)
+	default:
+		err = errors.New(`"servers" must be an object keyed by server ID or an array of servers`)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.DefaultServer != "" && cfg.Servers[cfg.DefaultServer] == nil {
+		return nil, fmt.Errorf("defaultServer %q is not one of the servers", cfg.DefaultServer)
+	}
+	return cfg, nil
+}
+
+// parseServerList adds the servers of a JSON array, each named by its "id"
+// or "name", to servers.
+func parseServerList(raw []byte, servers map[string]*ConnectionEntry) error {
+	var list []*nativeEntry
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return fmt.Errorf("servers: %w", err)
+	}
+	for i, item := range list {
+		if item == nil {
+			return fmt.Errorf("servers[%d]: not an object", i)
+		}
+		id := item.ID
+		if id == "" {
+			id = item.Name
+		}
+		if id == "" {
+			return fmt.Errorf("servers[%d]: needs an \"id\" or a \"name\"", i)
+		}
+		if _, dup := servers[id]; dup {
+			return fmt.Errorf("servers[%d]: a second server named %q", i, id)
+		}
+		entry, err := item.normalize(id)
+		if err != nil {
+			return err
+		}
+		servers[id] = entry
+	}
 	return nil
+}
+
+// parseServerMap adds the servers of a JSON object keyed by ID to servers.
+func parseServerMap(raw []byte, servers map[string]*ConnectionEntry) error {
+	var byID map[string]*nativeEntry
+	if err := json.Unmarshal(raw, &byID); err != nil {
+		return fmt.Errorf("servers: %w", err)
+	}
+	for id, item := range byID {
+		if item == nil {
+			return fmt.Errorf("server %q: not an object", id)
+		}
+		entry, err := item.normalize(id)
+		if err != nil {
+			return err
+		}
+		servers[id] = entry
+	}
+	return nil
+}
+
+// parseTransport maps a configured transport name to its TransportType. An
+// empty name is http for a server with a URL and stdio otherwise.
+func parseTransport(name string, hasURL bool) (config.TransportType, bool) {
+	switch strings.ToLower(name) {
+	case "":
+		if hasURL {
+			return config.TransportHTTP, true
+		}
+		return config.TransportStdio, true
+	case string(config.TransportStdio):
+		return config.TransportStdio, true
+	case string(config.TransportSSE):
+		return config.TransportSSE, true
+	case string(config.TransportHTTP):
+		return config.TransportHTTP, true
+	case string(config.TransportStreamableHTTP), "streamablehttp", "streamable_http":
+		return config.TransportStreamableHTTP, true
+	}
+	return "", false
+}
+
+// normalize turns a parsed server into a ConnectionEntry with id as its ID,
+// a display name and a known transport.
+func (item *nativeEntry) normalize(id string) (*ConnectionEntry, error) {
+	entry := (*ConnectionEntry)(&item.entryFields)
+	entry.ID = id
+	if entry.Name == "" {
+		entry.Name = displayName(id)
+	}
+	name := string(entry.Transport)
+	if name == "" {
+		name = item.Type
+	}
+	transport, ok := parseTransport(name, entry.URL != "")
+	if !ok {
+		return nil, fmt.Errorf("server %q: unknown transport %q (use stdio, http, streamable-http or sse)", id, name)
+	}
+	entry.Transport = transport
+	switch {
+	case transport == config.TransportStdio && entry.Command == "":
+		return nil, fmt.Errorf("server %q: a stdio server needs a \"command\"", id)
+	case transport != config.TransportStdio && entry.URL == "":
+		return nil, fmt.Errorf("server %q: a %s server needs a \"url\"", id, transport)
+	}
+	if entry.Icon == "" {
+		entry.Icon = iconForServer(id)
+	}
+	return entry, nil
 }
 
 // loadFromSource attempts to load from a specific source
@@ -136,6 +416,17 @@ func (cm *ConnectionsManager) loadFromSource(filePath string) bool {
 	if err != nil {
 		cm.logger.Debug("Could not read config file", debug.F("path", filePath), debug.F("error", err))
 		return false
+	}
+
+	if cm.isNativePath(filePath) {
+		nativeCfg, err := ParseNativeConfig(data)
+		if err != nil {
+			cm.logger.Warn("Native config does not parse", debug.F("path", filePath), debug.F("error", err))
+			return false
+		}
+		cm.config = nativeCfg
+		cm.savedDefault = nativeCfg.DefaultServer
+		return true
 	}
 
 	// Try to parse as MCP-TUI native format first
@@ -157,19 +448,21 @@ func (cm *ConnectionsManager) loadFromSource(filePath string) bool {
 	return false
 }
 
-// loadNativeFormat loads MCP-TUI native format
+// loadNativeFormat loads MCP-TUI native format from a file found elsewhere
+// (a project file, a discovered file). There, a "version" field is what
+// tells the native format from VS Code's, which also has "servers".
 func (cm *ConnectionsManager) loadNativeFormat(data []byte) bool {
-	var nativeCfg ConnectionsConfig
-	if err := json.Unmarshal(data, &nativeCfg); err != nil {
+	if !hasVersionField(data) {
+		return false
+	}
+	nativeCfg, err := ParseNativeConfig(data)
+	if err != nil {
+		cm.logger.Warn("Native config does not parse", debug.F("error", err))
 		return false
 	}
 
-	// Validate that it's our format by checking for version field
-	if nativeCfg.Version == "" {
-		return false
-	}
-
-	cm.config = &nativeCfg
+	cm.config = nativeCfg
+	cm.savedDefault = nativeCfg.DefaultServer
 	cm.logger.Debug("Loaded native format", debug.F("serverCount", len(nativeCfg.Servers)))
 	return true
 }
@@ -207,7 +500,7 @@ func (cm *ConnectionsManager) loadClaudeDesktopFormat(data []byte) bool {
 		}
 
 		// Set icons based on server type
-		entry.Icon = cm.getIconForServerType(id)
+		entry.Icon = iconForServer(id)
 
 		cm.config.Servers[id] = entry
 	}
@@ -252,20 +545,15 @@ func (cm *ConnectionsManager) loadVSCodeFormat(data []byte) bool {
 			Success:     false,
 		}
 
-		// Map transport type
-		switch server.Type {
-		case string(config.TransportStdio):
-			entry.Transport = config.TransportStdio
-		case "sse":
-			entry.Transport = config.TransportSSE
-		case "http":
-			entry.Transport = config.TransportHTTP
-		default:
-			entry.Transport = config.TransportStdio
+		// Map transport type; an unknown one is treated as stdio, as before.
+		transport, ok := parseTransport(server.Type, server.URL != "" && server.Command == "")
+		if !ok {
+			transport = config.TransportStdio
 		}
+		entry.Transport = transport
 
 		// Set icons based on server type
-		entry.Icon = cm.getIconForServerType(id)
+		entry.Icon = iconForServer(id)
 
 		cm.config.Servers[id] = entry
 	}
@@ -306,8 +594,8 @@ func (cm *ConnectionsManager) getClaudeDesktopConfigPath() string {
 	return ""
 }
 
-// getIconForServerType returns an appropriate icon for a server type
-func (cm *ConnectionsManager) getIconForServerType(serverType string) string {
+// iconForServer returns an appropriate icon for a server ID
+func iconForServer(serverType string) string {
 	icons := map[string]string{
 		"filesystem": "📁",
 		"github":     "🐙",
@@ -352,7 +640,9 @@ func (cm *ConnectionsManager) SaveConnections() error {
 		}
 	}
 
-	data, err := json.MarshalIndent(cm.config, "", "  ")
+	out := *cm.config
+	out.DefaultServer = cm.savedDefault
+	data, err := json.MarshalIndent(&out, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal connections: %w", err)
 	}
@@ -475,6 +765,80 @@ func (cm *ConnectionsManager) updateRecentConnections(serverID string, success b
 	}
 }
 
+// ServerIDs returns the configured server IDs in sorted order.
+func (cm *ConnectionsManager) ServerIDs() []string {
+	ids := make([]string, 0, len(cm.config.Servers))
+	for id := range cm.config.Servers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// FindServer returns the server called name: the one with that ID, else the
+// only one whose ID or display name matches it ignoring case.
+func (cm *ConnectionsManager) FindServer(name string) (*ConnectionEntry, error) {
+	if entry := cm.config.Servers[name]; entry != nil {
+		return entry, nil
+	}
+	var match *ConnectionEntry
+	for _, id := range cm.ServerIDs() {
+		entry := cm.config.Servers[id]
+		if strings.EqualFold(id, name) || strings.EqualFold(entry.Name, name) {
+			if match != nil {
+				return nil, fmt.Errorf("server name %q is ambiguous: it matches %q and %q", name, match.ID, id)
+			}
+			match = entry
+		}
+	}
+	if match != nil {
+		return match, nil
+	}
+	ids := cm.ServerIDs()
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no server %q: no servers are configured (see %s)", name, cm.serversPath)
+	}
+	return nil, fmt.Errorf("no server %q; configured servers: %s", name, strings.Join(ids, ", "))
+}
+
+// LoadServer loads the configured servers and returns the one called name
+// (see FindServer) with its connection config resolved.
+func LoadServer(name string) (*config.ConnectionConfig, error) {
+	cm := NewConnectionsManager()
+	loadErr := cm.LoadConnections()
+	entry, err := cm.FindServer(name)
+	if err != nil {
+		if loadErr != nil {
+			return nil, fmt.Errorf("%w (config errors: %w)", err, loadErr)
+		}
+		return nil, err
+	}
+	return entry.ResolveConnectionConfig()
+}
+
+// ResolveConnectionConfig is ToConnectionConfig with every ${VAR} in the
+// URL, header values and environment values replaced from the environment,
+// so secrets can stay out of the config file. A variable that is unset or
+// empty is an error naming the server and the field.
+func (entry *ConnectionEntry) ResolveConnectionConfig() (*config.ConnectionConfig, error) {
+	conn := entry.ToConnectionConfig()
+	var err error
+	if conn.URL, err = config.ExpandEnvRefs(conn.URL); err != nil {
+		return nil, fmt.Errorf("server %q: url: %w", entry.ID, err)
+	}
+	for name, value := range conn.Headers {
+		if conn.Headers[name], err = config.ExpandEnvRefs(value); err != nil {
+			return nil, fmt.Errorf("server %q: header %s: %w", entry.ID, name, err)
+		}
+	}
+	for name, value := range conn.Environment {
+		if conn.Environment[name], err = config.ExpandEnvRefs(value); err != nil {
+			return nil, fmt.Errorf("server %q: env %s: %w", entry.ID, name, err)
+		}
+	}
+	return conn, nil
+}
+
 // ToConnectionConfig converts a ConnectionEntry to config.ConnectionConfig
 func (entry *ConnectionEntry) ToConnectionConfig() *config.ConnectionConfig {
 	return &config.ConnectionConfig{
@@ -567,7 +931,8 @@ func (cm *ConnectionsManager) DiscoverConfigFiles() []*DiscoveredConfigFile {
 	// Check user config directory
 	if homeDir, err := os.UserHomeDir(); err == nil {
 		userConfigPaths := []string{
-			filepath.Join(homeDir, ".config", "mcp-tui", "connections.json"),
+			filepath.Join(homeDir, ".config", "mcp-tui", ServersFileName),
+			filepath.Join(homeDir, ".config", "mcp-tui", ConnectionsFileName),
 			filepath.Join(homeDir, ".config", "mcp", "config.json"),
 		}
 		discovered = cm.discoverAtPaths(discovered, userConfigPaths)
@@ -617,6 +982,10 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	// Determine format by trying to parse
 	serverCount := 0
 
+	if cm.analyzeNativeFile(dc, data) {
+		return dc
+	}
+
 	// Try Claude Desktop format - must have mcpServers node
 	var claudeConfig struct {
 		MCPServers map[string]interface{} `json:"mcpServers"`
@@ -658,6 +1027,23 @@ func (cm *ConnectionsManager) analyzeConfigFile(filePath string) *DiscoveredConf
 	}
 
 	return dc
+}
+
+// analyzeNativeFile fills dc from a native-format file and reports whether
+// it was one. The native files, and any file with a "version", are native
+// format; without this check first a native file passes for VS Code's.
+func (cm *ConnectionsManager) analyzeNativeFile(dc *DiscoveredConfigFile, data []byte) bool {
+	if !cm.isNativePath(dc.Path) && !hasVersionField(data) {
+		return false
+	}
+	nativeCfg, err := ParseNativeConfig(data)
+	if err != nil || len(nativeCfg.Servers) == 0 {
+		return false
+	}
+	dc.Format = FormatMCPTUI
+	dc.ServerCount = len(nativeCfg.Servers)
+	dc.Servers = cm.extractNativeServers(nativeCfg.Servers)
+	return true
 }
 
 // extractJSONObjectServers extracts server information from a
@@ -798,9 +1184,10 @@ func (cm *ConnectionsManager) LoadFromDiscovered(discoveredConfig *DiscoveredCon
 
 	// Clear current config and load from the selected file
 	cm.config = &ConnectionsConfig{
-		Version: "1.0",
+		Version: nativeFormatVersion,
 		Servers: make(map[string]*ConnectionEntry),
 	}
+	cm.savedDefault = ""
 
 	if cm.loadFromSource(discoveredConfig.Path) {
 		cm.logger.Info("Loaded connections from discovered file",

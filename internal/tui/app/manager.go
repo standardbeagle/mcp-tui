@@ -44,8 +44,16 @@ func NewScreenManager(cfg *config.Config, connConfig *config.ConnectionConfig) *
 		sm.currentScreen = screens.NewMainScreen(cfg, connConfig)
 	} else {
 		// Check for auto-connect scenarios
-		autoConnectConfig, autoConnectEntry, autoConnectManager := sm.checkAutoConnect()
-		if autoConnectConfig != nil {
+		autoConnectConfig, autoConnectEntry, autoConnectManager, autoConnectErr := sm.checkAutoConnect()
+		switch {
+		case autoConnectErr != nil:
+			// The server to auto-connect to could not be resolved (say, a
+			// ${VAR} its headers use is unset): say so on the connection
+			// screen rather than connect without it.
+			connectionScreen := screens.NewConnectionScreen(cfg)
+			connectionScreen.SetError(autoConnectErr)
+			sm.currentScreen = connectionScreen
+		case autoConnectConfig != nil:
 			sm.logger.Info("Auto-connecting to saved connection",
 				debug.F("transport", autoConnectConfig.Type),
 				debug.F("command", autoConnectConfig.Command),
@@ -63,7 +71,7 @@ func NewScreenManager(cfg *config.Config, connConfig *config.ConnectionConfig) *
 				})
 			}
 			sm.currentScreen = mainScreen
-		} else {
+		default:
 			// Interactive mode - start with connection screen
 			sm.currentScreen = screens.NewConnectionScreen(cfg)
 		}
@@ -76,28 +84,31 @@ func NewScreenManager(cfg *config.Config, connConfig *config.ConnectionConfig) *
 // Returns the resolved connection config plus the source entry and its
 // owning manager so the caller can wire post-connect persistence (e.g. the
 // negotiated protocol version) back into the saved-connections file.
+// A config file that does not load leaves the connection screen to show
+// why; an auto-connect entry that does not resolve is returned as an error.
 func (sm *ScreenManager) checkAutoConnect() (
 	*config.ConnectionConfig,
 	*models.ConnectionEntry,
 	*models.ConnectionsManager,
+	error,
 ) {
 	// Create connections manager and try to load connections
 	connectionsManager := models.NewConnectionsManager()
 	if err := connectionsManager.LoadConnections(); err != nil {
-		sm.logger.Debug("Could not load connections for auto-connect check", debug.F("error", err))
-		return nil, nil, nil
+		sm.logger.Warn("Not auto-connecting: a config file did not load", debug.F("error", err))
+		return nil, nil, nil, nil
 	}
 
 	// Check if auto-connect should happen
 	if !connectionsManager.ShouldAutoConnect() {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	// Get the auto-connect entry
 	entry := connectionsManager.GetAutoConnectEntry()
 	if entry == nil {
 		sm.logger.Debug("No auto-connect entry found despite ShouldAutoConnect returning true")
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	sm.logger.Info("Found auto-connect configuration",
@@ -106,8 +117,11 @@ func (sm *ScreenManager) checkAutoConnect() (
 
 	// Convert to connection config and return alongside the source entry +
 	// manager so the caller can post-process success.
-	connConfig := entry.ToConnectionConfig()
-	return connConfig, entry, connectionsManager
+	connConfig, err := entry.ResolveConnectionConfig()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("auto-connect: %w", err)
+	}
+	return connConfig, entry, connectionsManager, nil
 }
 
 // CurrentMainScreen returns the underlying *MainScreen if it is currently the

@@ -13,6 +13,11 @@ subcommands are `tool`, `resource`, `prompt`, `server`, `capabilities`,
 mcp-tui [connection-flags] <subcommand> [args]
 ```
 
+The connection flags are `--cmd`/`--args` for a stdio server, `--url` for an
+HTTP or SSE server, or `--server NAME` for a server configured in
+`~/.config/mcp-tui/servers.json`, with its headers and `${VAR}` secrets (see
+[Configuration](/mcp-tui/guides/configuration/#selecting-a-server)).
+
 ## Tools
 
 ```bash

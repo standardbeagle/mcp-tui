@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`~/.config/mcp-tui/servers.json` works as the configuration guide says** ([#2](https://github.com/standardbeagle/mcp-tui/issues/2)). The file was never read; only `connections.json` was, and only in the object-keyed form with a `version`, so the guide's array example loaded nothing and a versionless file passed for VS Code's format, turning every HTTP server into a stdio one. Now both files are read (a `servers.json` server wins over a saved one of the same ID), `servers` may be an array or an object, `version` is optional, and the transport defaults from `url`/`command`. `${VAR}` in `url`, `headers` and `env` is expanded at connect time, and an unset variable is an error rather than a blank credential. A file that does not parse is reported on the connection screen instead of being skipped silently.
+- **Auto-connect uses `servers.json`**: one server (or a `defaultServer`) connects on launch; several open the Saved tab to pick from, now listed in a stable order.
+
 ### Added
+- **`--server NAME`** connects to a configured server by ID or name, in the TUI and in CLI subcommands (`verify` and `conform` excepted), with its saved headers; `--header` adds to them.
 - **npm package smoke test**: CI packs the npm package and installs it on Linux, macOS (arm64) and Windows against a release built on that runner, then runs `mcp-tui --version` through the launcher, so a package that ships or installs a binary for the wrong platform ([#1](https://github.com/standardbeagle/mcp-tui/issues/1), fixed in 0.10.0) fails CI. The release build checks each binary is the OS and architecture its archive is named for, and after publishing, installs the published package from npm on all three and runs it.
 - The npm launcher names the cause when the installed binary cannot run on the machine (`ENOEXEC`, `EBADARCH`) and how to reinstall.
 

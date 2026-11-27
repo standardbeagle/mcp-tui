@@ -19,6 +19,8 @@ func newCmdWithConnectionFlags(t *testing.T, args ...string) *cobra.Command {
 	root.PersistentFlags().String("protocol-version", "", "")
 	root.PersistentFlags().String("server-log-level", "", "")
 	root.PersistentFlags().String("traceparent", "", "")
+	root.PersistentFlags().String("server", "", "")
+	root.PersistentFlags().StringArray("header", nil, "")
 	RegisterOAuthFlags(root.PersistentFlags())
 
 	child := &cobra.Command{Use: "child"}
