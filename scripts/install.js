@@ -49,7 +49,13 @@ function archiveBinaryName(target) {
   return `mcp-tui-${target.goos}-${target.goarch}${target.goos === 'windows' ? '.exe' : ''}`;
 }
 
-function releaseBaseUrl(version) {
+// MCP_TUI_DOWNLOAD_BASE_URL replaces the GitHub release URL, for a mirror
+// or for the package smoke test (scripts/package-smoke.js). The archive is
+// still checked against the checksums.txt found there.
+function releaseBaseUrl(version, env = process.env) {
+  if (env.MCP_TUI_DOWNLOAD_BASE_URL) {
+    return env.MCP_TUI_DOWNLOAD_BASE_URL.replace(/\/+$/, '');
+  }
   return `https://github.com/${REPO}/releases/download/v${version}`;
 }
 

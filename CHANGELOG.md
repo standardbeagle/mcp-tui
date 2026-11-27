@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **npm package smoke test**: CI packs the npm package and installs it on Linux, macOS (arm64) and Windows against a release built on that runner, then runs `mcp-tui --version` through the launcher, so a package that ships or installs a binary for the wrong platform ([#1](https://github.com/standardbeagle/mcp-tui/issues/1), fixed in 0.10.0) fails CI. The release build checks each binary is the OS and architecture its archive is named for, and after publishing, installs the published package from npm on all three and runs it.
+- The npm launcher names the cause when the installed binary cannot run on the machine (`ENOEXEC`, `EBADARCH`) and how to reinstall.
+
 ### Changed
 - **Building from source needs Go 1.26.** Go 1.25 left support when Go 1.27 shipped, and `golang.org/x/oauth2` v0.37 requires 1.26. Release binaries and the npm package are unaffected.
 

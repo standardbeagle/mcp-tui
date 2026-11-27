@@ -37,6 +37,12 @@ for (const signal of ['SIGTERM', 'SIGHUP']) {
 
 child.on('error', (err) => {
   console.error(`mcp-tui: failed to start ${binary}: ${err.message}`);
+  // ENOEXEC / EBADARCH: the file is not an executable for this OS and CPU,
+  // the failure the 0.8.x packages had on macOS (they shipped linux-amd64).
+  if (err.code === 'ENOEXEC' || err.code === 'EBADARCH') {
+    console.error(`mcp-tui: that binary is not built for ${process.platform}/${process.arch}. ` +
+      'Reinstall the latest package: npm install -g @standardbeagle/mcp-tui@latest');
+  }
   process.exit(1);
 });
 child.on('exit', (code, signal) => {

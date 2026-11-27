@@ -123,7 +123,8 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   # The npm installer runs on every user platform, and extracts with whatever
-  # tar the platform has, so it is tested on all three.
+  # tar the platform has, so it is tested on all three. macos-latest is arm64,
+  # the platform 0.8.x shipped a linux-amd64 binary to (#1).
   npm-installer:
     name: npm installer (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -141,6 +142,21 @@ jobs:
 
       - name: node --test
         run: node --test scripts/install.test.js
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # Pack the package, install it with npm (postinstall fetching this
+      # runner's binary from a loopback release) and run `mcp-tui --version`
+      # through the npm-linked launcher: what a user's `npm install -g` does.
+      - name: npm package smoke test
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          go build -ldflags "-X main.version=${VERSION}" -o "${RUNNER_TEMP}/mcp-tui-host$(go env GOEXE)" .
+          node scripts/package-smoke.js "${RUNNER_TEMP}/mcp-tui-host$(go env GOEXE)"
 
   build:
     name: Cross-platform build

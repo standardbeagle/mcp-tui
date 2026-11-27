@@ -53,7 +53,11 @@ test('archive member is the platform-suffixed binary, .exe on windows', () => {
 });
 
 test('release base URL points at the version tag', () => {
-  assert.equal(releaseBaseUrl('0.9.1'), 'https://github.com/standardbeagle/mcp-tui/releases/download/v0.9.1');
+  assert.equal(releaseBaseUrl('0.9.1', {}), 'https://github.com/standardbeagle/mcp-tui/releases/download/v0.9.1');
+});
+
+test('MCP_TUI_DOWNLOAD_BASE_URL replaces the release URL', () => {
+  assert.equal(releaseBaseUrl('0.9.1', { MCP_TUI_DOWNLOAD_BASE_URL: 'http://127.0.0.1:8080/rel/' }), 'http://127.0.0.1:8080/rel');
 });
 
 const checksums = [
