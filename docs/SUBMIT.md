@@ -30,7 +30,7 @@ This file lists the catalogs we submit to and the canonical blurb / metadata use
 
 ### Demo recordings
 
-Available at `docs/src/assets/recordings/*.webp` and rendered on the README and docs site.
+Available at `site/src/assets/recordings/*.webp` and rendered on the README and docs site.
 
 ## Catalogs
 

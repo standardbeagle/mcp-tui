@@ -138,11 +138,11 @@ help:
 	@echo "  run        - Build and run the TUI"
 	@echo "  help       - Show this help"
 # Demo videos for the docs site and README. The agnt demo engine records each
-# docs/recordings/demos/<name>/demo.json (VHS takes, title cards, logo
+# site/recordings/demos/<name>/demo.json (VHS takes, title cards, logo
 # overlay); publish.mjs then writes the site's video files. See
-# docs/recordings/README.md.
+# site/recordings/README.md.
 DEMO_ENGINE ?= $(HOME)/work/core/agnt/docs-site/screenshots/engine/demo.mjs
-RECORDINGS = docs/recordings
+RECORDINGS = site/recordings
 DEMO_NAMES = $(notdir $(wildcard $(RECORDINGS)/demos/*))
 
 demo-bins:
@@ -164,4 +164,4 @@ demos: demo-bins
 # The docs' video files are assets of the docs-media release, not files in
 # git; fetch them before building the docs site locally.
 docs-media:
-	gh release download docs-media --repo standardbeagle/mcp-tui --dir docs/public/videos --pattern '*.webm' --pattern '*.mp4' --clobber
+	gh release download docs-media --repo standardbeagle/mcp-tui --dir site/public/videos --pattern '*.webm' --pattern '*.mp4' --clobber

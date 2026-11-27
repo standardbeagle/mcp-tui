@@ -7,7 +7,7 @@ every take prints the same output. Tools that would change the desk
 without changing it.
 
 ```bash
-go build -o bin/demo-server ./docs/recordings/demo-server
+go build -o bin/demo-server ./site/recordings/demo-server
 ```
 
 ## Flags
@@ -197,5 +197,5 @@ first on `PATH` that runs `curl -sL "$1"`.
 ## Test
 
 ```bash
-tman run -- go test ./docs/recordings/demo-server
+tman run -- go test ./site/recordings/demo-server
 ```

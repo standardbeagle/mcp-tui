@@ -13,7 +13,7 @@ fails, it tells you why: the HTTP status, the stray line on stdout, the
 handshake step the server skipped, and the flag that fixes it.
 
 <p align="center">
-  <img src="docs/src/assets/recordings/verify-a-tool.webp" alt="mcp-tui connecting to an MCP server, running search_tickets from a schema-built form, and showing the equivalent CLI command" width="900" />
+  <img src="site/src/assets/recordings/verify-a-tool.webp" alt="mcp-tui connecting to an MCP server, running search_tickets from a schema-built form, and showing the equivalent CLI command" width="900" />
 </p>
 
 ## Install
@@ -42,7 +42,7 @@ server that ignores `server/discover`, a missing OAuth sign-in: each is
 reported with its cause and fix, not as a timeout.
 
 <p align="center">
-  <img src="docs/src/assets/recordings/handshake-errors.webp" alt="mcp-tui naming an HTTP 404 path error and an SSE transport mismatch" width="900" />
+  <img src="site/src/assets/recordings/handshake-errors.webp" alt="mcp-tui naming an HTTP 404 path error and an SSE transport mismatch" width="900" />
 </p>
 
 ## From a manual check to CI
@@ -53,7 +53,7 @@ that break the tool's schema, and exits non-zero on tool errors with
 `--strict-errors`.
 
 <p align="center">
-  <img src="docs/src/assets/recordings/cli-to-ci.webp" alt="Exporting an mcp-tui session as a shell script and replaying it" width="900" />
+  <img src="site/src/assets/recordings/cli-to-ci.webp" alt="Exporting an mcp-tui session as a shell script and replaying it" width="900" />
 </p>
 
 ## Conformance for CI
@@ -63,7 +63,7 @@ names and list order. `conform` runs every protocol scenario plus the probes
 and writes a JUnit report.
 
 <p align="center">
-  <img src="docs/src/assets/recordings/verify-conform.webp" alt="mcp-tui verify reporting a failing tool name and an unstable tools/list order" width="900" />
+  <img src="site/src/assets/recordings/verify-conform.webp" alt="mcp-tui verify reporting a failing tool name and an unstable tools/list order" width="900" />
 </p>
 
 ## What it covers
@@ -84,7 +84,7 @@ and writes a JUnit report.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [ARCHITECTURE.md](ARCHITECTURE.md). The demo videos are recorded from scripts in [docs/recordings](docs/recordings/README.md). Issues and PRs welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [ARCHITECTURE.md](ARCHITECTURE.md). The demo videos are recorded from scripts in [site/recordings](site/recordings/README.md). Issues and PRs welcome.
 
 ## License
 

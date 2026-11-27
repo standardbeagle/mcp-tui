@@ -43,10 +43,10 @@ binaries/
 # Claude Code agent worktrees
 /.claude/worktrees/
 
-# Demo recordings: built binaries and engine output (published files live in docs/public/videos)
-/docs/recordings/.bin/
-/docs/recordings/demos/*/out/
-/docs/recordings/workspace/
+# Demo recordings: built binaries and engine output (published files live in site/public/videos)
+/site/recordings/.bin/
+/site/recordings/demos/*/out/
+/site/recordings/workspace/
 # Docs video files are docs-media release assets (make docs-media fetches them)
-/docs/public/videos/*.webm
-/docs/public/videos/*.mp4
+/site/public/videos/*.webm
+/site/public/videos/*.mp4

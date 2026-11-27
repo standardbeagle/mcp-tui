@@ -13,13 +13,13 @@ updates:
 
   # The Astro docs site.
   - package-ecosystem: npm
-    directory: /docs
+    directory: /site
     schedule:
       interval: weekly
 
   # The demo recording toolchain.
   - package-ecosystem: npm
-    directory: /docs/recordings
+    directory: /site/recordings
     schedule:
       interval: weekly
 
