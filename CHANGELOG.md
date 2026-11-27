@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-27
+
 ### Fixed
 - **`~/.config/mcp-tui/servers.json` works as the configuration guide says** ([#2](https://github.com/standardbeagle/mcp-tui/issues/2)). The file was never read; only `connections.json` was, and only in the object-keyed form with a `version`, so the guide's array example loaded nothing and a versionless file passed for VS Code's format, turning every HTTP server into a stdio one. Now both files are read (a `servers.json` server wins over a saved one of the same ID), `servers` may be an array or an object, `version` is optional, and the transport defaults from `url`/`command`. `${VAR}` in `url`, `headers` and `env` is expanded at connect time, and an unset variable is an error rather than a blank credential. A file that does not parse is reported on the connection screen instead of being skipped silently.
 - **Auto-connect uses `servers.json`**: one server (or a `defaultServer`) connects on launch; several open the Saved tab to pick from, now listed in a stable order.
