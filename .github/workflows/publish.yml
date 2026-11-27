@@ -203,14 +203,17 @@ jobs:
         with:
           node-version: '20'
 
-      # The registry can take a minute to serve a new version everywhere.
+      # The registry can take minutes to serve a new version everywhere, and npm
+      # reuses its cached package listing between tries unless --prefer-online is
+      # given: v0.11.0 failed all 10 tries over 4.5 minutes and then installed
+      # fine on a rerun.
       - name: Install and run the published package
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            npm install -g "@standardbeagle/mcp-tui@${VERSION}" && break
-            [ "${attempt}" = 10 ] && exit 1
+          for attempt in $(seq 1 20); do
+            npm install -g --prefer-online "@standardbeagle/mcp-tui@${VERSION}" && break
+            [ "${attempt}" = 20 ] && exit 1
             sleep 30
           done
           OUT="$(mcp-tui --version)"
